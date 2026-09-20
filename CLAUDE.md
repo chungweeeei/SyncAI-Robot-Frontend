@@ -34,6 +34,12 @@ interactive runner.
 (playwright, which produces its own production build). Node is pinned to 22.
 A failing e2e run uploads its traces as an artifact.
 
+`.github/workflows/claude-review.yml` reviews each PR against the conventions
+CI cannot check — it reads this file and `.claude/skills/` from the checkout,
+which is what makes them enforceable rather than merely written down. It runs
+only once the workflow reaches `main`, the default branch; see the
+`github-flow` skill for why.
+
 Ports: the console listens on 3001 and expects the backend on 3000 of the same
 host. The `Dockerfile` sets `PORT=3000`, which collides with the backend on a
 shared host network; nothing deploys that image today (see README).
@@ -294,6 +300,11 @@ once. A token moved there is a two-file change, and the second file says so.
 Project-scoped skills live in `.claude/skills/` and are expected to be used
 when working here:
 
+- `github-flow` — how work lands here: branching, splitting a change into
+  commits, opening and stacking PRs with `gh`, watching CI, and deleting a
+  branch safely. Also the gotchas that cost time once already, including why
+  the review workflow does not run until it reaches `main`. Consult when
+  committing, pushing, opening a PR, or debugging a failing check.
 - `backend-endpoint` — the seven ordered steps for adding or changing a
   backend interaction, and the two mistakes that pass every automated gate
   (a write that misses a key its response affects; a zod schema written
