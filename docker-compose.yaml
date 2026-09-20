@@ -1,0 +1,60 @@
+# Operator console as a container. Two services on purpose:
+#
+#   frontend-build  builds the image and tags it. It sits behind the `build`
+#                   profile so `docker compose up` never triggers a multi-minute
+#                   `next build` on the robot by accident; naming the service
+#                   enables its profile:
+#                       docker compose build frontend-build
+#   frontend        runs that tag. It has no `build:` block, so `up` only ever
+#                   starts an image that already exists (built here, or pulled
+#                   after a `docker compose pull`).
+#
+# Values come from .env (copy .env.example). The NEXT_PUBLIC_* pair is a build
+# arg, not a runtime environment variable — see the note in the Dockerfile.
+#
+# The backend is not in this file. The console is a browser client: the page's
+# JavaScript calls the backend on :3000 of the host the page was opened from,
+# so the two processes need no shared network, only the same host name.
+
+services:
+  frontend-build:
+    profiles: ["build"]
+    image: ${FRONTEND_IMAGE:-syncai-frontend}:${FRONTEND_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-}
+        NEXT_PUBLIC_WS_BASE: ${NEXT_PUBLIC_WS_BASE:-}
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-syncai-frontend}:${FRONTEND_TAG:-local}
+    container_name: syncai-frontend
+    restart: unless-stopped
+    # server.js is PID 1 otherwise and does not forward SIGTERM to itself
+    # cleanly; tini makes `docker compose stop` a fast stop, not a 10 s kill.
+    init: true
+    ports:
+      # The container side is fixed at 3001 by the Dockerfile's PORT; only the
+      # host side is configurable.
+      - "${FRONTEND_PORT:-3001}:3001"
+    environment:
+      TZ: ${TZ:-Asia/Taipei}
+    healthcheck:
+      # The slim image ships no curl or wget, and Node 22 has fetch.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
