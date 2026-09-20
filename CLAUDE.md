@@ -319,6 +319,10 @@ when working here:
 - `frontend-patterns` — React/Next.js component, state and render-performance
   patterns. Consult when reviewing or restructuring components.
 
+A personal `daily-report` skill lives at user level (`~/.claude/skills/`), not
+in this repo: it summarises a day's commits, PRs and CI runs for whatever repo
+it is run in, so it does not belong to any one of them.
+
 ## Conventions
 
 - Next.js moves fast and may differ from training data — when a Next.js API is
