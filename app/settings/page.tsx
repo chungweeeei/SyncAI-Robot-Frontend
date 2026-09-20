@@ -1,6 +1,6 @@
 "use client";
 
-import { useConsoleRobotState } from "@/components/console/robot-state-context";
+import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { AppearanceSettings } from "@/components/settings/appearance-settings";
 import { NetworkSettings } from "@/components/settings/network-settings";
 
@@ -17,7 +17,7 @@ export default function SettingsPage() {
             Settings
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Network and console preferences for{" "}
+            Wi-Fi and display preferences for{" "}
             <span className="readout">{state?.robot_id ?? "this robot"}</span>.
           </p>
         </header>

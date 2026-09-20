@@ -1,7 +1,7 @@
 "use client";
 
 import { ActiveTaskChip } from "@/components/console/active-task-chip";
-import { useConsoleRobotState } from "@/components/console/robot-state-context";
+import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import {
   Chip,
   SegmentMeter,
@@ -12,6 +12,13 @@ import {
 } from "@/components/console/instrument";
 import { cn } from "@/lib/utils";
 import type { RobotMode } from "@/lib/types/robot";
+
+/** The robot's own mode names, in the words the mode switch uses for them. */
+const MODE_LABEL: Record<RobotMode, string> = {
+  AUTO: "Navigation",
+  MANUAL: "Mapping",
+  MAINTENANCE: "Maintenance",
+};
 
 const MODE_TONE: Record<RobotMode, Tone> = {
   AUTO: "live",
@@ -61,7 +68,7 @@ export function StatusStrip() {
       : status === "loading"
         ? { label: "Linking", tone: "neutral" }
         : state
-          ? { label: "Stale", tone: "caution" }
+          ? { label: "Last seen", tone: "caution" }
           : { label: "No signal", tone: "warn" };
 
   const battery = state?.battery_status.battery_percentage;
@@ -74,7 +81,7 @@ export function StatusStrip() {
           <span className="readout truncate text-[15px] font-medium">
             {state?.robot_id ?? "—"}
           </span>
-          {state && <Chip tone={MODE_TONE[state.mode]}>{state.mode}</Chip>}
+          {state && <Chip tone={MODE_TONE[state.mode]}>{MODE_LABEL[state.mode]}</Chip>}
         </div>
 
         <StripDivider className="hidden sm:block" />

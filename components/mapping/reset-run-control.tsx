@@ -40,7 +40,7 @@ export function ResetRunControl({
       label="New map"
       caption={
         enabled
-          ? "Discards the run in the robot's memory. Keep the robot still — the lidar re-levels itself against gravity."
+          ? "Throws away the map built so far and starts a new one. Keep the robot still while it does — its sensors re-level themselves."
           : "Starting a new map needs mapping mode."
       }
     >

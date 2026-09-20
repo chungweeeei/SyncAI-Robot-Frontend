@@ -20,8 +20,8 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-// /model-preview is intentionally absent: it is a developer tool for checking
-// the GLB, not an operator screen. Open it by hand. (See its page comment.)
+// /webrtc-test is intentionally absent: it is a developer tool, not an operator
+// screen. Open it by hand. (See its page comment.)
 const navItems = [
   { title: "Dashboard", href: "/", icon: RadarIcon },
   // Between the driving screen and the map library, which is the mapping
@@ -106,6 +106,13 @@ export function NavRail() {
                 render={
                   <Link
                     href={item.href}
+                    // Named explicitly, because the only visible text is
+                    // `lg:hidden`: from lg up this is an icon and a tooltip,
+                    // and a tooltip names a control to a pointer, not to a
+                    // screen reader or to anything driving the page by role.
+                    // Below lg it matches the label right beside it, so the
+                    // accessible name and the visible one never diverge.
+                    aria-label={item.title}
                     aria-current={active ? "page" : undefined}
                     className={cn(
                       "relative flex h-9 items-center justify-center gap-2 rounded-sm px-3 transition-colors lg:w-9 lg:px-0",
