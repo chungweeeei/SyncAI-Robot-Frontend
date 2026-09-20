@@ -118,11 +118,24 @@ On the robot this repo is checked out inside the `SyncAI-Robot-Workspace`
 tree, where `NodeManager` starts `npm run dev` in the `frontend` window of both
 session specs (that repo's `config/sessions/*.yaml`).
 
-**`next.config.ts` `allowedDevOrigins` hardcodes LAN IPs.** Next 16 only trusts
+**`allowedDevOrigins` is detected, not configured.** Next 16 only trusts
 `localhost` for dev/HMR requests, so opening the dashboard from another origin
 (the container's bridge IP, a robot's LAN address) breaks the HMR WebSocket
-unless that origin is listed. Edit it per robot / network — but the file is
-tracked, so do not commit a per-site IP list by accident.
+unless that origin is listed. `next.config.ts` builds the list at startup from
+this host's own non-internal interfaces plus `os.hostname()`, which covers the
+laptop-on-a-new-network and inside-a-container cases without editing a tracked
+file. The list is fixed when the dev server boots — a new Wi-Fi network or DHCP
+lease needs a restart.
+
+For an origin the host cannot discover about itself (a reverse proxy, a tunnel,
+a name that resolves elsewhere), set `SYNCAI_DEV_ORIGINS` to a comma-separated
+list of hostnames — no scheme, no port, since Next matches on hostname alone:
+
+```bash
+SYNCAI_DEV_ORIGINS=robot-01.lan,10.8.140.138 npm run dev
+```
+
+When a request is still blocked, Next's 403 log names the exact host to add.
 
 **Ports differ between package.json and the Dockerfile.** `package.json` pins
 3001 for both `dev` and `start`. The `Dockerfile` (multi-stage, `output:
