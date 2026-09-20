@@ -34,6 +34,14 @@ interactive runner.
 (playwright, which produces its own production build). Node is pinned to 22.
 A failing e2e run uploads its traces as an artifact.
 
+`.github/workflows/release.yml` builds the container image on two native
+runners (arm64 for the Jetson, amd64) and publishes one multi-platform
+manifest to `ghcr.io/chungweeeei/syncai-robot-frontend`: every push to `main`
+moves the `main` tag, a `v*` tag on `main` publishes the semver tags and
+`latest`. It passes no `NEXT_PUBLIC_*` build args on purpose, so the image
+works on any robot. It is separate from CI because a container build is
+minutes long and only matters after the gate has passed.
+
 `.github/workflows/claude-review.yml` reviews each PR against the conventions
 CI cannot check — it reads this file and `.claude/skills/` from the checkout,
 which is what makes them enforceable rather than merely written down. It runs
@@ -41,8 +49,12 @@ only once the workflow reaches `main`, the default branch; see the
 `github-flow` skill for why.
 
 Ports: the console listens on 3001 and expects the backend on 3000 of the same
-host. The `Dockerfile` sets `PORT=3000`, which collides with the backend on a
-shared host network; nothing deploys that image today (see README).
+host, in `npm start` and in the container alike. `docker-compose.yaml` splits the
+image into a `frontend-build` service (behind the `build` profile) and a
+`frontend` run service; `.env.example` lists the knobs. `NEXT_PUBLIC_*` are
+build args there, because Next inlines them at build time. The run service
+can also pull the published image from GHCR (see README); the robot sessions
+still run `npm run dev` today.
 
 The source was ported in from `src/syncai_frontend` of the
 `SyncAI-Robot-Workspace` repo, which still holds the ROS side (including
@@ -382,4 +394,6 @@ the imperative mood, no trailing period. One logical change per commit.
 
 **Pull requests** — target `dev` (except `hotfix/`, which targets `main`).
 Rebase or merge `dev` in before requesting review so the PR is conflict-free,
-and make sure lint, types, and tests pass. Releases are a `dev` → `main` PR.
+and make sure lint, types, and tests pass. Releases are a `dev` → `main` PR; a
+`vX.Y.Z` tag on the merge commit is what publishes the versioned image (see
+`release.yml` above and the `github-flow` skill).
