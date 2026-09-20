@@ -196,7 +196,7 @@ export function VertexPanel(props: VertexPanelProps) {
             vertices={vertices}
             selectedIds={selectedIds}
             onSelect={props.onSelect}
-            empty={status === "ok" ? "No vertices on this map yet." : null}
+            empty={status === "ok" ? "No waypoints on this map yet." : null}
           />
 
           {/* The panel is the only place the tool row's icons are spelled out.
@@ -204,9 +204,10 @@ export function VertexPanel(props: VertexPanelProps) {
             * question the unarmed default buys, and this is where an operator
             * looking at the vertex layer is already looking. */}
           <p className="text-[11px] leading-tight text-muted-foreground">
-            Arm <span className="text-foreground">Place</span> to stage a vertex — press
-            the map, drag to aim. <span className="text-foreground">Select</span> drags a
-            box over several; Shift adds. Escape returns to Pan.
+            Choose <span className="text-foreground">Place</span>, then press the
+            map where the robot should stop and drag to set which way it faces.{" "}
+            <span className="text-foreground">Select</span> drags a box over
+            several; hold Shift to add more. Escape goes back to Pan.
           </p>
         </>
       )}
@@ -276,7 +277,7 @@ function BandBlock({
           // take: a count alone is not enough to check a band against, since the
           // band was drawn on the map and the map is behind this panel.
           const listed = names.length > 6 ? `${names.slice(0, 6).join(", ")}, …` : names.join(", ");
-          if (window.confirm(`Delete ${count} vertices (${listed})? This cannot be undone.`)) {
+          if (window.confirm(`Delete ${count} waypoints (${listed})? This cannot be undone.`)) {
             onDelete();
           }
         }}
@@ -435,8 +436,8 @@ function VertexForm({
           <button
             type="button"
             disabled={busy}
-            aria-label="Delete vertex"
-            title="Delete vertex"
+            aria-label="Delete waypoint"
+            title="Delete waypoint"
             onClick={() => {
               // A confirm rather than an undo: this panel writes through, so
               // there is no local history to step back over, and the page's back

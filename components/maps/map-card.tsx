@@ -64,7 +64,7 @@ function MapThumbnail({ map }: { map: MapSummary }) {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={map.thumbnail}
-        alt={`Occupancy grid of ${map.name}`}
+        alt={`Floor plan of ${map.name}`}
         className="size-full object-contain"
       />
     </div>
@@ -94,9 +94,9 @@ function GridStatusChip({ map }: { map: MapSummary }) {
         </Chip>
       );
     case "interrupted":
-      return <Chip tone="caution">Conversion stopped</Chip>;
+      return <Chip tone="caution">Build stopped</Chip>;
     case "none":
-      return <Chip tone="caution">No 2D grid</Chip>;
+      return <Chip tone="caution">No floor plan</Chip>;
     default:
       return null;
   }
@@ -129,8 +129,8 @@ function GridStatusNote({ map }: { map: MapSummary }) {
     // hand. Re-saving the run is the only way back, and this run is gone.
     return (
       <p className="mt-2 text-[11px] leading-tight text-signal-warn">
-        This map has no point cloud, so no 2D grid can be built from it. Only a
-        fresh mapping run can replace it.
+        This map has no scan data, so a floor plan cannot be built from it.
+        Only a fresh mapping run can replace it.
       </p>
     );
   }
@@ -138,11 +138,11 @@ function GridStatusNote({ map }: { map: MapSummary }) {
   if (map.grid_status === "failed") {
     return (
       <p className="mt-2 text-[11px] leading-tight text-signal-warn">
-        {map.grid_error ?? "The conversion failed for a reason the robot did not record."}{" "}
+        {map.grid_error ?? "The floor plan could not be built, and the robot did not record why."}{" "}
         <span className="text-muted-foreground">
           {map.grid
-            ? "The map is still serving the grid it had before. Rebuild it with the other recipe to try again."
-            : "Rebuilding with the same recipe will fail the same way — try the other one."}
+            ? "The map is still using the floor plan it had before. Try rebuilding it with the other setting."
+            : "Rebuilding with the same setting will fail the same way — try the other one."}
         </span>
       </p>
     );
@@ -151,8 +151,8 @@ function GridStatusNote({ map }: { map: MapSummary }) {
   if (map.grid_status === "interrupted") {
     return (
       <p className="mt-2 text-[11px] leading-tight text-muted-foreground">
-        The backend stopped before this conversion finished, so the grid was
-        never built. Rebuild it — nothing is wrong with the cloud.
+        The robot restarted before the floor plan was finished, so it was never
+        built. Rebuild it — the scan data is fine.
       </p>
     );
   }
@@ -163,8 +163,8 @@ function GridStatusNote({ map }: { map: MapSummary }) {
   // about any state that is not one of the four handled above.
   return (
     <p className="mt-2 text-[11px] leading-tight text-muted-foreground">
-      Saved from LIO but never converted, so the nav stack cannot load it. Build
-      the grid to make it loadable.
+      This map was saved but its floor plan was never built, so the robot cannot
+      navigate with it yet. Build the floor plan to start using it.
     </p>
   );
 }
@@ -255,7 +255,7 @@ export function MapCard({
         * paired to it, so no colour is spelled out here. */}
       {map.active ? (
         <span
-          title="In use — the map the running stack loaded"
+          title="In use — the map the robot is working in"
           aria-label="In use"
           className="absolute top-2 left-2 z-10 flex size-6 items-center justify-center rounded-sm bg-primary text-primary-foreground shadow-sm"
         >
@@ -357,9 +357,9 @@ export function MapCard({
                 />
               </>
             ) : (
-              <Readout label="Grid" value="—" tone="caution" />
+              <Readout label="Ready" value="No" tone="caution" />
             )}
-            <Readout label="Vertices" value={map.vertex_count} />
+            <Readout label="Waypoints" value={map.vertex_count} />
             <Readout label="Size" value={formatSize(map.size_bytes)} />
             <Readout label="Saved" value={formatTimestamp(map.modified_at)} />
           </div>

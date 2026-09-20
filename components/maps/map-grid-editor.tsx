@@ -4,20 +4,22 @@ import * as React from "react";
 
 import {
   GridCanvas,
-  type CellProbe,
-  type EditMode,
-  type EditTool,
-  type VertexGesture,
-  type VertexTool,
 } from "@/components/maps/grid-canvas";
+import type {
+  CellProbe,
+  EditMode,
+  EditTool,
+  VertexGesture,
+  VertexTool,
+} from "@/lib/map/editor";
 import { ManualControl } from "@/components/dashboard/manual-control";
 import { GridStatus } from "@/components/maps/grid-status";
 import { GridToolbar, type SaveState } from "@/components/maps/grid-toolbar";
 import { VertexPanel } from "@/components/maps/vertex-panel";
+import { useSaveMapGrid } from "@/hooks/use-map-actions";
 import { useMapGrid } from "@/hooks/use-map-grid";
 import { useMapVertices, type UseMapVertices } from "@/hooks/use-map-vertices";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
-import { saveMapGrid } from "@/lib/api/map";
 import type { VertexChanges } from "@/lib/api/vertex";
 import { FREE, countValues, type GridValue, type ValueCounts } from "@/lib/map/grid";
 import {
@@ -445,41 +447,44 @@ function EditorSurface({
   const redo = React.useCallback(() => step("redo"), [step]);
   const fit = React.useCallback(() => setFitNonce((n) => n + 1), []);
 
+  // `mutate` alone, not the whole result: it is bound once per observer, so
+  // `onSave` keeps its identity across the mutation's state changes.
+  const { mutate: saveGrid } = useSaveMapGrid();
+
   /**
    * Write the buffer back, and report what the running stack made of it.
    *
-   * Nothing is refetched afterwards, deliberately: the local buffer *is* what was
-   * written, byte for byte, so a refetch would re-download and re-decode ~2.4 MB
-   * to arrive back where we are — and it would need a new GridSession (patches
-   * index into a specific buffer), which means a remount, which would throw away
-   * the operator's undo history as the reward for saving.
+   * The grid is not refetched afterwards, deliberately (useSaveMapGrid says
+   * why): the local buffer *is* what was written, byte for byte. The outcome
+   * is kept in `save` rather than read off the mutation because it is
+   * entangled with the revision guard — "saved" is only true of the bytes as of
+   * `sent`, and a stroke painted since has to put it back to idle.
    */
-  const onSave = React.useCallback(async () => {
+  const onSave = React.useCallback(() => {
     const sent = revisionRef.current;
     setSaveState({ kind: "saving" });
 
-    try {
-      const result = await saveMapGrid(session.name, session.grid);
-
-      // Only the bytes as of `sent` are on disk; anything painted since is not.
-      if (revisionRef.current === sent) setDirty(false);
-      setSaveState({
-        kind: "saved",
-        active: result.active,
-        reloaded: result.reloaded,
-        message: result.message,
-      });
-    } catch (cause) {
-      // Caught here rather than by the caller: this is wired straight to onClick,
-      // so a rejection would be an unhandled one — and `dirty` has to stay true
-      // so the button re-enables for a retry.
-      setSaveState({
-        kind: "failed",
-        message:
-          cause instanceof Error ? cause.message : "The gridmap could not be saved.",
-      });
-    }
-  }, [session]);
+    saveGrid(
+      { name: session.name, grid: session.grid },
+      {
+        onSuccess: (result) => {
+          // Only the bytes as of `sent` are on disk; anything painted since is
+          // not.
+          if (revisionRef.current === sent) setDirty(false);
+          setSaveState({
+            kind: "saved",
+            active: result.active,
+            reloaded: result.reloaded,
+            message: result.message,
+          });
+        },
+        // `dirty` stays true so the button re-enables for a retry.
+        onError: (cause) => {
+          setSaveState({ kind: "failed", message: cause.message });
+        },
+      },
+    );
+  }, [saveGrid, session]);
 
   React.useEffect(() => {
     const isTypingTarget = (target: EventTarget | null) => {

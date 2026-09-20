@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeftIcon, Trash2Icon, XIcon } from "lucide-react";
 
 import {
@@ -13,15 +12,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { deleteMap } from "@/lib/api/map";
-import { queryKeys } from "@/lib/api/query-keys";
+import { useDeleteMap } from "@/hooks/use-map-actions";
 import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
 
 const LOCKED_REASON =
-  "The map in use cannot be deleted: the running stack loaded this name. Switch the robot to another map first.";
+  "The robot is working in this map right now, so it cannot be deleted. Switch it to another map first.";
 const CONVERTING_REASON =
-  "Wait for the gridmap conversion to finish before deleting.";
+  "This map is still being prepared. Wait for it to finish.";
 
 /**
  * The corner itself: geometry and surface, shared by the live button and the
@@ -46,8 +44,8 @@ const CORNER =
  */
 function vertexWarning(map: MapSummary): string | null {
   if (map.vertex_count === 0) return null;
-  if (map.vertex_count === 1) return "Its saved vertex goes too.";
-  return `Its ${map.vertex_count} saved vertices go too.`;
+  if (map.vertex_count === 1) return "Its saved waypoint goes too.";
+  return `Its ${map.vertex_count} saved waypoints go too.`;
 }
 
 /**
@@ -96,9 +94,8 @@ function vertexWarning(map: MapSummary): string | null {
  *
  * On success this instance goes away: MapLibrary keys cards by name, so the
  * refetch unmounts the card. The backend's sentence therefore goes *up*, through
- * `onDeleted`, to a line the library keeps. Mutation-as-async-callback with
- * local busy/error, same as MapRenameControl — this codebase does not use
- * useMutation.
+ * `onDeleted`, to a line the library keeps — from the per-call callback, which
+ * runs before the invalidation useDeleteMap fires has had time to refetch.
  */
 export function MapDeleteControl({
   map,
@@ -108,36 +105,31 @@ export function MapDeleteControl({
   /** The backend's sentence, for a surface that outlives this card. */
   onDeleted?: (message: string) => void;
 }) {
-  const queryClient = useQueryClient();
+  const remove = useDeleteMap();
   const [confirming, setConfirming] = React.useState(false);
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+
+  const busy = remove.isPending;
+  // 409 (in use, converting, a task template still bound) arrives as the
+  // backend's own sentence, written to be shown. The dialog stays open.
+  const error = remove.error?.message ?? null;
 
   const locked = map.active;
   const blocked = locked || map.grid_status === "converting";
 
-  const submit = React.useCallback(async () => {
+  const submit = () => {
     if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await deleteMap(map.name);
-      // Nothing will read this map's vertices again; drop the entry rather
-      // than let it sit until eviction.
-      queryClient.removeQueries({ queryKey: queryKeys.mapVertices(map.name) });
-      onDeleted?.(result.message);
-      setConfirming(false);
-      // The catalogue no longer lists the map; the refetch is what unmounts
-      // this card.
-      void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
-    } catch (cause) {
-      // 409 (in use, converting, a task template still bound) arrives as the
-      // backend's own sentence, written to be shown. The dialog stays open.
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, map.name, onDeleted, queryClient]);
+    remove.mutate(map.name, {
+      onSuccess: (result) => {
+        onDeleted?.(result.message);
+        setConfirming(false);
+      },
+    });
+  };
+
+  const close = () => {
+    setConfirming(false);
+    remove.reset();
+  };
 
   return (
     <>
@@ -156,7 +148,7 @@ export function MapDeleteControl({
         <button
           type="button"
           onClick={() => {
-            setError(null);
+            remove.reset();
             setConfirming(true);
           }}
           aria-label={`Delete ${map.name}`}
@@ -173,10 +165,7 @@ export function MapDeleteControl({
       <AlertDialog
         open={confirming}
         onOpenChange={(open) => {
-          if (!open && !busy) {
-            setConfirming(false);
-            setError(null);
-          }
+          if (!open && !busy) close();
         }}
       >
         <AlertDialogContent>
@@ -202,15 +191,7 @@ export function MapDeleteControl({
               * what makes the dangerous one unmistakable. This is the last
               * screen before an rmtree — not the place to make an operator
               * decode two unlabelled buttons. */}
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={busy}
-              onClick={() => {
-                setConfirming(false);
-                setError(null);
-              }}
-            >
+            <Button variant="ghost" size="sm" disabled={busy} onClick={close}>
               <ArrowLeftIcon data-icon="inline-start" />
               Keep
             </Button>
@@ -218,7 +199,7 @@ export function MapDeleteControl({
               variant="destructive"
               size="sm"
               disabled={busy}
-              onClick={() => void submit()}
+              onClick={submit}
             >
               <Trash2Icon data-icon="inline-start" />
               {busy ? "Deleting…" : "Delete"}

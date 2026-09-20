@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { ChevronDownIcon, RefreshCwIcon } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 
 import {
   AlertDialog,
@@ -19,8 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { ConvertConflictError, convertMapGrid } from "@/lib/api/map";
-import { queryKeys } from "@/lib/api/query-keys";
+import { isHandEditConflict, useConvertMapGrid } from "@/hooks/use-map-actions";
 import type { GridRecipe, MapSummary } from "@/lib/types/map";
 
 /**
@@ -42,54 +40,39 @@ import type { GridRecipe, MapSummary } from "@/lib/types/map";
  * other failure just render as the backend's own sentence.
  *
  * There is no local "converting" state to hold, and no completion to report
- * either: success invalidates the maps query, the catalogue answers with
- * `grid_status: "converting"`, and useMaps' poll carries the card through to
- * `ok` or to `failed` with its reason. What this control owns is the request —
- * everything after it belongs to the card. Mutation-as-async-callback with
- * local busy/error, same as SaveMapControl — this codebase does not use
- * useMutation.
+ * either: useConvertMapGrid invalidates the maps query, the catalogue answers
+ * with `grid_status: "converting"`, and useMaps' poll carries the card through
+ * to `ok` or to `failed` with its reason. What this control owns is the
+ * request — everything after it belongs to the card.
  */
 export function GridRebuildControl({ map }: { map: MapSummary }) {
-  const queryClient = useQueryClient();
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [message, setMessage] = React.useState<string | null>(null);
+  const conversion = useConvertMapGrid();
   const [confirm, setConfirm] = React.useState<{
     recipe: GridRecipe;
     detail: string;
   } | null>(null);
 
-  const convert = React.useCallback(
-    async (recipe: GridRecipe, overwriteEdits: boolean) => {
-      setBusy(true);
-      setError(null);
-      setMessage(null);
-      try {
-        const result = await convertMapGrid(map.name, {
-          recipe,
-          overwriteEdits,
-        });
-        setMessage(result.message);
-        // The catalogue now reports grid_status "converting"; invalidating is
-        // what starts useMaps' poll and flips this card to its Converting…
-        // state, and then to the outcome when the poll sees it land.
-        void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
-      } catch (cause) {
-        if (
-          cause instanceof ConvertConflictError &&
-          cause.code === "gridmap_hand_edited" &&
-          !overwriteEdits
-        ) {
-          setConfirm({ recipe, detail: cause.message });
-        } else {
-          setError(cause instanceof Error ? cause.message : String(cause));
-        }
-      } finally {
-        setBusy(false);
-      }
-    },
-    [map.name, queryClient],
-  );
+  const busy = conversion.isPending;
+  const message = conversion.data?.message ?? null;
+  // The hand-edit conflict is a question, not a failure: it is asked in the
+  // dialog below and never rendered as an error, whether the dialog is open or
+  // was answered "keep". Every other refusal is the backend's sentence.
+  const conflict =
+    isHandEditConflict(conversion.error) && !conversion.variables?.overwriteEdits;
+  const error = conflict ? null : (conversion.error?.message ?? null);
+
+  const convert = (recipe: GridRecipe, overwriteEdits: boolean) => {
+    conversion.mutate(
+      { name: map.name, recipe, overwriteEdits },
+      {
+        onError: (cause) => {
+          if (isHandEditConflict(cause) && !overwriteEdits) {
+            setConfirm({ recipe, detail: cause.message });
+          }
+        },
+      },
+    );
+  };
 
   // Every state but "converting" is rebuildable, failures included — a failed
   // conversion is in fact the state most likely to want this control, with the
@@ -105,25 +88,27 @@ export function GridRebuildControl({ map }: { map: MapSummary }) {
           className="instrument-label flex h-5 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
         >
           <RefreshCwIcon className="size-3" aria-hidden />
-          {map.grid ? "Rebuild grid" : "Build grid"}
+          {map.grid ? "Rebuild floor plan" : "Build floor plan"}
           <ChevronDownIcon className="size-3" aria-hidden />
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-64">
-          <DropdownMenuItem onClick={() => void convert("z-band", false)}>
+          <DropdownMenuItem onClick={() => convert("z-band", false)}>
             <div>
-              <p className="text-sm">Z-band (default)</p>
+              <p className="text-sm">Standard</p>
               <p className="text-[11px] leading-snug text-muted-foreground">
-                Trinary map, unknown where nothing was seen. Recoverable by
-                driving or hand-editing — the safe choice on a new site.
+                Anywhere the robot did not see stays open, so you can fix it
+                later by driving through it or editing the map. The safe choice
+                on a new site.
               </p>
             </div>
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => void convert("traversability", false)}>
+          <DropdownMenuItem onClick={() => convert("traversability", false)}>
             <div>
-              <p className="text-sm">Traversability</p>
+              <p className="text-sm">Strict</p>
               <p className="text-[11px] leading-snug text-muted-foreground">
-                For sites too large to hand-edit. Everything the lidar did not
-                see becomes a permanent wall — pick it deliberately.
+                For sites too large to tidy up by hand. Anywhere the robot did
+                not see becomes a wall it will never cross — choose this
+                deliberately.
               </p>
             </div>
           </DropdownMenuItem>
@@ -150,18 +135,16 @@ export function GridRebuildControl({ map }: { map: MapSummary }) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Overwrite hand edits?</AlertDialogTitle>
+            <AlertDialogTitle>Replace your edits?</AlertDialogTitle>
             <AlertDialogDescription>
               {confirm?.detail ??
-                "This map's gridmap holds hand edits; rebuilding replaces it."}{" "}
-              The edited grid is kept as{" "}
-              <span className="readout">gridmap_prev.pgm</span> in the map
-              directory.
+                "This map's floor plan has been edited by hand. Rebuilding replaces those edits."}{" "}
+              A copy of the edited version is kept on the robot.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <Button variant="ghost" size="sm" onClick={() => setConfirm(null)}>
-              Keep the edits
+              Keep my edits
             </Button>
             <Button
               size="sm"
@@ -170,7 +153,7 @@ export function GridRebuildControl({ map }: { map: MapSummary }) {
                 if (!confirm) return;
                 const { recipe } = confirm;
                 setConfirm(null);
-                void convert(recipe, true);
+                convert(recipe, true);
               }}
             >
               Rebuild anyway

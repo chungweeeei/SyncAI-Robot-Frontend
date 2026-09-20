@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeftIcon, ArrowLeftRightIcon } from "lucide-react";
 
 import {
@@ -13,17 +12,16 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { activateMap } from "@/lib/api/map";
-import { queryKeys } from "@/lib/api/query-keys";
+import { useActivateMap } from "@/hooks/use-map-actions";
 import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
 
 const NO_GRID_REASON =
-  "The robot cannot run on a map with no gridmap. Build one first — the planner and both costmaps read it, and map_server refuses to load anything else.";
+  "This map has no floor plan yet, and the robot cannot navigate without one. Build it first.";
 const NO_CLOUD_REASON =
-  "The robot cannot localize on a map with no map.pcd. Only a map saved from a mapping run can be switched to.";
+  "This map has no scan data, so the robot could not work out where it is. Only a map made by a mapping run can be used.";
 const CONVERTING_REASON =
-  "Wait for the gridmap conversion to finish before switching to this map.";
+  "This map is still being prepared. Wait for it to finish.";
 
 /**
  * The corner itself — MapDeleteControl's geometry and surface, on the opposite
@@ -94,9 +92,8 @@ const CORNER =
  * On success the card does *not* unmount (unlike rename and delete), but the
  * check badge moves to it from another card, so the sentence still goes up
  * through `onSwitched` to the library: it is about the robot, not about this
- * map, and it outlives the dialog it came from. Mutation-as-async-callback with
- * local busy/error, same as the other card controls — this codebase does not use
- * useMutation.
+ * map, and it outlives the dialog it came from. The cache consequences — which
+ * keys a switch makes stale — live in useActivateMap, not here.
  */
 export function MapActivateControl({
   map,
@@ -106,41 +103,30 @@ export function MapActivateControl({
   /** The backend's sentence, for a surface that is not this card. */
   onSwitched?: (message: string) => void;
 }) {
-  const queryClient = useQueryClient();
+  const activate = useActivateMap();
   const [confirming, setConfirming] = React.useState(false);
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
 
-  const submit = React.useCallback(async () => {
+  const busy = activate.isPending;
+  // Every refusal arrives as the backend's own sentence, written to be shown.
+  // ActivateConflictError's code is not branched on here: each one already
+  // says what to do, and none has a retry this control can offer the way the
+  // rebuild's `gridmap_hand_edited` does.
+  const error = activate.error?.message ?? null;
+
+  const submit = () => {
     if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await activateMap(map.name);
-      onSwitched?.(result.message);
-      setConfirming(false);
-      // `active` moved between two cards, and the dashboard reads the active
-      // map's vertices — nothing else forces either refresh, because a live
-      // swap (unlike the stack restart this replaced) drops no socket.
-      void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.mapVertices(map.name),
-      });
-      if (result.previous) {
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.mapVertices(result.previous),
-        });
-      }
-    } catch (cause) {
-      // Every refusal arrives as the backend's own sentence, written to be
-      // shown. ActivateConflictError's code is not branched on here: each one
-      // already says what to do, and none has a retry this control can offer
-      // the way the rebuild's `gridmap_hand_edited` does.
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, map.name, onSwitched, queryClient]);
+    activate.mutate(map.name, {
+      onSuccess: (result) => {
+        onSwitched?.(result.message);
+        setConfirming(false);
+      },
+    });
+  };
+
+  const close = () => {
+    setConfirming(false);
+    activate.reset();
+  };
 
   // The active card says "in use" with its badge; it has no use for this.
   if (map.active) return null;
@@ -168,7 +154,7 @@ export function MapActivateControl({
         <button
           type="button"
           onClick={() => {
-            setError(null);
+            activate.reset();
             setConfirming(true);
           }}
           aria-label={`Switch the robot to ${map.name}`}
@@ -185,10 +171,7 @@ export function MapActivateControl({
       <AlertDialog
         open={confirming}
         onOpenChange={(open) => {
-          if (!open && !busy) {
-            setConfirming(false);
-            setError(null);
-          }
+          if (!open && !busy) close();
         }}
       >
         <AlertDialogContent>
@@ -215,23 +198,11 @@ export function MapActivateControl({
               * unmistakable. Not `destructive` — nothing is destroyed, and
               * spending the red here would leave the delete dialog nothing
               * louder to say. */}
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={busy}
-              onClick={() => {
-                setConfirming(false);
-                setError(null);
-              }}
-            >
+            <Button variant="ghost" size="sm" disabled={busy} onClick={close}>
               <ArrowLeftIcon data-icon="inline-start" />
               Cancel
             </Button>
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={() => void submit()}
-            >
+            <Button size="sm" disabled={busy} onClick={submit}>
               <ArrowLeftRightIcon data-icon="inline-start" />
               {busy ? "Switching…" : "Switch"}
             </Button>

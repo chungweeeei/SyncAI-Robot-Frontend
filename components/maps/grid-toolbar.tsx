@@ -21,11 +21,11 @@ import {
 } from "@/components/console/instrument";
 import { cn } from "@/lib/utils";
 import { BRUSH_SIZES, FREE, OCCUPIED, UNKNOWN, type GridValue } from "@/lib/map/grid";
-import type { EditMode, EditTool, VertexTool } from "@/components/maps/grid-canvas";
+import type { EditMode, EditTool, VertexTool } from "@/lib/map/editor";
 
 const MODES: readonly { value: EditMode; label: string }[] = [
   { value: "grid", label: "Grid" },
-  { value: "vertex", label: "Vertex" },
+  { value: "vertex", label: "Waypoints" },
 ];
 
 /**
@@ -72,11 +72,11 @@ const TOOLS: readonly ToolOption<EditTool>[] = [
 /** Vertex mode's counterpart to TOOLS. Pan leads, for the same reason. */
 const VERTEX_TOOLS: readonly ToolOption<VertexTool>[] = [
   { value: "pan", label: "Pan", hint: "drag the map", icon: HandIcon },
-  { value: "place", label: "Place", hint: "press the map to stage a vertex", icon: MapPinPlusIcon },
+  { value: "place", label: "Place", hint: "press the map to add a waypoint", icon: MapPinPlusIcon },
   {
     value: "select",
     label: "Select",
-    hint: "drag a box over vertices; Shift adds",
+    hint: "drag a box over waypoints; Shift adds",
     icon: SquareDashedMousePointerIcon,
   },
 ];

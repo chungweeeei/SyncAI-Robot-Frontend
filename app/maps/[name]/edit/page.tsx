@@ -36,7 +36,7 @@ export default function MapEditPage() {
   const goBack = () => {
     if (
       dirty &&
-      !window.confirm("Leave the editor? Unsaved edits to this gridmap will be lost.")
+      !window.confirm("Leave the editor? Your unsaved changes to this map will be lost.")
     ) {
       return;
     }

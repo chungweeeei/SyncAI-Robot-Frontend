@@ -4,7 +4,7 @@ import { Readout, overlayPanel, type Tone } from "@/components/console/instrumen
 import { cn } from "@/lib/utils";
 import { FREE, OCCUPIED, classify, type ValueCounts } from "@/lib/map/grid";
 import { gridToWorld } from "@/lib/map/view";
-import type { CellProbe } from "@/components/maps/grid-canvas";
+import type { CellProbe } from "@/lib/map/editor";
 import type { MapMetadata } from "@/lib/types/robot";
 
 const VALUE_LABEL: Record<number, string> = {
