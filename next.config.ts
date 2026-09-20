@@ -1,4 +1,4 @@
-import { networkInterfaces, hostname } from "node:os";
+import { networkInterfaces } from "node:os";
 import type { NextConfig } from "next";
 
 /**
@@ -36,9 +36,6 @@ function localDevOrigins(): string[] {
       }
     }
   }
-
-  // mDNS: the host is often reached as `<name>.local` rather than by address.
-  origins.add(hostname().toLowerCase());
 
   // Escape hatch for origins this host cannot discover about itself — a
   // reverse proxy, a tunnel, a name that resolves elsewhere. Comma-separated.

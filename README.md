@@ -122,14 +122,15 @@ session specs (that repo's `config/sessions/*.yaml`).
 `localhost` for dev/HMR requests, so opening the dashboard from another origin
 (the container's bridge IP, a robot's LAN address) breaks the HMR WebSocket
 unless that origin is listed. `next.config.ts` builds the list at startup from
-this host's own non-internal interfaces plus `os.hostname()`, which covers the
+this host's own non-internal interface addresses, which covers the
 laptop-on-a-new-network and inside-a-container cases without editing a tracked
 file. The list is fixed when the dev server boots — a new Wi-Fi network or DHCP
 lease needs a restart.
 
-For an origin the host cannot discover about itself (a reverse proxy, a tunnel,
-a name that resolves elsewhere), set `SYNCAI_DEV_ORIGINS` to a comma-separated
-list of hostnames — no scheme, no port, since Next matches on hostname alone:
+Only addresses are detected, so reaching the dev server **by name** — an mDNS
+`<host>.local`, a DNS entry, a reverse proxy, a tunnel — is not covered. Set
+`SYNCAI_DEV_ORIGINS` to a comma-separated list of hostnames for those, with no
+scheme and no port, since Next matches on hostname alone:
 
 ```bash
 SYNCAI_DEV_ORIGINS=robot-01.lan,10.8.140.138 npm run dev
