@@ -37,7 +37,7 @@ export function TelemetryRail({ state }: { state: RobotState }) {
     <div className="divide-y divide-hairline">
       <InstrumentGroup
         label="Pose"
-        caption={localized ? undefined : "Not localized — no pose to report."}
+        caption={localized ? undefined : "The robot does not know where it is yet."}
       >
         <div className="mb-3 grid grid-cols-2 gap-3">
           <PrimaryReadout

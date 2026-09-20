@@ -23,9 +23,9 @@ import type { StreamStatus } from "@/lib/types/stream";
 
 const STATUS_LABEL: Record<StreamStatus, string> = {
   connecting: "Connecting",
-  open: "Cloud live",
-  closed: "Cloud down",
-  error: "Cloud error",
+  open: "Scan live",
+  closed: "Scan lost",
+  error: "Scan error",
 };
 
 const CAMERA_OPTIONS = [
@@ -83,7 +83,7 @@ export function PointCloudView({
   const { vertices, moveVertex } = stops;
   // Robot pose + joints + planned route via the telemetry WebSocket — see
   // useTelemetry on the rates and on why this is a stream and not a poll.
-  const { pose, joints, path } = useTelemetry();
+  const { feed, path } = useTelemetry();
   const [status, setStatus] = React.useState<StreamStatus>("connecting");
   const [showMapCloud, setShowMapCloud] = React.useState(false);
   // On by default, like the vertices and for the same reason: the route is a
@@ -200,8 +200,7 @@ export function PointCloudView({
         meta={activeMap?.grid ?? undefined}
         mapImageUrl={mapImageUrl}
         mapName={activeMap?.name}
-        pose={pose}
-        joints={joints}
+        telemetry={feed}
         showMapCloud={showMapCloud}
         path={path}
         showPath={showPath}
@@ -308,7 +307,7 @@ export function PointCloudView({
           Top down
         </button>
         <LayerToggle
-          label="Map cloud"
+          label="Map scan"
           on={showMapCloud}
           onToggle={() => setShowMapCloud((v) => !v)}
         />
@@ -316,7 +315,7 @@ export function PointCloudView({
           * an empty layer is indistinguishable from one that is broken. */}
         {vertices.length > 0 && (
           <LayerToggle
-            label="Vertices"
+            label="Waypoints"
             on={showVertices}
             onToggle={() => setShowVertices((v) => !v)}
           />

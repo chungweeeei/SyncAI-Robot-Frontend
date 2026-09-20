@@ -5,8 +5,9 @@ import { GripHorizontalIcon, JoystickIcon } from "lucide-react";
 
 import { overlayPanel } from "@/components/console/instrument";
 import { Thumbstick } from "@/components/dashboard/thumbstick";
-import { useJoystick, type TeleopVector } from "@/hooks/use-joystick";
+import { useJoystick } from "@/hooks/use-joystick";
 import { useTeleopSender } from "@/hooks/use-teleop-sender";
+import type { TeleopVector } from "@/lib/types/robot";
 import { cn } from "@/lib/utils";
 
 /**
@@ -224,7 +225,7 @@ export function ManualControl({ className }: { className?: string }) {
         <TeleopFooter vectorRef={stick.vectorRef} onDrop={handleDrop} />
       ) : (
         <p className="mt-2 text-[11px] leading-tight text-muted-foreground">
-          Disarmed — nothing is sent.
+          Not armed — no commands are sent.
         </p>
       )}
     </div>

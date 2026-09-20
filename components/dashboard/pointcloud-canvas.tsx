@@ -3,13 +3,41 @@
 import * as React from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { useTheme } from "next-themes";
 
+import type { TelemetryFeed } from "@/hooks/use-telemetry";
 import { cn } from "@/lib/utils";
 import { G23_JOINTS } from "@/lib/robot/g23-joints";
-import { vertexGlyph } from "@/lib/map/vertex";
+import {
+  DEFAULT_SPAN_M,
+  TOP_DOWN_TILT,
+  applyCameraMode,
+  overheadDistance,
+} from "@/lib/scene/camera";
+import {
+  LIVE_POINT_SIZE,
+  MAP_POINT_SIZE,
+  MAX_LIVE_POINTS,
+  heightColor,
+} from "@/lib/scene/live-cloud";
+import {
+  createPoseMarker,
+  placePoseMarker,
+  setMarkerColor,
+} from "@/lib/scene/markers";
+import { createPathRibbon } from "@/lib/scene/path-ribbon";
+import { aimRaycaster, intersectGround } from "@/lib/scene/picking";
+import { POSE_EASE_TAU_S, type SmoothPose } from "@/lib/scene/pose";
+import {
+  ROBOT_BASE_HEIGHT_M,
+  loadRobotModel,
+  warnedUnknownJoints,
+} from "@/lib/scene/robot-model";
+import { THEMES } from "@/lib/scene/theme";
+import {
+  createVertexLayer,
+  type VertexLayer,
+} from "@/lib/scene/vertex-layer";
 import type { MapVertex } from "@/lib/types/map";
 import type {
   MapMetadata,
@@ -24,217 +52,14 @@ import {
   fetchMapPointCloud,
 } from "@/lib/ros/pointcloud-stream";
 
-// Upper bound on live points held in the GPU buffer. The backend caps frames
-// (default 30k) well below this; the slack absorbs config changes without a
-// reallocation.
-const MAX_LIVE_POINTS = 200_000;
 
-// Fixed height band (metres, map frame) used to colour points by z. A fixed
-// range keeps colours stable frame-to-frame instead of flickering with the
-// per-frame min/max.
-const Z_MIN = -0.5;
-const Z_MAX = 3.0;
 
-// The robot itself is deliberately absent here: it renders in its own material
-// so the machine looks like the same machine in either theme.
-interface Theme {
-  background: number;
-  ground: number;
-  groundOpacity: number;
-  /** Solid colour for the static map cloud, kept distinct from the
-   *  height-coloured body cloud. White on the dark background; a dark grey on
-   *  the near-white light background so it stays visible in both themes. */
-  mapCloud: number;
-  /** Committed / being-dragged goal marker. `signal-cmd` cyan from globals.css:
-   *  a goal is a commanded value, and it is the same cyan in the goal readback
-   *  and on the Send button. */
-  goal: number;
-  goalDraft: number;
-  /** Staged initial-pose marker. `signal-caution` amber, matching its control:
-   *  it asserts where the robot *is*, not where it should go, and the two must
-   *  never be misread for each other on the floor. */
-  initialPose: number;
-  initialPoseDraft: number;
-  /**
-   * Stored map vertices. One hue for all five types, deliberately not a signal
-   * colour: see lib/map/vertex.ts on why the type is a glyph.
-   *
-   * Both themes get a *dark* hue, which is where this parts company with the
-   * gridmap editor's `PALETTES.vertex` (components/maps/grid-canvas.tsx) — the
-   * two agree on the family, not on the value. The editor can flip to a light
-   * marker in night mode because it draws its own halo behind every mark; here
-   * the marker lies on a ground plane textured with the occupancy grid, which is
-   * white free space in *either* theme (lib/map/render.ts blits the bytes
-   * literally). The editor's dark-theme hue put a light mark on that white
-   * floor, which is how a stop became something you had to go looking for.
-   *
-   * The dark value is still mid-toned rather than ink, because a map that has
-   * not been converted to a gridmap has no ground plane at all and the mark
-   * falls back onto the near-black background.
-   */
-  vertex: number;
-  /**
-   * The vertex under the pointer. The commanded hue, because that stop is one
-   * double-click away from becoming the commanded pose — and because the gridmap
-   * editor already lights its selected vertex in `palette.cmd`.
-   */
-  vertexHover: number;
-  /**
-   * The planner's route. In the goal's cyan family on purpose: the route is what
-   * the commanded pose turned into, and reading it as a separate kind of thing
-   * would hide that. But deliberately a step *darker* than `goal` — the route is
-   * the longest mark on the floor by far, and at the goal's brightness it takes
-   * the eye off the pose that was actually commanded.
-   */
-  path: number;
-}
 
-// Scene colours track the console surfaces so the viewport reads as a recessed
-// well in the panel rather than a pasted-in canvas. Keep these in sync with the
-// --background / --elevated / --signal-cmd values in globals.css.
-const THEMES: Record<"light" | "dark", Theme> = {
-  light: {
-    background: 0xe9eef2,
-    ground: 0xffffff,
-    groundOpacity: 0.85,
-    mapCloud: 0x54646f,
-    goal: 0x0a6d94,
-    goalDraft: 0x4aa6c6,
-    initialPose: 0x93600e,
-    initialPoseDraft: 0xc08c33,
-    vertex: 0x173845,
-    vertexHover: 0x0a6d94,
-    path: 0x2b86a8,
-  },
-  dark: {
-    background: 0x0b1014,
-    ground: 0x1b252d,
-    groundOpacity: 0.6,
-    mapCloud: 0xa7b6c1,
-    goal: 0x45c8f0,
-    goalDraft: 0x8adcf7,
-    initialPose: 0xf0b23c,
-    initialPoseDraft: 0xf6cd7e,
-    vertex: 0x2b5f77,
-    vertexHover: 0x45c8f0,
-    path: 0x3aa8cc,
-  },
-};
 
-// Point sizes (metres — PointsMaterial keeps sizeAttenuation on, so these are
-// world units that shrink with distance, not screen pixels). The live body
-// cloud is drawn small and fine: at ~2.5k points per scan, sprites large enough
-// to see individually also merge into blobs that hide the structure of what the
-// lidar actually saw. The map cloud stays coarser — it is decimated to a 0.3 m
-// voxel, so drawing it finer than that only makes it look sparse.
-const LIVE_POINT_SIZE = 0.05;
-const MAP_POINT_SIZE = 0.14;
 
-// G23 model baked from description/G23.urdf by scripts/urdf2glb.py. It keeps
-// the ROS convention (Z-up, +x forward, metres) rather than glTF's nominal
-// +Y-up, which is exactly what the Z-up world below expects — so it needs no
-// correction rotation. See that script's docstring.
-const ROBOT_MODEL_URL = "/models/g23.glb";
 
-// Height of base_link above the ground with the legs at the rest pose the GLB
-// is baked in: 0.41012 m of link offsets down to FL_FOOT, plus the 22 mm foot
-// collision sphere the URDF uses as the contact point. The pose feed reports a
-// planar pose (lio_bridge projects to x/y/yaw, so z is ~0), so without this the
-// robot renders buried to its knees.
-const ROBOT_BASE_HEIGHT_M = 0.43212;
 
-// Time constant (seconds) of the easing applied to the reported pose. The
-// dashboard's feed is now the ~20 Hz telemetry WebSocket, so the filter's job
-// shrank from hiding a 1 Hz snapshot cadence (tau 0.25 then) to bridging the
-// 50 ms gaps between frames — 0.1 s does that while cutting the lag the old
-// value would now just waste. It is deliberately a filter rather than a
-// replay buffer: smoothing costs a fraction of a second of lag but never
-// renders a pose the robot has already left behind, which a buffer would.
-// /model-preview still ticks its fake pose at 500 ms, where the robot eases
-// between updates a touch more stiffly than before — acceptable for a dev
-// tool.
-const POSE_EASE_TAU_S = 0.1;
 
-/** Pose the robot is actually drawn at, eased toward the reported one. */
-interface SmoothPose {
-  x: number;
-  y: number;
-  z: number;
-  /**
-   * Radians, and deliberately *not* wrapped to [-π, π]: each new target is
-   * unwrapped against this value so easing always takes the short way round.
-   */
-  yaw: number;
-}
-
-/**
- * Load the robot model once per page load.
- *
- * The scene-setup effect below tears down and rebuilds the renderer whenever
- * the map or the theme changes, and refetching plus reparsing a ~600 kB GLB on
- * every theme toggle is pure waste. Caching the promise at module scope is the
- * same move the body_cloud WebSocket already makes for the same reason.
- *
- * The GLB carries geometry only — no materials, and no vertex normals (STL has
- * none to carry over, and generating them would inflate the asset for a
- * mechanical part that reads fine flat-shaded). Left alone, glTF's default
- * material is fully metallic and would render pure black in this deliberately
- * unlit scene, so every mesh gets our own lit material here.
- */
-let robotModelPromise: Promise<THREE.Object3D> | null = null;
-
-function loadRobotModel(): Promise<THREE.Object3D> {
-  if (!robotModelPromise) {
-    const loader = new GLTFLoader();
-    // scripts/urdf2glb.py runs gltfpack -cc, whose output declares
-    // EXT_meshopt_compression. (KHR_mesh_quantization needs no registration.)
-    loader.setMeshoptDecoder(MeshoptDecoder);
-    robotModelPromise = loader.loadAsync(ROBOT_MODEL_URL).then((gltf) => {
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xb0b4ba,
-        metalness: 0.1,
-        roughness: 0.75,
-        // No NORMAL attribute in the asset, so shade off face derivatives.
-        flatShading: true,
-      });
-      gltf.scene.traverse((obj) => {
-        const mesh = obj as THREE.Mesh;
-        if (mesh.isMesh) mesh.material = material;
-      });
-      return gltf.scene;
-    });
-  }
-  return robotModelPromise;
-}
-
-/**
- * Joint names seen in a `joints` prop that G23_JOINTS does not know. Warned
- * once each (module scope, like the model cache): a name mismatch between the
- * telemetry source and the URDF would otherwise fail silently as a leg that
- * never moves — and kJointNames in syncai_driver_manager.cpp still carries a
- * TODO about its ordering, so a mismatch is a live possibility.
- */
-const warnedUnknownJoints = new Set<string>();
-
-/** Map a height to an RGB colour (blue = low, red = high) via an HSL sweep. */
-function heightColor(z: number, out: THREE.Color): THREE.Color {
-  const t = Math.min(1, Math.max(0, (z - Z_MIN) / (Z_MAX - Z_MIN)));
-  // hue 240deg (blue) -> 0deg (red)
-  return out.setHSL(((1 - t) * 240) / 360, 0.9, 0.55);
-}
-
-// Pose marker (goal / initial pose), in metres. The marker sits on the ground in
-// a perspective view, so it has to be a real object of roughly robot size or it
-// stops reading as a place on the floor — a screen-space arrow of fixed pixel
-// length would grow into the horizon. Lifted off z=0 to keep it out of a
-// z-fight with the ground.
-const MARKER_RING_INNER_M = 0.26;
-const MARKER_RING_OUTER_M = 0.34;
-const MARKER_SHAFT_LEN_M = 0.5;
-const MARKER_SHAFT_RADIUS_M = 0.035;
-const MARKER_HEAD_LEN_M = 0.26;
-const MARKER_HEAD_RADIUS_M = 0.1;
-const MARKER_Z_M = 0.05;
 
 /** Drag distance (CSS px) below which the heading is not taken from the drag. */
 const HEADING_DEADZONE_PX = 8;
@@ -246,668 +71,10 @@ const HEADING_DEADZONE_PX = 8;
 // marker ring below it, which stays on the floor throughout.
 const CARRY_LIFT_M = 0.35;
 
-/**
- * The z=0 map plane the pointer is projected onto to pick a goal.
- *
- * Deliberately the mathematical plane rather than a raycast against the ground
- * *mesh*: the mesh only spans the occupancy grid (and does not exist at all
- * without a 2D map), while goal mode has to work anywhere the operator can see
- * floor. Bounds are then checked separately against the map extent.
- */
-const GROUND_PLANE = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 
-/**
- * Ring + arrow marking a pose on the floor, built pointing down +x so the
- * group's rotation.z is the heading. Unlit (MeshBasicMaterial) like everything
- * else in the scene except the robot itself, so it keeps its colour whichever
- * way it faces.
- *
- * One material for all three meshes, which is also what lets `setMarkerColor`
- * recolour a marker in place — the draft marker changes hue with the pick mode
- * and must not force a scene rebuild to do it.
- */
-function createPoseMarker(color: number, opacity: number): THREE.Group {
-  const material = new THREE.MeshBasicMaterial({
-    color,
-    transparent: opacity < 1,
-    opacity,
-    side: THREE.DoubleSide,
-  });
 
-  const group = new THREE.Group();
 
-  // RingGeometry is already in the XY plane, i.e. flat on this z-up world.
-  group.add(
-    new THREE.Mesh(
-      new THREE.RingGeometry(MARKER_RING_INNER_M, MARKER_RING_OUTER_M, 32),
-      material,
-    ),
-  );
 
-  // Cylinder / cone run along +y by default; -90deg about z aims them down +x.
-  const shaft = new THREE.Mesh(
-    new THREE.CylinderGeometry(
-      MARKER_SHAFT_RADIUS_M,
-      MARKER_SHAFT_RADIUS_M,
-      MARKER_SHAFT_LEN_M,
-      12,
-    ),
-    material,
-  );
-  shaft.rotation.z = -Math.PI / 2;
-  shaft.position.x = MARKER_RING_OUTER_M + MARKER_SHAFT_LEN_M / 2;
-  group.add(shaft);
-
-  const head = new THREE.Mesh(
-    new THREE.ConeGeometry(MARKER_HEAD_RADIUS_M, MARKER_HEAD_LEN_M, 16),
-    material,
-  );
-  head.rotation.z = -Math.PI / 2;
-  head.position.x =
-    MARKER_RING_OUTER_M + MARKER_SHAFT_LEN_M + MARKER_HEAD_LEN_M / 2;
-  group.add(head);
-
-  group.visible = false;
-  return group;
-}
-
-/** Move a marker to a pose (theta in degrees), or hide it when there is none. */
-function placePoseMarker(marker: THREE.Group, pose: PlanarPose | null) {
-  marker.visible = pose !== null;
-  if (!pose) return;
-  marker.position.set(pose.x, pose.y, MARKER_Z_M);
-  marker.rotation.z = (pose.theta * Math.PI) / 180;
-}
-
-/** Recolour a marker built by `createPoseMarker` (shared material). */
-function setMarkerColor(marker: THREE.Group, color: number) {
-  const mesh = marker.children[0] as THREE.Mesh;
-  (mesh.material as THREE.MeshBasicMaterial).color.setHex(color);
-}
-
-/*
- * Vertex markers, in metres.
- *
- * Deliberately *not* the ring-and-arrow of createPoseMarker at a smaller scale.
- * A map carries a dozen or more stored stops and only ever one goal, and a dozen
- * arrows crossing each other at floor level is noise the operator has to read
- * past to find the marker they are acting on. A stop is instead a flat target on
- * the floor — a translucent disc, a crisp ring, and a chevron for the heading —
- * so the whole layer reads as ground marking rather than as instruments.
- *
- * The chevron is what carries the heading, and it is short: a stop's heading is
- * worth knowing but never worth as much screen as the goal's, which is drawn as
- * a full arrow because it is the pose being commanded right now.
- *
- * The mark sits lower than MARKER_Z_M so a goal placed on a stop draws over it
- * rather than z-fighting with it.
- */
-const VERTEX_DISC_RADIUS_M = 0.2;
-// A 5 cm band rather than 3: the ring is what locates the stop from across a
-// warehouse, and a hairline ring is the first thing to alias away at distance.
-const VERTEX_RING_INNER_M = 0.2;
-const VERTEX_RING_OUTER_M = 0.25;
-const VERTEX_CHEVRON_BASE_M = 0.31;
-const VERTEX_CHEVRON_TIP_M = 0.46;
-const VERTEX_CHEVRON_HALF_M = 0.1;
-const VERTEX_Z_M = 0.02;
-
-/*
- * The floor mark alone disappears the moment the camera drops toward the
- * horizon — which is most of the time, because the useful views of a robot are
- * from behind and low. A thin stem and a small badge above it give every stop a
- * vertical presence that survives a grazing camera, the same way a pin does on a
- * street map, without adding anything at floor level.
- *
- * The badge carries the type glyph and nothing else. The name lives in the
- * dialog a double-click opens: a caption per stop is the one thing that turns
- * this layer back into clutter, and the operator only needs a name at the moment
- * they are about to act on one.
- */
-const VERTEX_STEM_HEIGHT_M = 0.6;
-const VERTEX_STEM_RADIUS_M = 0.009;
-const VERTEX_BADGE_SIZE_M = 0.22;
-/** Badge scale-up on hover — the marker under the pointer has to answer back. */
-const VERTEX_BADGE_HOVER_SCALE = 1.3;
-/** Texture resolution of a badge, not its drawn size. */
-const VERTEX_BADGE_TEXTURE_PX = 128;
-/**
- * Radius of the invisible disc that catches the pointer. Comfortably wider than
- * the mark itself, for the same reason the gridmap editor's VERTEX_HIT_RADIUS is
- * wider than its dot: a stop is a point, and a point is hard to hit.
- */
-const VERTEX_HIT_RADIUS_M = 0.42;
-
-/** Materials for one vertex hue, shared by every marker drawn in it. */
-interface VertexMaterials {
-  /** The disc: present, but never competing with the cloud drawn over it. */
-  fill: THREE.MeshBasicMaterial;
-  /** Ring and chevron — the part that has to stay crisp at distance. */
-  line: THREE.MeshBasicMaterial;
-  stem: THREE.MeshBasicMaterial;
-}
-
-function createVertexMaterials(color: number): VertexMaterials {
-  const make = (opacity: number) =>
-    new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity,
-      side: THREE.DoubleSide,
-      // Ground marking, not geometry: writing depth would let one stop's
-      // translucent disc erase the cloud behind the next one.
-      depthWrite: false,
-    });
-  // The ring and chevron are drawn flat out: they are the mark. Only the disc
-  // stays translucent, and even that is now solid enough to read as a target
-  // through the live cloud rather than as a smudge under it.
-  return { fill: make(0.35), line: make(1), stem: make(0.7) };
-}
-
-/** `0x2b5f77` → `"#2b5f77"`, for the canvas the badge is drawn on. */
-function cssHex(color: number): string {
-  return `#${color.toString(16).padStart(6, "0")}`;
-}
-
-/**
- * The type badge: a filled disc in the marker hue with the glyph knocked out in
- * near-white, plus a pale rim.
- *
- * The hue is baked in rather than left to `SpriteMaterial.color` tinting a white
- * texture. Tinting was cheaper — one texture served both the resting and hover
- * hues — but it forces the glyph to be a *darkened* version of the disc it sits
- * on, and once the disc hue went dark enough to be findable, dark-on-dark is
- * what that leaves. A light glyph on a solid dark disc is the contrast that
- * makes the badge readable at a glance, and it is the same figure/ground the
- * console's own chips use.
- *
- * Two textures per glyph then, resting and hover — ten in the worst case, all
- * 128 px, all built once per layer.
- */
-function createBadgeTexture(glyph: string, fill: number): THREE.CanvasTexture {
-  const size = VERTEX_BADGE_TEXTURE_PX;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("2D canvas context unavailable");
-
-  const centre = size / 2;
-  ctx.fillStyle = cssHex(fill);
-  ctx.beginPath();
-  ctx.arc(centre, centre, centre - size * 0.08, 0, Math.PI * 2);
-  ctx.fill();
-  // A pale rim, so a dark badge keeps its edge against the near-black
-  // background of a map with no gridmap under it.
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
-  ctx.lineWidth = size * 0.05;
-  ctx.stroke();
-
-  ctx.fillStyle = "#f2f7fa";
-  ctx.font = `700 ${size * 0.5}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  // +2% down: the monospace cap sits high in the em box, and a badge whose
-  // letter is off-centre is the kind of thing you see without being able to
-  // name it.
-  ctx.fillText(glyph, centre, centre + size * 0.02);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-/** Everything one vertex owns, so hover can recolour it without a rebuild. */
-interface VertexHandle {
-  fill: THREE.Mesh[];
-  line: THREE.Mesh[];
-  stem: THREE.Mesh[];
-  badge: THREE.Sprite;
-  /** Resting and hover faces of this stop's badge, swapped by `paint`. */
-  badgeTextures: { base: THREE.CanvasTexture; hover: THREE.CanvasTexture };
-  /** The mark itself, hidden as a whole while the stop is being re-placed. */
-  marker: THREE.Group;
-}
-
-export interface VertexLayer {
-  group: THREE.Group;
-  /** What a pointer ray is tested against. */
-  pickables: THREE.Object3D[];
-  /** Resolve a `userData.vertexId` from a hit back to its row. */
-  byId: Map<string, MapVertex>;
-  /** Light up one marker, or none. Cheap enough to call per pointer move. */
-  setHovered: (id: string | null) => void;
-  /** Take one marker off the map while its pose is in the operator's hands. */
-  setMoving: (id: string | null) => void;
-  dispose: () => void;
-}
-
-/**
- * The whole stored-vertex layer as one group, plus the disposer for everything
- * it allocated.
- *
- * Built wholesale and thrown away on any change rather than diffed: the list
- * comes from a fetch-once-per-mount hook, so "any change" means a map swap or a
- * theme toggle, not a stream. Geometry, materials and the badge textures are all
- * shared across the layer; a vertex owns only its meshes, its sprite material
- * (which carries the tint hover changes) and its transforms.
- */
-function createVertexLayer(
-  vertices: MapVertex[],
-  theme: Theme,
-): VertexLayer {
-  const group = new THREE.Group();
-  const base = createVertexMaterials(theme.vertex);
-  const hover = createVertexMaterials(theme.vertexHover);
-
-  const discGeom = new THREE.CircleGeometry(VERTEX_DISC_RADIUS_M, 32);
-  const ringGeom = new THREE.RingGeometry(
-    VERTEX_RING_INNER_M,
-    VERTEX_RING_OUTER_M,
-    32,
-  );
-  // Both the chevron and the ring are already in the XY plane, i.e. flat on
-  // this z-up world, and the chevron already points down +x — so the marker
-  // group's rotation.z is the heading, exactly as in createPoseMarker.
-  const chevron = new THREE.Shape();
-  chevron.moveTo(VERTEX_CHEVRON_TIP_M, 0);
-  chevron.lineTo(VERTEX_CHEVRON_BASE_M, VERTEX_CHEVRON_HALF_M);
-  chevron.lineTo(VERTEX_CHEVRON_BASE_M, -VERTEX_CHEVRON_HALF_M);
-  chevron.closePath();
-  const chevronGeom = new THREE.ShapeGeometry(chevron);
-  const stemGeom = new THREE.CylinderGeometry(
-    VERTEX_STEM_RADIUS_M,
-    VERTEX_STEM_RADIUS_M,
-    VERTEX_STEM_HEIGHT_M,
-    6,
-  );
-  const hitGeom = new THREE.CircleGeometry(VERTEX_HIT_RADIUS_M, 12);
-  // The hit discs are `visible = false` (set per mesh below) and still picked:
-  // three's Raycaster tests layers, never visibility, so a flagged-off mesh
-  // costs no draw call and keeps catching rays. That is the whole job here.
-  const hitMaterial = new THREE.MeshBasicMaterial({
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-
-  // Keyed by glyph *and* face, so five types cost at most ten textures however
-  // many stops the map has.
-  const badgeTextures = new Map<string, THREE.CanvasTexture>();
-  const badgeTexture = (glyph: string, hovered: boolean) => {
-    const key = `${hovered ? "h" : "b"}:${glyph}`;
-    let texture = badgeTextures.get(key);
-    if (!texture) {
-      texture = createBadgeTexture(
-        glyph,
-        hovered ? theme.vertexHover : theme.vertex,
-      );
-      badgeTextures.set(key, texture);
-    }
-    return texture;
-  };
-  const handles = new Map<string, VertexHandle>();
-  const pickables: THREE.Object3D[] = [];
-  const byId = new Map<string, MapVertex>();
-
-  for (const vertex of vertices) {
-    byId.set(vertex.id, vertex);
-
-    const marker = new THREE.Group();
-    marker.position.set(vertex.x, vertex.y, VERTEX_Z_M);
-    marker.rotation.z = (vertex.theta * Math.PI) / 180;
-
-    const disc = new THREE.Mesh(discGeom, base.fill);
-    const ring = new THREE.Mesh(ringGeom, base.line);
-    const head = new THREE.Mesh(chevronGeom, base.line);
-
-    const stem = new THREE.Mesh(stemGeom, base.stem);
-    // The cylinder runs along +y by default; +90deg about x stands it up.
-    stem.rotation.x = Math.PI / 2;
-    stem.position.z = VERTEX_STEM_HEIGHT_M / 2;
-
-    const hit = new THREE.Mesh(hitGeom, hitMaterial);
-    hit.userData.vertexId = vertex.id;
-    hit.visible = false;
-
-    marker.add(disc, ring, head, stem, hit);
-    group.add(marker);
-
-    const glyph = vertexGlyph(vertex.type);
-    const faces = {
-      base: badgeTexture(glyph, false),
-      hover: badgeTexture(glyph, true),
-    };
-    const badge = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: faces.base,
-        transparent: true,
-        depthWrite: false,
-      }),
-    );
-    badge.scale.setScalar(VERTEX_BADGE_SIZE_M);
-    // Hung off the layer rather than the marker: a sprite ignores rotation, so
-    // parenting it under the heading transform would only hide that fact.
-    // Lifted by a third of its own height so it caps the stem instead of
-    // swallowing the top of it.
-    badge.position.set(
-      vertex.x,
-      vertex.y,
-      VERTEX_Z_M + VERTEX_STEM_HEIGHT_M + VERTEX_BADGE_SIZE_M / 3,
-    );
-    badge.userData.vertexId = vertex.id;
-    group.add(badge);
-
-    pickables.push(hit, badge);
-    handles.set(vertex.id, {
-      fill: [disc],
-      line: [ring, head],
-      stem: [stem],
-      badge,
-      badgeTextures: faces,
-      marker,
-    });
-  }
-
-  let hovered: string | null = null;
-
-  const paint = (id: string | null, on: boolean) => {
-    const handle = id ? handles.get(id) : undefined;
-    if (!handle) return;
-    const set = on ? hover : base;
-    for (const mesh of handle.fill) mesh.material = set.fill;
-    for (const mesh of handle.line) mesh.material = set.line;
-    for (const mesh of handle.stem) mesh.material = set.stem;
-    const material = handle.badge.material as THREE.SpriteMaterial;
-    material.map = on ? handle.badgeTextures.hover : handle.badgeTextures.base;
-    // Swapping the map is a program change, not a uniform change.
-    material.needsUpdate = true;
-    handle.badge.scale.setScalar(
-      on ? VERTEX_BADGE_SIZE_M * VERTEX_BADGE_HOVER_SCALE : VERTEX_BADGE_SIZE_M,
-    );
-  };
-
-  const setHovered = (id: string | null) => {
-    // An id this layer does not know is treated as none: the caller's idea of
-    // what is hovered outlives a rebuild, and a map swap can retire the stop it
-    // names. Resolving it here (rather than trusting the id) is what keeps a
-    // rebuilt layer from carrying a highlight nothing can clear.
-    const next = id && handles.has(id) ? id : null;
-    if (next === hovered) return;
-    paint(hovered, false);
-    paint(next, true);
-    hovered = next;
-  };
-
-  let moving: string | null = null;
-
-  const setMoving = (id: string | null) => {
-    const next = id && handles.has(id) ? id : null;
-    if (next === moving) return;
-    for (const candidate of [moving, next]) {
-      const handle = candidate ? handles.get(candidate) : undefined;
-      if (!handle) continue;
-      // Group visibility covers the whole mark; the badge is hung off the layer
-      // rather than the marker, so it has to be told separately.
-      const shown = candidate !== next;
-      handle.marker.visible = shown;
-      handle.badge.visible = shown;
-    }
-    moving = next;
-  };
-
-  const dispose = () => {
-    for (const geometry of [
-      discGeom,
-      ringGeom,
-      chevronGeom,
-      stemGeom,
-      hitGeom,
-    ]) {
-      geometry.dispose();
-    }
-    for (const set of [base, hover]) {
-      set.fill.dispose();
-      set.line.dispose();
-      set.stem.dispose();
-    }
-    hitMaterial.dispose();
-    // Textures are shared between the badges wearing the same glyph, so they are
-    // freed here rather than per badge — and they have to be freed here at all:
-    // the scene teardown's traverse reaches geometries and materials, never the
-    // texture a material points at.
-    for (const texture of badgeTextures.values()) texture.dispose();
-    for (const handle of handles.values()) handle.badge.material.dispose();
-  };
-
-  return { group, pickables, byId, setHovered, setMoving, dispose };
-}
-
-/*
- * The planner's route, in metres.
- *
- * Drawn as a band of real width on the floor rather than as a THREE.Line, and
- * that is not a style preference: WebGL ignores LineBasicMaterial.linewidth, so
- * a line is a 1 px hairline at every distance — it aliases away down the length
- * of a warehouse and it does not get thinner as the camera pulls back, which is
- * the one cue that makes a perspective view readable. A band is also the same
- * language the vertex layer already speaks: everything the operator sees on the
- * floor here is ground marking, and nothing is an instrument overlay.
- *
- * 12 cm is roughly a tenth of the robot's width — legible from across the map,
- * and never wide enough to hide the stop marker it runs through.
- */
-const PATH_WIDTH_M = 0.12;
-/*
- * Below VERTEX_Z_M (0.02), which is itself below MARKER_Z_M (0.05). Route <
- * stop < goal, which is also the order they matter in: where it will go, where
- * it could go, where it was told to go. Each draws over the one beneath instead
- * of z-fighting with it.
- */
-const PATH_Z_M = 0.012;
-
-/**
- * One flat band following `points` (flat map-frame xy pairs), plus the disposer
- * for what it allocated.
- *
- * Built wholesale and thrown away on every update, like the vertex layer and for
- * a comparable reason: a route arrives about once every 3 s (the BT replans at
- * 0.333 Hz), and rebuilding ~500 quads at that rate is far cheaper than keeping
- * a preallocated buffer correct across paths of different lengths.
- *
- * Returns null for anything that cannot make a band — fewer than two points, or
- * a degenerate run where every point coincides.
- */
-function createPathRibbon(
-  points: Float32Array,
-  theme: Theme,
-): { mesh: THREE.Mesh; dispose: () => void } | null {
-  const n = points.length >> 1;
-  if (n < 2) return null;
-
-  const half = PATH_WIDTH_M / 2;
-  const positions = new Float32Array(n * 6); // two vertices per point, xyz each
-  const indices: number[] = [];
-
-  for (let i = 0; i < n; i++) {
-    const x = points[i * 2];
-    const y = points[i * 2 + 1];
-
-    // Tangent from the neighbours (one-sided at the ends). Averaging the
-    // incoming and outgoing directions is what joins a corner: both segments
-    // share these two offset vertices, so the band stays continuous with no
-    // join drawn — and, because the material is translucent, with no overlap to
-    // double-blend into a darker patch at every turn.
-    //
-    // The offset keeps the normal unit-length instead of dividing by
-    // cos(turn / 2), so a corner can never spike outward the way a true miter
-    // can; it *pinches* instead, to cos(turn / 2) of the nominal width. That is
-    // the failure mode worth having, and it needs no clamp: NavFn's worst case
-    // is a 90-degree step between two 8-connected cells, which narrows the band
-    // to 71% (4.2 cm of 6) for one quad — a slight waist, not an artefact. Only
-    // a near-hairpin would thin to nothing, and a route that doubles back inside
-    // one costmap cell is not something the planner emits.
-    const px = points[Math.max(0, i - 1) * 2];
-    const py = points[Math.max(0, i - 1) * 2 + 1];
-    const nx = points[Math.min(n - 1, i + 1) * 2];
-    const ny = points[Math.min(n - 1, i + 1) * 2 + 1];
-
-    let tx = nx - px;
-    let ty = ny - py;
-    const len = Math.hypot(tx, ty);
-    if (len < 1e-6) {
-      // Coincident neighbours. The subscriber filters duplicates out, so this
-      // is the second line of defence — and it has to be here, because an
-      // unnormalisable tangent yields NaN offsets and a NaN in a position
-      // buffer blanks the entire mesh, not just this quad.
-      tx = 1;
-      ty = 0;
-    } else {
-      tx /= len;
-      ty /= len;
-    }
-
-    // Left normal of the tangent, in this z-up world.
-    const ox = -ty * half;
-    const oy = tx * half;
-
-    const v = i * 6;
-    positions[v] = x + ox;
-    positions[v + 1] = y + oy;
-    positions[v + 2] = PATH_Z_M;
-    positions[v + 3] = x - ox;
-    positions[v + 4] = y - oy;
-    positions[v + 5] = PATH_Z_M;
-
-    if (i > 0) {
-      const a = (i - 1) * 2; // left vertex of the previous point
-      indices.push(a, a + 1, a + 3, a, a + 3, a + 2);
-    }
-  }
-
-  if (!indices.length) return null;
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
-
-  // Unlit and double-sided like every other mark on this floor: the band has to
-  // keep its colour whichever way the route turns, and it is thin enough that a
-  // grazing camera can catch its back face.
-  const material = new THREE.MeshBasicMaterial({
-    color: theme.path,
-    transparent: true,
-    opacity: 0.75,
-    side: THREE.DoubleSide,
-  });
-
-  const mesh = new THREE.Mesh(geometry, material);
-  return {
-    mesh,
-    dispose: () => {
-      geometry.dispose();
-      material.dispose();
-    },
-  };
-}
-
-/**
- * Wire the OrbitControls buttons for a camera mode.
- *  - "move":  left-drag pans (moves the view), right-drag orbits.
- *  - "focus": left-drag orbits around the locked target; panning is disabled
- *    so the target stays pinned to the robot.
- * Middle button always dollies (zoom).
- *
- * An armed pick mode overrides the left button entirely: a left-drag then has to
- * produce a pose, not move the camera. Mapping it to null (OrbitControls falls
- * through to its no-action default) rather than disabling the controls outright
- * keeps right-drag orbit and wheel zoom live, so the operator can still look
- * around while placing a pose.
- *
- * `touches` has to be set alongside `mouseButtons` and not instead of it:
- * OrbitControls keeps two entirely separate mapping tables and consults
- * `touches` for every pointer of `pointerType === "touch"`, so a mouse mapping
- * alone leaves a phone on the library defaults (ONE: ROTATE, TWO: DOLLY_PAN)
- * whatever mode the console is in. That is what made the viewport impossible to
- * pan by dragging on a tablet — one finger orbited in *both* modes, and there
- * was no gesture left that moved the view — and it also let a one-finger drag
- * swing the camera while a pick was armed, which the mouse mapping expressly
- * forbids.
- *
- * The touch table mirrors the mouse one rather than inventing a second
- * vocabulary: one finger does what the left button does, two fingers do what
- * the right button does plus pinch-zoom (there is no wheel to carry it). In
- * "focus" that second gesture is DOLLY_PAN rather than DOLLY_ROTATE only
- * because one finger already rotates there; with `enablePan` off the pan half
- * is inert, so it degrades to the pinch-zoom the mode needs.
- *
- * `zoomToCursor` tracks the mode for the same reason `enablePan` does. In "move"
- * the wheel has to close in on whatever is under the pointer, not on the orbit
- * target: OrbitControls' default dolly slides the camera straight down the
- * view axis, so the screen centre is the only thing zoom can ever approach, and
- * reaching a corner of a warehouse map costs a zoom-pan-zoom-pan crawl. The
- * gridmap editor already anchors its wheel at the cursor (`zoomAt` in
- * lib/map/view.ts), so this is also what makes the two views behave alike.
- *
- * In "focus" it stays off, and not just as a preference: zoom-to-cursor works by
- * shifting the *target* toward the pointer ray, and the render loop reassigns
- * `controls.target` to the robot pose every frame (see `stepPose`). The shift
- * would be overwritten a frame later, leaving the camera swung off-axis with the
- * robot snapping back to centre — a lurch per wheel notch. A locked target is
- * the whole point of focus mode, so zoom there belongs on the axis to the robot.
- */
-function applyCameraMode(
-  controls: OrbitControls,
-  mode: "move" | "focus",
-  picking: boolean,
-) {
-  const orbit = mode === "focus";
-  controls.enablePan = !orbit;
-  controls.zoomToCursor = !orbit;
-  controls.mouseButtons = {
-    LEFT: picking ? null : orbit ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN,
-    MIDDLE: THREE.MOUSE.DOLLY,
-    RIGHT: THREE.MOUSE.ROTATE,
-  };
-  controls.touches = {
-    ONE: picking ? null : orbit ? THREE.TOUCH.ROTATE : THREE.TOUCH.PAN,
-    TWO: orbit ? THREE.TOUCH.DOLLY_PAN : THREE.TOUCH.DOLLY_ROTATE,
-  };
-}
-
-// Fallback world framing when no 2D map is available (e.g. a raw body_cloud
-// render test with no map_server running). Points arrive near the LIO odom
-// origin, so a modest span centred on the origin frames them sensibly.
-const DEFAULT_SPAN_M = 20;
-
-/**
- * How far south of the target an overhead camera is parked, as a fraction of its
- * height.
- *
- * A camera placed *exactly* above its target in a z-up world has its up vector
- * parallel to its view direction, which is undefined for both the projection and
- * OrbitControls' spherical maths — the view snaps to an arbitrary azimuth and
- * the first orbit drag flips it. About a degree off vertical costs nothing that
- * reads as tilt and pins map +y to the top of the screen, which is the
- * orientation the gridmap editor and every site plan use.
- */
-const TOP_DOWN_TILT = 0.02;
-
-/** Slack around the map extent when framing it from overhead. */
-const TOP_DOWN_MARGIN = 1.08;
-
-/** Height at which a perspective camera frames a `widthM` x `heightM` rectangle. */
-function overheadDistance(
-  camera: THREE.PerspectiveCamera,
-  widthM: number,
-  heightM: number,
-): number {
-  const halfFov = (camera.fov * Math.PI) / 360;
-  // The vertical fov is the fixed one; the horizontal follows from the aspect,
-  // so a wide, short map is framed by its width and a tall one by its height.
-  const forHeight = heightM / 2 / Math.tan(halfFov);
-  const forWidth = widthM / 2 / (Math.tan(halfFov) * camera.aspect);
-  return Math.max(forHeight, forWidth) * TOP_DOWN_MARGIN;
-}
 
 /**
  * The kinds of pose a drag on the viewport can produce.
@@ -933,14 +100,18 @@ interface PointCloudCanvasProps {
    * do anything, since that cloud is now read per map from its saved map.pcd.
    */
   mapName?: string;
-  pose?: RobotPose;
   /**
-   * Joint angles in radians, keyed by URDF joint name (the vocabulary
-   * MotorState.name / the telemetry stream uses, e.g. "FL_Knee_joint").
-   * Applied to the GLB relative to its baked zero configuration. Omitted or
-   * missing joints simply keep their last angle.
+   * Where the robot is and how its legs are arranged, drained once per drawn
+   * frame rather than arriving as props.
+   *
+   * A feed and not two values because the telemetry socket lands ~40 messages a
+   * second: a prop is a render, so feeding it that way re-rendered this whole
+   * subtree at the wire's rate for a change only the frame loop cares about.
+   * The same arrangement the point cloud has always had, one layer up.
+   *
+   * Omitted leaves the robot hidden, which is what a cloud-only view wants.
    */
-  joints?: Record<string, number>;
+  telemetry?: TelemetryFeed;
   /** When true, also fetch and render the static localizer map cloud. */
   showMapCloud?: boolean;
   /**
@@ -1001,12 +172,6 @@ interface PointCloudCanvasProps {
    */
   topDownNonce?: number;
   /**
-   * Open the live body_cloud WebSocket. Defaults to true; the model-preview
-   * route turns it off so a machine with no backend running doesn't sit in the
-   * stream's 2 s reconnect loop, logging a failed socket forever.
-   */
-  liveStream?: boolean;
-  /**
    * Open the streamed "map so far" WebSocket — pgo's merged, loop-closure-
    * corrected keyframe cloud, which only has a producer while a mapping
    * session is up — and render it as a dim layer under the live scan. Each
@@ -1056,8 +221,7 @@ export function PointCloudCanvas({
   meta,
   mapImageUrl,
   mapName,
-  pose,
-  joints,
+  telemetry,
   showMapCloud,
   path,
   showPath = true,
@@ -1067,7 +231,6 @@ export function PointCloudCanvas({
   movingVertex = null,
   cameraMode = "move",
   topDownNonce = 0,
-  liveStream = true,
   mapCloudStream = false,
   onMapStatus,
   goal = null,
@@ -1254,6 +417,61 @@ export function PointCloudCanvas({
     }
   }, []);
 
+  /**
+   * Record where the robot should be. The render loop walks the drawn pose
+   * toward it; nothing here touches the scene, so it is safe to call while a
+   * rebuild is in flight.
+   */
+  const setTargetPose = React.useCallback((next: RobotPose) => {
+    const yaw = (next.theta * Math.PI) / 180;
+    const cur = renderedPoseRef.current;
+    targetPoseRef.current = {
+      x: next.x,
+      y: next.y,
+      z: next.z,
+      // Unwrap against the drawn yaw so the ease takes the short way round:
+      // 359deg -> 1deg has to be +2deg, not a -358deg spin in place.
+      yaw: cur
+        ? yaw + Math.round((cur.yaw - yaw) / (2 * Math.PI)) * 2 * Math.PI
+        : yaw,
+    };
+  }, []);
+
+  // The live feed, when one was given. In a ref so a frame loop can read it
+  // without the loop's effect depending on the prop.
+  const telemetryRef = React.useRef(telemetry);
+  React.useEffect(() => {
+    telemetryRef.current = telemetry;
+  }, [telemetry]);
+  /** The last pose object taken off the feed, compared by identity. */
+  const feedPoseRef = React.useRef<RobotPose | undefined>(undefined);
+
+  /**
+   * Drain the live feed, once per drawn frame rather than once per message.
+   *
+   * Polling a 20 Hz feed from a 60 Hz loop reads each frame about three times,
+   * which is why both channels are guarded on object identity: the stream hands
+   * out a fresh object per message, so "unchanged" is one comparison and costs
+   * nothing. The alternative — a subscription that pushes — would buy an
+   * earlier reaction by at most one frame and would need its own teardown.
+   */
+  const pumpTelemetry = React.useCallback(() => {
+    const feed = telemetryRef.current;
+    if (!feed) return;
+
+    const nextPose = feed.pose.current;
+    if (nextPose && nextPose !== feedPoseRef.current) {
+      feedPoseRef.current = nextPose;
+      setTargetPose(nextPose);
+    }
+
+    const nextJoints = feed.joints.current;
+    if (nextJoints && nextJoints !== latestJointsRef.current) {
+      latestJointsRef.current = nextJoints;
+      applyJoints();
+    }
+  }, [setTargetPose, applyJoints]);
+
   // ---- Scene setup (rebuilds on map / theme change) --------------------
   React.useEffect(() => {
     const container = containerRef.current;
@@ -1264,6 +482,11 @@ export function PointCloudCanvas({
     const heightM = meta ? meta.height * meta.resolution : DEFAULT_SPAN_M;
     const centerX = meta ? meta.origin[0] + widthM / 2 : 0;
     const centerY = meta ? meta.origin[1] + heightM / 2 : 0;
+
+    // Set by dispose() below. Two async loads — the GLB and the ground texture
+    // — can land after this scene has been torn down by a theme toggle or a map
+    // change, and each has to check it before touching anything.
+    let cancelled = false;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(theme.background);
@@ -1295,6 +518,7 @@ export function PointCloudCanvas({
 
     // Ground plane textured with the 2D occupancy grid for spatial context.
     // Only drawn when a 2D map is available; a raw cloud test skips it.
+    let groundTexture: THREE.Texture | null = null;
     if (meta) {
       const ground = new THREE.Mesh(
         new THREE.PlaneGeometry(widthM, heightM),
@@ -1310,7 +534,18 @@ export function PointCloudCanvas({
 
       if (mapImageUrl) {
         new THREE.TextureLoader().load(mapImageUrl, (texture) => {
+          // A rebuild that lands mid-download leaves this callback holding a
+          // texture for a material that is already disposed. Nothing else would
+          // ever free it, and nothing would ever draw it either.
+          if (cancelled) {
+            texture.dispose();
+            return;
+          }
           texture.colorSpace = THREE.SRGBColorSpace;
+          // Kept so dispose() can free it: the teardown traverse below walks
+          // materials, and a material does not dispose the textures it points
+          // at. Every theme toggle used to leak one of these.
+          groundTexture = texture;
           const mat = ground.material as THREE.MeshBasicMaterial;
           mat.map = texture;
           mat.color.set(0xffffff);
@@ -1368,7 +603,6 @@ export function PointCloudCanvas({
     // Attach the shared model once it resolves. `cancelled` guards a scene
     // rebuild that lands mid-load: Object3D.add() reparents, so a stale
     // callback would steal the model out of the group the new scene just built.
-    let cancelled = false;
     loadRobotModel()
       .then((model) => {
         if (cancelled) return;
@@ -1397,7 +631,23 @@ export function PointCloudCanvas({
       })
       .catch((err) => console.error("robot model failed to load", err));
 
+    // The canvas's client rect, cached. castFromPointer runs on every
+    // pointermove and a drag re-renders this component (the draft marker is
+    // state), so reading it live would force a layout on each move. The cache
+    // lives in this closure rather than in a component ref because it describes
+    // *this* renderer and has to die with it — and because a ref an effect
+    // touches may not be written from a callback.
+    let cachedRect: DOMRect | null = null;
+    const invalidateRect = () => {
+      cachedRect = null;
+    };
+    canvasRectRef.current = (fresh) => {
+      if (fresh) cachedRect = null;
+      return (cachedRect ??= renderer.domElement.getBoundingClientRect());
+    };
+
     const resize = () => {
+      invalidateRect();
       const rect = container.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
       renderer.setSize(rect.width, rect.height, false);
@@ -1407,6 +657,14 @@ export function PointCloudCanvas({
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(container);
+    // A scroll moves the canvas in client coordinates without resizing it, and
+    // below `lg` this page scrolls. Capture phase because the scroller is an
+    // ancestor and scroll does not bubble; passive because this only ever
+    // drops a cached value.
+    window.addEventListener("scroll", invalidateRect, {
+      capture: true,
+      passive: true,
+    });
 
     /**
      * Advance the drawn pose toward the reported one by one frame.
@@ -1472,6 +730,9 @@ export function PointCloudCanvas({
       const dt = (now - prevFrameMs) / 1000;
       prevFrameMs = now;
 
+      // Before the ease, so a frame that just arrived is the one this frame
+      // walks toward rather than the one before it.
+      pumpTelemetry();
       stepPose(dt);
       controls.update();
       renderer.render(scene, camera);
@@ -1483,6 +744,7 @@ export function PointCloudCanvas({
       cancelled = true;
       cancelAnimationFrame(raf);
       observer.disconnect();
+      window.removeEventListener("scroll", invalidateRect, { capture: true });
       controls.dispose();
       renderer.dispose();
       // Detach the robot before the sweep below. The model is cached across
@@ -1496,6 +758,10 @@ export function PointCloudCanvas({
         if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
         else if (mat) mat.dispose();
       });
+      // By hand, because the traverse above never reaches the texture a
+      // material points at — the same gap the vertex layer's badge textures
+      // have their own dispose for.
+      groundTexture?.dispose();
       if (renderer.domElement.parentNode === container) {
         container.removeChild(renderer.domElement);
       }
@@ -1527,7 +793,14 @@ export function PointCloudCanvas({
       dispose();
       sceneRef.current = null;
     };
-  }, [meta, mapImageUrl, resolvedTheme, applyJoints, applyMapStreamFrame]);
+  }, [
+    meta,
+    mapImageUrl,
+    resolvedTheme,
+    applyJoints,
+    applyMapStreamFrame,
+    pumpTelemetry,
+  ]);
 
   // ---- Live body_cloud stream (independent of scene rebuilds) ----------
   // The WebSocket is opened once on mount and closed on unmount. Each frame is
@@ -1537,8 +810,6 @@ export function PointCloudCanvas({
   // so an async map load closed the still-connecting WS and logged
   // "WebSocket is closed before the connection is established".
   React.useEffect(() => {
-    if (!liveStream) return;
-
     const color = new THREE.Color();
     const applyFrame = (frame: PointCloudFrame) => {
       const ctx = sceneRef.current;
@@ -1573,7 +844,7 @@ export function PointCloudCanvas({
       onStatus: (s) => onStatusRef.current?.(s),
     });
     return () => stream.close();
-  }, [liveStream]);
+  }, []);
 
   // ---- Streamed "map so far" cloud (mapping runs) ------------------------
   // Same socket-outside-the-scene-effect shape as the live stream above, same
@@ -1607,34 +878,6 @@ export function PointCloudCanvas({
     );
     return () => stream.close();
   }, [mapCloudStream]);
-
-  // ---- Pose updates (no scene rebuild) ---------------------------------
-  // This only records where the robot should be; the render loop above walks
-  // the drawn pose toward it. Nothing here touches the scene, so it is safe to
-  // run while a rebuild is in flight.
-  React.useEffect(() => {
-    if (!pose) return;
-    const yaw = (pose.theta * Math.PI) / 180;
-    const cur = renderedPoseRef.current;
-    targetPoseRef.current = {
-      x: pose.x,
-      y: pose.y,
-      z: pose.z,
-      // Unwrap against the drawn yaw so the ease takes the short way round:
-      // 359deg -> 1deg has to be +2deg, not a -358deg spin in place.
-      yaw: cur
-        ? yaw + Math.round((cur.yaw - yaw) / (2 * Math.PI)) * 2 * Math.PI
-        : yaw,
-    };
-  }, [pose]);
-
-  // ---- Joint updates (no scene rebuild) ---------------------------------
-  // Applied directly, no easing: the telemetry feed runs at ~20 Hz, fast
-  // enough that legs read as continuous — unlike the 1 Hz body pose above.
-  React.useEffect(() => {
-    latestJointsRef.current = joints;
-    applyJoints();
-  }, [joints, applyJoints]);
 
   // ---- Camera mode (move / focus) --------------------------------------
   // Re-runs on a scene rebuild (meta / theme) too, so the mode survives a
@@ -1817,25 +1060,30 @@ export function PointCloudCanvas({
   }, [path, showPath, meta, mapImageUrl, resolvedTheme]);
 
   // ---- Optional static map cloud (toggle) ------------------------------
+  //
+  // `meta` and `mapImageUrl` are dependencies although nothing here reads them:
+  // they rebuild the scene, and this layer has to be re-added to the new one.
+  // Without them a grid appearing for the map already on screen disposed these
+  // points with the old scene and left the toggle lit over nothing. The path
+  // ribbon above carries the same two for the same reason.
   React.useEffect(() => {
     const ctx = sceneRef.current;
-    if (!ctx) return;
-
-    if (!showMapCloud || !mapName) {
-      if (ctx.mapPoints) {
-        ctx.scene.remove(ctx.mapPoints);
-        ctx.mapPoints.geometry.dispose();
-        (ctx.mapPoints.material as THREE.Material).dispose();
-        ctx.mapPoints = null;
-      }
-      return;
-    }
+    if (!ctx || !showMapCloud || !mapName) return;
 
     const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const abort = new AbortController();
+    // Held so the cleanup can undo exactly what this run added. The removal
+    // used to live at the top of the *next* run, which meant a run that never
+    // came — the toggle going off while a rebuild was in flight — left the
+    // points in the scene with nothing tracking them.
+    let added: THREE.Points | null = null;
+
     fetchMapPointCloud(mapName, { signal: abort.signal })
       .then((frame) => {
-        if (abort.signal.aborted || !sceneRef.current) return;
+        // `sceneRef.current !== ctx` is the download landing after a rebuild:
+        // adding to the discarded scene would draw nothing and leak both
+        // buffers.
+        if (abort.signal.aborted || sceneRef.current !== ctx) return;
         const geom = new THREE.BufferGeometry();
         geom.setAttribute(
           "position",
@@ -1853,15 +1101,26 @@ export function PointCloudCanvas({
           }),
         );
         points.frustumCulled = false;
-        sceneRef.current.mapPoints = points;
-        sceneRef.current.scene.add(points);
+        added = points;
+        ctx.mapPoints = points;
+        ctx.scene.add(points);
       })
       .catch((err) => {
         if (!abort.signal.aborted) console.error(err);
       });
 
-    return () => abort.abort();
-  }, [showMapCloud, mapName, resolvedTheme]);
+    return () => {
+      abort.abort();
+      if (!added) return;
+      // `ctx.scene` may already be the discarded scene here, since the setup
+      // effect's cleanup runs first; the remove is harmless either way and the
+      // dispose is what matters, same as the path ribbon.
+      ctx.scene.remove(added);
+      added.geometry.dispose();
+      (added.material as THREE.Material).dispose();
+      if (ctx.mapPoints === added) ctx.mapPoints = null;
+    };
+  }, [showMapCloud, mapName, meta, mapImageUrl, resolvedTheme]);
 
   // ---- Pose picking -----------------------------------------------------
   // The anchor is the ground point the press landed on, kept alongside the raw
@@ -1874,35 +1133,36 @@ export function PointCloudCanvas({
     cx: number;
     cy: number;
   } | null>(null);
-  // Lazily constructed: this component re-renders at the telemetry rate, and a
-  // useRef initialiser argument is evaluated (then thrown away) every render.
+  // Lazily constructed: a useRef initialiser argument is evaluated (then thrown
+  // away) on every render, and a Raycaster is not free to build.
   const raycasterRef = React.useRef<THREE.Raycaster | null>(null);
+  /**
+   * Reads the canvas's client rect through the scene's own cache, or null
+   * before the renderer exists. Installed by the setup effect below.
+   */
+  const canvasRectRef = React.useRef<
+    ((fresh?: boolean) => DOMRect) | null
+  >(null);
 
   /** Aim the shared raycaster through a pointer position, or null off-canvas. */
   const castFromPointer = (event: { clientX: number; clientY: number }) => {
     const ctx = sceneRef.current;
     if (!ctx) return null;
-    const rect = ctx.renderer.domElement.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return null;
+    // Through the scene's cache, dropped by its ResizeObserver and by any
+    // ancestor scroll — the two things that move the canvas in client
+    // coordinates — and refilled on the first cast after either.
+    const rect = canvasRectRef.current?.();
+    if (!rect || rect.width === 0 || rect.height === 0) return null;
 
     const raycaster = (raycasterRef.current ??= new THREE.Raycaster());
-    raycaster.setFromCamera(
-      new THREE.Vector2(
-        ((event.clientX - rect.left) / rect.width) * 2 - 1,
-        -((event.clientY - rect.top) / rect.height) * 2 + 1,
-      ),
-      ctx.camera,
-    );
+    aimRaycaster(raycaster, ctx.camera, rect, event.clientX, event.clientY);
     return raycaster;
   };
 
   /** Project a pointer position onto the z=0 map plane. */
   const pickGround = (event: React.PointerEvent) => {
     const raycaster = castFromPointer(event);
-    if (!raycaster) return null;
-    const hit = raycaster.ray.intersectPlane(GROUND_PLANE, new THREE.Vector3());
-    // Misses when the ray runs parallel to the floor or points at the sky.
-    return hit ? { wx: hit.x, wy: hit.y } : null;
+    return raycaster ? intersectGround(raycaster) : null;
   };
 
   /**
@@ -1963,10 +1223,26 @@ export function PointCloudCanvas({
    */
   const seedTheta = () =>
     draft?.theta ??
-    (pickMode === "vertex" ? movingVertex?.theta : pose?.theta) ??
+    (pickMode === "vertex"
+      ? movingVertex?.theta
+      : // Off the feed rather than a prop, and read here rather than kept in
+        // state: this runs on a press, so "the robot's heading" means the one
+        // it has at the moment the gesture starts.
+        telemetryRef.current?.pose.current?.theta) ??
     0;
 
   const handlePointerDown = (event: React.PointerEvent) => {
+    // Re-measure on every press, whatever the press turns out to mean.
+    //
+    // The cache's two invalidations — a resize and an ancestor scroll — miss
+    // the canvas being *translated* without either: a banner or a status row
+    // appearing above a fixed-height viewport moves it in client coordinates
+    // and a ResizeObserver says nothing. A stale rect there would put a
+    // commanded pose at an offset from where the operator clicked, which is
+    // the one way this can be wrong that matters. A press is both the start of
+    // every pick and rare enough to pay a layout read for; the drag that
+    // follows cannot move the canvas, since the pointer is captured.
+    canvasRectRef.current?.(true);
     if (!pickMode || event.button !== 0) return;
     const hit = pickGround(event);
     if (!hit || !insideMap(hit.wx, hit.wy)) return;

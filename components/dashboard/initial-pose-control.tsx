@@ -62,7 +62,7 @@ export function InitialPoseControl({
         )}
       >
         <LocateFixedIcon className="size-3.5" />
-        {armed ? "Aim and drop the robot" : "Set initial pose"}
+        {armed ? "Press the map, then drag to aim" : "Tell the robot where it is"}
       </button>
 
       {(pose || error) && (
@@ -70,13 +70,13 @@ export function InitialPoseControl({
           {pose && (
             <div className="space-y-1">
               <Readout
-                label="Est X"
+                label="X"
                 value={pose.x.toFixed(2)}
                 unit="m"
                 tone="caution"
               />
               <Readout
-                label="Est Y"
+                label="Y"
                 value={pose.y.toFixed(2)}
                 unit="m"
                 tone="caution"
@@ -104,11 +104,11 @@ export function InitialPoseControl({
                 Estimate
               </span>
               {busy ? (
-                <Chip tone="caution">SENDING</Chip>
+                <Chip tone="caution">Sending</Chip>
               ) : error ? (
-                <Chip tone="warn">FAILED</Chip>
+                <Chip tone="warn">Failed</Chip>
               ) : (
-                <Chip tone="live">PUBLISHED</Chip>
+                <Chip tone="live">Sent</Chip>
               )}
             </div>
           )}
