@@ -18,17 +18,14 @@ import { StepList } from "@/components/tasks/step-list";
 import { TaskLibrary } from "@/components/tasks/task-library";
 import { useActiveMapVertices } from "@/hooks/use-active-map-vertices";
 import { useTaskTemplates } from "@/hooks/use-task-templates";
-import { useSchedules } from "@/hooks/use-schedules";
+import { useScheduleTaskTemplate, useSchedules } from "@/hooks/use-schedules";
 import { useStepDrafts } from "@/hooks/use-step-drafts";
 import { useTaskDispatch } from "@/hooks/use-task-dispatch";
-import {
-  scheduleTaskTemplate,
-  toDispatchSteps,
-  type TaskTemplate,
-} from "@/lib/api/task-template";
+import type { TaskTemplate } from "@/lib/api/task-template";
 import {
   fromTemplateSteps,
   stepDraftsSubmittable,
+  toDispatchSteps,
   toTemplateSteps,
   toStepRequests,
 } from "@/lib/task/step";
@@ -36,7 +33,7 @@ import {
 type TaskMode = "now" | "schedule";
 
 const MODE_OPTIONS = [
-  { value: "now", label: "Dispatch now" },
+  { value: "now", label: "Run now" },
   { value: "schedule", label: "On a schedule" },
 ] as const satisfies readonly { value: TaskMode; label: string }[];
 
@@ -76,6 +73,7 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
   const drafts = useStepDrafts();
   const dispatch = useTaskDispatch(robotId);
   const schedules = useSchedules();
+  const scheduleTemplate = useScheduleTaskTemplate();
   const library = useTaskTemplates();
   const { vertices, status: verticesStatus, mapName } = useActiveMapVertices();
 
@@ -122,7 +120,7 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
     : !stepsOk
       ? // Not "coordinates": a SPEAK row fails this for an empty line, and each
         // row already says exactly what it is missing.
-        "Fill in every step — the marked rows say what is missing."
+        "Some steps are incomplete — the marked rows say what is missing."
       : null;
 
   // Only the dispatch path needs a robot id — it is the prefix of the task id.
@@ -132,7 +130,7 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
     stepReason ??
     (robotId
       ? null
-      : "Waiting for the robot's first state frame — a task id is scoped by robot id.");
+      : "Waiting for the robot to report in. A job can be built now and run once it does.");
 
   /**
    * The library, scoped to what this robot can actually run: the loaded map's
@@ -168,7 +166,7 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
   const saveReason =
     stepReason ??
     (draftMapName === null && drafts.steps.some((step) => step.type === "MOVE")
-      ? "The robot has no map loaded, so a template with MOVE steps cannot be scoped to one."
+      ? "The robot has no map loaded, so a job with Move steps cannot be saved yet."
       : null);
 
   /**
@@ -242,7 +240,7 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
 
       <div className="mb-4 overflow-hidden rounded-md border border-hairline bg-panel">
         <InstrumentGroup
-          label="Task templates"
+          label="Saved jobs"
           action={
             <div className="flex items-center gap-1.5">
               <Chip tone={visibleTemplates.length ? "neutral" : "caution"}>
@@ -250,8 +248,8 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
               </Chip>
               <button
                 type="button"
-                aria-label="Refresh task templates"
-                title="Refresh task templates"
+                aria-label="Refresh saved jobs"
+                title="Refresh saved jobs"
                 disabled={library.busy}
                 onClick={library.refresh}
                 className="flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-40"
@@ -260,7 +258,7 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
               </button>
             </div>
           }
-          caption="A saved MOVE step follows the vertex it was taken from, so moving a stop on the map updates every route that uses it."
+          caption="A saved Move step follows the waypoint it was taken from, so moving a waypoint on the map updates every job that uses it."
         >
           {library.error && (
             <p
@@ -324,7 +322,7 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
           onClick={() => setComposerOpen((v) => !v)}
           title={
             dispatch.running
-              ? "A task is running — Cancel is in the dispatch pane below."
+              ? "A job is running — Cancel is in the panel below."
               : editorOpen
                 ? "Fold the editor away"
                 : "Build or edit a task"
@@ -455,7 +453,7 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
                 // friendlier prose would put backend copy in the frontend and go stale
                 // the day the gateway's wording changes — `detail` is rendered verbatim
                 // everywhere else in this console.
-                caption="Dispatch goes through the Temporal orchestrator. A failure here is the orchestrator, not the robot."
+                caption="Jobs are queued by the robot's scheduler. A failure here means the job was never accepted, not that the robot refused it."
               >
                 <DispatchPanel
                   dispatch={dispatch}
@@ -473,7 +471,7 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
                 label="Schedule"
                 caption={
                   editing
-                    ? "Registering from a template freezes its coordinates now — later vertex edits do not reach a scheduled run."
+                    ? "Scheduling a saved job locks in today\u2019s waypoint positions. Moving a waypoint later will not change what the schedule runs."
                     : // Said before the fact, because it cannot be said after: a
                       // schedule registered from loose steps records no source,
                       // so no library row can ever show that it exists. Saving
@@ -486,8 +484,11 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
                   existingIds={schedules.schedules.map((entry) => entry.id)}
                   ready={stepsOk}
                   reason={stepReason}
-                  busy={schedules.busy || library.busy}
-                  error={schedules.error}
+                  busy={schedules.busy || library.busy || scheduleTemplate.isPending}
+                  // The template path's refusal first: it is the newer of the
+                  // two whenever it is set, because each path resets the other
+                  // before it goes out.
+                  error={scheduleTemplate.error?.message ?? schedules.error}
                   onCreate={(id, trigger) => {
                     // Two paths on purpose. With a template loaded, go through
                     // /task_templates/{id}/schedule: it re-resolves server-side,
@@ -495,27 +496,20 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
                     // later be told it has gone stale), and refuses an unattended run
                     // against another map or a deleted vertex. Without one, there is
                     // no row to reference and the plain schedule endpoint takes the
-                    // steps.
-                    const done = editing
-                      ? scheduleTaskTemplate(editing.id, id, trigger).then(() => true)
-                      : schedules.create({
-                          id,
-                          trigger,
-                          steps: toStepRequests(drafts.steps),
-                        });
-
-                    void Promise.resolve(done)
+                    // steps. Both hooks re-read the list themselves on success.
+                    if (editing) {
+                      schedules.clearError();
+                      scheduleTemplate.mutate(
+                        { templateId: editing.id, scheduleId: id, trigger },
+                        { onSuccess: () => setScheduleNonce((n) => n + 1) },
+                      );
+                      return;
+                    }
+                    scheduleTemplate.reset();
+                    void schedules
+                      .create({ id, trigger, steps: toStepRequests(drafts.steps) })
                       .then((created) => {
-                        if (created) {
-                          setScheduleNonce((n) => n + 1);
-                          schedules.refresh();
-                        }
-                      })
-                      .catch(() => {
-                        // scheduleTaskTemplate is the only path that can reject here —
-                        // useSchedules already swallows its own. Surfaced through the
-                        // template hook so the sentence lands in one place.
-                        library.refresh();
+                        if (created) setScheduleNonce((n) => n + 1);
                       });
                   }}
                 />

@@ -1,11 +1,11 @@
 "use client";
 
-import * as React from "react";
 import { XIcon } from "lucide-react";
 
 import { TaskStatusChip } from "@/components/console/task-chip";
-import { useConsoleActiveTasks } from "@/components/console/active-task-context";
-import { cancelTask, type ActiveTask } from "@/lib/api/task";
+import { useConsoleActiveTasks } from "@/hooks/use-console-active-tasks";
+import { useCancelTask } from "@/hooks/use-cancel-task";
+import type { ActiveTask } from "@/lib/api/task";
 
 /**
  * Runs this tab is not following, with a way to stop them.
@@ -28,7 +28,7 @@ export function ActiveRunBanner({
 }: {
   trackedTaskId: string | null;
 }) {
-  const { tasks, status, asOf, refresh } = useConsoleActiveTasks();
+  const { tasks, status, asOf } = useConsoleActiveTasks();
 
   const unattended = tasks.filter((task) => task.id !== trackedTaskId);
 
@@ -43,39 +43,19 @@ export function ActiveRunBanner({
         Running outside this editor
       </p>
       {unattended.map((task) => (
-        <ActiveRunRow key={task.id} task={task} asOf={asOf} onDone={refresh} />
+        <ActiveRunRow key={task.id} task={task} asOf={asOf} />
       ))}
     </div>
   );
 }
 
-function ActiveRunRow({
-  task,
-  asOf,
-  onDone,
-}: {
-  task: ActiveTask;
-  asOf: string | null;
-  onDone: () => void;
-}) {
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  const cancel = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await cancelTask(task.id);
-      // Re-read rather than dropping the row locally: cancelling is a request,
-      // and the workflow stops when it stops. The row disappearing on the next
-      // poll is the honest signal that it did.
-      onDone();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
+function ActiveRunRow({ task, asOf }: { task: ActiveTask; asOf: string | null }) {
+  // One mutation per row: two unattended runs cancelled back to back must not
+  // share a busy flag or overwrite each other's refusal. The re-read of the
+  // active list that follows a cancel is the hook's, not this row's.
+  const cancel = useCancelTask();
+  const busy = cancel.isPending;
+  const error = cancel.error?.message ?? null;
 
   return (
     <div className="space-y-1">
@@ -95,7 +75,7 @@ function ActiveRunRow({
         <button
           type="button"
           disabled={busy}
-          onClick={cancel}
+          onClick={() => cancel.mutate(task.id)}
           className="instrument-label flex h-6 shrink-0 items-center gap-1 rounded-sm border border-signal-warn/50 bg-signal-warn/12 px-2 text-signal-warn transition-colors hover:bg-signal-warn/20 disabled:opacity-50"
         >
           <XIcon className="size-3" aria-hidden />

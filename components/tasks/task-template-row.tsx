@@ -237,7 +237,7 @@ function TemplateStepLine({
           }
           title={
             step.vertex_status === "MISSING"
-              ? "This vertex was deleted; the coordinates are the snapshot taken when the task was saved."
+              ? "This waypoint has been deleted. The robot will use the position it had when the job was saved."
               : undefined
           }
         >

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 
-import { useConsoleRobotState } from "@/components/console/robot-state-context";
+import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { RecorderControl } from "@/components/recordings/recorder-control";
 import { RecordingList } from "@/components/recordings/recording-list";
 
@@ -30,16 +30,16 @@ export default function RecordingsPage() {
             Recordings
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Bags recorded on{" "}
+            Sensor recordings from{" "}
             <span className="readout">{state?.robot_id ?? "this robot"}</span>,
-            written to <span className="readout">record/</span> and kept until
-            deleted. Nothing in the stack plays them back — a bag is insurance.
-            The run worth recording is a{" "}
+            kept until you delete them. A recording is a safety net rather than
+            something to play back here. The run worth recording is a{" "}
             <Link href="/mapping" className="underline underline-offset-2">
               mapping run
             </Link>
-            : the robot holds it in memory until it is saved, and replaying the
-            lidar topics is the only way to rebuild one that was lost.
+            : until a new map is saved it exists only in the robot&apos;s
+            memory, and a recording is the only way to rebuild one that was
+            lost.
           </p>
         </header>
 

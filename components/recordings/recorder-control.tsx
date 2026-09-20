@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { CircleIcon, SquareIcon } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 
 import { Readout } from "@/components/console/instrument";
 import { TopicPicker, DEFAULT_TOPICS } from "@/components/recordings/topic-picker";
@@ -10,17 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { useStartRecording, useStopRecording } from "@/hooks/use-recorder";
 import { useActiveRecording } from "@/hooks/use-recordings";
-import { queryKeys } from "@/lib/api/query-keys";
+import type { ActiveRecording, StoppedRecording } from "@/lib/api/recording";
+import { formatDuration, formatSize, formatTimestamp } from "@/lib/recording/format";
 import {
   RECORDING_NAME_RE,
   RESERVED_RECORDING_NAME,
-  startRecording,
-  stopRecording,
-  type ActiveRecording,
-  type StoppedRecording,
-} from "@/lib/api/recording";
-import { formatDuration, formatSize, formatTimestamp } from "@/lib/recording/format";
+} from "@/lib/recording/name";
 import { cn } from "@/lib/utils";
 
 /**
@@ -84,13 +80,13 @@ function LiveRecorder({
       <div className="space-y-1.5">
         <Readout label="Written" value={formatSize(active.size_bytes)} tone="live" />
         <Readout
-          label="Topics"
+          label="Channels"
           value={active.topics.length}
           tone="cmd"
           className="cursor-default"
         />
         <Readout label="Started" value={formatTimestamp(active.started_at)} />
-        <Readout label="Bag" value={active.name} />
+        <Readout label="Name" value={active.name} />
       </div>
 
       {/* The resolved names, which is what actually went to the recorder — the
@@ -109,8 +105,8 @@ function LiveRecorder({
       </ul>
 
       <p className="text-[11px] leading-tight text-muted-foreground">
-        Stopping flushes the bag&apos;s index, which is what makes it playable.
-        Leaving this page does not stop the recorder.
+        Stopping closes the file so it can be played back later. Leaving this
+        page does not stop the recording.
       </p>
     </div>
   );
@@ -121,10 +117,9 @@ function StoppedLine({ stopped }: { stopped: StoppedRecording }) {
   if (!stopped.complete) {
     return (
       <p className="text-[11px] leading-snug text-signal-caution">
-        {stopped.name} was stopped with {stopped.stopped_by} and has no index —
-        the messages are there, but it needs{" "}
-        <span className="readout">ros2 bag reindex record/{stopped.name}</span>{" "}
-        on the robot before it will play.
+        {stopped.name} did not close cleanly, so it cannot be used as it is.
+        The recorded data is safe on the robot and can be repaired — contact
+        support if you need this one.
       </p>
     );
   }
@@ -157,15 +152,20 @@ function StoppedLine({ stopped }: { stopped: StoppedRecording }) {
  * something, and what it asks for — delete a recording — is the list below.
  */
 export function RecorderControl() {
-  const queryClient = useQueryClient();
   const { active, status } = useActiveRecording();
+  const start = useStartRecording();
+  const stop = useStopRecording();
 
   const [name, setName] = React.useState("");
   const [topics, setTopics] = React.useState<string[]>(DEFAULT_TOPICS);
   const [compression, setCompression] = React.useState(false);
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [stopped, setStopped] = React.useState<StoppedRecording | null>(null);
+
+  // One panel, two writes: whichever was pressed last owns the busy flag and
+  // the error line, and starting a recording clears the last stop's receipt.
+  // Each press resets the other mutation to keep that true.
+  const busy = start.isPending || stop.isPending;
+  const error = (start.error ?? stop.error)?.message ?? null;
+  const stopped: StoppedRecording | null = stop.data ?? null;
 
   // Empty is valid — the backend names the bag `rec_<UTC timestamp>` and that
   // is the right default for the run somebody is about to drive.
@@ -173,46 +173,18 @@ export function RecorderControl() {
     name.length === 0 ||
     (RECORDING_NAME_RE.test(name) && name !== RESERVED_RECORDING_NAME);
 
-  const start = React.useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    setStopped(null);
-    try {
-      const started = await startRecording({
-        name: name.trim() || undefined,
-        topics,
-        compression,
-      });
-      setName("");
-      // Both entries: the panel switches face off the first, the list gains a
-      // row from the second. Setting the active entry directly rather than
-      // waiting for the next poll is what makes the switch feel like the press.
-      queryClient.setQueryData(queryKeys.activeRecording, started);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.recordings });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }, [compression, name, queryClient, topics]);
+  const submitStart = () => {
+    stop.reset();
+    start.mutate(
+      { name: name.trim() || undefined, topics, compression },
+      { onSuccess: () => setName("") },
+    );
+  };
 
-  const stop = React.useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await stopRecording();
-      setStopped(result);
-      queryClient.setQueryData(queryKeys.activeRecording, null);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.recordings });
-    } catch (cause) {
-      // A 409 here means the recorder was already gone — reaped after a crash,
-      // or stopped from somewhere else. The catalogue is what says which.
-      setError(cause instanceof Error ? cause.message : String(cause));
-      void queryClient.invalidateQueries({ queryKey: queryKeys.activeRecording });
-    } finally {
-      setBusy(false);
-    }
-  }, [queryClient]);
+  const submitStop = () => {
+    start.reset();
+    stop.mutate();
+  };
 
   return (
     <section className="rounded-md border border-hairline bg-panel px-4 py-3.5">
@@ -223,15 +195,15 @@ export function RecorderControl() {
         * only 409. */}
       {status === "loading" ? (
         <p className="text-[11px] leading-tight text-muted-foreground">
-          Reading the recorder…
+          Checking the recorder…
         </p>
       ) : active ? (
-        <LiveRecorder active={active} busy={busy} onStop={() => void stop()} />
+        <LiveRecorder active={active} busy={busy} onStop={submitStop} />
       ) : (
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (!busy && nameValid && topics.length > 0) void start();
+            if (!busy && nameValid && topics.length > 0) submitStart();
           }}
           className="space-y-3"
         >
@@ -239,8 +211,8 @@ export function RecorderControl() {
             <Input
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="bag name (optional)"
-              aria-label="Bag name"
+              placeholder="recording name (optional)"
+              aria-label="Recording name"
               disabled={busy}
               className="h-8 flex-1 text-sm"
             />
@@ -255,7 +227,7 @@ export function RecorderControl() {
           {!nameValid && (
             <p className="text-[11px] leading-snug text-signal-caution">
               {name === RESERVED_RECORDING_NAME
-                ? "“active” is reserved — it is the name of this page's own status route."
+                ? "“active” is a reserved name — please choose another."
                 : "Letters, digits, dot, dash and underscore only, up to 64 characters."}
             </p>
           )}
@@ -264,17 +236,16 @@ export function RecorderControl() {
 
           {topics.length === 0 && (
             <p className="text-[11px] leading-snug text-signal-caution">
-              Pick at least one topic. A bag of nothing is still a directory.
+              Pick at least one channel to record.
             </p>
           )}
 
           <div className="flex items-start justify-between gap-4 border-t border-hairline pt-3">
             <div>
-              <Label htmlFor="bag-compression">Compress with zstd</Label>
+              <Label htmlFor="bag-compression">Compress the recording</Label>
               <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
-                Roughly halves a lidar bag, in a burst on the recorder&apos;s own
-                thread each time a 2 GB split closes. Leave it off during
-                mapping — the Tegra is already busy with LIO.
+                Roughly halves the space a recording takes, at the cost of some
+                of the robot&apos;s processing power. Leave it off while mapping.
               </p>
             </div>
             <Switch

@@ -54,7 +54,7 @@ export function ScheduleList({
   if (status === "loading") {
     return (
       <p className="text-[11px] leading-tight text-muted-foreground">
-        Reading the schedules from Temporal…
+        Loading schedules…
       </p>
     );
   }
