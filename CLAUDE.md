@@ -23,6 +23,10 @@ npx tsc --noEmit   # type check alone, faster than a full build
 npm test           # vitest, unit tests only (vitest.config.mts)
 npm run test:watch # the same, watching
 npm run test:e2e   # playwright; builds and starts the app itself
+
+cp .env.example .env                 # compose knobs; nothing else reads it
+docker compose build frontend-build  # the image (behind the `build` profile)
+docker compose up -d frontend        # serve it on 3001
 ```
 
 Run one unit file with `npx vitest run lib/map/view.test.ts`, one e2e test with
@@ -40,7 +44,9 @@ manifest to `ghcr.io/chungweeeei/syncai-robot-frontend`: every push to `main`
 moves the `main` tag, a `v*` tag on `main` publishes the semver tags and
 `latest`. It passes no `NEXT_PUBLIC_*` build args on purpose, so the image
 works on any robot. It is separate from CI because a container build is
-minutes long and only matters after the gate has passed.
+minutes long and only matters after the gate has passed. Like every workflow
+here it first runs once it is on `main`, and `main` is still at the initial
+commit: the first `dev` → `main` release PR is what starts publishing.
 
 `.github/workflows/claude-review.yml` reviews each PR against the conventions
 CI cannot check — it reads this file and `.claude/skills/` from the checkout,
@@ -49,12 +55,12 @@ only once the workflow reaches `main`, the default branch; see the
 `github-flow` skill for why.
 
 Ports: the console listens on 3001 and expects the backend on 3000 of the same
-host, in `npm start` and in the container alike. `docker-compose.yaml` splits the
-image into a `frontend-build` service (behind the `build` profile) and a
-`frontend` run service; `.env.example` lists the knobs. `NEXT_PUBLIC_*` are
-build args there, because Next inlines them at build time. The run service
-can also pull the published image from GHCR (see README); the robot sessions
-still run `npm run dev` today.
+host, in `npm start` and in the container alike. In `docker-compose.yaml` the
+`frontend` run service has no `build:` block, so it can run either the locally
+built tag or the GHCR one, chosen in `.env`. `NEXT_PUBLIC_*` are build args,
+not runtime environment, because Next inlines them at build time; the README's
+"Container image" section has the details. The robot sessions still run
+`npm run dev` today.
 
 The source was ported in from `src/syncai_frontend` of the
 `SyncAI-Robot-Workspace` repo, which still holds the ROS side (including
@@ -188,7 +194,7 @@ touch one, prefer moving it toward the rule.
   owns a mutable `GridSession` holding a cell buffer and a canvas that must be
   disposed, which is not something a structurally-shared cache should hand
   around. Everything else that reads the backend is a query.
-- **The two canvases are still the biggest components** (~1360 and ~825
+- **The two canvases are still the biggest components** (~1380 and ~825
   lines), but what is left is React: refs, effects, the frame loop and the
   pointer state machines. The scene builders and the 2D drawing moved to
   `lib/scene/` and `lib/map/draw.ts`. The gesture reducers are the next thing
@@ -313,10 +319,11 @@ Project-scoped skills live in `.claude/skills/` and are expected to be used
 when working here:
 
 - `github-flow` — how work lands here: branching, splitting a change into
-  commits, opening and stacking PRs with `gh`, watching CI, and deleting a
-  branch safely. Also the gotchas that cost time once already, including why
-  the review workflow does not run until it reaches `main`. Consult when
-  committing, pushing, opening a PR, or debugging a failing check.
+  commits, opening and stacking PRs with `gh`, watching CI, cutting a release
+  tag, and deleting a branch safely. Also the gotchas that cost time once
+  already, including why no workflow runs until it reaches `main`. Consult
+  when committing, pushing, opening a PR, tagging, or debugging a failing
+  check.
 - `backend-endpoint` — the seven ordered steps for adding or changing a
   backend interaction, and the two mistakes that pass every automated gate
   (a write that misses a key its response affects; a zod schema written
@@ -330,6 +337,9 @@ when working here:
   output.
 - `frontend-patterns` — React/Next.js component, state and render-performance
   patterns. Consult when reviewing or restructuring components.
+- `grill-me` — user-invoked only (`/grill-me`): a relentless interview that
+  sharpens a plan or design before it is built. Not for Claude to start on
+  its own.
 
 A personal `daily-report` skill lives at user level (`~/.claude/skills/`), not
 in this repo: it summarises a day's commits, PRs and CI runs for whatever repo

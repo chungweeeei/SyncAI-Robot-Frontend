@@ -17,9 +17,10 @@ of its own beyond what a page needs to render.
   bench are kept for when it comes back, and that route 404s in a production
   build so it never reaches the robot.
 
-Dev server and production server both listen on **3001**
-(`next dev -p 3001` / `next start -p 3001` in `package.json`), so the console
-and the backend can share a host without a proxy.
+Dev server, production server and the container all listen on **3001**
+(`next dev -p 3001` / `next start -p 3001` in `package.json`, `PORT=3001` in
+the `Dockerfile`), so the console and the backend can share a host without a
+proxy.
 
 ## Routes (`app/`)
 
@@ -42,13 +43,18 @@ components/   console/ (shell: nav rail, status strip, shared providers), dashbo
 hooks/        one hook per backend interaction (use-maps, use-active-tasks, use-teleop-sender…)
 lib/api/      typed fetchers per backend router + config.ts + query-keys.ts
 lib/ros/      the WebSocket clients (telemetry, point cloud, teleop) and their frame decoders
+lib/map/      gridmap maths — view transforms, patches, the editing session, vertex
+              helpers, the map name rule, the 2D drawing (draw.ts) and the editor's vocabulary
 lib/scene/    three.js scene building for the 3D viewport — theme, markers, the
               vertex layer, the path ribbon, camera policy, picking, robot mesh
 lib/theme/    the signal hues both canvases draw with, transcribed from globals.css
+lib/task/     step and schedule domain helpers, the template name limit
 lib/robot/    G23 joint table (URDF link names ↔ GLB node names)
 lib/recording/ how a bag's duration / size / message count are read, shared by the two
               recording surfaces so one quantity never appears in two spellings
+lib/video/    WHIP/WHEP signalling; no production consumer (the WebRTC note above)
 lib/types/    wire and domain types shared across layers (map, robot, pointcloud, stream)
+lib/angle.ts  normalizeTheta — the degree fold every heading goes through
 ```
 
 The arrow runs one way — `app/` to `components/` to `hooks/` to `lib/` — and
@@ -153,13 +159,18 @@ renders at normal width.
 ## Running
 
 ```bash
-npm install
+npm ci             # the lockfile is authoritative; Node >= 22
 npm run dev        # http://<host>:3001, HMR
 npm run build && npm start
 
+npm run lint       # eslint, including the layering rule above
+npx tsc --noEmit   # type check alone
 npm test           # unit tests (vitest)
 npm run test:e2e   # end-to-end (playwright; builds and starts the app itself)
 ```
+
+`.github/workflows/ci.yml` runs the same four gates on every push and PR to
+`main` and `dev`; `CLAUDE.md` describes the split.
 
 The e2e suite fakes the backend per test (`e2e/backend.ts`), so it needs no
 robot and no `syncai_backend` running.
@@ -188,10 +199,12 @@ SYNCAI_DEV_ORIGINS=robot-01.lan,10.8.140.138 npm run dev
 
 When a request is still blocked, Next's 403 log names the exact host to add.
 
-**Running it as a container.** `docker-compose.yaml` has two services: `frontend-build`
-builds and tags the image (behind the `build` profile, so an `up` on the robot
-never kicks off a `next build` by accident) and `frontend` runs that tag with no
-`build:` block of its own. Values come from `.env`, copied from `.env.example`:
+## Container image
+
+`docker-compose.yaml` has two services: `frontend-build` builds and tags the
+image (behind the `build` profile, so an `up` on the robot never kicks off a
+`next build` by accident) and `frontend` runs that tag with no `build:` block
+of its own. Values come from `.env`, copied from `.env.example`:
 
 ```bash
 cp .env.example .env               # edit if 3001 is taken or the backend is elsewhere
@@ -229,7 +242,10 @@ FRONTEND_TAG=1.2.0          # or `main` to track the release branch
 docker compose pull frontend && docker compose up -d frontend
 ```
 
-GHCR creates the package private even for a public repo; the first publish
-needs someone to open the package's settings on GitHub and make it public, or
+Two things gate the first publish. The workflow only fires once it exists on
+`main`, and `main` is still at the repository's initial commit — so nothing is
+published until the first `dev` → `main` release PR lands, which then triggers
+it by itself. And GHCR creates the package private even for a public repo, so
+someone has to open the package's settings on GitHub and make it public, or
 every robot has to `docker login` first. The robot sessions still run
 `npm run dev` today; nothing deploys the image on its own.
