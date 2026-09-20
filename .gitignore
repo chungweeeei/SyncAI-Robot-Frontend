@@ -12,6 +12,12 @@
 
 # testing
 /coverage
+# Playwright's run artefacts: traces, screenshots and the HTML report. The
+# browsers themselves live in ~/Library/Caches/ms-playwright, not here.
+/test-results/
+/playwright-report/
+/blob-report/
+/.playwright/
 
 # next.js
 /.next/
