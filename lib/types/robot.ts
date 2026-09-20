@@ -1,6 +1,15 @@
 // Mirrors the backend Pydantic models in
-// src/syncai_backend/syncai_backend/interfaces/rest/routers/robot.py
-// (snake_case preserved so wiring GET /api/v1/robot/state later is a drop-in fetch)
+// src/syncai_backend/syncai_backend/interfaces/rest/routers/robot.py.
+// snake_case is preserved throughout, which is what lets `fetchRobotState` in
+// lib/api/robot.ts parse a response straight into RobotState with no mapping
+// layer — and what makes a field rename on the backend a type error here.
+//
+// The schemas at the bottom are the runtime half of that mirror: the interfaces
+// say what this console expects, and `RobotStateSchema` is what checks the robot
+// actually sent it. Each schema is annotated with the interface it must produce,
+// so a field added above and forgotten below does not compile.
+
+import { z } from "zod";
 
 export type RobotMode = "MAINTENANCE" | "MANUAL" | "AUTO";
 
@@ -40,6 +49,25 @@ export interface PlanarPose {
   x: number;
   y: number;
   theta: number;
+}
+
+/**
+ * Normalized teleop command, REP-103 body-frame axes: +vx forward, +vy left,
+ * +wz counter-clockwise. Every component is in [-1, 1] on purpose — scaling to
+ * m/s and rad/s is the sender's job, because the robot's velocity limits live
+ * next to whatever will publish cmd_vel, not in a UI component that would
+ * otherwise need re-editing every time a limit changes.
+ *
+ * Here rather than in useJoystick, where it was first written, because this is
+ * the shape that goes on the wire: `encodeTeleopFrame` in lib/ros/teleop-frame.ts
+ * is what turns it into a frame, and a `lib/` module reaching up into a UI input
+ * hook for the definition of its own payload was the arrow pointing backwards.
+ * The joystick is one producer of this shape, not its owner.
+ */
+export interface TeleopVector {
+  vx: number;
+  vy: number;
+  wz: number;
 }
 
 /**
@@ -127,15 +155,57 @@ export interface MapMetadata {
   height: number;
 }
 
-// Occupancy values follow the ROS convention: 0 free, 100 occupied, -1 unknown
-export type OccupancyGrid = Int8Array;
+// `OccupancyGrid` and `Vertex` used to live here and are gone: the first was an
+// Int8Array alias nothing ever referenced (the editor's cells are a Uint8Array
+// in lib/map/grid.ts, in .pgm byte values rather than the ROS -1/0/100), and the
+// second was a map/vertexes.json shape that MapVertex in lib/types/map.ts
+// replaced when vertices moved into Postgres with ids and a type.
 
-// Mirrors map/vertexes.json
-export interface Vertex {
-  name: string;
-  pose: {
-    x: number;
-    y: number;
-    theta: number;
-  };
-}
+// ---- Runtime schemas --------------------------------------------------
+//
+// Only for what actually arrives over REST. PlannedPath and TeleopVector are
+// built by this console (from a WebSocket frame and from a thumbstick), so
+// there is nothing to check; MapMetadata never arrives in this shape either —
+// the catalogue sends `{x, y, yaw}` and lib/api/map.ts folds it into the tuple.
+//
+// Each is annotated with the interface it must produce, which is what makes the
+// two halves impossible to drift apart: a field added above and forgotten here
+// is a compile error rather than a silent `undefined` at runtime.
+
+const RobotPoseSchema: z.ZodType<RobotPose> = z.object({
+  x: z.number(),
+  y: z.number(),
+  z: z.number(),
+  theta: z.number(),
+});
+
+export const RobotStateSchema: z.ZodType<RobotState> = z.object({
+  timestamp: z.number(),
+  robot_id: z.string(),
+  map: z.string(),
+  mode: z.enum(["MAINTENANCE", "MANUAL", "AUTO"]),
+  // Open strings, matching the interface: the backend's lookup has an
+  // "UNKNOWN" fallback it legitimately hits, so an enum here would reject a
+  // frame that is perfectly valid.
+  low_level_mode: z.object({ policy: z.string(), motion: z.string() }),
+  localization_valid: z.boolean(),
+  localization_status: z.object({
+    position: RobotPoseSchema,
+    velocity: z.number(),
+  }),
+  network_status: z.object({
+    ssid: z.string(),
+    bssid: z.string(),
+    rssi: z.number(),
+    ip_address: z.string(),
+    mac_address: z.string(),
+  }),
+  battery_status: z.object({ battery_percentage: z.number() }),
+  motor_status: z.array(
+    z.object({
+      name: z.string(),
+      temperature: z.number(),
+      error: z.number(),
+    }),
+  ),
+});

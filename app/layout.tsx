@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from "next";
 import { Archivo, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
-import { ActiveTaskProvider } from "@/components/console/active-task-context";
+import { ActiveTaskProvider } from "@/components/console/active-task-provider";
 import { NavRail } from "@/components/console/nav-rail";
-import { RobotStateProvider } from "@/components/console/robot-state-context";
+import { RobotStateProvider } from "@/components/console/robot-state-provider";
 import { StatusStrip } from "@/components/console/status-strip";
 import { QueryProvider } from "@/components/query-provider";
 import { ThemeProvider } from "@/components/theme-provider";

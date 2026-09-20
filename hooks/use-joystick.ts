@@ -2,18 +2,7 @@
 
 import * as React from "react";
 
-/**
- * Normalized teleop command, REP-103 body-frame axes: +vx forward, +vy left,
- * +wz counter-clockwise. Every component is in [-1, 1] on purpose — scaling to
- * m/s and rad/s is the sender's job, because the robot's velocity limits live
- * next to whatever will publish cmd_vel, not in a UI component that would
- * otherwise need re-editing every time a limit changes.
- */
-export interface TeleopVector {
-  vx: number;
-  vy: number;
-  wz: number;
-}
+import type { TeleopVector } from "@/lib/types/robot";
 
 /** A stick deflection in screen space: x grows right, y grows DOWN. */
 export interface StickValue {

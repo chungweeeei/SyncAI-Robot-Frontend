@@ -1,4 +1,4 @@
-import type { TeleopVector } from "@/hooks/use-joystick";
+import type { TeleopVector } from "@/lib/types/robot";
 
 /**
  * Wire codec for the WS teleop channel (`/api/v1/robot/teleop`) — pure
