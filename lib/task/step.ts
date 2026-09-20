@@ -6,12 +6,12 @@
 // shape lives here too, so lib/api/task.ts never has to know what a half-typed
 // coordinate field looks like.
 
+import { normalizeTheta } from "@/lib/angle";
 import type { TemplateStep, TemplateStepRequest } from "@/lib/api/task-template";
-import {
-  normalizeTheta,
-  type MoveStepParams,
-  type StepType,
-  type TaskStepRequest,
+import type {
+  MoveStepParams,
+  StepType,
+  TaskStepRequest,
 } from "@/lib/api/task";
 
 export interface StepTypeSpec {
@@ -282,4 +282,55 @@ export function fromTemplateSteps(steps: readonly TemplateStep[]): StepDraft[] {
     }
     return draft;
   });
+}
+
+/**
+ * Project a template's steps into the dispatch wire shape.
+ *
+ * `resolved_params` is what the server says to send, so this drops the
+ * provenance and nothing else. A posture step gets no `params` key at all —
+ * which is why the result is typed as the discriminated `TaskStepRequest` rather
+ * than something with an optional `params`.
+ *
+ * Here rather than in lib/api/task-template.ts, where it was first written,
+ * beside the other three template/draft/wire conversions this file already
+ * owns: it reads no response and builds no request, so the REST client was
+ * never its home, and living there meant the two components that dispatch a
+ * saved template had to import a fetcher module to reach it.
+ */
+export function toDispatchSteps(steps: readonly TemplateStep[]): TaskStepRequest[] {
+  return steps.map((step): TaskStepRequest => {
+    switch (step.type) {
+      case "MOVE":
+        return {
+          id: step.id,
+          type: "MOVE",
+          // Non-null by construction: the backend always resolves a MOVE to
+          // either the vertex's pose or the snapshot. Falling back to an origin
+          // would be a silent drive to (0, 0), so this throws instead.
+          params: assertResolved(step, "no coordinates"),
+        };
+      case "SPEAK":
+        // Same construction guarantee — a SPEAK's resolved_params is its
+        // snapshot verbatim, and the backend refuses to store one without text.
+        return { id: step.id, type: "SPEAK", params: assertResolved(step, "no text") };
+      default:
+        return { id: step.id, type: step.type };
+    }
+  });
+}
+
+/**
+ * Structural rather than typed against TemplateStep, which keeps the shape it
+ * needs in view and spares lib/api/task-template.ts an export of the base
+ * interface for one caller's benefit.
+ */
+function assertResolved<T>(
+  step: { id: string; resolved_params: T | null },
+  missing: string,
+): T {
+  if (!step.resolved_params) {
+    throw new Error(`Template step "${step.id}" has ${missing} to dispatch.`);
+  }
+  return step.resolved_params;
 }
