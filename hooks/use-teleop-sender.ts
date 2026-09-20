@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import { createTeleopChannel } from "@/lib/ros/teleop-channel";
-import type { TeleopVector } from "@/hooks/use-joystick";
+import type { TeleopVector } from "@/lib/types/robot";
 
 /** How long a backend refusal stays on screen after the frames stop being
  *  refused. The backend answers per refused frame (~10 Hz) and sends no

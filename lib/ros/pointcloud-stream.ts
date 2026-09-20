@@ -1,4 +1,5 @@
 import { apiUrl } from "@/lib/api/config";
+import { requestRaw } from "@/lib/api/http";
 import {
   createReconnectingSocket,
   type ReconnectingSocket,
@@ -62,9 +63,10 @@ export async function fetchMapPointCloud(
   opts: { signal?: AbortSignal } = {},
 ): Promise<PointCloudFrame> {
   const path = `/api/v1/maps/${encodeURIComponent(name)}/pointcloud`;
-  const res = await fetch(apiUrl(path), { signal: opts.signal });
-  if (!res.ok) {
-    throw new Error(`map pointcloud fetch failed: ${res.status}`);
-  }
+  // Through requestRaw like the gridmap image, rather than a bare fetch with
+  // its own error string: the body is binary but a *refusal* is the same
+  // `{detail}` sentence every other endpoint answers with, and "map pointcloud
+  // fetch failed: 404" threw that sentence away.
+  const res = await requestRaw(apiUrl(path), { signal: opts.signal });
   return decodePointCloud(await res.arrayBuffer());
 }

@@ -67,11 +67,11 @@ export function createReconnectingSocket(
     ws.onerror = () => opts.onStatus?.("error");
     ws.onclose = () => {
       // Reported on an explicit close() as well as on an unexpected drop, on
-      // purpose. A caller can stop a stream without unmounting —
-      // PointCloudCanvas's `liveStream` prop does exactly that, and its effect
-      // returns early rather than reopening — so suppressing the final
-      // transition would leave the status badge reading "open" with no socket
-      // behind it.
+      // purpose. A caller can stop a stream without unmounting — the mapping
+      // screen's "Map so far" toggle does exactly that through
+      // PointCloudCanvas's `mapCloudStream` prop, whose effect returns early
+      // rather than reopening — so suppressing the final transition would leave
+      // the status badge reading "open" with no socket behind it.
       opts.onStatus?.("closed");
       if (!closed) {
         reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
