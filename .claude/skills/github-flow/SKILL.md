@@ -109,6 +109,30 @@ git branch -d <branch>     # -d, never -D: git re-checks the merge for you
 `git branch -D` on an unmerged branch loses the commits. There is no reason to
 reach for it here.
 
+## Cutting a release
+
+A release is a `dev` → `main` PR, merged when CI is green. The merge alone
+publishes a `main`-tagged image through `release.yml`; the versioned image
+needs a tag, and the tag is the release decision:
+
+```bash
+git fetch origin
+git tag -a v1.2.0 -m "v1.2.0" origin/main   # annotated, on the merge commit
+git push origin v1.2.0
+gh run watch                                # release.yml: build ×2, publish
+```
+
+`vX.Y.Z` exactly — the metadata step derives `1.2.0`, `1.2` and `latest` from
+it, and a tag that is not semver produces only a `sha-` image. Tag `main`,
+never `dev`: a tag pushed from a `dev` commit publishes code that has not
+merged through the release PR. Check the result with
+
+```bash
+docker buildx imagetools inspect ghcr.io/chungweeeei/syncai-robot-frontend:1.2.0
+```
+
+which must list both `linux/arm64` and `linux/amd64`.
+
 ---
 
 ## Gotchas

@@ -188,12 +188,48 @@ SYNCAI_DEV_ORIGINS=robot-01.lan,10.8.140.138 npm run dev
 
 When a request is still blocked, Next's 403 log names the exact host to add.
 
-**Ports differ between package.json and the Dockerfile.** `package.json` pins
-3001 for both `dev` and `start`. The `Dockerfile` (multi-stage, `output:
-"standalone"`, `node server.js`) sets `PORT=3000` and `EXPOSE 3000` — the
-standalone server ignores `package.json` scripts, so a container built from it
-comes up on 3000, colliding with the backend if both run on one host network.
-Nothing runs that image today (the robot sessions use `npm run dev`);
-if it is ever deployed, either pass `-e PORT=3001` or fix the Dockerfile, and
-set `NEXT_PUBLIC_API_BASE` since the same-hostname fallback assumes the backend
-is on 3000 of the page's host.
+**Running it as a container.** `docker-compose.yaml` has two services: `frontend-build`
+builds and tags the image (behind the `build` profile, so an `up` on the robot
+never kicks off a `next build` by accident) and `frontend` runs that tag with no
+`build:` block of its own. Values come from `.env`, copied from `.env.example`:
+
+```bash
+cp .env.example .env               # edit if 3001 is taken or the backend is elsewhere
+docker compose build frontend-build
+docker compose up -d frontend      # http://<host>:3001
+docker compose logs -f frontend
+docker compose down
+```
+
+The image serves on **3001** like `package.json` does (the standalone server
+ignores the npm scripts and reads `PORT`, which the `Dockerfile` sets). The
+backend is not in the compose file: the console is a browser client, and the
+page calls port 3000 of whatever host it was opened from, so the two need the
+same host name and nothing more. `NEXT_PUBLIC_API_BASE` / `NEXT_PUBLIC_WS_BASE`
+are **build args**, not runtime environment — Next.js inlines `NEXT_PUBLIC_*`
+into the bundle — so pointing the console at a backend on another machine
+means setting them in `.env` and rebuilding, not restarting. Leave them empty
+for the same-host case.
+
+**Pulling it instead of building it.** `.github/workflows/release.yml`
+publishes the image to GitHub Container Registry as
+`ghcr.io/chungweeeei/syncai-robot-frontend`, multi-platform (arm64 for the
+Jetson, amd64 for a PC), with the `NEXT_PUBLIC_*` pair left empty so the
+same-host fallback holds on any robot. Every push to `main` moves the `main`
+tag and adds a `sha-<short>` one; a `vX.Y.Z` git tag on `main` publishes
+`X.Y.Z`, `X.Y` and `latest`. On the robot, point `.env` at it and skip the
+build service:
+
+```bash
+FRONTEND_IMAGE=ghcr.io/chungweeeei/syncai-robot-frontend
+FRONTEND_TAG=1.2.0          # or `main` to track the release branch
+```
+
+```bash
+docker compose pull frontend && docker compose up -d frontend
+```
+
+GHCR creates the package private even for a public repo; the first publish
+needs someone to open the package's settings on GitHub and make it public, or
+every robot has to `docker login` first. The robot sessions still run
+`npm run dev` today; nothing deploys the image on its own.

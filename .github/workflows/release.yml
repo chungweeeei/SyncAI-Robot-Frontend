@@ -1,0 +1,190 @@
+# Builds the operator console image and publishes it to GitHub Container
+# Registry, so a robot can `docker compose pull` instead of running a
+# multi-minute `next build` on its own CPU.
+#
+# Two kinds of image come out of here:
+#   - every push to main (the release branch) publishes a moving `main` tag
+#     plus a `sha-<short>` tag, for trying a build before it is blessed;
+#   - a `v*` tag on main publishes `1.2.3`, `1.2` and `latest`. Tagging is the
+#     release decision; nothing here decides for you.
+# workflow_dispatch exists so the pipeline can be exercised without either.
+#
+# Separate from ci.yml on purpose: CI is the per-push gate and has to stay
+# fast, while a container build is minutes long and only matters once the
+# code has already passed that gate. A tag does not re-run CI, and does not
+# need to — it is cut on main, which merged through CI.
+#
+# Two native runners rather than QEMU: the robot is arm64 (Jetson) and the
+# GitHub default runner is amd64. `next build` under emulation is ten-plus
+# minutes and flaky; the arm64 runner builds it in the same time as amd64.
+# Each runner pushes its image by digest only, and the `publish` job stitches
+# the two digests into one multi-platform manifest that carries the tags —
+# so a half-finished run leaves untagged blobs behind, never a broken tag.
+#
+# NEXT_PUBLIC_API_BASE / NEXT_PUBLIC_WS_BASE are deliberately NOT passed.
+# The Dockerfile defaults them to empty, which keeps lib/api/config.ts's
+# same-hostname fallback (backend on :3000 of whatever host served the page).
+# That is the only value a registry image can carry: it has to work on every
+# robot that pulls it, and the robot's address is not known here.
+#
+# First-time setup, once, by hand: GHCR creates the package private even for a
+# public repo. Open the package's settings on GitHub and set it to public, or
+# the robot has to `docker login` before it can pull.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+# A newer push to the same ref makes the running build's output obsolete.
+# Safe to cancel mid-way: the build jobs push by digest only and the tags are
+# applied in one command at the very end.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      # An arm64 failure should not hide an amd64 log, or vice versa.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - platform: linux/amd64
+            runner: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Prepare names
+        # GHCR rejects uppercase and github.repository keeps the repo's
+        # casing, so lowercase it here once; metadata-action does the same for
+        # its own outputs. The platform pair is the artifact name suffix — a
+        # slash is not allowed there.
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+          echo "PLATFORM_PAIR=${PLATFORM//\//-}" >> "$GITHUB_ENV"
+
+      - name: Image metadata
+        id: meta
+        # Labels only at this stage (source, revision, licence…); the tags are
+        # decided in `publish`, on the merged manifest.
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ env.IMAGE }}
+          # push-by-digest: the registry gets the image, but no tag points at
+          # it until `publish` has both platforms in hand.
+          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+          # GitHub Actions cache keyed per platform, so the `npm ci` layer is
+          # reused between runs that only change source.
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+
+      - name: Export digest
+        # The digest travels to `publish` as an empty file named after it;
+        # download-artifact merges the two platforms' files into one folder.
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "${{ runner.temp }}/digests"
+          touch "${{ runner.temp }}/digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: publish manifest
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Prepare names
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          # `latest` is added automatically (flavor latest=auto) only when the
+          # event is a semver tag push — a push to main never moves it.
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Create multi-platform manifest and push tags
+        working-directory: ${{ runner.temp }}/digests
+        # One manifest list referencing both digests, given every tag at once.
+        # DOCKER_METADATA_OUTPUT_JSON is exported by metadata-action; the
+        # digest files are the ones `build` exported, one per platform.
+        run: |
+          args=()
+          while IFS= read -r tag; do args+=(-t "$tag"); done \
+            < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          for digest in *; do args+=("$IMAGE@sha256:$digest"); done
+          docker buildx imagetools create "${args[@]}"
+
+      - name: Inspect
+        # Fails the run if the manifest is missing a platform, which is the
+        # one thing the previous step cannot tell from its own exit code.
+        # Not piped into grep -q: the default shell has pipefail, and grep
+        # closing early would fail the step on SIGPIPE, not on the content.
+        run: |
+          docker buildx imagetools inspect "$IMAGE:${{ steps.meta.outputs.version }}" > manifest.txt
+          cat manifest.txt
+          grep -q 'linux/arm64' manifest.txt
+          grep -q 'linux/amd64' manifest.txt
