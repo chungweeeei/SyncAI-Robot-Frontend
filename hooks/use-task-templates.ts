@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { writeState } from "@/lib/api/mutation-state";
 import { queryKeys } from "@/lib/api/query-keys";
 import {
   createTaskTemplate,
@@ -47,10 +48,10 @@ export interface UseTaskTemplates {
  * `refresh` exists even though nothing here mutates behind our back, because
  * something else does: a stored MOVE step's coordinates are resolved server-side
  * against the vertex's *current* pose, so editing a vertex on /maps changes what
- * these rows say. Navigation remounts the page and re-reads, and this is the
- * in-page escape hatch. Write failures live in their own slot rather than the
- * query's, so the reload a refresh triggers cannot clear a sentence the
- * operator still needs to read.
+ * these rows say. The vertex hooks now mark this key stale themselves, so a
+ * fresh mount re-reads; this is the in-page escape hatch for a long-open tab.
+ * Write failures live in the mutations rather than the query, so the reload a
+ * refresh triggers cannot clear a sentence the operator still needs to read.
  */
 export function useTaskTemplates(): UseTaskTemplates {
   const queryClient = useQueryClient();
@@ -58,9 +59,6 @@ export function useTaskTemplates(): UseTaskTemplates {
     queryKey: queryKeys.taskTemplates,
     queryFn: ({ signal }) => listTaskTemplates(signal),
   });
-
-  const [busy, setBusy] = React.useState(false);
-  const [writeError, setWriteError] = React.useState<string | null>(null);
 
   const refresh = React.useCallback(
     () =>
@@ -79,78 +77,74 @@ export function useTaskTemplates(): UseTaskTemplates {
     [queryClient],
   );
 
-  /**
-   * Run one write, holding `busy` and turning a rejection into `error`.
-   *
-   * Rejections are swallowed rather than rethrown because every caller is wired
-   * straight to an onClick — a rethrow would be an unhandled rejection, and the
-   * components read the outcome off `error` and the returned value.
-   */
-  const run = React.useCallback(
-    async <T,>(action: () => Promise<T>): Promise<T | null> => {
-      setBusy(true);
-      setWriteError(null);
-      try {
-        return await action();
-      } catch (cause) {
-        setWriteError(cause instanceof Error ? cause.message : String(cause));
-        return null;
-      } finally {
-        setBusy(false);
-      }
+  const createMutation = useMutation({
+    mutationFn: (draft: TaskTemplateDraft) => createTaskTemplate(draft),
+    onSuccess: (created) => {
+      // Inserted in the server's order (name, then created_at) rather than
+      // appended, so the row does not jump on the next refresh.
+      setTemplates((current) => sortByName([...current, created]));
     },
-    [],
-  );
+  });
 
+  const updateMutation = useMutation({
+    mutationFn: ({ id, changes }: { id: string; changes: TaskTemplateChanges }) =>
+      updateTaskTemplate(id, changes),
+    onSuccess: (updated, { id }) => {
+      setTemplates((current) =>
+        sortByName(
+          current.map((template) => (template.id === id ? updated : template)),
+        ),
+      );
+    },
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (id: string) => deleteTaskTemplate(id),
+    onSuccess: (_result, id) => {
+      setTemplates((current) => current.filter((template) => template.id !== id));
+    },
+  });
+
+  const { mutateAsync: createAsync } = createMutation;
+  const { mutateAsync: updateAsync } = updateMutation;
+  const { mutateAsync: removeAsync } = removeMutation;
+
+  // Rejections are swallowed rather than rethrown because every caller is wired
+  // straight to an onClick — a rethrow would be an unhandled rejection, and the
+  // components read the outcome off `error` and the returned value.
   const create = React.useCallback(
-    async (draft: TaskTemplateDraft) => {
-      const created = await run(() => createTaskTemplate(draft));
-      if (created) {
-        // Inserted in the server's order (name, then created_at) rather than
-        // appended, so the row does not jump on the next refresh.
-        setTemplates((current) => sortByName([...current, created]));
-      }
-      return created;
-    },
-    [run, setTemplates],
+    (draft: TaskTemplateDraft) => createAsync(draft).catch(() => null),
+    [createAsync],
   );
-
   const update = React.useCallback(
-    async (id: string, changes: TaskTemplateChanges) => {
-      const updated = await run(() => updateTaskTemplate(id, changes));
-      if (updated) {
-        setTemplates((current) =>
-          sortByName(
-            current.map((template) => (template.id === id ? updated : template)),
-          ),
-        );
-      }
-      return updated;
-    },
-    [run, setTemplates],
+    (id: string, changes: TaskTemplateChanges) =>
+      updateAsync({ id, changes }).catch(() => null),
+    [updateAsync],
   );
-
   const remove = React.useCallback(
-    async (id: string) => {
-      const done = await run(async () => {
-        await deleteTaskTemplate(id);
-        return true as const;
-      });
-      if (done) {
-        setTemplates((current) => current.filter((template) => template.id !== id));
-      }
-      return done === true;
-    },
-    [run, setTemplates],
+    (id: string) =>
+      removeAsync(id).then(
+        () => true,
+        () => false,
+      ),
+    [removeAsync],
   );
 
-  const clearError = React.useCallback(() => setWriteError(null), []);
+  const write = writeState([createMutation, updateMutation, removeMutation]);
+  const { reset: resetCreate } = createMutation;
+  const { reset: resetUpdate } = updateMutation;
+  const { reset: resetRemove } = removeMutation;
+  const clearError = React.useCallback(() => {
+    resetCreate();
+    resetUpdate();
+    resetRemove();
+  }, [resetCreate, resetUpdate, resetRemove]);
 
   return {
     templates: query.data ?? [],
     status: query.isPending ? "loading" : query.isError ? "error" : "ok",
-    error: writeError ?? query.error?.message ?? null,
-    busy,
+    error: write.error ?? query.error?.message ?? null,
+    busy: write.busy,
     create,
     update,
     remove,

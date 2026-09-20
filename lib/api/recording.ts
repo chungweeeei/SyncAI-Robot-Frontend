@@ -11,6 +11,8 @@
 // mirror the backend's field names so the fetchers are a pass-through rather
 // than a rename table.
 
+import { z } from "zod";
+
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
 
@@ -93,6 +95,38 @@ export interface RecordingSummary {
   compression: string | null;
 }
 
+const ActiveRecordingSchema: z.ZodType<ActiveRecording> = z.object({
+  name: z.string(),
+  path: z.string(),
+  topics: z.array(z.string()),
+  started_at: z.string(),
+  elapsed_seconds: z.number(),
+  compression: z.boolean(),
+  size_bytes: z.number(),
+});
+
+const StoppedRecordingSchema: z.ZodType<StoppedRecording> = z.object({
+  name: z.string(),
+  path: z.string(),
+  topics: z.array(z.string()),
+  started_at: z.string(),
+  elapsed_seconds: z.number(),
+  size_bytes: z.number(),
+  stopped_by: z.string(),
+  complete: z.boolean(),
+});
+
+const RecordingSummarySchema: z.ZodType<RecordingSummary> = z.object({
+  name: z.string(),
+  status: z.enum(["recording", "ok", "interrupted"]),
+  size_bytes: z.number(),
+  modified_at: z.string(),
+  duration_seconds: z.number().nullable(),
+  message_count: z.number().nullable(),
+  topics: z.array(z.string()),
+  compression: z.string().nullable(),
+});
+
 export interface StartRecordingRequest {
   /** Omitted for the backend's `rec_<UTC timestamp>` default. */
   name?: string;
@@ -109,21 +143,6 @@ export interface StartRecordingRequest {
 }
 
 /**
- * Mirrors the backend catalogue's name rule so the Start button can refuse a
- * bad name before a request goes out. The server still validates — this is a
- * convenience, not the boundary. rosbag2 names its split files after the
- * directory, which is why the rule is this strict.
- */
-export const RECORDING_NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
-
-/**
- * The one name the backend refuses outright, because `GET
- * /api/v1/recordings/active` is its own route and a directory called that could
- * never be read back.
- */
-export const RESERVED_RECORDING_NAME = "active";
-
-/**
  * Start recording into `record/<name>/`.
  *
  * A 201 means the recorder survived its liveness probe, so it is genuinely
@@ -138,6 +157,9 @@ export function startRecording(
   return requestJson<ActiveRecording>(apiUrl("/api/v1/recordings"), {
     method: "POST",
     body: JSON.stringify(request),
+    // The echo is written straight into the activeRecording cache entry, so it
+    // is read like any other answer rather than trusted because we asked.
+    schema: ActiveRecordingSchema,
   });
 }
 
@@ -147,7 +169,8 @@ export function fetchActiveRecording(
 ): Promise<ActiveRecording | null> {
   return requestJson<ActiveRecording | null>(
     apiUrl("/api/v1/recordings/active"),
-    { signal },
+    // Null is a real answer here ("nothing is recording"), not a missing one.
+    { signal, schema: ActiveRecordingSchema.nullable() },
   );
 }
 
@@ -162,6 +185,7 @@ export function fetchActiveRecording(
 export function stopRecording(): Promise<StoppedRecording> {
   return requestJson<StoppedRecording>(apiUrl("/api/v1/recordings/stop"), {
     method: "POST",
+    schema: StoppedRecordingSchema,
   });
 }
 
@@ -171,7 +195,7 @@ export function fetchRecordings(
 ): Promise<RecordingSummary[]> {
   return requestJson<{ recordings: RecordingSummary[] }>(
     apiUrl("/api/v1/recordings"),
-    { signal },
+    { signal, schema: z.object({ recordings: z.array(RecordingSummarySchema) }) },
   ).then((body) => body.recordings);
 }
 

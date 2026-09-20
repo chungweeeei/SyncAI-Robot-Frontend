@@ -2,15 +2,13 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
 
 import { Input } from "@/components/ui/input";
-import { renameMap } from "@/lib/api/map";
-import { MAP_NAME_RE } from "@/lib/api/mapping";
-import { queryKeys } from "@/lib/api/query-keys";
+import { useRenameMap } from "@/hooks/use-map-actions";
+import { MAP_NAME_RE } from "@/lib/map/name";
 
 const DIRTY_REASON =
-  "Save the gridmap first. A rename moves map/<name>/ on disk, and the editor would have to reload from the new directory — which is the one thing that cannot be done while there are unsaved cells in the buffer.";
+  "Save your changes first. Renaming a map reloads it, which would throw away anything you have not saved.";
 
 /**
  * The editor's title, and the way to change it — the header-side face of
@@ -39,13 +37,25 @@ const DIRTY_REASON =
  */
 export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }) {
   const router = useRouter();
-  const queryClient = useQueryClient();
+  const rename = useRenameMap();
 
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(name);
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  /**
+   * This component's own refusal (`dirty`), which is not a request outcome and
+   * so does not live in the mutation. The backend's refusals do — 409 (active,
+   * converting, taken) and 400 arrive as its own sentence, written to be shown.
+   */
+  const [refusal, setRefusal] = React.useState<string | null>(null);
+  /**
+   * Held locally rather than read off `rename.data`: the success handler
+   * navigates, and a cancel-on-blur racing that navigation resets the mutation
+   * — the sentence must survive it.
+   */
   const [note, setNote] = React.useState<string | null>(null);
+
+  const busy = rename.isPending;
+  const error = refusal ?? rename.error?.message ?? null;
 
   const trimmed = draft.trim();
   const valid = MAP_NAME_RE.test(trimmed);
@@ -56,21 +66,26 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
       // Refused before the input opens rather than on submit: there is nothing
       // the operator could type that would make it allowed, so letting them
       // type first would only be a longer way to say no.
-      setError(DIRTY_REASON);
+      setRefusal(DIRTY_REASON);
       return;
     }
     setDraft(name);
-    setError(null);
+    setRefusal(null);
     setNote(null);
+    rename.reset();
     setEditing(true);
   };
 
   const cancel = () => {
     setEditing(false);
-    setError(null);
+    setRefusal(null);
+    // Not while the request is out: `disabled` on the input fires a blur in
+    // some browsers, and resetting a pending mutation would detach the success
+    // handler that has the navigation in it.
+    if (!rename.isPending) rename.reset();
   };
 
-  const submit = async () => {
+  const submit = () => {
     if (busy) return;
     // Enter on an unchanged name is "I am done here", not a request: close.
     if (!changed) {
@@ -79,27 +94,19 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
     }
     if (!valid) return;
 
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await renameMap(name, trimmed);
-      // Keyed by the old name and never read again; drop it rather than let it
-      // sit until eviction. Same reasoning as MapRenameControl.
-      queryClient.removeQueries({ queryKey: queryKeys.mapVertices(name) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
-      setEditing(false);
-      setNote(result.message);
-      // replace, not push: the URL this page was opened at names a directory
-      // that no longer exists, so leaving it in the history is leaving a Back
-      // button that lands on a 404.
-      router.replace(`/maps/${encodeURIComponent(trimmed)}/edit`);
-    } catch (cause) {
-      // 409 (active, converting, taken) and 400 arrive as the backend's own
-      // sentence, written to be shown.
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
+    rename.mutate(
+      { from: name, to: trimmed },
+      {
+        onSuccess: (result) => {
+          setEditing(false);
+          setNote(result.message);
+          // replace, not push: the URL this page was opened at names a
+          // directory that no longer exists, so leaving it in the history is
+          // leaving a Back button that lands on a 404.
+          router.replace(`/maps/${encodeURIComponent(trimmed)}/edit`);
+        },
+      },
+    );
   };
 
   if (editing) {
@@ -109,7 +116,7 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            void submit();
+            submit();
           }}
         >
           <Input

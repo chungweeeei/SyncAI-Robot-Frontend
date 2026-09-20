@@ -1,19 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { renameMap } from "@/lib/api/map";
-import { MAP_NAME_RE } from "@/lib/api/mapping";
-import { queryKeys } from "@/lib/api/query-keys";
+import { useRenameMap } from "@/hooks/use-map-actions";
+import { MAP_NAME_RE } from "@/lib/map/name";
 import type { MapSummary } from "@/lib/types/map";
 
 const LOCKED_REASON =
-  "The map in use cannot be renamed: the running stack loaded this name. Switch the robot to another map first.";
+  "The robot is working in this map right now, so it cannot be renamed. Switch it to another map first.";
 const CONVERTING_REASON =
-  "Wait for the gridmap conversion to finish before renaming.";
+  "This map is still being prepared. Wait for it to finish.";
 
 /**
  * The card's title, and the way to change it — the card-side face of
@@ -40,8 +38,8 @@ const CONVERTING_REASON =
  * On success this instance goes away: MapLibrary keys cards by name, so the
  * refetch mounts a fresh card under the new name. The backend's sentence (how
  * many vertices and templates moved) therefore goes *up*, through `onRenamed`,
- * to a line the library keeps. Mutation-as-async-callback with local busy/error,
- * same as GridRebuildControl — this codebase does not use useMutation.
+ * to a line the library keeps. Which cache entries a rename touches is
+ * useRenameMap's business, not this card's.
  */
 export function MapRenameControl({
   map,
@@ -51,11 +49,14 @@ export function MapRenameControl({
   /** The backend's sentence, for a surface that outlives this card. */
   onRenamed?: (message: string) => void;
 }) {
-  const queryClient = useQueryClient();
+  const rename = useRenameMap();
   const [editing, setEditing] = React.useState(false);
   const [name, setName] = React.useState(map.name);
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+
+  const busy = rename.isPending;
+  // 409 (taken, converting, in use) and 400 arrive as the backend's own
+  // sentence, written to be shown.
+  const error = rename.error?.message ?? null;
 
   const trimmed = name.trim();
   const valid = MAP_NAME_RE.test(trimmed);
@@ -64,36 +65,26 @@ export function MapRenameControl({
 
   const begin = () => {
     setName(map.name);
-    setError(null);
+    rename.reset();
     setEditing(true);
   };
   const cancel = () => {
     setEditing(false);
-    setError(null);
+    rename.reset();
   };
 
-  const submit = React.useCallback(async () => {
+  const submit = () => {
     if (!valid || !changed || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await renameMap(map.name, trimmed);
-      // The per-map vertex cache is keyed by the old name and nothing will
-      // read it again; drop it rather than let it sit until eviction.
-      queryClient.removeQueries({ queryKey: queryKeys.mapVertices(map.name) });
-      onRenamed?.(result.message);
-      setEditing(false);
-      // The catalogue now lists the map under its new name; the refetch is
-      // what replaces this card with one keyed on that name.
-      void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
-    } catch (cause) {
-      // 409 (taken, converting, in use) and 400 arrive as the backend's own
-      // sentence, written to be shown.
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, changed, map.name, onRenamed, queryClient, trimmed, valid]);
+    rename.mutate(
+      { from: map.name, to: trimmed },
+      {
+        onSuccess: (result) => {
+          onRenamed?.(result.message);
+          setEditing(false);
+        },
+      },
+    );
+  };
 
   if (editing) {
     return (
@@ -103,7 +94,7 @@ export function MapRenameControl({
           // row is expected to do.
           onSubmit={(event) => {
             event.preventDefault();
-            void submit();
+            submit();
           }}
           className="flex items-center gap-1.5"
         >

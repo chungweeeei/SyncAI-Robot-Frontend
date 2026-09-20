@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeftIcon, Trash2Icon, XIcon } from "lucide-react";
 
 import {
@@ -13,13 +12,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { queryKeys } from "@/lib/api/query-keys";
-import { deleteRecording, type RecordingSummary } from "@/lib/api/recording";
+import { useDeleteRecording } from "@/hooks/use-recorder";
+import type { RecordingSummary } from "@/lib/api/recording";
 import { formatSize } from "@/lib/recording/format";
 import { cn } from "@/lib/utils";
 
 const LIVE_REASON =
-  "This recording is still running. Stop it first — deleting the directory under a live writer loses the bag without stopping the recorder.";
+  "This recording is still running. Stop it first — deleting it now would lose the recording without stopping it.";
 
 /**
  * Delete one bag, behind a confirmation.
@@ -45,27 +44,23 @@ export function RecordingDeleteControl({
 }: {
   recording: RecordingSummary;
 }) {
-  const queryClient = useQueryClient();
+  const remove = useDeleteRecording();
   const [confirming, setConfirming] = React.useState(false);
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+
+  const busy = remove.isPending;
+  const error = remove.error?.message ?? null;
 
   const live = recording.status === "recording";
 
-  const submit = React.useCallback(async () => {
+  const submit = () => {
     if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await deleteRecording(recording.name);
-      setConfirming(false);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.recordings });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, queryClient, recording.name]);
+    remove.mutate(recording.name, { onSuccess: () => setConfirming(false) });
+  };
+
+  const close = () => {
+    setConfirming(false);
+    remove.reset();
+  };
 
   return (
     <>
@@ -84,7 +79,7 @@ export function RecordingDeleteControl({
         <button
           type="button"
           onClick={() => {
-            setError(null);
+            remove.reset();
             setConfirming(true);
           }}
           aria-label={`Delete ${recording.name}`}
@@ -101,18 +96,15 @@ export function RecordingDeleteControl({
       <AlertDialog
         open={confirming}
         onOpenChange={(open) => {
-          if (!open && !busy) {
-            setConfirming(false);
-            setError(null);
-          }
+          if (!open && !busy) close();
         }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {recording.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              {formatSize(recording.size_bytes)} of recorded messages. Driving
-              the same route again is the only way back.
+              {formatSize(recording.size_bytes)} of sensor data. The only way
+              back is to drive the same route again.
             </AlertDialogDescription>
           </AlertDialogHeader>
 
@@ -123,15 +115,7 @@ export function RecordingDeleteControl({
           )}
 
           <AlertDialogFooter>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={busy}
-              onClick={() => {
-                setConfirming(false);
-                setError(null);
-              }}
-            >
+            <Button variant="ghost" size="sm" disabled={busy} onClick={close}>
               <ArrowLeftIcon data-icon="inline-start" />
               Keep
             </Button>
@@ -139,7 +123,7 @@ export function RecordingDeleteControl({
               variant="destructive"
               size="sm"
               disabled={busy}
-              onClick={() => void submit()}
+              onClick={submit}
             >
               <Trash2Icon data-icon="inline-start" />
               {busy ? "Deleting…" : "Delete"}

@@ -1,0 +1,90 @@
+# The gate this repo did not have. Everything here is a command CLAUDE.md
+# already documents; CI's only job is to stop it depending on somebody
+# remembering to run them.
+#
+# Two jobs rather than one, because they answer different questions and the
+# slow one should not hide the fast one: `check` fails in about a minute on a
+# type error or a lint break, while `e2e` has to produce a production build and
+# drive a browser through it. They run in parallel.
+
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+# A new push to the same branch makes the previous run's answer irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: lint, types, unit tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          # package.json says >=22; pin the LTS rather than `latest` so a new
+          # major landing upstream is a deliberate bump, not a red Monday.
+          node-version: 22
+          cache: npm
+
+      # `ci`, not `install`: the lockfile is authoritative here.
+      - run: npm ci
+
+      - name: Lint
+        # Also enforces the app -> components -> hooks -> lib import boundaries
+        # (no-restricted-imports in eslint.config.mjs), which is the one part of
+        # the architecture that cannot be reviewed back in by hand.
+        run: npm run lint
+
+      - name: Type check
+        # Ahead of the build so a type error reports as a type error.
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        # The real gate, and last because it is the slowest thing in this job.
+        run: npm run build
+
+  e2e:
+    name: end-to-end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Chromium only — playwright.config.ts defines the one project, and the
+      # browser download is the slowest step in this job.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        # The suite builds and starts the app itself (see webServer in
+        # playwright.config.ts). There is no robot: every test installs its own
+        # fake backend, so nothing here needs a service container.
+        run: npm run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        # Traces are written on retry, which on CI is exactly the run somebody
+        # will want to look at.
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

@@ -11,7 +11,7 @@ type TriggerKind = "interval" | "cron";
 
 const TRIGGER_OPTIONS = [
   { value: "interval", label: "Every" },
-  { value: "cron", label: "Cron" },
+  { value: "cron", label: "At a time" },
 ] as const satisfies readonly { value: TriggerKind; label: string }[];
 
 export interface ScheduleFormProps {
@@ -69,9 +69,9 @@ export function ScheduleForm({
   const localReason = !trimmedId
     ? "Name the schedule."
     : duplicate
-      ? "A schedule with this id already exists."
+      ? "A schedule with this name already exists."
       : kind === "cron" && !trimmedCron
-        ? "Enter a cron expression."
+        ? "Enter when it should run."
         : !triggerOk
           ? "The interval must be a whole number of seconds above zero."
           : null;
@@ -99,7 +99,7 @@ export function ScheduleForm({
       }}
     >
       <label className="block">
-        <span className="instrument-label text-muted-foreground">Schedule id</span>
+        <span className="instrument-label text-muted-foreground">Schedule name</span>
         <Input
           value={id}
           disabled={busy}
@@ -144,7 +144,7 @@ export function ScheduleForm({
       {kind === "cron" && (
         <label className="block">
           <span className="instrument-label text-muted-foreground">
-            Timezone <span className="font-normal">(optional, IANA)</span>
+            Timezone <span className="font-normal">(optional)</span>
           </span>
           <Input
             value={timezone}

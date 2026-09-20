@@ -217,8 +217,8 @@ export function NetworkSettings() {
           {!current && (
             <Hint>
               {wifi.stateStatus === "loading"
-                ? "Waiting for the first state frame."
-                : "The robot has not published a state frame, so its current network cannot be read."}
+                ? "Waiting for the robot to report in."
+                : "This console cannot reach the robot, so its current network is unknown."}
             </Hint>
           )}
 

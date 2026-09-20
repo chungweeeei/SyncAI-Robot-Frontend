@@ -1,6 +1,6 @@
 "use client";
 
-import { useConsoleRobotState } from "@/components/console/robot-state-context";
+import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { TaskConsole } from "@/components/tasks/task-console";
 
 /**
@@ -42,11 +42,11 @@ export default function TasksPage() {
           <p className="instrument-label text-muted-foreground">Robot</p>
           <h1 className="mt-1.5 text-xl font-semibold tracking-tight">Tasks</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Build a run for{" "}
-            <span className="readout">{state?.robot_id ?? "this robot"}</span> step
-            by step, save it, then dispatch it now or register it to repeat. Steps
-            execute in order, one at a time, and a failing step stops the ones after
-            it.
+            Build a job for{" "}
+            <span className="readout">{state?.robot_id ?? "this robot"}</span>{" "}
+            step by step, save it, then run it now or set it to repeat on a
+            schedule. Steps run in order, one at a time, and if a step fails the
+            rest are skipped.
           </p>
         </header>
 

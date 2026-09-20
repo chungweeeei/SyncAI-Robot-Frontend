@@ -1,9 +1,11 @@
 "use client";
 
 import * as React from "react";
+import { useMutation } from "@tanstack/react-query";
 
+import { ignore } from "@/lib/api/mutation-state";
 import { setInitialPose } from "@/lib/api/robot";
-import { normalizeTheta } from "@/lib/api/task";
+import { normalizeTheta } from "@/lib/angle";
 import type { PlanarPose } from "@/lib/types/robot";
 
 /**
@@ -54,37 +56,36 @@ export interface InitialPoseEstimate {
  * moving to where the robot was dropped. That is also why a published estimate
  * expires on its own after CLEAR_AFTER_PUBLISH_MS: with nothing to wait for,
  * leaving the read-back up would state an open action that is already over.
+ *
+ * `published` is the mutation's own success, which is what makes a fresh drag
+ * cancel the pending expiry for free: going pending clears the success flag,
+ * so the effect below tears its timer down and the new estimate gets its own
+ * full window.
  */
 export function useInitialPose(): InitialPoseEstimate {
   const [pose, setPose] = React.useState<PlanarPose | null>(null);
-  const [published, setPublished] = React.useState(false);
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
 
-  const send = React.useCallback(async (next: PlanarPose) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await setInitialPose(next);
-      setPublished(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+  const publishPose = useMutation({
+    mutationFn: (next: PlanarPose) => setInitialPose(next),
+  });
+
+  const {
+    mutate: sendPose,
+    mutateAsync: sendPoseAsync,
+    reset: resetPublish,
+    isSuccess: published,
+  } = publishPose;
 
   const commitPose = React.useCallback(
     (next: PlanarPose) => {
       const placed = { ...next, theta: normalizeTheta(next.theta) };
       setPose(placed);
-      setPublished(false);
       // Sent from `placed`, not from the `pose` state set on the line above:
       // this runs in the same tick, so reading state here would post the
       // *previous* drag's pose (or nothing at all, on the first one).
-      void send(placed);
+      sendPose(placed);
     },
-    [send],
+    [sendPose],
   );
 
   /**
@@ -98,28 +99,34 @@ export function useInitialPose(): InitialPoseEstimate {
    *
    * Only a *success* is cleared. A failure keeps the pose, because that panel is
    * the only place the error and its Retry live, and the pose is what Retry
-   * re-sends. A fresh drag sets `published` false first, which cancels any timer
-   * already running, so the new estimate always gets its own full window.
+   * re-sends.
    */
   React.useEffect(() => {
     if (!published) return;
     const timer = setTimeout(() => {
       setPose(null);
-      setPublished(false);
+      resetPublish();
     }, CLEAR_AFTER_PUBLISH_MS);
     return () => clearTimeout(timer);
-  }, [published]);
+  }, [published, resetPublish]);
 
   const publish = React.useCallback(async () => {
     if (!pose) return;
-    await send(pose);
-  }, [pose, send]);
+    await sendPoseAsync(pose).catch(ignore);
+  }, [pose, sendPoseAsync]);
 
   const clear = React.useCallback(() => {
     setPose(null);
-    setPublished(false);
-    setError(null);
-  }, []);
+    resetPublish();
+  }, [resetPublish]);
 
-  return { pose, commitPose, published, busy, error, publish, clear };
+  return {
+    pose,
+    commitPose,
+    published,
+    busy: publishPose.isPending,
+    error: publishPose.error?.message ?? null,
+    publish,
+    clear,
+  };
 }

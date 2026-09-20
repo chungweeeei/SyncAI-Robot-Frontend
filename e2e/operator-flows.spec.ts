@@ -1,0 +1,245 @@
+import { expect, test } from "@playwright/test";
+
+import {
+  MAP_NAME,
+  failOnConsoleErrors,
+  mapSummary,
+  mockBackend,
+  recording,
+} from "./backend";
+
+/**
+ * The flows where pressing a button does something to a real machine. Each one
+ * asserts two halves that can drift apart: what the screen says, and what the
+ * console actually sent. A test that only checks the screen passes a build that
+ * posts to the wrong endpoint.
+ */
+
+test.describe("the recorder", () => {
+  test("shows the idle form when nothing is recording", async ({ page }) => {
+    // Which face is shown comes from the server, not from a local flag, so a
+    // recording started from a shell is reflected correctly.
+    await mockBackend(page, { activeRecording: null });
+    await page.goto("/recordings");
+
+    await expect(page.getByRole("button", { name: /start recording/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Stop" })).toHaveCount(0);
+  });
+
+  test("shows the live face and the robot's own elapsed clock", async ({ page }) => {
+    await mockBackend(page, {
+      activeRecording: {
+        name: "rec_live",
+        path: "/home/syncai/record/rec_live",
+        topics: ["/robot01/livox/lidar"],
+        started_at: "2026-09-18T09:22:00Z",
+        elapsed_seconds: 75,
+        compression: false,
+        size_bytes: 1024 * 1024,
+      },
+    });
+    await page.goto("/recordings");
+
+    // Exact, because "Recordings" (the rail link and the page heading) would
+    // otherwise match too.
+    await expect(page.getByText("Recording", { exact: true })).toBeVisible();
+    // 75 s as the robot measured it, not a timer this console started.
+    await expect(page.getByText("1:15")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /start recording/i }),
+    ).toHaveCount(0);
+  });
+
+  test("posts a start with the name and topics that were on screen", async ({
+    page,
+  }) => {
+    const writes = await mockBackend(page, { activeRecording: null });
+    await page.goto("/recordings");
+
+    await page.getByLabel("Recording name").fill("field-run-3");
+    await page.getByRole("button", { name: /start recording/i }).click();
+
+    await expect
+      .poll(() => writes.filter((w) => w.path === "/api/v1/recordings"))
+      .toHaveLength(1);
+    const body = writes[0].body as { name: string; topics: string[] };
+    expect(body.name).toBe("field-run-3");
+    expect(body.topics.length).toBeGreaterThan(0);
+  });
+
+  test("refuses the reserved name before a request goes out", async ({ page }) => {
+    // "active" is the status route's own path; a directory called that could
+    // never be read back, and the backend refuses it too.
+    const writes = await mockBackend(page, { activeRecording: null });
+    await page.goto("/recordings");
+
+    await page.getByLabel("Recording name").fill("active");
+    await expect(page.getByText(/reserved/i)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /start recording/i }),
+    ).toBeDisabled();
+    expect(writes).toHaveLength(0);
+  });
+
+  test("lists what is on disk", async ({ page }) => {
+    await mockBackend(page, {
+      recordings: [recording({ name: "rec_a" }), recording({ name: "rec_b" })],
+    });
+    await page.goto("/recordings");
+
+    await expect(page.getByText("rec_a")).toBeVisible();
+    await expect(page.getByText("rec_b")).toBeVisible();
+  });
+});
+
+test.describe("the map library", () => {
+  test("marks the map the stack is running and locks it", async ({ page }) => {
+    // The running map is the one map that cannot be renamed or deleted — the
+    // backend refuses both, and the card says so rather than letting the
+    // operator find out from a 409.
+    await mockBackend(page, { maps: [mapSummary({ active: true })] });
+    await page.goto("/maps");
+
+    await expect(page.getByRole("heading", { name: MAP_NAME })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: `Delete ${MAP_NAME}` }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: `Rename ${MAP_NAME}` }),
+    ).toHaveCount(0);
+  });
+
+  test("puts a delete behind a dialog that names what goes with it", async ({
+    page,
+  }) => {
+    const writes = await mockBackend(page, {
+      maps: [
+        mapSummary({ active: true, name: "in-use" }),
+        mapSummary({ active: false, name: "old-site", vertex_count: 3 }),
+      ],
+    });
+    await page.goto("/maps");
+
+    await page.getByRole("button", { name: "Delete old-site" }).click();
+
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("old-site");
+    // The waypoints are the part that surprises: hand-placed work that does not
+    // live in the map directory being removed.
+    await expect(dialog).toContainText("3 saved waypoints");
+
+    // Backing out sends nothing.
+    await dialog.getByRole("button", { name: "Keep" }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(writes.filter((w) => w.method === "DELETE")).toHaveLength(0);
+  });
+
+  test("sends the delete only after the dialog is confirmed", async ({ page }) => {
+    const writes = await mockBackend(page, {
+      maps: [
+        mapSummary({ active: true, name: "in-use" }),
+        mapSummary({ active: false, name: "old-site" }),
+      ],
+    });
+    await page.goto("/maps");
+
+    await page.getByRole("button", { name: "Delete old-site" }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Delete" })
+      .click();
+
+    await expect
+      .poll(() => writes.filter((w) => w.method === "DELETE"))
+      .toHaveLength(1);
+    expect(writes[0].path).toBe("/api/v1/maps/old-site");
+  });
+
+  test("explains a conversion that failed instead of showing a hole", async ({
+    page,
+  }) => {
+    await mockBackend(page, {
+      maps: [
+        mapSummary({
+          active: false,
+          name: "bad-cloud",
+          grid: null,
+          thumbnail: null,
+          grid_status: "failed",
+          grid_error: "intensity/normal gate selected no ground points",
+        }),
+      ],
+    });
+    await page.goto("/maps");
+
+    await expect(
+      page.getByText("intensity/normal gate selected no ground points"),
+    ).toBeVisible();
+  });
+});
+
+test.describe("the task console", () => {
+  let errors: string[];
+
+  test.beforeEach(async ({ page }) => {
+    errors = [];
+    failOnConsoleErrors(page, errors);
+  });
+
+  test.afterEach(() => {
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("lists the templates this robot can actually run", async ({ page }) => {
+    await mockBackend(page);
+    await page.goto("/tasks");
+    await expect(page.getByText("Morning round")).toBeVisible();
+  });
+
+  test("announces a run this tab did not start", async ({ page }) => {
+    // The banner exists because a reload, a second browser or an overnight
+    // schedule all leave a robot executing with no Cancel anywhere on screen.
+    await mockBackend(page, {
+      activeTasks: [
+        {
+          id: "robot01-task-1758000000-1",
+          run_id: "run-1",
+          status: "IN_PROGRESS",
+          started_at: "2026-09-18T09:44:30Z",
+          source: "SCHEDULE",
+          schedule_id: "nightly",
+        },
+      ],
+    });
+    await page.goto("/tasks");
+
+    await expect(page.getByText("Running outside this editor")).toBeVisible();
+    await expect(page.getByText("robot01-task-1758000000-1")).toBeVisible();
+    await expect(page.getByText("via nightly")).toBeVisible();
+  });
+
+  test("cancels that run against the id it announced", async ({ page }) => {
+    const writes = await mockBackend(page, {
+      activeTasks: [
+        {
+          id: "robot01-task-1758000000-1",
+          run_id: "run-1",
+          status: "IN_PROGRESS",
+          started_at: "2026-09-18T09:44:30Z",
+          source: "DIRECT",
+          schedule_id: null,
+        },
+      ],
+    });
+    await page.goto("/tasks");
+
+    await page.getByRole("button", { name: "Cancel" }).click();
+
+    await expect
+      .poll(() => writes.filter((w) => w.method === "DELETE"))
+      .toHaveLength(1);
+    expect(writes[0].path).toBe("/api/v1/tasks/robot01-task-1758000000-1");
+  });
+});

@@ -16,8 +16,11 @@
 // needs no encoder at all, and the raw path cannot be colour-managed.
 
 import { apiUrl } from "@/lib/api/config";
-import { errorDetail, requestJson } from "@/lib/api/http";
+import { z } from "zod";
+
+import { requestJson, requestRaw } from "@/lib/api/http";
 import type { MapGrid } from "@/lib/map/grid";
+import { GridStatusSchema } from "@/lib/types/map";
 import type { GridRecipe, GridStatus, MapSummary } from "@/lib/types/map";
 
 /** `GridInfoResponse` — note `origin` is {x, y, yaw}, not a tuple. */
@@ -43,6 +46,32 @@ interface WireSummary {
   vertex_count: number;
 }
 
+/**
+ * The catalogue as it arrives, before `toSummary` folds the origin and
+ * absolutises the thumbnail. Checked in this shape rather than after the fold,
+ * so a failure names the field the backend actually sent.
+ */
+const WireSummarySchema: z.ZodType<WireSummary> = z.object({
+  name: z.string(),
+  active: z.boolean(),
+  grid: z
+    .object({
+      resolution: z.number(),
+      origin: z.object({ x: z.number(), y: z.number(), yaw: z.number() }),
+      width: z.number(),
+      height: z.number(),
+    })
+    .nullable(),
+  thumbnail: z.string().nullable(),
+  has_pointcloud: z.boolean(),
+  grid_status: GridStatusSchema,
+  grid_error: z.string().nullable(),
+  grid_converting: z.boolean(),
+  size_bytes: z.number(),
+  modified_at: z.string(),
+  vertex_count: z.number(),
+});
+
 function toSummary(wire: WireSummary): MapSummary {
   return {
     ...wire,
@@ -60,31 +89,11 @@ function toSummary(wire: WireSummary): MapSummary {
   };
 }
 
-/**
- * Fetch, or throw with the backend's own message.
- *
- * The domain-exception handlers return `{detail}`, and those strings are written
- * to be read by an operator ("Map 'x' has no gridmap. Convert its map.pcd
- * (syncai_backend.helpers.pcd_to_gridmap) first."). The hooks render `error.message` verbatim, so
- * unwrapping `detail` here is what puts the actionable half on screen instead of
- * a status code.
- */
-async function request(path: string, signal?: AbortSignal): Promise<Response> {
-  const response = await fetch(apiUrl(path), { signal });
-  if (response.ok) return response;
-
-  let detail: string | null = null;
-  try {
-    detail = ((await response.json()) as { detail?: string }).detail ?? null;
-  } catch {
-    // A non-JSON error body (a proxy's 502 page, say) leaves detail null.
-  }
-  throw new Error(detail ?? `${path} failed: ${response.status}`);
-}
-
 export async function fetchMaps(signal?: AbortSignal): Promise<MapSummary[]> {
-  const response = await request("/api/v1/maps", signal);
-  const wire = (await response.json()) as WireSummary[];
+  const wire = await requestJson<WireSummary[]>(apiUrl("/api/v1/maps"), {
+    signal,
+    schema: z.array(WireSummarySchema),
+  });
   return wire.map(toSummary);
 }
 
@@ -153,7 +162,10 @@ export async function fetchMapGrid(
   const encoded = encodeURIComponent(name);
 
   const summary = toSummary(
-    (await (await request(`/api/v1/maps/${encoded}`, signal)).json()) as WireSummary,
+    await requestJson<WireSummary>(apiUrl(`/api/v1/maps/${encoded}`), {
+      signal,
+      schema: WireSummarySchema,
+    }),
   );
   if (!summary.grid) {
     throw new Error(
@@ -161,7 +173,9 @@ export async function fetchMapGrid(
     );
   }
 
-  const image = await request(`/api/v1/maps/${encoded}/image`, signal);
+  const image = await requestRaw(apiUrl(`/api/v1/maps/${encoded}/image`), {
+    signal,
+  });
   return { summary, grid: await decodeGrid(await image.blob()) };
 }
 
@@ -202,21 +216,21 @@ export interface SaveGridResult {
  * mean the result describes the buffer as it was when Save was pressed, which is
  * what the editor's revision guard is for.
  */
-export async function saveMapGrid(
+export function saveMapGrid(
   name: string,
   grid: MapGrid,
 ): Promise<SaveGridResult> {
-  const response = await fetch(
+  return requestJson<SaveGridResult>(
     apiUrl(`/api/v1/maps/${encodeURIComponent(name)}/grid`),
     {
       method: "PUT",
+      // Explicit, so requestJson's JSON default stands down: the body is the
+      // cell buffer and `Body(..., media_type=...)` on the endpoint needs the
+      // type to match or FastAPI parses the bytes as JSON.
       headers: { "Content-Type": "application/octet-stream" },
       body: grid.data,
     },
   );
-  if (!response.ok) throw new Error(await errorDetail(response));
-
-  return (await response.json()) as SaveGridResult;
 }
 
 /**
@@ -264,42 +278,26 @@ export interface ConvertGridResult {
  * there as `"failed"` with the reason in `grid_error` rather than as a rejected
  * promise here.
  */
-export async function convertMapGrid(
+export function convertMapGrid(
   name: string,
   opts: { recipe: GridRecipe; overwriteEdits?: boolean; reason?: string },
 ): Promise<ConvertGridResult> {
-  const response = await fetch(
+  return requestJson<ConvertGridResult>(
     apiUrl(`/api/v1/maps/${encodeURIComponent(name)}/grid/convert`),
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         recipe: opts.recipe,
         overwrite_edits: opts.overwriteEdits ?? false,
         ...(opts.reason ? { reason: opts.reason } : {}),
       }),
+      mapError: ({ detail, code }, res) =>
+        res.status === 409 &&
+        (code === "conversion_running" || code === "gridmap_hand_edited")
+          ? new ConvertConflictError(detail, code)
+          : undefined,
     },
   );
-
-  if (response.status === 409) {
-    // Read the body once: errorDetail would consume it without the code.
-    let detail = `${response.status} ${response.statusText}`;
-    let code: string | undefined;
-    try {
-      const body = (await response.json()) as { detail?: string; code?: string };
-      detail = body.detail ?? detail;
-      code = body.code;
-    } catch {
-      /* non-JSON 409 body; fall through to the plain error below */
-    }
-    if (code === "conversion_running" || code === "gridmap_hand_edited") {
-      throw new ConvertConflictError(detail, code);
-    }
-    throw new Error(detail);
-  }
-  if (!response.ok) throw new Error(await errorDetail(response));
-
-  return (await response.json()) as ConvertGridResult;
 }
 
 /** `RenameMapResponse`, verbatim. */
@@ -438,29 +436,15 @@ export interface ActivateMapResult {
  * in the new one; and a 200 does not mean the robot knows where it is — read
  * `localized`, and expect to tell the operator to set an initial pose.
  */
-export async function activateMap(name: string): Promise<ActivateMapResult> {
-  const response = await fetch(
+export function activateMap(name: string): Promise<ActivateMapResult> {
+  return requestJson<ActivateMapResult>(
     apiUrl(`/api/v1/maps/${encodeURIComponent(name)}/activate`),
-    { method: "POST" },
+    {
+      method: "POST",
+      mapError: ({ detail, code }, res) =>
+        res.status === 409 && code && ACTIVATE_CONFLICT_CODES.includes(code)
+          ? new ActivateConflictError(detail, code as ActivateConflictCode)
+          : undefined,
+    },
   );
-
-  if (response.status === 409) {
-    // Read the body once: errorDetail would consume it without the code.
-    let detail = `${response.status} ${response.statusText}`;
-    let code: string | undefined;
-    try {
-      const body = (await response.json()) as { detail?: string; code?: string };
-      detail = body.detail ?? detail;
-      code = body.code;
-    } catch {
-      /* non-JSON 409 body; fall through to the plain error below */
-    }
-    if (code && ACTIVATE_CONFLICT_CODES.includes(code)) {
-      throw new ActivateConflictError(detail, code as ActivateConflictCode);
-    }
-    throw new Error(detail);
-  }
-  if (!response.ok) throw new Error(await errorDetail(response));
-
-  return (await response.json()) as ActivateMapResult;
 }

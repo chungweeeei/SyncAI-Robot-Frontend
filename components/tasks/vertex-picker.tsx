@@ -42,15 +42,15 @@ export function VertexPicker({
   onPick,
 }: VertexPickerProps) {
   if (status === "loading") {
-    return <Hint>Loading the map&apos;s vertices…</Hint>;
+    return <Hint>Loading this map&apos;s waypoints…</Hint>;
   }
 
   if (status === "no-map") {
-    return <Hint>No map is loaded on this robot — type the coordinates.</Hint>;
+    return <Hint>No map is loaded on this robot — type the position instead.</Hint>;
   }
 
   if (status === "error") {
-    return <Hint>The map&apos;s vertices could not be read — type the coordinates.</Hint>;
+    return <Hint>Could not load this map&apos;s waypoints — type the position instead.</Hint>;
   }
 
   if (!vertices.length) {
@@ -58,7 +58,7 @@ export function VertexPicker({
       <Hint>
         {mapName ? (
           <>
-            <span className="readout">{mapName}</span> has no vertices yet —{" "}
+            <span className="readout">{mapName}</span> has no waypoints yet —{" "}
             <Link
               href={`/maps/${encodeURIComponent(mapName)}/edit`}
               className="underline underline-offset-2 hover:text-foreground"
@@ -68,7 +68,7 @@ export function VertexPicker({
             , or type the coordinates.
           </>
         ) : (
-          "No vertices to pick from — type the coordinates."
+          "No waypoints to pick from — type the position instead."
         )}
       </Hint>
     );
@@ -89,7 +89,7 @@ export function VertexPicker({
       }}
     >
       <SelectTrigger size="sm" className="w-full rounded-sm text-[13px]">
-        <SelectValue placeholder="Pick a vertex" />
+        <SelectValue placeholder="Pick a waypoint" />
       </SelectTrigger>
       <SelectContent>
         {vertices.map((vertex) => (

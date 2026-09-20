@@ -3,6 +3,8 @@
 // (backend: src/syncai_backend/syncai_backend/interfaces/rest/routers/network.py,
 //  which forwards to sys_manager's scan_wifi / connect_wifi ROS services)
 
+import { z } from "zod";
+
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
 
@@ -31,9 +33,16 @@ export interface WifiNetwork {
  * request run to completion lands the list in the query cache for the next
  * visit instead. A 502 carries the ROS-side reason in `detail`.
  */
+const WifiNetworkSchema: z.ZodType<WifiNetwork> = z.object({
+  bssid: z.string(),
+  ssid: z.string(),
+  rssi: z.number(),
+});
+
 export function scanWifiNetworks(): Promise<WifiNetwork[]> {
   return requestJson<{ networks: WifiNetwork[] }>(
     apiUrl("/api/v1/network/wifi/scan"),
+    { schema: z.object({ networks: z.array(WifiNetworkSchema) }) },
   ).then((body) => body.networks);
 }
 

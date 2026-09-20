@@ -132,8 +132,7 @@ export function MotorStatus({ motors }: { motors: RobotMotorStatus[] }) {
     >
       {motors.length === 0 ? (
         <p className="text-[11px] leading-snug text-muted-foreground">
-          No motor telemetry. syncai_driver_manager is not publishing
-          motor_states.
+          No motor readings from the robot.
         </p>
       ) : (
         <>

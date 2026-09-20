@@ -23,14 +23,14 @@ import { cn } from "@/lib/utils";
  */
 const PRESETS: readonly { topic: string; hint: string }[] = [
   // The pair a lost mapping run is replayed from — the reason this page exists.
-  { topic: "livox/lidar", hint: "Lidar points, straight off the MID360" },
-  { topic: "livox/imu", hint: "Lidar IMU — LIO needs it alongside the points" },
-  { topic: "odom", hint: "LIO odometry, projected to 2D" },
-  { topic: "robot_state", hint: "The aggregate telemetry, 1 Hz" },
-  { topic: "cmd_vel", hint: "Velocity commands sent to the gait controller" },
-  { topic: "pointlio/body_cloud", hint: "The deskewed cloud the console draws" },
-  { topic: "/tf", hint: "Transforms — fleet-wide, not namespaced" },
-  { topic: "/tf_static", hint: "Static transforms — fleet-wide, not namespaced" },
+  { topic: "livox/lidar", hint: "Laser scanner — the robot's main sensor" },
+  { topic: "livox/imu", hint: "Motion sensor — needed with the scanner to rebuild a map" },
+  { topic: "odom", hint: "Where the robot calculates it has travelled" },
+  { topic: "robot_state", hint: "Overall status: battery, mode, motor health" },
+  { topic: "cmd_vel", hint: "The speed commands sent to the legs" },
+  { topic: "pointlio/body_cloud", hint: "The live 3D scan shown on the Dashboard" },
+  { topic: "/tf", hint: "How the robot's parts move relative to each other" },
+  { topic: "/tf_static", hint: "Fixed distances between the robot's parts" },
 ];
 
 /** The default selection: the LIO inputs, matching the backend's own default. */
@@ -212,8 +212,8 @@ export function TopicPicker({
               add();
             }
           }}
-          placeholder="another topic"
-          aria-label="Add a topic"
+          placeholder="another channel"
+          aria-label="Add a channel"
           disabled={disabled}
           className="readout h-7 flex-1 text-[11px]"
         />
@@ -233,8 +233,8 @@ export function TopicPicker({
       </div>
 
       <p className="text-[11px] leading-tight text-muted-foreground">
-        Names are resolved under this robot&apos;s namespace. Write a leading
-        slash for a fleet-wide topic.
+        Names apply to this robot. Start the name with a slash for a channel
+        that is shared by every robot.
       </p>
     </div>
   );

@@ -42,7 +42,7 @@ function StatusChip({ recording }: { recording: RecordingSummary }) {
   }
   if (recording.status === "interrupted") {
     return (
-      <Chip tone="caution" title="No index — the recorder went away before it could flush.">
+      <Chip tone="caution" title="This recording did not close cleanly.">
         No index
       </Chip>
     );
@@ -63,8 +63,8 @@ function EmptyWarning({ recording }: { recording: RecordingSummary }) {
   if (recording.status !== "ok" || recording.message_count !== 0) return null;
   return (
     <p className="mt-1 text-[11px] leading-snug text-signal-caution">
-      This bag has no messages — its topics were never published under those
-      names while it ran.
+      This recording is empty — the channels it was set to record sent nothing
+      while it ran.
     </p>
   );
 }
@@ -73,10 +73,9 @@ function InterruptedHint({ recording }: { recording: RecordingSummary }) {
   if (recording.status !== "interrupted") return null;
   return (
     <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-      The recorder stopped without flushing — a mode switch or a backend restart
-      does this. The messages are on disk;{" "}
-      <span className="readout">ros2 bag reindex record/{recording.name}</span>{" "}
-      rebuilds the index.
+      This recording was cut short — restarting the robot mid-recording does
+      that. The data is safe on the robot but needs repairing before it can be
+      used; contact support if you need this one.
     </p>
   );
 }
@@ -120,7 +119,7 @@ function RecordingRow({ recording }: { recording: RecordingSummary }) {
           {recording.topics.length > 0
             ? ` · ${recording.topics.join(", ")}`
             : live
-              ? " · topics are listed when the recording finishes"
+              ? " · the recorded channels are listed once it finishes"
               : ""}
         </p>
 

@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
+import { useMutation } from "@tanstack/react-query";
 
 import { useTaskTracker } from "@/hooks/use-task-tracker";
+import { ignore } from "@/lib/api/mutation-state";
 import {
   cancelTask,
   submitTask,
@@ -38,8 +40,10 @@ export interface TaskDispatch {
 
 /**
  * Dispatch an authored step list and follow it until it is terminal — the
- * multi-step sibling of useGoalTask / usePosture, composed the same way: this
- * hook owns `busy`, useTaskTracker owns everything about the submitted task.
+ * multi-step sibling of useGoalTask / usePosture, composed the same way: two
+ * mutations own the requests, useTaskTracker owns everything about the
+ * submitted task, and the three error slots are read in the order that one
+ * documents — submit, then the task's own failure, then a refused cancel.
  *
  * Two differences from those two are deliberate:
  *
@@ -55,43 +59,56 @@ export interface TaskDispatch {
  * and needs no robot id at all. That asymmetry is why only this hook is gated.
  */
 export function useTaskDispatch(robotId: string | null): TaskDispatch {
-  const [busy, setBusy] = React.useState(false);
   const task = useTaskTracker();
 
-  const { track, setError, reset, taskId, steps } = task;
+  const { track, reset, taskId, steps } = task;
+
+  const submit = useMutation({
+    // The robot id travels in the variables rather than being read from the
+    // closure, which is what keeps `submitTask`'s non-null argument honest
+    // without an assertion: `send` refuses before there is anything to submit.
+    mutationFn: ({
+      robot,
+      requests,
+    }: {
+      robot: string;
+      requests: readonly TaskStepRequest[];
+    }) => submitTask(robot, requests),
+    // Before the request, not after it: this is the one place that knows a new
+    // task is starting, so the previous task's per-step readback goes now
+    // instead of lingering under the new one's rows.
+    onMutate: () => reset(),
+    onSuccess: (id) => track(id),
+  });
+
+  const cancelRun = useMutation({
+    // No optimistic CANCELED: this is a *request*, and whether the workflow
+    // actually stopped is what the next poll answers.
+    mutationFn: (id: string) => cancelTask(id),
+  });
+
+  const { mutateAsync: submitAsync, reset: resetSubmit } = submit;
+  const { mutateAsync: cancelAsync, reset: resetCancel } = cancelRun;
 
   const send = React.useCallback(
     async (requests: readonly TaskStepRequest[]) => {
       if (!robotId || !requests.length) return;
-      setBusy(true);
-      // reset() here rather than in track(): this is the one place that knows a
-      // new task is starting, so the previous task's per-step readback goes now
-      // instead of lingering under the new one's rows.
-      reset();
-      try {
-        track(await submitTask(robotId, requests));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setBusy(false);
-      }
+      resetCancel();
+      await submitAsync({ robot: robotId, requests }).catch(ignore);
     },
-    [robotId, track, setError, reset],
+    [robotId, submitAsync, resetCancel],
   );
 
   const cancel = React.useCallback(async () => {
     if (!taskId) return;
-    setBusy(true);
-    try {
-      // No optimistic CANCELED: this is a *request*, and whether the workflow
-      // actually stopped is what the next poll answers.
-      await cancelTask(taskId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }, [taskId, setError]);
+    await cancelAsync(taskId).catch(ignore);
+  }, [taskId, cancelAsync]);
+
+  const clear = React.useCallback(() => {
+    reset();
+    resetSubmit();
+    resetCancel();
+  }, [reset, resetSubmit, resetCancel]);
 
   /**
    * A Map rather than the array the tracker hands over, because a row looks
@@ -107,13 +124,13 @@ export function useTaskDispatch(robotId: string | null): TaskDispatch {
   return {
     taskStatus: task.taskStatus,
     running: task.running,
-    busy,
+    busy: submit.isPending || cancelRun.isPending,
     cancelable: task.cancelable,
-    error: task.error,
+    error: submit.error?.message ?? task.error ?? cancelRun.error?.message ?? null,
     stepStates,
     taskId,
     send,
     cancel,
-    clear: reset,
+    clear,
   };
 }

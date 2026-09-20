@@ -4,7 +4,7 @@ import {
   parseTeleopError,
   ZERO_FRAME,
 } from "@/lib/ros/teleop-frame";
-import type { TeleopVector } from "@/hooks/use-joystick";
+import type { TeleopVector } from "@/lib/types/robot";
 
 /**
  * Outbound teleop channel — deliberately NOT createReconnectingSocket.

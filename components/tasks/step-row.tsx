@@ -9,7 +9,8 @@ import { TaskStatusChip } from "@/components/console/task-chip";
 import { VertexPicker } from "@/components/tasks/vertex-picker";
 import { Input } from "@/components/ui/input";
 import type { ActiveVerticesStatus } from "@/hooks/use-active-map-vertices";
-import { normalizeTheta, type TaskStepState } from "@/lib/api/task";
+import { normalizeTheta } from "@/lib/angle";
+import type { TaskStepState } from "@/lib/api/task";
 import {
   SPEAK_TEXT_MAX,
   STEP_TYPES,
@@ -79,7 +80,7 @@ export function StepRow({
          * row dispatches fine — but the operator should know the map no longer
          * agrees, and re-picking a vertex clears it. */}
         {step.vertexMissing && step.vertexId !== null && (
-          <Chip tone="caution">vertex deleted</Chip>
+          <Chip tone="caution">waypoint deleted</Chip>
         )}
 
         {state && <TaskStatusChip status={state.status} />}

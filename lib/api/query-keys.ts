@@ -11,6 +11,15 @@ export const queryKeys = {
   robotState: ["robot-state"] as const,
   /** GET /api/v1/active_tasks — the console's single 2 s poll. */
   activeTasks: ["active-tasks"] as const,
+  /**
+   * GET /api/v1/tasks/<id> — one dispatched run's per-step readback, polled at
+   * 1 Hz while it is still going.
+   *
+   * Keyed per task rather than per screen, which is what stops two surfaces
+   * following the same run from opening two intervals, and what makes the
+   * entry go away with the run it describes.
+   */
+  task: (id: string) => ["task", id] as const,
   /** GET /api/v1/maps — the catalogue, read by every screen that needs the active map. */
   maps: ["maps"] as const,
   /** GET /api/v1/maps/<name>/vertices — one map's stops, keyed by map name. */
@@ -19,6 +28,13 @@ export const queryKeys = {
   taskTemplates: ["task-templates"] as const,
   /** GET /api/v1/schedules — Temporal's schedule list. */
   schedules: ["schedules"] as const,
+  /**
+   * GET /api/v1/schedules/<id> — one schedule *with* its frozen steps, which
+   * the list cannot carry (see lib/api/schedule.ts). Its own root rather than
+   * `["schedules", id]` on purpose: invalidating the list after a pause or
+   * delete must not also re-describe every expanded row.
+   */
+  schedule: (id: string) => ["schedule", id] as const,
   /**
    * GET /api/v1/recordings — the bag catalogue. Shared by the list and by the
    * recorder panel's "did the bag I just stopped come out playable" read, so

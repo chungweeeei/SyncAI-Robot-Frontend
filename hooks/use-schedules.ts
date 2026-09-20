@@ -1,18 +1,22 @@
 "use client";
 
 import * as React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { writeState } from "@/lib/api/mutation-state";
 import { queryKeys } from "@/lib/api/query-keys";
 import {
   createSchedule,
   deleteSchedule,
+  getSchedule,
   listSchedules,
   pauseSchedule,
   resumeSchedule,
   type ScheduleDraft,
   type ScheduleState,
+  type ScheduleTrigger,
 } from "@/lib/api/schedule";
+import { scheduleTaskTemplate } from "@/lib/api/task-template";
 
 export type SchedulesStatus = "loading" | "ok" | "error";
 
@@ -41,6 +45,7 @@ export interface UseSchedules {
   resume: (id: string) => Promise<boolean>;
   remove: (id: string) => Promise<boolean>;
   refresh: () => void;
+  clearError: () => void;
 }
 
 /**
@@ -57,7 +62,7 @@ export interface UseSchedules {
  * disappearing, rather than sitting there next to an error about it. The one local
  * write is the optimistic paused flag, and PAUSE_SETTLE_MS explains why.
  *
- * Write failures live in their own slot rather than the query's, and the
+ * Write failures live in the mutations rather than the query, and the
  * refresh-on-every-write above is the reason: a rejected create triggers a
  * reload that *succeeds*, and if the failure lived where the query keeps its
  * error, that success would clear the very sentence the operator needs to read.
@@ -76,37 +81,21 @@ export function useSchedules(): UseSchedules {
     queryFn: ({ signal }) => listSchedules(signal),
   });
 
-  const [busy, setBusy] = React.useState(false);
-  const [writeError, setWriteError] = React.useState<string | null>(null);
-
   const refresh = React.useCallback(
     () => void queryClient.invalidateQueries({ queryKey: queryKeys.schedules }),
     [queryClient],
   );
 
   /**
-   * Run one write, holding `busy` and turning a rejection into `error`.
-   *
-   * Rejections are swallowed rather than rethrown because every caller is wired
-   * straight to an onClick — a rethrow would be an unhandled rejection, and the
-   * components read the outcome off `error` and the returned boolean.
+   * The pending settle refresh, so it can be cleared on unmount and so a second
+   * pause inside the window replaces the timer rather than stacking one.
    */
-  const run = React.useCallback(
-    async (action: () => Promise<void>): Promise<boolean> => {
-      setBusy(true);
-      setWriteError(null);
-      try {
-        await action();
-        return true;
-      } catch (cause) {
-        setWriteError(cause instanceof Error ? cause.message : String(cause));
-        return false;
-      } finally {
-        setBusy(false);
-        refresh();
-      }
+  const settleRef = React.useRef<number | null>(null);
+  React.useEffect(
+    () => () => {
+      if (settleRef.current !== null) window.clearTimeout(settleRef.current);
     },
-    [refresh],
+    [],
   );
 
   /**
@@ -116,58 +105,142 @@ export function useSchedules(): UseSchedules {
    * the write already returned 200 — this is a display lag, not an unconfirmed
    * write. A failure skips the flip and refreshes at once, so the row snaps back.
    */
-  const runPaused = React.useCallback(
-    async (id: string, paused: boolean, action: () => Promise<void>) => {
-      setBusy(true);
-      setWriteError(null);
-      try {
-        await action();
-        queryClient.setQueryData<ScheduleState[]>(
-          queryKeys.schedules,
-          (current) =>
-            current?.map((entry) =>
-              entry.id === id ? { ...entry, paused } : entry,
-            ),
-        );
-        window.setTimeout(refresh, PAUSE_SETTLE_MS);
-        return true;
-      } catch (cause) {
-        setWriteError(cause instanceof Error ? cause.message : String(cause));
+  const settlePaused = React.useCallback(
+    (id: string, paused: boolean) => {
+      queryClient.setQueryData<ScheduleState[]>(queryKeys.schedules, (current) =>
+        current?.map((entry) => (entry.id === id ? { ...entry, paused } : entry)),
+      );
+      if (settleRef.current !== null) window.clearTimeout(settleRef.current);
+      settleRef.current = window.setTimeout(() => {
+        settleRef.current = null;
         refresh();
-        return false;
-      } finally {
-        setBusy(false);
-      }
+      }, PAUSE_SETTLE_MS);
     },
     [queryClient, refresh],
   );
 
+  const createMutation = useMutation({
+    mutationFn: (draft: ScheduleDraft) => createSchedule(draft),
+    onSettled: refresh,
+  });
+  const removeMutation = useMutation({
+    mutationFn: (id: string) => deleteSchedule(id),
+    onSettled: refresh,
+  });
+  const pauseMutation = useMutation({
+    mutationFn: (id: string) => pauseSchedule(id),
+    onSuccess: (_result, id) => settlePaused(id, true),
+    onError: refresh,
+  });
+  const resumeMutation = useMutation({
+    mutationFn: (id: string) => resumeSchedule(id),
+    onSuccess: (_result, id) => settlePaused(id, false),
+    onError: refresh,
+  });
+
+  const { mutateAsync: createAsync } = createMutation;
+  const { mutateAsync: removeAsync } = removeMutation;
+  const { mutateAsync: pauseAsync } = pauseMutation;
+  const { mutateAsync: resumeAsync } = resumeMutation;
+
+  // Rejections are swallowed rather than rethrown because every caller is wired
+  // straight to an onClick — a rethrow would be an unhandled rejection, and the
+  // components read the outcome off `error` and the returned boolean.
   const create = React.useCallback(
-    (draft: ScheduleDraft) => run(() => createSchedule(draft)),
-    [run],
+    (draft: ScheduleDraft) => createAsync(draft).then(ok, no),
+    [createAsync],
   );
-  const pause = React.useCallback(
-    (id: string) => runPaused(id, true, () => pauseSchedule(id)),
-    [runPaused],
-  );
+  const pause = React.useCallback((id: string) => pauseAsync(id).then(ok, no), [pauseAsync]);
   const resume = React.useCallback(
-    (id: string) => runPaused(id, false, () => resumeSchedule(id)),
-    [runPaused],
+    (id: string) => resumeAsync(id).then(ok, no),
+    [resumeAsync],
   );
-  const remove = React.useCallback(
-    (id: string) => run(() => deleteSchedule(id)),
-    [run],
-  );
+  const remove = React.useCallback((id: string) => removeAsync(id).then(ok, no), [removeAsync]);
+
+  const write = writeState([createMutation, pauseMutation, resumeMutation, removeMutation]);
+  const { reset: resetCreate } = createMutation;
+  const { reset: resetPause } = pauseMutation;
+  const { reset: resetResume } = resumeMutation;
+  const { reset: resetRemove } = removeMutation;
+  const clearError = React.useCallback(() => {
+    resetCreate();
+    resetPause();
+    resetResume();
+    resetRemove();
+  }, [resetCreate, resetPause, resetResume, resetRemove]);
 
   return {
     schedules: query.data ?? [],
     status: query.isPending ? "loading" : query.isError ? "error" : "ok",
-    error: writeError ?? query.error?.message ?? null,
-    busy,
+    error: write.error ?? query.error?.message ?? null,
+    busy: write.busy,
     create,
     pause,
     resume,
     remove,
     refresh,
+    clearError,
   };
+}
+
+const ok = () => true;
+const no = () => false;
+
+export interface UseSchedule {
+  /** The schedule with its frozen steps, or null until the describe answers. */
+  schedule: ScheduleState | null;
+  status: SchedulesStatus;
+}
+
+/**
+ * One schedule, **including its frozen step list** — the per-row describe the
+ * list endpoint cannot afford (see lib/api/schedule.ts).
+ *
+ * Fetched on a deliberate gesture — the caller mounts this when the row is
+ * expanded — so the extra RPC is paid once, for the one schedule the operator
+ * asked about. Under its own key rather than the list's so that the list's
+ * refresh-on-every-write does not re-describe every open row.
+ */
+export function useSchedule(id: string): UseSchedule {
+  const query = useQuery({
+    queryKey: queryKeys.schedule(id),
+    queryFn: ({ signal }) => getSchedule(id, signal),
+  });
+
+  return {
+    schedule: query.data ?? null,
+    status: query.isPending ? "loading" : query.isError ? "error" : "ok",
+  };
+}
+
+export interface ScheduleTaskTemplateVariables {
+  templateId: string;
+  scheduleId: string;
+  trigger: ScheduleTrigger;
+}
+
+/**
+ * POST /api/v1/task_templates/{id}/schedule — freeze a template's current
+ * resolution into a schedule.
+ *
+ * A separate hook from useSchedules' `create`, because it is a different path
+ * on purpose: it re-resolves server-side, records the provenance in the
+ * schedule memo (so the row can later be told it has gone stale), and refuses
+ * an unattended run against another map or a deleted vertex. The list is
+ * re-read on success like every other schedule write. On a refusal the
+ * template library is re-read too — the reason is a `vertex_status` or a
+ * `map_matches_active` the rows may be showing stale.
+ */
+export function useScheduleTaskTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ templateId, scheduleId, trigger }: ScheduleTaskTemplateVariables) =>
+      scheduleTaskTemplate(templateId, scheduleId, trigger),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.schedules });
+    },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.taskTemplates });
+    },
+  });
 }

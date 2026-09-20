@@ -2,7 +2,7 @@
 
 import { RadarIcon } from "lucide-react";
 
-import { useConsoleRobotState } from "@/components/console/robot-state-context";
+import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { PointCloudView } from "@/components/dashboard/pointcloud-view";
 import { TelemetryRail } from "@/components/dashboard/telemetry-rail";
 import { cn } from "@/lib/utils";
@@ -50,8 +50,13 @@ export default function DashboardPage() {
 }
 
 /**
- * No-telemetry state. It names the endpoint and the node, because the fix is
- * always on the robot side — the console has nothing to retry.
+ * No-telemetry state.
+ *
+ * Written for whoever is standing in front of the robot, because that is where
+ * the fix is — the console has nothing to retry. It names things the reader can
+ * check without opening a terminal: power, network, and whether the robot has
+ * finished starting. The endpoint and the service name used to be printed here
+ * and are deliberately gone; they told a customer nothing they could act on.
  */
 function AwaitingTelemetry({ connecting }: { connecting: boolean }) {
   return (
@@ -69,19 +74,17 @@ function AwaitingTelemetry({ connecting }: { connecting: boolean }) {
           )}
         />
         <h1 className="instrument-label mt-4 text-muted-foreground">
-          {connecting ? "Linking" : "No telemetry"}
+          {connecting ? "Connecting" : "No signal from the robot"}
         </h1>
         <p className="mt-2 text-sm text-foreground">
           {connecting
-            ? "Waiting for the first state frame."
-            : "The robot has not published a state frame yet."}
-        </p>
-        <p className="readout mt-3 text-xs text-muted-foreground">
-          GET /api/v1/robot/state
+            ? "Waiting for the robot to report in."
+            : "This console cannot reach the robot."}
         </p>
         {!connecting && (
-          <p className="mt-1 text-xs text-muted-foreground">
-            Check that syncai_robot_state is running on the robot.
+          <p className="mt-3 text-xs text-muted-foreground">
+            Check that the robot is powered on, has finished starting up, and is
+            on the same network as this computer.
           </p>
         )}
       </div>

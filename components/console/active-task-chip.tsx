@@ -1,7 +1,7 @@
 "use client";
 
 import { Chip } from "@/components/console/instrument";
-import { useConsoleActiveTasks } from "@/components/console/active-task-context";
+import { useConsoleActiveTasks } from "@/hooks/use-console-active-tasks";
 import { STATUS_TONE } from "@/components/console/task-chip";
 
 /**
@@ -34,7 +34,7 @@ export function ActiveTaskChip() {
     return (
       <Chip
         tone="caution"
-        title="The orchestrator could not be reached. This is the last state the console knew about, not a current reading."
+        title="The robot's job scheduler could not be reached. This is the last status the console saw, not a current reading."
       >
         TASK ?
       </Chip>

@@ -3,12 +3,10 @@
 import * as React from "react";
 
 import { Chip } from "@/components/console/instrument";
-import { getSchedule } from "@/lib/api/schedule";
-import { toDispatchSteps, type TaskTemplate } from "@/lib/api/task-template";
+import { useSchedule } from "@/hooks/use-schedules";
+import type { TaskTemplate } from "@/lib/api/task-template";
 import type { TaskStepRequest } from "@/lib/api/task";
-import { stepGlyph } from "@/lib/task/step";
-
-type Status = "loading" | "ok" | "error";
+import { stepGlyph, toDispatchSteps } from "@/lib/task/step";
 
 export interface ScheduleStepsProps {
   scheduleId: string;
@@ -19,11 +17,12 @@ export interface ScheduleStepsProps {
 /**
  * A registered schedule's frozen step list, fetched when the row is expanded.
  *
- * Its own fetch rather than data threaded down from `useSchedules`, because the
- * collection endpoint cannot carry steps at all: a Temporal schedule *list*
- * element holds only the workflow type name, so the args have to come from a
- * per-schedule `describe`. Paying that on expansion means one RPC for the one
- * schedule the operator opened, instead of N on every first paint.
+ * Its own query (useSchedule) rather than data threaded down from
+ * `useSchedules`, because the collection endpoint cannot carry steps at all: a
+ * Temporal schedule *list* element holds only the workflow type name, so the
+ * args have to come from a per-schedule `describe`. Paying that on expansion
+ * means one RPC for the one schedule the operator opened, instead of N on every
+ * first paint.
  *
  * When the schedule came from a template that is still in the library, the
  * frozen steps are diffed against that template's *current* resolution. That is the
@@ -32,28 +31,8 @@ export interface ScheduleStepsProps {
  * them, so a vertex moved after registration never reaches a scheduled run.
  */
 export function ScheduleSteps({ scheduleId, source }: ScheduleStepsProps) {
-  const [steps, setSteps] = React.useState<TaskStepRequest[] | null>(null);
-  const [status, setStatus] = React.useState<Status>("loading");
-
-  React.useEffect(() => {
-    let active = true;
-    const abort = new AbortController();
-
-    getSchedule(scheduleId, abort.signal)
-      .then((state) => {
-        if (!active) return;
-        setSteps(state.steps ?? []);
-        setStatus("ok");
-      })
-      .catch(() => {
-        if (active && !abort.signal.aborted) setStatus("error");
-      });
-
-    return () => {
-      active = false;
-      abort.abort();
-    };
-  }, [scheduleId]);
+  const { schedule, status } = useSchedule(scheduleId);
+  const steps: TaskStepRequest[] | null = schedule ? (schedule.steps ?? []) : null;
 
   if (status === "loading") {
     return <Line>Reading the frozen steps…</Line>;

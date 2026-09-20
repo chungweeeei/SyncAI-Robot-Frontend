@@ -4,7 +4,7 @@ import * as React from "react";
 import { SaveIcon } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
-import { TASK_TEMPLATE_NAME_MAX } from "@/lib/api/task-template";
+import { TASK_TEMPLATE_NAME_MAX } from "@/lib/task/template";
 
 export interface SaveGroupProps {
   /** The template currently loaded in the editor, or null when authoring fresh. */

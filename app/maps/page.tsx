@@ -1,6 +1,6 @@
 "use client";
 
-import { useConsoleRobotState } from "@/components/console/robot-state-context";
+import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { MapLibrary } from "@/components/maps/map-library";
 
 export default function MapsPage() {
@@ -14,12 +14,12 @@ export default function MapsPage() {
           <p className="instrument-label text-muted-foreground">Robot</p>
           <h1 className="mt-1.5 text-xl font-semibold tracking-tight">Maps</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Maps saved on{" "}
-            <span className="readout">{state?.robot_id ?? "this robot"}</span>.
-            The one in use is marked; switching to another re-points the running
-            stack and survives a restart, but resets the robot&apos;s pose — set
-            an initial pose on the dashboard afterwards. The map in use is the
-            one map you cannot rename or delete here.
+            Areas{" "}
+            <span className="readout">{state?.robot_id ?? "this robot"}</span>{" "}
+            can work in. The one it is using now is marked. Switching to another
+            takes effect straight away and is remembered after a restart, but
+            the robot loses track of where it is — set its position on the
+            Dashboard afterwards. The map in use cannot be renamed or deleted.
           </p>
         </header>
 

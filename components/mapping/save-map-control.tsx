@@ -3,14 +3,13 @@
 import * as React from "react";
 import Link from "next/link";
 import { SaveIcon } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 
 import { InstrumentGroup } from "@/components/console/instrument";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useSaveMap } from "@/hooks/use-mapping-run";
 import { useMapConversion } from "@/hooks/use-maps";
-import { MAP_NAME_RE, saveMap } from "@/lib/api/mapping";
-import { queryKeys } from "@/lib/api/query-keys";
+import { MAP_NAME_RE } from "@/lib/map/name";
 import type { MapSummary } from "@/lib/types/map";
 
 /**
@@ -35,13 +34,13 @@ function ConversionLine({ map }: { map: MapSummary | null }) {
     case "converting":
       return (
         <p className="text-[11px] leading-snug text-signal-active">
-          Building the 2D grid…
+          Building the floor plan…
         </p>
       );
     case "ok":
       return (
         <p className="text-[11px] leading-snug text-signal-live">
-          2D grid ready — the map is loadable.{" "}
+          Floor plan ready — this map is ready to use.{" "}
           <Link href="/maps" className="underline underline-offset-2">
             Open the map library
           </Link>
@@ -54,16 +53,16 @@ function ConversionLine({ map }: { map: MapSummary | null }) {
       // or go and look at the cloud.
       return (
         <p className="text-[11px] leading-snug text-signal-warn">
-          The 2D grid failed to build:{" "}
-          {map.grid_error ?? "the robot did not record a reason"}. The cloud is
-          saved — rebuild the grid from the map library.
+          The floor plan could not be built:{" "}
+          {map.grid_error ?? "the robot did not record a reason"}. The scan is
+          saved — rebuild the floor plan from the map library.
         </p>
       );
     case "interrupted":
       return (
         <p className="text-[11px] leading-snug text-signal-caution">
-          The 2D grid was not finished — the backend stopped mid-conversion.
-          The cloud is saved; rebuild the grid from the map library.
+          The floor plan was not finished — the robot restarted partway through.
+          The scan is saved; rebuild the floor plan from the map library.
         </p>
       );
     default:
@@ -96,47 +95,34 @@ export function SaveMapControl({
   enabled: boolean;
   onSaved: () => void;
 }) {
-  const queryClient = useQueryClient();
+  const save = useSaveMap();
   const [name, setName] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [saved, setSaved] = React.useState<string | null>(null);
-  // The map whose conversion this screen is following. Held rather than derived
-  // because "the one I just saved" is not something the catalogue can be asked:
+
+  const busy = save.isPending;
+  const saved = save.data?.message ?? null;
+  // 409 (name taken), pgo's "NO POSES!", the wrong-mode 502 — all arrive as
+  // the backend's own sentence, written to be shown.
+  const error = save.error?.message ?? null;
+  // The map whose conversion this screen is following, read off the last save:
+  // "the one I just saved" is not something the catalogue can be asked, since
   // it lists every map on the robot and says nothing about which one is this
-  // operator's. Null until a save succeeds, which is also what keeps the
-  // mapping screen from fetching the catalogue it otherwise has no use for.
-  const [watching, setWatching] = React.useState<string | null>(null);
+  // operator's. Only when the backend says a conversion started — for
+  // grid_pending false there is nothing running to watch, and the line would
+  // sit on "none" saying nothing. Null until then, which is also what keeps the
+  // mapping screen from fetching a catalogue it otherwise has no use for.
+  const watching = save.data?.grid_pending ? save.data.name : null;
 
   const converting = useMapConversion(watching);
   const valid = MAP_NAME_RE.test(name);
 
-  const save = React.useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    setSaved(null);
-    setWatching(null);
-    try {
-      const result = await saveMap(name);
-      setSaved(result.message);
-      setName("");
-      // Only when the backend says a conversion started. For grid_pending
-      // false there is nothing running to watch, and the line would sit on
-      // "none" saying nothing.
-      if (result.grid_pending) setWatching(result.name);
-      onSaved();
-      // The Maps screen's card list is fed by this key; invalidating is what
-      // makes the new map appear there without a manual refresh, and what gets
-      // the conversion line its first reading here.
-      void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
-    } catch (cause) {
-      // 409 (name taken), pgo's "NO POSES!", the wrong-mode 502 — all arrive
-      // as the backend's own sentence, written to be shown.
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }, [name, onSaved, queryClient]);
+  const submit = () => {
+    save.mutate(name, {
+      onSuccess: () => {
+        setName("");
+        onSaved();
+      },
+    });
+  };
 
   return (
     <InstrumentGroup
@@ -152,7 +138,7 @@ export function SaveMapControl({
         // row is expected to do.
         onSubmit={(event) => {
           event.preventDefault();
-          if (enabled && valid && !busy) void save();
+          if (enabled && valid && !busy) submit();
         }}
         className="flex items-center gap-2"
       >

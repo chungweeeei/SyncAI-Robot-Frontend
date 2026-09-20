@@ -2,9 +2,8 @@
 
 import * as React from "react";
 
-import { useActiveTasks, type UseActiveTasks } from "@/hooks/use-active-tasks";
-
-const ActiveTaskContext = React.createContext<UseActiveTasks | null>(null);
+import { ActiveTaskContext } from "@/hooks/use-console-active-tasks";
+import { useActiveTasks } from "@/hooks/use-active-tasks";
 
 /**
  * Holds the console's single GET /api/v1/active_tasks poll, mounted once in the
@@ -22,6 +21,9 @@ const ActiveTaskContext = React.createContext<UseActiveTasks | null>(null);
  * state 404s until the robot has localized, while this only fails when Temporal
  * is unreachable. One shared `status` would have to stand for two unrelated
  * links, and the operator would not be able to tell which one broke.
+ *
+ * The context and its accessor live in hooks/use-console-active-tasks.ts; see
+ * RobotStateProvider for why the two halves sit in different directories.
  */
 export function ActiveTaskProvider({
   children,
@@ -35,14 +37,4 @@ export function ActiveTaskProvider({
       {children}
     </ActiveTaskContext.Provider>
   );
-}
-
-export function useConsoleActiveTasks(): UseActiveTasks {
-  const value = React.useContext(ActiveTaskContext);
-  if (!value) {
-    throw new Error(
-      "useConsoleActiveTasks must be used inside <ActiveTaskProvider>.",
-    );
-  }
-  return value;
 }

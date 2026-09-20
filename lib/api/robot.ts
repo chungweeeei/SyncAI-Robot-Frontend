@@ -3,8 +3,26 @@
 
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
-import { normalizeTheta } from "@/lib/api/task";
-import type { PlanarPose } from "@/lib/types/robot";
+import { normalizeTheta } from "@/lib/angle";
+import { RobotStateSchema } from "@/lib/types/robot";
+import type { PlanarPose, RobotState } from "@/lib/types/robot";
+
+/**
+ * The console's 1 Hz snapshot of the machine: mode, pose, battery, network,
+ * motor health.
+ *
+ * Answers 404 until the robot has published a first state frame, which
+ * useRobotState surfaces as an error with the last good frame still on screen.
+ * Not a source of motion — the timestamp has whole-second resolution and this
+ * is a frozen third-party contract, so the 3D viewer reads the telemetry
+ * WebSocket instead.
+ */
+export function fetchRobotState(signal?: AbortSignal): Promise<RobotState> {
+  return requestJson<RobotState>(apiUrl("/api/v1/robot/state"), {
+    signal,
+    schema: RobotStateSchema,
+  });
+}
 
 /**
  * Seed localization with an operator-supplied pose (RViz's "2D Pose Estimate").

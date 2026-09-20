@@ -11,7 +11,7 @@ import type { SwitchableMode } from "@/lib/api/mapping";
 
 const MODES: readonly { value: SwitchableMode; label: string }[] = [
   { value: "MANUAL", label: "Mapping" },
-  { value: "AUTO", label: "Nav" },
+  { value: "AUTO", label: "Navigation" },
 ];
 
 /**
@@ -51,8 +51,8 @@ export function ModeControl({
       action={pending ? <Chip tone="caution">Switching</Chip> : undefined}
       caption={
         pending
-          ? "The robot's stack is rebuilding. The console loses its link for a while and reconnects on its own."
-          : "Switching rebuilds the robot's stack; the console drops its link for ~30 s."
+          ? "The robot is restarting its software. This console loses contact for a while and reconnects on its own."
+          : "Switching restarts the robot's software. This console loses contact for about 30 seconds."
       }
     >
       <div>

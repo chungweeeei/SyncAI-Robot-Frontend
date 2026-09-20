@@ -58,13 +58,6 @@ export interface SaveMapResult {
 }
 
 /**
- * Mirrors the backend catalogue's name rule, so the Save button can refuse a
- * bad name before a request goes out. The server still validates — this is a
- * convenience, not the boundary.
- */
-export const MAP_NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
-
-/**
  * Save the current mapping run as `map/<name>/` on the robot.
  *
  * Only meaningful in MANUAL mode: pgo is the sole holder of the run's
