@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
+import { useMutation } from "@tanstack/react-query";
 
 import { useTaskTracker } from "@/hooks/use-task-tracker";
+import { ignore } from "@/lib/api/mutation-state";
 import { sendPostureTask, type Posture, type TaskStatus } from "@/lib/api/task";
 
 export interface PostureControl {
@@ -31,40 +33,45 @@ export interface PostureControl {
  * cannot do. Sending the opposite posture is the way back.
  */
 export function usePosture(robotId: string): PostureControl {
-  const [sent, setSent] = React.useState<Posture | null>(null);
-  const [busy, setBusy] = React.useState(false);
   const task = useTaskTracker();
+  const { track, reset } = task;
 
-  const { track, setError, reset } = task;
+  const submit = useMutation({
+    mutationFn: (posture: Posture) => sendPostureTask(robotId, posture),
+    // Before the request, not after it: `sent` names the new command as soon as
+    // it goes out, and the previous one's step failure under that name would
+    // read as this command's. The buttons are gated on `running`, so there is
+    // never a live poll to fight over the slot.
+    onMutate: () => reset(),
+    onSuccess: (id) => track(id),
+  });
+
+  const { mutateAsync: submitAsync, reset: resetSubmit } = submit;
 
   const send = React.useCallback(
     async (posture: Posture) => {
-      setBusy(true);
-      setError(null);
-      setSent(posture);
-      try {
-        track(await sendPostureTask(robotId, posture));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setBusy(false);
-      }
+      // Swallowed because the button is wired straight to this; the failure is
+      // on `error`.
+      await submitAsync(posture).catch(ignore);
     },
-    [robotId, track, setError],
+    [submitAsync],
   );
 
   const clear = React.useCallback(() => {
-    setSent(null);
+    resetSubmit();
     reset();
-  }, [reset]);
+  }, [reset, resetSubmit]);
 
   return {
     send,
-    sent,
+    // The mutation's own variables, which is what "the command being tracked"
+    // has always meant here: it is set the moment the request goes out, so a
+    // posture that failed to submit is still the one named beside the error.
+    sent: submit.variables ?? null,
     taskStatus: task.taskStatus,
     running: task.running,
-    busy,
-    error: task.error,
+    busy: submit.isPending,
+    error: submit.error?.message ?? task.error,
     clear,
   };
 }

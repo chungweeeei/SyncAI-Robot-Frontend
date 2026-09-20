@@ -1,11 +1,13 @@
 "use client";
 
 import * as React from "react";
+import { useMutation } from "@tanstack/react-query";
 
 import { useTaskTracker } from "@/hooks/use-task-tracker";
+import { normalizeTheta } from "@/lib/angle";
+import { ignore } from "@/lib/api/mutation-state";
 import {
   cancelTask,
-  normalizeTheta,
   sendMoveTask,
   type GoalPose,
   type TaskStatus,
@@ -60,13 +62,38 @@ export interface GoalTask {
  * an initial-pose estimate are two things one drag gesture can produce, and only
  * one of them can be armed at a time. The view owns that single pick mode (see
  * PointCloudView) and hands the finished pose to whichever flow asked for it.
+ *
+ * Two mutations and a tracker: the requests own their own in-flight and failure
+ * state, useTaskTracker owns everything about the task once it has an id.
+ *
+ * Their three error slots are read in a deliberate order. A failed submit wins
+ * because there is then no task to report on at all. The *task's* own failure
+ * comes next and outranks a failed cancel: "navigation aborted" is what
+ * actually stopped the robot, and a cancel that was refused because the
+ * workflow had already closed must not stand in front of the reason it closed.
  */
 export function useGoalTask(robotId: string): GoalTask {
   const [goal, setGoal] = React.useState<GoalPose | null>(null);
-  const [busy, setBusy] = React.useState(false);
   const task = useTaskTracker();
 
-  const { track, setError, reset, taskId } = task;
+  const { track, reset, taskId } = task;
+
+  const submit = useMutation({
+    mutationFn: (staged: GoalPose) => sendMoveTask(robotId, staged),
+    // Before the request, not after it: the panel shows the new coordinates
+    // the moment the drag is released, and the last run's step failure sitting
+    // under them would read as this goal's. The button that got here is gated
+    // on `running`, so there is never a live poll to fight over the slot.
+    onMutate: () => reset(),
+    onSuccess: (id) => track(id),
+  });
+
+  const cancelRun = useMutation({
+    mutationFn: (id: string) => cancelTask(id),
+  });
+
+  const { mutateAsync: submitAsync, reset: resetSubmit } = submit;
+  const { mutateAsync: cancelAsync, reset: resetCancel } = cancelRun;
 
   const sendGoal = React.useCallback(
     async (next: GoalPose) => {
@@ -75,19 +102,18 @@ export function useGoalTask(robotId: string): GoalTask {
       // with the dispatched task about would be a lie about a moving robot.
       const staged = { ...next, theta: normalizeTheta(next.theta) };
       setGoal(staged);
-      setBusy(true);
-      setError(null);
-      try {
-        // `staged`, not the `goal` state — setState is not visible until the
-        // next render, so reading it back here would submit the previous goal.
-        track(await sendMoveTask(robotId, staged));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setBusy(false);
-      }
+      // The last cancel's refusal was about a task that is over; a new dispatch
+      // is not the place to keep reading it. A previous *submit* failure needs
+      // no such call — going pending drops it, and the tracker's is cleared by
+      // this mutation's onMutate.
+      resetCancel();
+      // `staged`, not the `goal` state — setState is not visible until the next
+      // render, so reading it back here would submit the previous goal. The
+      // rejection is swallowed because callers are wired straight to a pointer
+      // handler; the failure is on `error`.
+      await submitAsync(staged).catch(ignore);
     },
-    [robotId, track, setError],
+    [submitAsync, resetCancel],
   );
 
   const send = React.useCallback(async () => {
@@ -97,29 +123,25 @@ export function useGoalTask(robotId: string): GoalTask {
 
   const cancel = React.useCallback(async () => {
     if (!taskId) return;
-    setBusy(true);
-    try {
-      await cancelTask(taskId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }, [taskId, setError]);
+    await cancelAsync(taskId).catch(ignore);
+  }, [taskId, cancelAsync]);
 
   const clear = React.useCallback(() => {
     // The goal marker goes with the status: both describe the same finished
-    // task, so leaving one on the map without the other is a lie.
+    // task, so leaving one on the map without the other is a lie. The two
+    // mutations go with them — their errors describe the same finished task.
     setGoal(null);
     reset();
-  }, [reset]);
+    resetSubmit();
+    resetCancel();
+  }, [reset, resetSubmit, resetCancel]);
 
   return {
     goal,
     taskStatus: task.taskStatus,
     running: task.running,
-    busy,
-    error: task.error,
+    busy: submit.isPending || cancelRun.isPending,
+    error: submit.error?.message ?? task.error ?? cancelRun.error?.message ?? null,
     cancelable: task.cancelable,
     send,
     sendGoal,

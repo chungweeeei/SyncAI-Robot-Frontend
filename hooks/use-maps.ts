@@ -44,8 +44,9 @@ export interface UseMaps {
    */
   status: MapsStatus;
   /**
-   * Re-fetch. The rename and delete controls invalidate this key directly
-   * rather than call it; this is for a caller holding the hook's result.
+   * Re-fetch. The map write hooks (hooks/use-map-actions.ts) invalidate this
+   * key themselves rather than call it; this is for a caller holding the
+   * hook's result.
    */
   refresh: () => void;
 }

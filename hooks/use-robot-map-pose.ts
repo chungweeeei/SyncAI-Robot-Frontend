@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { useConsoleRobotState } from "@/components/console/robot-state-context";
+import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { useActiveMap } from "@/hooks/use-maps";
 import type { PlanarPose } from "@/lib/types/robot";
 
@@ -61,12 +61,12 @@ export function useRobotMapPose(name: string): UseRobotMapPose {
       };
     }
     if (!hasState) {
-      return { pose: null, reason: "No robot state yet." };
+      return { pose: null, reason: "No signal from the robot yet." };
     }
     if (!valid) {
       // The pose fields are a zeroed placeholder in this case, not a stale
       // reading — see RobotState.localization_valid.
-      return { pose: null, reason: "The robot is not localized yet." };
+      return { pose: null, reason: "The robot does not know where it is yet." };
     }
     return { pose: { x, y, theta }, reason: null };
   }, [mapsStatus, activeName, name, hasState, valid, x, y, theta]);

@@ -1,8 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { apiUrl } from "@/lib/api/config";
-import { requestJson } from "@/lib/api/http";
 import { queryKeys } from "@/lib/api/query-keys";
+import { fetchRobotState } from "@/lib/api/robot";
 import type { RobotState } from "@/lib/types/robot";
 
 // The upstream detailed topic runs at 10 Hz, but RobotState.timestamp has only
@@ -44,8 +43,7 @@ export interface UseRobotState {
 export function useRobotState(pollMs: number = DEFAULT_POLL_MS): UseRobotState {
   const { data, dataUpdatedAt, isPending, isError } = useQuery({
     queryKey: queryKeys.robotState,
-    queryFn: ({ signal }) =>
-      requestJson<RobotState>(apiUrl("/api/v1/robot/state"), { signal }),
+    queryFn: ({ signal }) => fetchRobotState(signal),
     refetchInterval: pollMs,
   });
 

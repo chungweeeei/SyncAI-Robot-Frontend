@@ -1,6 +1,7 @@
 import * as React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { writeState } from "@/lib/api/mutation-state";
 import { queryKeys } from "@/lib/api/query-keys";
 import {
   createVertex,
@@ -46,6 +47,15 @@ export interface UseMapVertices {
  * its own key and cannot patch the list now on screen), and it is shared with
  * useActiveMapVertices, so an edit made here is already current on the
  * dashboard — see lib/api/query-keys.ts.
+ *
+ * The three writes are TanStack mutations whose hook-level `onSuccess` splices
+ * the cache (the response *is* the stored row, so a GET would cost a round trip
+ * to learn nothing) and marks the two other keys a vertex change touches: the
+ * catalogue's `vertex_count`, and the task templates whose MOVE steps resolve
+ * against this vertex's pose. `create`/`update`/`remove` swallow the rejection
+ * and return null/false because every caller is wired straight to an onClick —
+ * a rethrow would be an unhandled rejection, and the panel reads the outcome
+ * off `error` and the returned value.
  */
 export function useMapVertices(name: string): UseMapVertices {
   const queryClient = useQueryClient();
@@ -53,9 +63,6 @@ export function useMapVertices(name: string): UseMapVertices {
     queryKey: queryKeys.mapVertices(name),
     queryFn: ({ signal }) => listVertices(name, signal),
   });
-
-  const [writeError, setWriteError] = React.useState<string | null>(null);
-  const [busy, setBusy] = React.useState(false);
 
   /** Rewrite this map's cached list; a no-op until the load has answered. */
   const setVertices = React.useCallback(
@@ -68,73 +75,82 @@ export function useMapVertices(name: string): UseMapVertices {
     [queryClient, name],
   );
 
-  /**
-   * Run one write, holding `busy` and turning a rejection into `error`.
-   *
-   * Rejections are swallowed rather than rethrown because every caller is wired
-   * straight to an onClick — a rethrow would be an unhandled rejection, and the
-   * panel already reads the outcome off `error` and the returned value.
-   */
-  const run = React.useCallback(async <T,>(action: () => Promise<T>): Promise<T | null> => {
-    setBusy(true);
-    setWriteError(null);
-    try {
-      return await action();
-    } catch (cause) {
-      setWriteError(cause instanceof Error ? cause.message : String(cause));
-      return null;
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+  const touchDependents = React.useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.taskTemplates });
+  }, [queryClient]);
+
+  const createMutation = useMutation({
+    mutationFn: (draft: VertexDraft) => createVertex(name, draft),
+    onSuccess: (created) => {
+      setVertices((current) => [...current, created]);
+      touchDependents();
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, changes }: { id: string; changes: VertexChanges }) =>
+      updateVertex(name, id, changes),
+    onSuccess: (updated, { id }) => {
+      setVertices((current) =>
+        current.map((vertex) => (vertex.id === id ? updated : vertex)),
+      );
+      touchDependents();
+    },
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (id: string) => deleteVertex(name, id),
+    onSuccess: (_result, id) => {
+      setVertices((current) => current.filter((vertex) => vertex.id !== id));
+      touchDependents();
+    },
+  });
+
+  const { mutateAsync: createAsync } = createMutation;
+  const { mutateAsync: updateAsync } = updateMutation;
+  const { mutateAsync: removeAsync } = removeMutation;
 
   const create = React.useCallback(
-    async (draft: VertexDraft) => {
-      const created = await run(() => createVertex(name, draft));
-      // Appended rather than refetching the list: the response *is* the row the
-      // server stored, so a GET would cost a round trip to learn nothing.
-      if (created) setVertices((current) => [...current, created]);
-      return created;
-    },
-    [name, run, setVertices],
+    (draft: VertexDraft) => createAsync(draft).catch(() => null),
+    [createAsync],
   );
-
   const update = React.useCallback(
-    async (id: string, changes: VertexChanges) => {
-      const updated = await run(() => updateVertex(name, id, changes));
-      if (updated) {
-        setVertices((current) =>
-          current.map((vertex) => (vertex.id === id ? updated : vertex)),
-        );
-      }
-      return updated;
-    },
-    [name, run, setVertices],
+    (id: string, changes: VertexChanges) =>
+      updateAsync({ id, changes }).catch(() => null),
+    [updateAsync],
   );
-
   const remove = React.useCallback(
-    async (id: string) => {
-      const done = await run(async () => {
-        await deleteVertex(name, id);
-        return true as const;
-      });
-      if (done) setVertices((current) => current.filter((vertex) => vertex.id !== id));
-      return done === true;
-    },
-    [name, run, setVertices],
+    (id: string) =>
+      removeAsync(id).then(
+        () => true,
+        () => false,
+      ),
+    [removeAsync],
   );
 
-  const clearError = React.useCallback(() => setWriteError(null), []);
+  const write = writeState([createMutation, updateMutation, removeMutation]);
+  // `reset` is bound once per mutation observer, so this identity is stable —
+  // which the editor relies on: it sits in the deps of callbacks handed to the
+  // memoized GridCanvas.
+  const { reset: resetCreate } = createMutation;
+  const { reset: resetUpdate } = updateMutation;
+  const { reset: resetRemove } = removeMutation;
+  const clearError = React.useCallback(() => {
+    resetCreate();
+    resetUpdate();
+    resetRemove();
+  }, [resetCreate, resetUpdate, resetRemove]);
 
   return {
     vertices: query.data ?? [],
     status: query.isPending ? "loading" : query.isError ? "error" : "ok",
     // Shared slot preserved from before the migration: the panel has exactly
     // one place to put a sentence, and the two cases are never live at once (a
-    // map whose list failed to load has no vertices to edit). The load half now
+    // map whose list failed to load has no vertices to edit). The load half
     // clears itself — a successful refetch resets the query's error.
-    error: writeError ?? query.error?.message ?? null,
-    busy,
+    error: write.error ?? query.error?.message ?? null,
+    busy: write.busy,
     create,
     update,
     remove,

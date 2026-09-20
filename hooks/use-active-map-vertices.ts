@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useActiveMap } from "@/hooks/use-maps";
 import { queryKeys } from "@/lib/api/query-keys";
@@ -76,45 +76,42 @@ export function useActiveMapVertices(): UseActiveMapVertices {
     select: sortByName,
   });
 
-  const [busy, setBusy] = React.useState(false);
-  const [writeError, setWriteError] = React.useState<string | null>(null);
+  // The map name travels in the variables rather than being read from the
+  // closure: a write that lands after the active map changed must patch the
+  // list it was made against — the keyed cache is the old `loaded.name === name`
+  // guard, and it only works if the key is the one the request used.
+  const move = useMutation({
+    mutationFn: ({ map, id, pose }: { map: string; id: string; pose: PlanarPose }) =>
+      updateVertex(map, id, { x: pose.x, y: pose.y, theta: pose.theta }),
+    onSuccess: (updated, { map, id }) => {
+      // Patched into the cache from the row the server echoes back, for the
+      // same reason useMapVertices splices: the response *is* the stored row,
+      // so a GET would cost a round trip to learn nothing.
+      queryClient.setQueryData<MapVertex[]>(
+        queryKeys.mapVertices(map),
+        (current) =>
+          current?.map((vertex) => (vertex.id === id ? updated : vertex)),
+      );
+      // Every template with a MOVE step on this vertex now resolves to the new
+      // pose server-side; the library's rows say so once re-read.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.taskTemplates });
+    },
+  });
+
+  const { mutateAsync: moveAsync, reset: resetMove } = move;
 
   const moveVertex = React.useCallback(
-    async (id: string, pose: PlanarPose) => {
-      if (!name) return false;
-      setBusy(true);
-      setWriteError(null);
-      try {
-        const updated = await updateVertex(name, id, {
-          x: pose.x,
-          y: pose.y,
-          theta: pose.theta,
-        });
-        // Patched into the cache from the row the server echoes back, for the
-        // same reason useMapVertices splices: the response *is* the stored row,
-        // so a GET would cost a round trip to learn nothing. Written under the
-        // name the request was made against, so a write that lands after the
-        // active map changed patches the list it belongs to — the keyed cache
-        // is the old `loaded.name === name` guard.
-        queryClient.setQueryData<MapVertex[]>(
-          queryKeys.mapVertices(name),
-          (current) =>
-            current?.map((vertex) => (vertex.id === id ? updated : vertex)),
-        );
-        return true;
-      } catch (cause) {
-        setWriteError(
-          cause instanceof Error ? cause.message : "Failed to move the vertex.",
-        );
-        return false;
-      } finally {
-        setBusy(false);
-      }
+    (id: string, pose: PlanarPose) => {
+      if (!name) return Promise.resolve(false);
+      return moveAsync({ map: name, id, pose }).then(
+        () => true,
+        () => false,
+      );
     },
-    [name, queryClient],
+    [name, moveAsync],
   );
 
-  const clearWriteError = React.useCallback(() => setWriteError(null), []);
+  const clearWriteError = React.useCallback(() => resetMove(), [resetMove]);
 
   const status: ActiveVerticesStatus =
     mapsStatus === "loading"
@@ -133,8 +130,8 @@ export function useActiveMapVertices(): UseActiveMapVertices {
     mapName: name,
     vertices: query.data ?? [],
     status,
-    busy,
-    writeError,
+    busy: move.isPending,
+    writeError: move.error?.message ?? null,
     moveVertex,
     clearWriteError,
   };

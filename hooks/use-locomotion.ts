@@ -1,7 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { useMutation } from "@tanstack/react-query";
 
+import { ignore, writeState } from "@/lib/api/mutation-state";
 import {
   setMotionKey,
   setPolicyMode,
@@ -89,8 +91,6 @@ export function useLocomotion(
 ): LocomotionControl {
   const [controller, setController] = React.useState<Controller>("RL");
   const [requestedPolicy, setRequestedPolicy] = React.useState<Policy | null>(null);
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
 
   const reportedPolicy = reported
     ? REPORTED_POLICY[reported.policy] ?? null
@@ -101,47 +101,57 @@ export function useLocomotion(
   const pendingPolicy =
     requestedPolicy && requestedPolicy !== reportedPolicy ? requestedPolicy : null;
 
-  const selectController = React.useCallback(async (next: Controller) => {
-    setBusy(true);
-    setError(null);
-    try {
+  const controllerRequest = useMutation({
+    mutationFn: async (next: Controller) => {
       const result = await setMotionKey(CONTROLLER_KEY[next]);
       // `sent` is always true for these two keys -- only "4" is refused -- but
       // honouring it means a future backend that declines something else cannot
-      // leave this control claiming a switch that never left the process.
-      if (!result.sent) {
-        setError(result.message);
-        return;
-      }
-      setController(next);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+      // leave this control claiming a switch that never left the process. Thrown
+      // rather than returned as a flag, so a refusal lands in `error` by the same
+      // route an HTTP failure does.
+      if (!result.sent) throw new Error(result.message);
+      return next;
+    },
+    onSuccess: (next) => setController(next),
+  });
 
-  const selectPolicy = React.useCallback(async (next: Policy) => {
-    setBusy(true);
-    setError(null);
-    try {
+  const policyRequest = useMutation({
+    mutationFn: async (next: Policy) => {
       await setPolicyMode(POLICY_MODE[next]);
-      // Records the request only. What gets lit is still driven by the report;
-      // this just keeps the click visible across the 1 Hz poll gap.
-      setRequestedPolicy(next);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+      return next;
+    },
+    // Records the request only. What gets lit is still driven by the report;
+    // this just keeps the click visible across the 1 Hz poll gap.
+    onSuccess: (next) => setRequestedPolicy(next),
+  });
+
+  const { mutateAsync: requestController } = controllerRequest;
+  const { mutateAsync: requestPolicy } = policyRequest;
+
+  const selectController = React.useCallback(
+    async (next: Controller) => {
+      await requestController(next).catch(ignore);
+    },
+    [requestController],
+  );
+
+  const selectPolicy = React.useCallback(
+    async (next: Policy) => {
+      await requestPolicy(next).catch(ignore);
+    },
+    [requestPolicy],
+  );
+
+  // One busy flag and one error line for two segmented rows that are never
+  // pressed at once — the same fold the list hooks make.
+  const write = writeState([controllerRequest, policyRequest]);
 
   return {
     controller,
     policy: pendingPolicy ?? reportedPolicy,
     pendingPolicy,
-    busy,
-    error,
+    busy: write.busy,
+    error: write.error,
     selectController,
     selectPolicy,
   };

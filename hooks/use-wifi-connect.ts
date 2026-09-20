@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { useMutation } from "@tanstack/react-query";
 
-import { useConsoleRobotState } from "@/components/console/robot-state-context";
+import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { connectWifi } from "@/lib/api/network";
 import type { RobotNetworkStatus } from "@/lib/types/robot";
 
@@ -49,9 +50,6 @@ export interface WifiConnect {
 export function useWifiConnect(): WifiConnect {
   const { state, status } = useConsoleRobotState();
   const [requested, setRequested] = React.useState<string | null>(null);
-  const [busy, setBusy] = React.useState(false);
-  const [message, setMessage] = React.useState<string | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
 
   const current = state?.network_status ?? null;
 
@@ -60,49 +58,57 @@ export function useWifiConnect(): WifiConnect {
   // moment the robot reports it, however it got there.
   const pending = requested && requested !== current?.ssid ? requested : null;
 
-  const connect = React.useCallback(
-    async (ssid: string, password: string): Promise<WifiConnectOutcome> => {
-      setBusy(true);
-      setError(null);
-      setMessage(null);
-      // Recorded before the call, not after: the request may kill its own
-      // responder, so "the POST resolved" is not the moment the join began.
+  const request = useMutation({
+    mutationFn: ({ ssid, password }: { ssid: string; password: string }) =>
+      connectWifi(ssid, password),
+    // Recorded before the call, not after: the request may kill its own
+    // responder, so "the POST resolved" is not the moment the join began.
+    onMutate: ({ ssid }) => {
       setRequested(ssid);
-      try {
-        const result = await connectWifi(ssid, password);
-        setMessage(result.message);
-        setRequested(null);
-        return "ok";
-      } catch (cause) {
-        if (cause instanceof TypeError) {
-          // fetch's network-level failure: the connection dropped because the
-          // robot left the network this console was using. Expected; keep the
-          // request so `pending` shows, and let the state poll report the
-          // landing — if it can still reach the robot at all.
-          setMessage(
-            `The connection dropped mid-request — expected when this console reached the robot over the network it is leaving. If the page loses the robot, reopen the console at its address on ${ssid}.`,
-          );
-          return "dropped";
-        }
-        // An HTTP-level refusal (nmcli's sentence in a 400, a 502 from the ROS
-        // side): the join did not happen, so it must not be shown as pending.
-        setRequested(null);
-        setError(cause instanceof Error ? cause.message : String(cause));
-        return "error";
-      } finally {
-        setBusy(false);
-      }
     },
-    [],
+    onSuccess: () => setRequested(null),
+    onError: (cause) => {
+      // fetch's network-level failure: the connection dropped because the
+      // robot left the network this console was using. Expected; keep the
+      // request so `pending` shows, and let the state poll report the landing —
+      // if it can still reach the robot at all.
+      if (cause instanceof TypeError) return;
+      // An HTTP-level refusal (nmcli's sentence in a 400, a 502 from the ROS
+      // side): the join did not happen, so it must not be shown as pending.
+      setRequested(null);
+    },
+  });
+
+  const { mutateAsync: requestConnect } = request;
+
+  const connect = React.useCallback(
+    (ssid: string, password: string): Promise<WifiConnectOutcome> =>
+      requestConnect({ ssid, password }).then(
+        () => "ok",
+        (cause) => (cause instanceof TypeError ? "dropped" : "error"),
+      ),
+    [requestConnect],
   );
+
+  const dropped = request.error instanceof TypeError;
 
   return {
     current,
     stateStatus: status,
     pending,
-    busy,
-    message,
-    error,
+    busy: request.isPending,
+    // The success sentence, or — for the drop, which is not a failure to report
+    // as one — what to do about a console that may have just lost the robot.
+    message: request.data?.message ?? (dropped ? droppedNotice(request.variables?.ssid) : null),
+    error: dropped ? null : (request.error?.message ?? null),
     connect,
   };
+}
+
+function droppedNotice(ssid: string | undefined): string {
+  return (
+    "The connection dropped mid-request — expected when this console reached " +
+    "the robot over the network it is leaving. If the page loses the robot, " +
+    `reopen the console at its address on ${ssid ?? "the new network"}.`
+  );
 }
