@@ -1,7 +1,7 @@
 # Claude reviews every pull request into main or dev.
 #
 # This is the half of review that ci.yml cannot do. CI proves the code
-# compiles, lints, passes 137 tests and builds; none of that catches the rules
+# compiles, lints, passes 117 tests and builds; none of that catches the rules
 # this repo actually lives by, because they are conventions rather than types:
 # a write that forgets to invalidate a key its response affects, a zod schema
 # written without the z.ZodType<T> annotation, an error string that names a ROS
