@@ -10,9 +10,12 @@ of its own beyond what a page needs to render.
   changes relative to what models were trained on — read the relevant guide in
   `node_modules/next/dist/docs/` before writing Next.js code (see `CLAUDE.md`).
 - **shadcn-style UI** (`components/ui/`) built on `@base-ui/react`, Tailwind 4.
-- **TanStack Query** for every REST read.
+- **TanStack Query** for every REST read, each one parsed through a **zod**
+  schema at the boundary.
 - **Raw three.js** for the 3D view — no react-three-fiber. WebRTC streaming of
-  the view was considered and deferred.
+  the view was considered and deferred: `lib/video/` and the `/webrtc-test`
+  bench are kept for when it comes back, and that route 404s in a production
+  build so it never reaches the robot.
 
 Dev server and production server both listen on **3001**
 (`next dev -p 3001` / `next start -p 3001` in `package.json`), so the console
@@ -27,7 +30,6 @@ and the backend can share a host without a proxy.
 | `/maps` | The map library (`MapLibrary`): catalogue cards, thumbnails, per-card gridmap state (and why a conversion failed), Rebuild-grid, inline Rename, Delete as an X in the card's corner (Rename and Delete are greyed on the map in use — the backend refuses them too; Delete confirms in an alert dialog that names the map and counts the vertices and megabytes going with it), and **Switch**, which is what un-greys the other two. Switch is the card's top-left corner tile, in the same slot as the in-use badge and never shown beside it: a solid check where the robot is, swap arrows on every map it could move to. (Not an unfilled check — that reads as "already done, greyed out", which is a state this control genuinely has for maps it cannot switch to.) It is a live call — it re-points the running localizer and map_server and rewrites the instance INI, no stack restart — and its alert dialog carries the one consequence an unlabelled arrow cannot: the pose resets to the new map's origin, so set an initial pose on the dashboard afterwards. All three controls hand their result sentence up to one line above the grid. |
 | `/maps/[name]/edit` | The gridmap editor — replaces a step that used to be done in GIMP. Its title renames the map in place: double-click it (or press F2 on it) and Enter saves, Escape cancels — no button, and refused outright while the gridmap is dirty, since a rename moves the directory and the reload that follows would drop the buffer. Its Vertex mode also places stops. It opens on **Pan** like the grid half does — a press drags the map — and the tool row arms the other two: **Place** stages a vertex where you press (drag to aim it), **Select** drags a box over several, with Shift to add to the set and a Delete for the whole band. Escape disarms back to Pan. A stop you mark by driving to it instead comes from **Use robot position**. The robot's own footprint is drawn (to scale, `signal-live`, in both modes) wherever it is standing — both it and the button are offered only while the robot is localized on *this* map, and the button names the reason when it is not. Vertex mode also carries `ManualControl` (bottom right), so driving to the next stop does not mean leaving the editor; leaving the mode unmounts it, which closes the teleop channel and stops the robot. |
 | `/recordings` | Bag recording: start a `ros2 bag record` on the robot, watch it grow, and manage what is on disk. The recorder panel has two faces rather than one with disabled fields — idle asks what to record (name, topic chips defaulting to the LIO inputs, zstd off), live reports the elapsed clock, bytes written and resolved topic names — and which face is shown comes from `GET /api/v1/recordings/active`, not from a local "we pressed Start" flag, so a recording started from a shell or a second console is shown correctly and one that died is reaped within the second. The list below is every bag on the robot, newest first, with the live one still in it; a finished bag with zero messages is called out, because nothing refuses a topic that does not exist (the recorder waits for it, so it can be armed before bringup) and a typo is otherwise silent. Delete is the row's X, behind the map library's alert dialog, and is refused for the live recording. |
-| `/model-preview` | Backend-free preview of the G23 GLB inside the real canvas, for checking scale / up-axis / forward-axis of a re-baked asset. |
 | `/settings` | Appearance + wifi (`nmcli` through the backend). |
 | `/tasks` | Task console: template library, step composer, dispatch, schedules, the active run. |
 
@@ -40,10 +42,27 @@ components/   console/ (shell: nav rail, status strip, shared providers), dashbo
 hooks/        one hook per backend interaction (use-maps, use-active-tasks, use-teleop-sender…)
 lib/api/      typed fetchers per backend router + config.ts + query-keys.ts
 lib/ros/      the WebSocket clients (telemetry, point cloud, teleop) and their frame decoders
+lib/scene/    three.js scene building for the 3D viewport — theme, markers, the
+              vertex layer, the path ribbon, camera policy, picking, robot mesh
+lib/theme/    the signal hues both canvases draw with, transcribed from globals.css
 lib/robot/    G23 joint table (URDF link names ↔ GLB node names)
 lib/recording/ how a bag's duration / size / message count are read, shared by the two
               recording surfaces so one quantity never appears in two spellings
+lib/types/    wire and domain types shared across layers (map, robot, pointcloud, stream)
 ```
+
+The arrow runs one way — `app/` to `components/` to `hooks/` to `lib/` — and
+`eslint.config.mjs` enforces every hop of it, so a break fails `npm run lint`.
+A component may name the wire types (`import type` from `lib/api` is allowed,
+as is `apiUrl` from `lib/api/config`) but reaches the backend only through a
+hook. A rule the backend enforces and a form mirrors — a name regex, a length
+limit, the heading fold — lives with its domain rather than in the REST client:
+`lib/map/name.ts`, `lib/recording/name.ts`, `lib/task/template.ts`,
+`lib/angle.ts`. The
+two console-wide React contexts are split along that line: the context object
+and its `useConsole*` accessor sit in `hooks/`, the provider component in
+`components/console/`, so a hook can read the shared poll without importing
+upwards.
 
 **Backend addressing.** Every backend path goes through `apiUrl()` / `wsUrl()`
 from `lib/api/config.ts` — never a literal host. Resolution order:
@@ -63,12 +82,35 @@ decision visible in one place: the gridmap editor and the dashboard read the
 same `mapVertices` entry, which is what makes a vertex moved on one screen
 already current on the other. Add new keys there, never inline in a hook.
 
+**REST writes go through TanStack too**, as `useMutation` hooks — one per
+backend write (`hooks/use-map-actions.ts`, `use-mapping-run.ts`,
+`use-recorder.ts`, `use-cancel-task.ts`, and the write halves of the vertex,
+template and schedule hooks). A hook's `onSuccess` owns what the response
+makes stale, so "who invalidates `taskTemplates` when a map is renamed" is
+answered in the hook, not in whichever card happened to send the request.
+Components read `isPending` / `error` / `data` off the mutation; the backend's
+`detail` sentence is still what they render.
+
+The hooks that **command the robot** (`use-goal-task`, `use-posture`,
+`use-task-dispatch`, `use-initial-pose`, `use-locomotion`, `use-mode-switch`,
+`use-wifi-connect`) are mutations as well, but they invalidate nothing — a
+motion key makes no cached resource stale. Each pairs its request with a
+*reader* that says what the robot did with it: `useTaskTracker`'s 1 Hz poll for
+anything dispatched as a Temporal task, and the shared `robot_state` poll for
+the two that talk to the machine directly. The two that can kill their own
+responder — a mode switch and a WiFi join — read a `fetch` TypeError as
+"in progress", never as a failure.
+
 **The WebSocket streams stay outside TanStack** — a push stream has nothing to
-refetch. `hooks/use-telemetry.ts` (pose ~20 Hz, joints, path) and
-`hooks/use-teleop-sender.ts` (outbound `{vx, vy, wz}` at ~10 Hz) are React
-state; the point cloud additionally bypasses React entirely: frames
-(`[u32 count][f32 xyz…]`, ~10 Hz × a few hundred KB) go straight into three.js
-buffers in `components/dashboard/pointcloud-canvas.tsx`.
+refetch — and inside them React state is used by rate, not by habit. The point
+cloud never touches it: frames (`[u32 count][f32 xyz…]`, ~10 Hz × a few hundred
+KB) go straight into three.js buffers in
+`components/dashboard/pointcloud-canvas.tsx`. Pose and joints (~20 Hz each, in
+`hooks/use-telemetry.ts`) do not either: they are refs the canvas drains once
+per drawn frame, because a prop is a render and the viewport subtree is barely
+memoised. The planner's `path` is state, since it lands ~0.333 Hz and the view
+branches on whether a route exists. `hooks/use-teleop-sender.ts` sends
+`{vx, vy, wz}` at ~10 Hz off a ref on an interval.
 
 The shell in `app/layout.tsx` runs exactly **two polls** for the whole console
 (`RobotStateProvider` at 1 Hz, `ActiveTaskProvider` at 2 s); pages read those
@@ -97,7 +139,9 @@ Two invariants the canvas depends on: GLB node names **equal URDF link names**
 convention rather than glTF's nominal +Y-up, because the canvas builds a Z-up
 world so map coordinates pass straight through. The script runs `gltfpack`
 (meshopt compression), which the canvas decodes with `MeshoptDecoder`. Re-bake
-after any URDF change; `/model-preview` is where to check the result.
+after any URDF change. There is no in-app preview for the result any more —
+`/model-preview` was removed — so check a re-baked GLB in a glTF viewer, or
+against the dashboard with the robot publishing telemetry.
 
 ## Fonts
 
@@ -112,7 +156,13 @@ renders at normal width.
 npm install
 npm run dev        # http://<host>:3001, HMR
 npm run build && npm start
+
+npm test           # unit tests (vitest)
+npm run test:e2e   # end-to-end (playwright; builds and starts the app itself)
 ```
+
+The e2e suite fakes the backend per test (`e2e/backend.ts`), so it needs no
+robot and no `syncai_backend` running.
 
 On the robot this repo is checked out inside the `SyncAI-Robot-Workspace`
 tree, where `NodeManager` starts `npm run dev` in the `frontend` window of both
