@@ -12,7 +12,26 @@
 // runs in the background after the save. The conversion can lag or fail — the
 // window where only the pcd exists is why `grid` is nullable.
 
+import { z } from "zod";
+
 import type { MapMetadata } from "@/lib/types/robot";
+
+/** The closed unions, as runtime checks. See each type below for why it is closed. */
+export const GridStatusSchema = z.enum([
+  "none",
+  "converting",
+  "ok",
+  "failed",
+  "interrupted",
+]);
+
+export const VertexTypeSchema = z.enum([
+  "GENERAL",
+  "ARTIFACT",
+  "CHARGER",
+  "HOME",
+  "WAITING",
+]);
 
 /**
  * How a map's 2D gridmap stands — the backend's `GridStatus`.
@@ -130,3 +149,13 @@ export interface MapVertex {
    */
   theta: number;
 }
+
+export const MapVertexSchema: z.ZodType<MapVertex> = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: VertexTypeSchema,
+  map_name: z.string(),
+  x: z.number(),
+  y: z.number(),
+  theta: z.number(),
+});

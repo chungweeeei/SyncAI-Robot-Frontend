@@ -15,8 +15,11 @@
 // ignored, `interval_seconds` stays None, and the request then fails the
 // `_exactly_one` validator with a 422 naming a field the client never sent.
 
+import { z } from "zod";
+
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
+import { TaskStepRequestSchema } from "@/lib/api/task";
 import type { TaskStepRequest } from "@/lib/api/task";
 
 /**
@@ -82,6 +85,26 @@ export interface ScheduleState {
   steps?: TaskStepRequest[];
 }
 
+const ScheduleTriggerSchema: z.ZodType<ScheduleTrigger> = z.object({
+  // All three are `Optional[...] = None` on the backend and FastAPI serialises
+  // them, so an interval schedule really does answer with an explicit
+  // `"cron": null`. Nullable *and* optional, matching the interface.
+  cron: z.string().nullable().optional(),
+  interval_seconds: z.number().nullable().optional(),
+  timezone: z.string().nullable().optional(),
+});
+
+const ScheduleStateSchema: z.ZodType<ScheduleState> = z.object({
+  id: z.string(),
+  trigger: ScheduleTriggerSchema,
+  paused: z.boolean(),
+  next_run_times: z.array(z.string()),
+  map_name: z.string().nullable().optional(),
+  task_template_id: z.string().nullable().optional(),
+  task_template_name: z.string().nullable().optional(),
+  steps: z.array(TaskStepRequestSchema).optional(),
+});
+
 /**
  * The operator types the id, so `encodeURIComponent` is load-bearing rather than
  * defensive here: an unescaped `/` or `#` in a name would rewrite the URL into a
@@ -104,7 +127,10 @@ function schedulePath(id?: string, action?: "pause" | "resume"): string {
  * path that carries them.
  */
 export function listSchedules(signal?: AbortSignal): Promise<ScheduleState[]> {
-  return requestJson<ScheduleState[]>(schedulePath(), { signal });
+  return requestJson<ScheduleState[]>(schedulePath(), {
+    signal,
+    schema: z.array(ScheduleStateSchema),
+  });
 }
 
 /**
@@ -118,7 +144,10 @@ export function getSchedule(
   id: string,
   signal?: AbortSignal,
 ): Promise<ScheduleState> {
-  return requestJson<ScheduleState>(schedulePath(id), { signal });
+  return requestJson<ScheduleState>(schedulePath(id), {
+    signal,
+    schema: ScheduleStateSchema,
+  });
 }
 
 // The four writes all drop the `{id, message}` envelope: it says nothing the

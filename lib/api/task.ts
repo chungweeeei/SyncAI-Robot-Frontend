@@ -18,9 +18,21 @@
 // which is every id after a reload and every id belonging to a run a schedule
 // started while nobody was watching.
 
+import { z } from "zod";
+
+import { normalizeTheta } from "@/lib/angle";
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
 import type { PlanarPose } from "@/lib/types/robot";
+
+/** Shared by every task-shaped response below. */
+const TaskStatusSchema = z.enum([
+  "PENDING",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "FAILED",
+  "CANCELED",
+]);
 
 export type TaskStatus =
   | "PENDING"
@@ -54,19 +66,22 @@ export interface TaskStateResponse {
   steps: TaskStepState[];
 }
 
+const TaskStateResponseSchema: z.ZodType<TaskStateResponse> = z.object({
+  id: z.string(),
+  status: TaskStatusSchema,
+  steps: z.array(
+    z.object({
+      id: z.string(),
+      status: TaskStatusSchema,
+      error_msg: z.string(),
+    }),
+  ),
+});
+
 interface TaskAckResponse {
   id: string;
   status: TaskStatus;
   message: string;
-}
-
-/**
- * MoveParams validates `gt=-180, le=180`, so exactly -180 is rejected: fold the
- * angle into (-180, 180] rather than the usual [-180, 180).
- */
-export function normalizeTheta(deg: number): number {
-  const wrapped = ((deg % 360) + 360) % 360; // [0, 360)
-  return wrapped > 180 ? wrapped - 360 : wrapped;
 }
 
 /**
@@ -122,6 +137,29 @@ export type TaskStepRequest =
   | { id: string; type: "MOVE"; params: MoveStepParams }
   | { id: string; type: "SPEAK"; params: SpeakStepParams }
   | { id: string; type: Posture };
+
+export const MoveStepParamsSchema: z.ZodType<MoveStepParams> = z.object({
+  x: z.number(),
+  y: z.number(),
+  theta: z.number(),
+});
+
+export const SpeakStepParamsSchema: z.ZodType<SpeakStepParams> = z.object({
+  text: z.string(),
+  voice: z.string().optional(),
+  speed: z.number().optional(),
+});
+
+/**
+ * Read back off a schedule, which is the one place a step list arrives from the
+ * backend rather than leaving for it. A plain union rather than a discriminated
+ * one because the posture branch's discriminator is itself a pair of literals.
+ */
+export const TaskStepRequestSchema: z.ZodType<TaskStepRequest> = z.union([
+  z.object({ id: z.string(), type: z.literal("MOVE"), params: MoveStepParamsSchema }),
+  z.object({ id: z.string(), type: z.literal("SPEAK"), params: SpeakStepParamsSchema }),
+  z.object({ id: z.string(), type: z.enum(["STANDUP", "LIEDOWN"]) }),
+]);
 
 /**
  * Per-page-load submission sequence, appended to every task id.
@@ -208,7 +246,7 @@ export function fetchTaskState(
 ): Promise<TaskStateResponse> {
   return requestJson<TaskStateResponse>(
     apiUrl(`/api/v1/tasks/${encodeURIComponent(id)}`),
-    { signal },
+    { signal, schema: TaskStateResponseSchema },
   );
 }
 
@@ -227,6 +265,20 @@ export interface ActiveTask {
   /** Set only when `source` is "SCHEDULE". */
   schedule_id: string | null;
 }
+
+const ActiveTasksResponseSchema: z.ZodType<ActiveTasksResponse> = z.object({
+  tasks: z.array(
+    z.object({
+      id: z.string(),
+      run_id: z.string(),
+      status: TaskStatusSchema,
+      started_at: z.string(),
+      source: z.enum(["DIRECT", "SCHEDULE"]),
+      schedule_id: z.string().nullable(),
+    }),
+  ),
+  as_of: z.string(),
+});
 
 export interface ActiveTasksResponse {
   tasks: ActiveTask[];
@@ -251,6 +303,7 @@ export function fetchActiveTasks(
 ): Promise<ActiveTasksResponse> {
   return requestJson<ActiveTasksResponse>(apiUrl("/api/v1/active_tasks"), {
     signal,
+    schema: ActiveTasksResponseSchema,
   });
 }
 

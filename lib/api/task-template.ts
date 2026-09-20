@@ -15,24 +15,25 @@
 // **Vertex resolution is the server's job, not this client's.** A stored MOVE
 // step keeps both a vertex reference and a coordinate snapshot, and every read
 // reports `resolved_params` — what a dispatch should send *now*. Dispatching is
-// therefore a projection of three keys (see `toDispatchSteps`) rather than a
+// therefore a projection of three keys (`toDispatchSteps`, in lib/task/step.ts
+// with the rest of the step conversions) rather than a
 // reimplementation of "prefer the vertex, fall back to the snapshot". That rule
 // lives once, on the server, where a template for a *non-active* map can still
 // be resolved — something this client cannot do, since it only ever holds the
 // active map's vertices.
 
+import { z } from "zod";
+
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
 import type { ScheduleTrigger } from "@/lib/api/schedule";
+import { MoveStepParamsSchema, SpeakStepParamsSchema } from "@/lib/api/task";
 import type {
   MoveStepParams,
   Posture,
   SpeakStepParams,
   TaskStepRequest,
 } from "@/lib/api/task";
-
-/** Mirrors the backend's `max_length=255` and the `String(255)` column. */
-export const TASK_TEMPLATE_NAME_MAX = 255;
 
 /** One step as it is *stored*: a task step plus where a MOVE's numbers came from. */
 export type TemplateStepRequest = TaskStepRequest & {
@@ -118,44 +119,51 @@ export interface TaskTemplateDraft {
 export type TaskTemplateChanges = Partial<TaskTemplateDraft>;
 
 /**
- * Project a template's steps into the dispatch wire shape.
- *
- * `resolved_params` is what the server says to send, so this drops the
- * provenance and nothing else. A posture step gets no `params` key at all —
- * which is why the result is typed as the discriminated `TaskStepRequest` rather
- * than something with an optional `params`.
+ * The stored shape, checked. A plain union rather than a discriminated one for
+ * the reason TaskStepRequestSchema gives: the posture branch's discriminator is
+ * itself a pair of literals.
  */
-export function toDispatchSteps(steps: readonly TemplateStep[]): TaskStepRequest[] {
-  return steps.map((step): TaskStepRequest => {
-    switch (step.type) {
-      case "MOVE":
-        return {
-          id: step.id,
-          type: "MOVE",
-          // Non-null by construction: the backend always resolves a MOVE to
-          // either the vertex's pose or the snapshot. Falling back to an origin
-          // would be a silent drive to (0, 0), so this throws instead.
-          params: assertParams(step, "no coordinates"),
-        };
-      case "SPEAK":
-        // Same construction guarantee — a SPEAK's resolved_params is its
-        // snapshot verbatim, and the backend refuses to store one without text.
-        return { id: step.id, type: "SPEAK", params: assertParams(step, "no text") };
-      default:
-        return { id: step.id, type: step.type };
-    }
-  });
-}
+const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
+  z.object({
+    id: z.string(),
+    vertex_id: z.string().nullable(),
+    vertex_name: z.string().nullable(),
+    vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
+    type: z.literal("MOVE"),
+    params: MoveStepParamsSchema.nullable(),
+    resolved_params: MoveStepParamsSchema.nullable(),
+  }),
+  z.object({
+    id: z.string(),
+    vertex_id: z.string().nullable(),
+    vertex_name: z.string().nullable(),
+    vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
+    type: z.literal("SPEAK"),
+    params: SpeakStepParamsSchema.nullable(),
+    resolved_params: SpeakStepParamsSchema.nullable(),
+  }),
+  z.object({
+    id: z.string(),
+    vertex_id: z.string().nullable(),
+    vertex_name: z.string().nullable(),
+    vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
+    type: z.enum(["STANDUP", "LIEDOWN"]),
+    params: z.null(),
+    resolved_params: z.null(),
+  }),
+]);
 
-function assertParams<T>(
-  step: TemplateStepBase & { resolved_params: T | null },
-  missing: string,
-): T {
-  if (!step.resolved_params) {
-    throw new Error(`Template step "${step.id}" has ${missing} to dispatch.`);
-  }
-  return step.resolved_params;
-}
+const TaskTemplateSchema: z.ZodType<TaskTemplate> = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  map_name: z.string().nullable(),
+  steps: z.array(TemplateStepSchema),
+  map_matches_active: z.boolean(),
+  missing_vertex_count: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
 
 function taskTemplatePath(id?: string): string {
   const base = "/api/v1/task_templates";
@@ -168,13 +176,19 @@ export function listTaskTemplates(signal?: AbortSignal): Promise<TaskTemplate[]>
   // many rows it hid — silently dropping another map's templates is how an
   // operator concludes their work was lost, which is the complaint this feature
   // answers.
-  return requestJson<TaskTemplate[]>(taskTemplatePath(), { signal });
+  return requestJson<TaskTemplate[]>(taskTemplatePath(), {
+    signal,
+    schema: z.array(TaskTemplateSchema),
+  });
 }
 
 export function createTaskTemplate(draft: TaskTemplateDraft): Promise<TaskTemplate> {
   return requestJson<TaskTemplate>(taskTemplatePath(), {
     method: "POST",
     body: JSON.stringify(draft),
+    // The echo is the stored row and is spliced into the cached list, so it is
+    // checked like a read rather than trusted because we sent it.
+    schema: TaskTemplateSchema,
   });
 }
 
@@ -185,6 +199,7 @@ export function updateTaskTemplate(
   return requestJson<TaskTemplate>(taskTemplatePath(id), {
     method: "PUT",
     body: JSON.stringify(changes),
+    schema: TaskTemplateSchema,
   });
 }
 

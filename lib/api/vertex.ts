@@ -15,7 +15,10 @@
 
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
-import { normalizeTheta } from "@/lib/api/task";
+import { normalizeTheta } from "@/lib/angle";
+import { z } from "zod";
+
+import { MapVertexSchema } from "@/lib/types/map";
 import type { MapVertex, VertexType } from "@/lib/types/map";
 
 /** What the operator supplies; `id` and `map_name` come from the server/URL. */
@@ -40,7 +43,10 @@ export function listVertices(
   name: string,
   signal?: AbortSignal,
 ): Promise<MapVertex[]> {
-  return requestJson<MapVertex[]>(vertexPath(name), { signal });
+  return requestJson<MapVertex[]>(vertexPath(name), {
+    signal,
+    schema: z.array(MapVertexSchema),
+  });
 }
 
 /**
@@ -56,9 +62,12 @@ export async function createVertex(
   name: string,
   draft: VertexDraft,
 ): Promise<MapVertex> {
+  // The echo is checked like any other read: it is the row as stored, and both
+  // the editor and the dashboard splice it straight into their cache.
   const created = await requestJson<MapVertex[]>(vertexPath(name), {
     method: "POST",
     body: JSON.stringify([{ ...draft, theta: normalizeTheta(draft.theta) }]),
+    schema: z.array(MapVertexSchema),
   });
 
   // One in, one out. A response that does not hold exactly that is the backend
@@ -81,6 +90,7 @@ export function updateVertex(
         ? changes
         : { ...changes, theta: normalizeTheta(changes.theta) },
     ),
+    schema: MapVertexSchema,
   });
 }
 
