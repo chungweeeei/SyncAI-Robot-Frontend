@@ -80,8 +80,6 @@ export function TelemetryRail({ state }: { state: RobotState }) {
           unit="dBm"
         />
         <Readout label="IP" value={network.ip_address} />
-        <Readout label="MAC" value={network.mac_address} />
-        <Readout label="BSSID" value={network.bssid} />
       </InstrumentGroup>
 
       <PostureControl robotId={state.robot_id} />
