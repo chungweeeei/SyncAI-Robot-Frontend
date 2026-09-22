@@ -12,11 +12,12 @@ of its own beyond what a page needs to render.
 - **shadcn-style UI** (`components/ui/`) built on `@base-ui/react`, Tailwind 4.
 - **TanStack Query** for every REST read, each one parsed through a **zod**
   schema at the boundary.
-- **Raw three.js** for the 3D view — no react-three-fiber. WebRTC streaming of
-  the view was considered and deferred: `lib/video/` and the `/webrtc-test`
-  bench are kept for when it comes back. That route is unlisted — no nav rail
-  entry, opened by hand — but it renders in every build, including on the
-  robot, which is the only place the video path can actually be tested.
+- **Raw three.js** for the 3D view — no react-three-fiber. The robot's camera
+  reaches the operator over **WebRTC** (`lib/video/`) as a movable, resizable
+  window any screen can open from the masthead. The `/webrtc-test` bench is
+  where a video fault gets diagnosed: unlisted — no nav rail entry, opened by
+  hand — but it renders in every build, including on the robot, which is the
+  only place the video path can actually be tested.
 
 Dev server, production server and the container all listen on **3001**
 (`next dev -p 3001` / `next start -p 3001` in `package.json`, `PORT=3001` in

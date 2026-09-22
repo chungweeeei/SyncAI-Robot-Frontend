@@ -103,8 +103,10 @@ The stack as built. Correct this section if a choice changes.
   `refetchOnWindowFocus: false` — poll intervals are the retry policy.
 - **Raw three.js** (no react-three-fiber) for the 3D viewport, and a 2D
   `<canvas>` for the gridmap editor. Both are hand-rolled render loops.
-- **WebRTC (WHIP/WHEP) in `lib/video/`** exists but has no operator-screen
-  consumer; only the `/webrtc-test` bench uses it. The route renders in every
+- **WebRTC (WHEP) in `lib/video/`** reaches the operator as the masthead's
+  camera window (`useCameraStream` → `components/console/camera-window.tsx`), a
+  movable, resizable panel any screen can open. The `/webrtc-test` bench is the
+  other consumer and the only one that exercises WHIP: it renders in every
   build — the robot runs a production one — and is kept off an operator's path
   by being unlisted in the nav rail rather than by a 404.
 - **zod** for runtime validation of every backend read (see Data layer).
@@ -119,7 +121,9 @@ The stack as built. Correct this section if a choice changes.
 app/            route shells; the real content belongs to a component (see deviations)
 components/
   console/      shell: nav rail, status strip, the two layout-level providers
-                (their contexts live in hooks/use-console-*.ts — see Layering)
+                (their contexts live in hooks/use-console-*.ts — see Layering),
+                and the strip's disclosures: the drive panel and camera window
+                every screen can open
   dashboard/    3D viewport (pointcloud-canvas), telemetry rail, driving controls
   mapping/      mode switch, save-map and reset-run controls
   maps/         map library cards and the gridmap editor (grid-canvas)
@@ -185,12 +189,14 @@ Rules for new code:
 These are known debt, not precedent. Do not copy them into new code; when you
 touch one, prefer moving it toward the rule.
 
-- **`lib/video/` has no hook layer.** `components/webrtc/webrtc-bench.tsx`
-  drives WHIP/WHEP sessions itself and polls their stats with three
-  `setInterval`s, because there is no operator screen to hang a hook off yet.
-  The route is unlisted but reachable in every build, since testing the video
-  path means testing it on the robot; when camera streaming comes back as a
-  dashboard panel it gets a hook like every other backend interaction.
+- **The WebRTC bench has no hook layer.** `hooks/use-camera-stream.ts` now owns
+  the WHEP session for the operator-facing camera window, which is the debt
+  this entry used to describe. What is left is `components/webrtc/webrtc-bench.tsx`,
+  which still drives its own sessions and polls their stats with three
+  `setInterval`s — deliberately, because what that page exists to show *is* the
+  negotiation, and a hook that hides it would leave the bench with nothing to
+  report. The route is unlisted but reachable in every build, since testing the
+  video path means testing it on the robot.
 - **One server read outside TanStack Query**, on purpose: `hooks/use-map-grid.ts`
   owns a mutable `GridSession` holding a cell buffer and a canvas that must be
   disposed, which is not something a structurally-shared cache should hand
