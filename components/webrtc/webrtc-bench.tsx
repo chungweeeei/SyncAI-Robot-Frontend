@@ -37,8 +37,8 @@ import { cn } from "@/lib/utils";
  *   5. How is the path?          — candidate pair and RTT
  *
  * Deliberately not in the nav rail: a developer tool, opened by hand at
- * /webrtc-test — and only in development, since the route that mounts this
- * refuses to render it in a production build (see that page for why).
+ * /webrtc-test. It renders in a production build too, because the robot only
+ * ever runs one (see that page for why).
  *
  * Both directions are here now. The robot's microphone reaches the browser as
  * the WHEP session's second track; the browser's microphone reaches the

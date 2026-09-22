@@ -70,14 +70,21 @@ test.describe("routes that must not exist on the robot", () => {
     const response = await page.goto("/model-preview");
     expect(response?.status()).toBe(404);
   });
+});
 
-  test("keeps the WebRTC bench out of a production build", async ({ page }) => {
-    // The bench asks for the microphone and the camera, and nothing but the
-    // URL is needed to open it — so on the robot it must not open at all.
+/**
+ * Also outside the console-error guard: the bench talks to a WebRTC backend
+ * this suite does not fake, so it logs what a missing one looks like. What is
+ * asserted here is only that the route exists in a production build — it used
+ * to 404 in one, which put it out of reach on the robot, the only machine that
+ * can exercise the video path.
+ */
+test.describe("the WebRTC bench", () => {
+  test("renders in a production build", async ({ page }) => {
     await mockBackend(page);
     const response = await page.goto("/webrtc-test");
-    expect(response?.status()).toBe(404);
-    await expect(page.getByText(/could not be found/i)).toBeVisible();
+    expect(response?.status()).toBe(200);
+    await expect(page.getByRole("heading", { name: "Camera idle" })).toBeVisible();
   });
 });
 
