@@ -27,6 +27,24 @@ test.describe("the console shell", () => {
     await expect(page.getByText("88")).toBeVisible();
   });
 
+  test("opens the drive panel from the masthead on a screen with no viewport", async ({
+    page,
+  }) => {
+    // The panel used to be mounted by the three viewport screens, so /settings
+    // was one of the places an operator could not nudge the robot from. It
+    // comes up collapsed and disarmed: opening it must not start anything.
+    await page.goto("/settings");
+    const toggle = page.getByRole("button", { name: "Manual drive panel" });
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await toggle.click();
+    await expect(page.getByRole("heading", { name: "Manual drive" })).toBeVisible();
+    await expect(page.getByText("Not armed — no commands are sent.")).toBeVisible();
+
+    await toggle.click();
+    await expect(page.getByRole("heading", { name: "Manual drive" })).toHaveCount(0);
+  });
+
   test("reaches every operator screen from the rail", async ({ page }) => {
     await page.goto("/");
 
