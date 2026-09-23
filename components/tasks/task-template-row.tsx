@@ -74,8 +74,8 @@ export function TaskTemplateRow({
    * A single schedule spells its trigger out, because that is the fact the
    * operator is actually after — "every 30 min" answers "will this run on its
    * own, and when" in one read. Two or more collapse to a count: a row is not
-   * the place to list them, and the Registered schedules pane is one click away
-   * on the composer's Schedule pane.
+   * the place to list them, and the Registered schedules frame sits directly
+   * under this library.
    *
    * Paused counts as scheduled but not as armed, so an all-paused row goes
    * caution — the same tone the wrong-map chip uses for "registered, but it will
