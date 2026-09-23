@@ -137,6 +137,22 @@ export interface BackendOverrides {
 }
 
 /**
+ * Every write body a test asserts on is JSON, but not every write body is: the
+ * WHEP handshake posts an SDP offer. Parsing that as JSON used to throw inside
+ * the route handler, which never fulfilled the request -- so the page hung and
+ * the failure surfaced as whatever the test happened to be waiting for. A
+ * non-JSON body is logged as its own text instead.
+ */
+function parseBody(raw: string | null): unknown {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+/**
  * Install the whole surface. Returns a log of the non-GET requests that
  * reached it, so a test can assert the console actually sent what the button
  * promised rather than only that the screen changed.
@@ -167,11 +183,7 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     const method = request.method();
 
     if (method !== "GET") {
-      writes.push({
-        method,
-        path,
-        body: request.postData() ? JSON.parse(request.postData() as string) : null,
-      });
+      writes.push({ method, path, body: parseBody(request.postData()) });
     }
 
     // Reads -------------------------------------------------------------

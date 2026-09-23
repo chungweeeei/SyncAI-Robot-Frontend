@@ -1,6 +1,8 @@
 "use client";
 
 import { ActiveTaskChip } from "@/components/console/active-task-chip";
+import { CameraDisclosure } from "@/components/console/camera-disclosure";
+import { DriveDisclosure } from "@/components/console/drive-disclosure";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import {
   Chip,
@@ -62,9 +64,17 @@ function clockOf(epochSeconds: number): string {
 export function StatusStrip() {
   const { state, status, updatedAt } = useConsoleRobotState();
 
-  const link: { label: string; tone: Tone } =
+  /**
+   * Null while the link is healthy: a chip that says "Link" every second of
+   * every day is a readout with one value, and the heartbeat sweep on the
+   * strip's bottom edge already says the same thing per frame. What the chip
+   * is still here for is the other three states — and for readers who have
+   * asked for reduced motion, where that sweep degrades to a static tinted
+   * edge and this text is the only thing left that names the fault.
+   */
+  const link: { label: string; tone: Tone } | null =
     status === "ok"
-      ? { label: "Link", tone: "live" }
+      ? null
       : status === "loading"
         ? { label: "Linking", tone: "neutral" }
         : state
@@ -113,7 +123,14 @@ export function StatusStrip() {
 
         <div className="ml-auto flex items-center gap-2.5 sm:gap-3.5">
           <div className="flex items-center gap-2">
-            <Chip tone={link.tone}>{link.label}</Chip>
+            {/* First in the health cluster, where the link chip used to stand:
+              * icon-only controls need the room to be seen at all, and these
+              * are the only things in the strip an operator presses. Drive
+              * before camera because one commands the robot and the other
+              * watches it. */}
+            <DriveDisclosure />
+            <CameraDisclosure />
+            {link && <Chip tone={link.tone}>{link.label}</Chip>}
             {network && (
               <span className="hidden items-center gap-1.5 sm:flex">
                 <SignalBars
@@ -130,10 +147,10 @@ export function StatusStrip() {
 
           <StripDivider />
 
+          {/* No "Batt" label: the percent sign and the segment meter name the
+            * quantity between them, and the row is worth more than a word that
+            * repeats what the glyph beside it already shows. */}
           <div className="flex items-center gap-2">
-            <span className="instrument-label hidden text-muted-foreground sm:inline">
-              Batt
-            </span>
             {battery === undefined ? (
               <span className="readout text-[13px] text-muted-foreground">—</span>
             ) : (

@@ -27,6 +27,44 @@ test.describe("the console shell", () => {
     await expect(page.getByText("88")).toBeVisible();
   });
 
+  test("opens the drive panel from the masthead on a screen with no viewport", async ({
+    page,
+  }) => {
+    // The panel used to be mounted by the three viewport screens, so /settings
+    // was one of the places an operator could not nudge the robot from. It
+    // comes up collapsed and disarmed: opening it must not start anything.
+    await page.goto("/settings");
+    const toggle = page.getByRole("button", { name: "Manual drive panel" });
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await toggle.click();
+    await expect(page.getByRole("heading", { name: "Manual drive" })).toBeVisible();
+    await expect(page.getByText("Not armed — no commands are sent.")).toBeVisible();
+
+    await toggle.click();
+    await expect(page.getByRole("heading", { name: "Manual drive" })).toHaveCount(0);
+  });
+
+  test("offers no way to save a clip before there is a picture", async ({
+    page,
+  }) => {
+    // The fake backend cannot complete an ICE handshake, so the window never
+    // reaches a live picture -- which is exactly the state worth pinning: a
+    // control that offered to save one would be offering to save nothing.
+    await page.goto("/settings");
+    const toggle = page.getByRole("button", { name: "Camera window" });
+    await toggle.click();
+
+    const clip = page.getByRole("button", { name: "Video clip" });
+    await expect(clip).toBeDisabled();
+    await expect(clip).toHaveAttribute("aria-pressed", "false");
+
+    // And the disclosure still closes the way it did before the window grew a
+    // second control: Escape is scoped to this subtree, not to the window.
+    await page.keyboard.press("Escape");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+
   test("reaches every operator screen from the rail", async ({ page }) => {
     await page.goto("/");
 
@@ -70,14 +108,21 @@ test.describe("routes that must not exist on the robot", () => {
     const response = await page.goto("/model-preview");
     expect(response?.status()).toBe(404);
   });
+});
 
-  test("keeps the WebRTC bench out of a production build", async ({ page }) => {
-    // The bench asks for the microphone and the camera, and nothing but the
-    // URL is needed to open it — so on the robot it must not open at all.
+/**
+ * Also outside the console-error guard: the bench talks to a WebRTC backend
+ * this suite does not fake, so it logs what a missing one looks like. What is
+ * asserted here is only that the route exists in a production build — it used
+ * to 404 in one, which put it out of reach on the robot, the only machine that
+ * can exercise the video path.
+ */
+test.describe("the WebRTC bench", () => {
+  test("renders in a production build", async ({ page }) => {
     await mockBackend(page);
     const response = await page.goto("/webrtc-test");
-    expect(response?.status()).toBe(404);
-    await expect(page.getByText(/could not be found/i)).toBeVisible();
+    expect(response?.status()).toBe(200);
+    await expect(page.getByRole("heading", { name: "Camera idle" })).toBeVisible();
   });
 });
 
