@@ -15,9 +15,14 @@ import {
   ScheduleSourceChip,
   ScheduleSteps,
 } from "@/components/tasks/schedule-steps";
+import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";
 import type { SchedulesStatus } from "@/hooks/use-schedules";
 import type { ScheduleState } from "@/lib/api/schedule";
-import { describeTrigger } from "@/lib/task/schedule";
+import {
+  describeTrigger,
+  formatLocalRunTime,
+  formatUtcRunTime,
+} from "@/lib/task/schedule";
 import type { TaskTemplate } from "@/lib/api/task-template";
 
 export interface ScheduleListProps {
@@ -29,17 +34,6 @@ export interface ScheduleListProps {
   onPause: (id: string) => void;
   onResume: (id: string) => void;
   onDelete: (id: string) => void;
-}
-
-/**
- * `2026-08-04 09:00`, sliced out of the ISO string rather than run through
- * toLocaleString — this is a client component Next still prerenders, and a
- * server/browser timezone difference would be a hydration mismatch. UTC for
- * everyone is the honest trade, which is why the readout is labelled with it.
- * Same reasoning as map-card's formatTimestamp.
- */
-function formatRunTime(iso: string): string {
-  return iso.slice(0, 16).replace("T", " ");
 }
 
 export function ScheduleList({
@@ -116,6 +110,7 @@ function ScheduleRow({
   onDelete: (id: string) => void;
 }) {
   const [open, setOpen] = React.useState(false);
+  const timezone = useBrowserTimeZone();
 
   /**
    * A paused schedule keeps reporting future run times — Temporal computes them
@@ -126,6 +121,28 @@ function ScheduleRow({
    * returns an empty one.
    */
   const next = schedule.paused ? undefined : schedule.next_run_times[0];
+
+  /**
+   * The next run on the operator's own clock, once the browser has said which
+   * clock that is. It used to be UTC for everyone, sliced from the ISO string
+   * to keep the prerender and the browser agreeing — honest, but an operator
+   * who registered "09:00" and read back "01:00 UTC" concluded the schedule
+   * was wrong. UTC is now only the server render's answer, labelled as such;
+   * the browser replaces it on hydration. The zone is named only when it is
+   * not the one the trigger was registered in, because then — and only then —
+   * the two readouts on this row can legitimately show different numbers.
+   */
+  const nextReadout = next
+    ? timezone
+      ? {
+          value: formatLocalRunTime(next),
+          unit:
+            schedule.trigger.timezone && schedule.trigger.timezone !== timezone
+              ? timezone
+              : undefined,
+        }
+      : { value: formatUtcRunTime(next), unit: "UTC" }
+    : null;
 
   const source =
     templates.find((template) => template.id === schedule.task_template_id) ?? null;
@@ -198,9 +215,9 @@ function ScheduleRow({
         />
         <Readout
           label="Next run"
-          value={next ? formatRunTime(next) : "—"}
-          unit={next ? "UTC" : undefined}
-          tone={next ? "live" : "neutral"}
+          value={nextReadout?.value ?? "—"}
+          unit={nextReadout?.unit}
+          tone={nextReadout ? "live" : "neutral"}
         />
       </div>
 
