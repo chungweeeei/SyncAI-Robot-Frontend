@@ -1,6 +1,7 @@
 "use client";
 
 import { ActiveTaskChip } from "@/components/console/active-task-chip";
+import { CameraDisclosure } from "@/components/console/camera-disclosure";
 import { DriveDisclosure } from "@/components/console/drive-disclosure";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import {
@@ -123,9 +124,12 @@ export function StatusStrip() {
         <div className="ml-auto flex items-center gap-2.5 sm:gap-3.5">
           <div className="flex items-center gap-2">
             {/* First in the health cluster, where the link chip used to stand:
-              * an icon-only control needs the room to be seen at all, and this
-              * is the only thing in the strip an operator presses. */}
+              * icon-only controls need the room to be seen at all, and these
+              * are the only things in the strip an operator presses. Drive
+              * before camera because one commands the robot and the other
+              * watches it. */}
             <DriveDisclosure />
+            <CameraDisclosure />
             {link && <Chip tone={link.tone}>{link.label}</Chip>}
             {network && (
               <span className="hidden items-center gap-1.5 sm:flex">
