@@ -250,6 +250,33 @@ export function SegmentMeter({
 }
 
 /**
+ * The record indicator: a filled dot that breathes while a capture runs.
+ *
+ * The one animated thing on the surfaces that use it, and it earns the
+ * exception — what is being captured grows with no other outward sign, and the
+ * single question an operator asks is whether it is still running. A static dot
+ * answers it too, but not from across a room. Reduced motion drops the
+ * animation and keeps the dot, which is the whole signal; the pulse is
+ * emphasis, never the message.
+ *
+ * Warn red rather than the tone table's reading of it. `signal-warn` means
+ * faulted everywhere else in this console, but record-red is a stronger
+ * convention than the EFIS palette here, and two capture surfaces disagreeing
+ * about what "running" looks like would be worse than one borrowed hue.
+ */
+export function RecordDot() {
+  return (
+    <span className="relative flex size-2.5 shrink-0 items-center justify-center">
+      <span
+        aria-hidden
+        className="absolute inline-flex size-full animate-ping rounded-full bg-signal-warn opacity-60 motion-reduce:hidden"
+      />
+      <span className="relative inline-flex size-2.5 rounded-full bg-signal-warn" />
+    </span>
+  );
+}
+
+/**
  * Segmented selector for view state (2D / 3D, camera mode, motion). Commanded
  * hue on the active segment: it is a value the operator set, not one measured.
  */
