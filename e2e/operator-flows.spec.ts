@@ -242,4 +242,80 @@ test.describe("the task console", () => {
       .toHaveLength(1);
     expect(writes[0].path).toBe("/api/v1/tasks/robot01-task-1758000000-1");
   });
+
+  test("registers a timed schedule as a cron the operator never typed", async ({
+    page,
+  }) => {
+    // The backend's timed trigger is a cron expression, and this console is the
+    // one that writes it. The operator picks a clock time and some weekdays;
+    // the string those become is asserted here because it is the part a
+    // screen-only test cannot see, and the part the scheduler acts on.
+    const writes = await mockBackend(page);
+    await page.goto("/tasks");
+
+    await page.getByRole("button", { name: 'Schedule "Morning round"' }).click();
+    await page.getByPlaceholder("robot01-daily-patrol").fill("weekday-patrol");
+    await page.getByRole("button", { name: "At a time" }).click();
+    await page.getByLabel("Time of day").fill("09:00");
+    await page.getByRole("button", { name: "Saturday" }).click();
+    await page.getByRole("button", { name: "Sunday" }).click();
+
+    // Nothing on the pane may read as cron: no placeholder, no preview.
+    await expect(page.getByText("* *")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Create schedule" }).click();
+
+    await expect
+      .poll(() => writes.filter((w) => w.method === "POST"))
+      .toHaveLength(1);
+    const write = writes.find((w) => w.method === "POST");
+    expect(write?.path).toBe(
+      "/api/v1/task_templates/22222222-2222-2222-2222-222222222222/schedule",
+    );
+    const body = write?.body as {
+      id: string;
+      trigger: { cron: string; timezone?: string; interval_seconds?: number };
+    };
+    expect(body.id).toBe("weekday-patrol");
+    expect(body.trigger.cron).toBe("0 9 * * 1,2,3,4,5");
+    // The browser's own zone travels with the cron; which one depends on the
+    // machine running this, so only its presence is the console's promise.
+    expect(body.trigger.timezone).toEqual(expect.stringMatching(/\S/));
+    expect(body.trigger.interval_seconds).toBeUndefined();
+  });
+
+  test("lists registered schedules above the editor, in words", async ({
+    page,
+  }) => {
+    await mockBackend(page, {
+      schedules: [
+        {
+          id: "nightly",
+          trigger: { cron: "0 21 * * *", timezone: "Asia/Taipei" },
+          paused: false,
+          next_run_times: [],
+        },
+      ],
+    });
+    await page.goto("/tasks");
+
+    // The stored cron is read back as a sentence, never shown as itself.
+    await expect(page.getByText("Daily at 21:00 · Asia/Taipei")).toBeVisible();
+    await expect(page.getByText("0 21 * * *")).toHaveCount(0);
+
+    // What the robot already does on its own sits with the library, above the
+    // thing being drafted.
+    const schedules = page.getByRole("heading", { name: "Registered schedules" });
+    const editor = page.getByRole("button", { name: /Task editor/ });
+    await expect(schedules).toBeVisible();
+    const editorFollows = await schedules.evaluate(
+      (heading, editorEl) =>
+        Boolean(
+          heading.compareDocumentPosition(editorEl as Node) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+        ),
+      await editor.elementHandle(),
+    );
+    expect(editorFollows).toBe(true);
+  });
 });
