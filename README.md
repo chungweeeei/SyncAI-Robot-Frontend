@@ -17,7 +17,9 @@ of its own beyond what a page needs to render.
   window any screen can open from the masthead. The `/webrtc-test` bench is
   where a video fault gets diagnosed: unlisted — no nav rail entry, opened by
   hand — but it renders in every build, including on the robot, which is the
-  only place the video path can actually be tested.
+  only place the video path can actually be tested. The window can also save a
+  short clip of what the camera sees, video only, as a browser download onto
+  the operator's own machine; nothing is written on the robot.
 
 Dev server, production server and the container all listen on **3001**
 (`next dev -p 3001` / `next start -p 3001` in `package.json`, `PORT=3001` in
@@ -54,9 +56,12 @@ lib/task/     step and schedule domain helpers, the template name limit
 lib/robot/    G23 joint table (URDF link names ↔ GLB node names)
 lib/recording/ how a bag's duration / size / message count are read, shared by the two
               recording surfaces so one quantity never appears in two spellings
-lib/video/    WHIP/WHEP signalling; no production consumer (the WebRTC note above)
+lib/video/    WHIP/WHEP signalling, and the clip the camera window saves to the
+              operator's machine (the WebRTC note above)
 lib/types/    wire and domain types shared across layers (map, robot, pointcloud, stream)
 lib/angle.ts  normalizeTheta — the degree fold every heading goes through
+lib/download.ts  downloadBlob — the one path that writes a file to the
+              operator's own machine
 ```
 
 The arrow runs one way — `app/` to `components/` to `hooks/` to `lib/` — and

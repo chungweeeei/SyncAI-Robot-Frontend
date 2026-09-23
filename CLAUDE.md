@@ -145,9 +145,11 @@ lib/
   task/         step and schedule domain helpers, template name limit
   recording/    bag size/duration formatting and the bag name rule
   robot/        G23 joint table (URDF link names ↔ GLB node names)
-  video/        WHIP/WHEP signalling (no production consumer)
+  video/        WHIP/WHEP signalling, and the camera window's clip capture
+                (container pick, filename rule, the recorder wrapper)
   types/        shared wire types (map, robot, pointcloud, stream)
   angle.ts      normalizeTheta — the degree fold every heading goes through
+  download.ts   downloadBlob — hands a file to the operator's own machine
 ```
 
 ## Layering
@@ -215,7 +217,9 @@ touch one, prefer moving it toward the rule.
   `lib/api/` or `lib/ros/` calls `fetch` itself, so the way a refusal becomes
   an `Error` is written once. `lib/video/` is the exception and stays one: WHIP
   and WHEP exchange SDP and read a `Location` header, which is not this
-  vocabulary.
+  vocabulary. The clip that window saves is the one artifact this console
+  produces that the backend never sees at all, which is why it has no fetcher,
+  no query key and nothing to invalidate.
 - **A refusal is the backend's own sentence.** `errorBody` unwraps FastAPI's
   `{detail}` once, because a Response body can only be read once and two
   endpoints carry a `code` beside it. Those sentences are written for operators
@@ -314,6 +318,17 @@ As built:
   the scene it added to and the layer has to be re-added to the new one. Each
   such effect adds and removes its own object in one place; do not clean up the
   previous run at the top of the next one.
+- **A clip's save deliberately outlives the component that started it.** The
+  capture handle in `lib/video/clip.ts` is created in a click handler and owns
+  its recorder, its chunks and its delivery, so closing the camera window — which
+  unmounts it and closes the session — still writes the file. Moving the chunk
+  buffer or the delivery into React state would lose a capture the moment the
+  operator pressed Escape. Two consequences to keep: the unmount
+  effect has empty deps and reads a ref, because a dep on the stream or on
+  `capturing` would kill a live capture on the next render; and the finish path
+  is once-only by flag, because `useCameraStream`'s cleanup runs first and ends
+  the track, which has the browser flushing the recorder while the explicit
+  stop is still on its way.
 
 Both canvases read their signal hues from `lib/theme/signal.ts` — three.js
 wants a number and a 2D context wants a string, and neither can read a CSS
@@ -366,9 +381,17 @@ it is run in, so it does not belong to any one of them.
   error string because it would help you debug. The house words are: **floor
   plan** (not gridmap / 2D grid / occupancy grid), **scan** (not point cloud /
   "the cloud"), **waypoint** (not vertex / stop), **channel** (not topic),
-  **recording** (not bag), **Mapping / Navigation** for the robot's MANUAL /
-  AUTO modes, and **job** for a dispatched task. Backend sentences are still
-  rendered verbatim; they are written for operators too.
+  **recording** (not bag), **clip** for a video saved out of the camera window,
+  **Mapping / Navigation** for the robot's MANUAL / AUTO modes, and **job** for
+  a dispatched task. Backend sentences are still rendered verbatim; they are
+  written for operators too.
+- **A clip is not a recording.** A recording is the robot's bag, on the robot's
+  disk, started and stopped over REST; a clip is a video of the camera window's
+  picture, written by the browser onto the operator's own machine and never
+  seen by the backend. They are different artifacts in different places, so they
+  never share a word on screen — and, unusually for this codebase, not in the
+  code either: `clip*` identifiers exist so a reader can tell which of the two a
+  function is about without following it.
 - **The code keeps the engineering names.** `vertex`, `grid`, `cloud`, `bag`
   and `topic` are the backend's vocabulary and stay in identifiers, types,
   query keys and routes. Only the strings a human reads are translated, which
