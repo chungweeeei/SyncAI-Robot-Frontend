@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 
 import { overlayPanel } from "@/components/console/instrument";
-import { ManualControl } from "@/components/dashboard/manual-control";
 import { PointCloudCanvas } from "@/components/dashboard/pointcloud-canvas";
 import { ModeControl } from "@/components/mapping/mode-control";
 import { ResetRunControl } from "@/components/mapping/reset-run-control";
@@ -346,10 +345,6 @@ export function MappingView() {
           </button>
         </div>
 
-        {/* Only while mapping is actually live: in AUTO the dashboard is the
-          * driving screen, and during a switch the channel has no backend to
-          * talk to — an armed teleop that cannot send is worse than none. */}
-        {mapping && <ManualControl className="absolute right-3 bottom-3" />}
       </section>
 
       <aside

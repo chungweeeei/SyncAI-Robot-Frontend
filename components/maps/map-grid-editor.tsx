@@ -12,7 +12,6 @@ import type {
   VertexGesture,
   VertexTool,
 } from "@/lib/map/editor";
-import { ManualControl } from "@/components/dashboard/manual-control";
 import { GridStatus } from "@/components/maps/grid-status";
 import { GridToolbar, type SaveState } from "@/components/maps/grid-toolbar";
 import { VertexPanel } from "@/components/maps/vertex-panel";
@@ -667,23 +666,12 @@ function EditorSurface({
         />
       )}
 
-      {/* The other half of "Use robot position": the pose you capture is the one
-        * you drove the robot to, and without a drive panel here that meant
-        * leaving the editor for the dashboard between every stop — which on a
-        * dirty gridmap means answering the back button's confirm, losing the
-        * view, and coming back to re-find the corridor.
-        *
-        * Vertex mode only, matching VertexPanel: it belongs to the stop-placing
-        * flow, and a drive panel over a screen where the operator is painting
-        * cells is a joystick nobody asked for. Leaving the mode therefore also
-        * stops the robot — the panel unmounts, the channel closes, and the
-        * backend's watchdog zeroes cmd_vel — which is the safe direction for a
-        * mode switch to fail in.
-        *
-        * It comes up disarmed and takes no keyboard until it is armed (see
-        * ManualControl), so it cannot eat this editor's shortcuts; its WASD/QE/AD
-        * set does not overlap Space / 0 / Ctrl+Z in any case. */}
-      {mode === "vertex" && <ManualControl className="absolute right-3 bottom-3" />}
+      {/* The other half of "Use robot position" — the pose you capture is the
+        * one you drove the robot to — is now the masthead's drive panel
+        * (DriveDisclosure), which this editor no longer mounts itself. It still
+        * cannot eat this editor's shortcuts: it comes up disarmed and takes no
+        * keyboard until it is armed, and its WASD/QE/AD set does not overlap
+        * Space / 0 / Ctrl+Z in any case. */}
 
       <GridStatus
         className="absolute bottom-3 left-3"
