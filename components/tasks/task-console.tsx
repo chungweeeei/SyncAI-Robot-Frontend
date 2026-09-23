@@ -284,7 +284,7 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
             onLoad={loadTemplate}
             onSchedule={(template) => {
               // The trigger is authored in the composer's Schedule pane, which is
-              // the only place a cron/interval form exists. Loading the template
+              // the only place a timed/interval form exists. Loading the template
               // first is what makes that pane describe the thing being scheduled.
               loadTemplate(template);
               setMode("schedule");
@@ -305,6 +305,50 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
           />
         </InstrumentGroup>
       </div>
+
+      {/* Its own frame, because the registered schedules are a different object
+       * from the one being authored — not another group inside the composer.
+       *
+       * Above the editor, beside the library, because it answers the same
+       * question: "what does this robot already have". It used to be the last
+       * thing on the page, under a composer that can run to forty steps, so the
+       * one list of what runs unattended was a scroll past the thing being
+       * built — and the first thing an operator asks on returning is what is
+       * already set to run, not what they were drafting.
+       *
+       * Shown whenever any exist, not only in Schedule mode. Gating it on the
+       * mode meant the one place that lists what this robot does unattended was
+       * behind a picker inside a folded-away editor: an operator on the Dispatch
+       * pane could not see that anything was registered at all. */}
+      {(mode === "schedule" || schedules.schedules.length > 0) && (
+        <div className="mb-4 overflow-hidden rounded-md border border-hairline bg-panel">
+          <InstrumentGroup
+            label="Registered schedules"
+            action={
+              <button
+                type="button"
+                aria-label="Refresh schedules"
+                title="Refresh schedules"
+                disabled={schedules.busy}
+                onClick={schedules.refresh}
+                className="flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-40"
+              >
+                <RefreshCwIcon className="size-3.5" aria-hidden />
+              </button>
+            }
+          >
+            <ScheduleList
+              schedules={schedules.schedules}
+              templates={library.templates}
+              status={schedules.status}
+              busy={schedules.busy}
+              onPause={schedules.pause}
+              onResume={schedules.resume}
+              onDelete={schedules.remove}
+            />
+          </InstrumentGroup>
+        </div>
+      )}
 
       {/* The editor's own header, outside both columns: it is the handle for the
         * whole section, and a chevron sitting in one column's group header would
@@ -516,43 +560,6 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
               </InstrumentGroup>
             )}
           </div>
-        </div>
-      )}
-
-      {/* A third frame, because the registered schedules are a different object
-       * from the one being authored — not another group inside the composer.
-       *
-       * Shown whenever any exist, not only in Schedule mode. Gating it on the
-       * mode meant the one place that lists what this robot does unattended was
-       * behind a picker inside a folded-away editor: an operator on the Dispatch
-       * pane could not see that anything was registered at all. */}
-      {(mode === "schedule" || schedules.schedules.length > 0) && (
-        <div className="mt-4 overflow-hidden rounded-md border border-hairline bg-panel">
-          <InstrumentGroup
-            label="Registered schedules"
-            action={
-              <button
-                type="button"
-                aria-label="Refresh schedules"
-                title="Refresh schedules"
-                disabled={schedules.busy}
-                onClick={schedules.refresh}
-                className="flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-40"
-              >
-                <RefreshCwIcon className="size-3.5" aria-hidden />
-              </button>
-            }
-          >
-            <ScheduleList
-              schedules={schedules.schedules}
-              templates={library.templates}
-              status={schedules.status}
-              busy={schedules.busy}
-              onPause={schedules.pause}
-              onResume={schedules.resume}
-              onDelete={schedules.remove}
-            />
-          </InstrumentGroup>
         </div>
       )}
     </>
