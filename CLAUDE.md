@@ -104,8 +104,9 @@ The stack as built. Correct this section if a choice changes.
 - **Raw three.js** (no react-three-fiber) for the 3D viewport, and a 2D
   `<canvas>` for the gridmap editor. Both are hand-rolled render loops.
 - **WebRTC (WHIP/WHEP) in `lib/video/`** exists but has no operator-screen
-  consumer; only the `/webrtc-test` bench uses it, and that route 404s in a
-  production build so it never reaches the robot.
+  consumer; only the `/webrtc-test` bench uses it. The route renders in every
+  build — the robot runs a production one — and is kept off an operator's path
+  by being unlisted in the nav rail rather than by a 404.
 - **zod** for runtime validation of every backend read (see Data layer).
 - **Vitest** for unit tests, **Playwright** for e2e (see Tests). No
   `@vitejs/plugin-react`: esbuild already takes the JSX runtime from tsconfig,
@@ -125,7 +126,7 @@ components/
   recordings/   bag recorder and list
   tasks/        template library, step composer, dispatch, schedules
   settings/     appearance and Wi-Fi
-  webrtc/       WHIP/WHEP bench (development only — see deviations)
+  webrtc/       WHIP/WHEP bench (unlisted developer route — see deviations)
   ui/           shadcn primitives (lint-ignored)
 hooks/          one hook per backend interaction; the only place components get data
 lib/
@@ -187,9 +188,9 @@ touch one, prefer moving it toward the rule.
 - **`lib/video/` has no hook layer.** `components/webrtc/webrtc-bench.tsx`
   drives WHIP/WHEP sessions itself and polls their stats with three
   `setInterval`s, because there is no operator screen to hang a hook off yet.
-  The route that mounts it 404s in a production build, so the bench is a
-  development tool only; when camera streaming comes back as a dashboard panel
-  it gets a hook like every other backend interaction.
+  The route is unlisted but reachable in every build, since testing the video
+  path means testing it on the robot; when camera streaming comes back as a
+  dashboard panel it gets a hook like every other backend interaction.
 - **One server read outside TanStack Query**, on purpose: `hooks/use-map-grid.ts`
   owns a mutable `GridSession` holding a cell buffer and a canvas that must be
   disposed, which is not something a structurally-shared cache should hand
