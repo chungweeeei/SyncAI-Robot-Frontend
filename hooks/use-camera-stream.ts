@@ -51,10 +51,6 @@ export function useCameraStream(): CameraStream {
     // every Strict Mode remount, and a fast navigation on the robot too.
     let opened: WhepSession | null = null;
 
-    setPhase("connecting");
-    setError(null);
-    setStream(null);
-
     void (async () => {
       try {
         const session = await startWhepSession();
@@ -90,7 +86,16 @@ export function useCameraStream(): CameraStream {
     return () => window.removeEventListener("pagehide", onPageHide);
   }, []);
 
-  const retry = React.useCallback(() => setAttempt((n) => n + 1), []);
+  // The reset lives here rather than at the top of the effect: the initial
+  // state already is connecting/null/null, so the only run that needs clearing
+  // is the one a retry asks for -- and a setState in an effect body is a
+  // cascading render the compiler rightly refuses.
+  const retry = React.useCallback(() => {
+    setPhase("connecting");
+    setError(null);
+    setStream(null);
+    setAttempt((n) => n + 1);
+  }, []);
 
   return { phase, error, stream, retry };
 }

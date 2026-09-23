@@ -89,7 +89,10 @@ export function CameraWindow({ className }: { className?: string }) {
     maxY: number;
   } | null>(null);
 
-  const onGrab = (kind: "move" | "resize") => (event: React.PointerEvent<HTMLElement>) => {
+  // Takes the kind as an argument rather than currying it, so nothing calls
+  // this during render: a `onGrab("move")` in JSX is a call, and a call that
+  // reads a ref is one the compiler cannot prove happens in a handler.
+  const onGrab = (kind: "move" | "resize", event: React.PointerEvent<HTMLElement>) => {
     if (dragRef.current) return;
     // The header carries the speaker button; a press on it is a press on it.
     if (kind === "move" && (event.target as HTMLElement).closest("button")) return;
@@ -198,7 +201,7 @@ export function CameraWindow({ className }: { className?: string }) {
       {/* touch-none, or a touch drag scrolls the page and the browser answers
         * with pointercancel mid-gesture (the thumbstick's rule). */}
       <header
-        onPointerDown={onGrab("move")}
+        onPointerDown={(event) => onGrab("move", event)}
         onPointerMove={onDrag}
         onPointerUp={onRelease}
         onPointerCancel={onRelease}
@@ -277,7 +280,7 @@ export function CameraWindow({ className }: { className?: string }) {
           type="button"
           aria-label="Resize the camera window"
           title="Drag to resize · arrow keys to nudge"
-          onPointerDown={onGrab("resize")}
+          onPointerDown={(event) => onGrab("resize", event)}
           onPointerMove={onDrag}
           onPointerUp={onRelease}
           onPointerCancel={onRelease}
