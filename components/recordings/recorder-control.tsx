@@ -3,7 +3,7 @@
 import * as React from "react";
 import { CircleIcon, SquareIcon } from "lucide-react";
 
-import { Readout } from "@/components/console/instrument";
+import { RecordDot, Readout } from "@/components/console/instrument";
 import { TopicPicker, DEFAULT_TOPICS } from "@/components/recordings/topic-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,28 +18,6 @@ import {
   RESERVED_RECORDING_NAME,
 } from "@/lib/recording/name";
 import { cn } from "@/lib/utils";
-
-/**
- * The record indicator: a filled dot that breathes while the recorder runs.
- *
- * The one animated thing on this screen, and it earns the exception — a bag
- * grows on disk with no other outward sign, and the single question an operator
- * opens this page to answer is whether the robot is still recording. A static
- * dot answers it too, but not from across a room. Reduced motion drops the
- * animation and keeps the dot, which is the whole signal; the pulse is
- * emphasis, never the message.
- */
-function RecordDot() {
-  return (
-    <span className="relative flex size-2.5 shrink-0 items-center justify-center">
-      <span
-        aria-hidden
-        className="absolute inline-flex size-full animate-ping rounded-full bg-signal-warn opacity-60 motion-reduce:hidden"
-      />
-      <span className="relative inline-flex size-2.5 rounded-full bg-signal-warn" />
-    </span>
-  );
-}
 
 /** The live recorder: what is being written, and the one way to end it. */
 function LiveRecorder({
