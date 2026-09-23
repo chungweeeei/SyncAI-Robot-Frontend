@@ -45,6 +45,26 @@ test.describe("the console shell", () => {
     await expect(page.getByRole("heading", { name: "Manual drive" })).toHaveCount(0);
   });
 
+  test("offers no way to save a clip before there is a picture", async ({
+    page,
+  }) => {
+    // The fake backend cannot complete an ICE handshake, so the window never
+    // reaches a live picture -- which is exactly the state worth pinning: a
+    // control that offered to save one would be offering to save nothing.
+    await page.goto("/settings");
+    const toggle = page.getByRole("button", { name: "Camera window" });
+    await toggle.click();
+
+    const clip = page.getByRole("button", { name: "Video clip" });
+    await expect(clip).toBeDisabled();
+    await expect(clip).toHaveAttribute("aria-pressed", "false");
+
+    // And the disclosure still closes the way it did before the window grew a
+    // second control: Escape is scoped to this subtree, not to the window.
+    await page.keyboard.press("Escape");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+
   test("reaches every operator screen from the rail", async ({ page }) => {
     await page.goto("/");
 
