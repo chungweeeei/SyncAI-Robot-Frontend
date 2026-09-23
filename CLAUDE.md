@@ -132,7 +132,10 @@ components/
   settings/     appearance and Wi-Fi
   webrtc/       WHIP/WHEP bench (unlisted developer route — see deviations)
   ui/           shadcn primitives (lint-ignored)
-hooks/          one hook per backend interaction; the only place components get data
+hooks/          one hook per backend interaction; the only place components get data.
+                A few talk to no backend at all (use-joystick, use-step-drafts,
+                use-camera-clip, use-mobile): React glue over a lib/ module or a
+                browser API, never a second home for the logic itself
 lib/
   api/          typed fetchers per backend router, config.ts, http.ts, query-keys.ts
                 (requests only — mirrored validation rules live with their domain)
@@ -430,7 +433,12 @@ put the id first: `feature/SYNC-123-teleop-joystick`.
 **Commits** — Conventional Commits: `<type>(<scope>): <subject>`, e.g.
 `feat(dashboard): stream pointcloud into three.js buffers`. Types mirror the
 branch prefixes (`feat`, `fix`, `refactor`, `chore`, `docs`, `test`). Subject in
-the imperative mood, no trailing period. One logical change per commit.
+the imperative mood, no trailing period. One logical change per commit. The
+specification itself is vendored at
+`.github/prompt/copilot-commit-message-instructions.md` — it is there so the
+editor's commit-message assistant writes the same shape a human here does;
+this section is the house summary and wins where the two differ (the type list
+above is shorter than the spec's on purpose).
 
 **Pull requests** — target `dev` (except `hotfix/`, which targets `main`).
 Rebase or merge `dev` in before requesting review so the PR is conflict-free,

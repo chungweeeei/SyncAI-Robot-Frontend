@@ -31,19 +31,46 @@ proxy.
 | Route | What it is |
 |---|---|
 | `/` | Dashboard: `PointCloudView` (live cloud, map, robot mesh, route, vertices) left, `TelemetryRail` right. Gated on `GET /api/v1/robot/state` — no state, no panels. |
-| `/mapping` | Mapping mode: switch `AUTO`/`MANUAL`, drive, watch pgo's "map so far" stream, save the map and watch its 2D grid build, or discard the run and start a new map. The page owns the confirmation rule and drives a single alert dialog from it: **every** act here is confirmed, including a plain mode switch in either direction (it tears the stack down for ~30 s and stops whatever the robot was doing), and losing an unsaved run is what escalates the copy and turns the confirm button red. |
+| `/mapping` | Mapping mode: switch `AUTO`/`MANUAL`, drive it around from the masthead's drive panel, watch pgo's "map so far" stream, save the map and watch its 2D grid build, or discard the run and start a new map. The page owns the confirmation rule and drives a single alert dialog from it: **every** act here is confirmed, including a plain mode switch in either direction (it tears the stack down for ~30 s and stops whatever the robot was doing), and losing an unsaved run is what escalates the copy and turns the confirm button red. |
 | `/maps` | The map library (`MapLibrary`): catalogue cards, thumbnails, per-card gridmap state (and why a conversion failed), Rebuild-grid, inline Rename, Delete as an X in the card's corner (Rename and Delete are greyed on the map in use — the backend refuses them too; Delete confirms in an alert dialog that names the map and counts the vertices and megabytes going with it), and **Switch**, which is what un-greys the other two. Switch is the card's top-left corner tile, in the same slot as the in-use badge and never shown beside it: a solid check where the robot is, swap arrows on every map it could move to. (Not an unfilled check — that reads as "already done, greyed out", which is a state this control genuinely has for maps it cannot switch to.) It is a live call — it re-points the running localizer and map_server and rewrites the instance INI, no stack restart — and its alert dialog carries the one consequence an unlabelled arrow cannot: the pose resets to the new map's origin, so set an initial pose on the dashboard afterwards. All three controls hand their result sentence up to one line above the grid. |
-| `/maps/[name]/edit` | The gridmap editor — replaces a step that used to be done in GIMP. Its title renames the map in place: double-click it (or press F2 on it) and Enter saves, Escape cancels — no button, and refused outright while the gridmap is dirty, since a rename moves the directory and the reload that follows would drop the buffer. Its Vertex mode also places stops. It opens on **Pan** like the grid half does — a press drags the map — and the tool row arms the other two: **Place** stages a vertex where you press (drag to aim it), **Select** drags a box over several, with Shift to add to the set and a Delete for the whole band. Escape disarms back to Pan. A stop you mark by driving to it instead comes from **Use robot position**. The robot's own footprint is drawn (to scale, `signal-live`, in both modes) wherever it is standing — both it and the button are offered only while the robot is localized on *this* map, and the button names the reason when it is not. Vertex mode also carries `ManualControl` (bottom right), so driving to the next stop does not mean leaving the editor; leaving the mode unmounts it, which closes the teleop channel and stops the robot. |
+| `/maps/[name]/edit` | The gridmap editor — replaces a step that used to be done in GIMP. Its title renames the map in place: double-click it (or press F2 on it) and Enter saves, Escape cancels — no button, and refused outright while the gridmap is dirty, since a rename moves the directory and the reload that follows would drop the buffer. Its Vertex mode also places stops. It opens on **Pan** like the grid half does — a press drags the map — and the tool row arms the other two: **Place** stages a vertex where you press (drag to aim it), **Select** drags a box over several, with Shift to add to the set and a Delete for the whole band. Escape disarms back to Pan. A stop you mark by driving to it instead comes from **Use robot position**. The robot's own footprint is drawn (to scale, `signal-live`, in both modes) wherever it is standing — both it and the button are offered only while the robot is localized on *this* map, and the button names the reason when it is not. The other half of that button — driving to the stop you are about to mark — is the masthead's drive panel, which this editor no longer mounts itself; the panel comes up disarmed and its WASD/QE set does not collide with the editor's Space / 0 / Ctrl+Z. |
 | `/recordings` | Bag recording: start a `ros2 bag record` on the robot, watch it grow, and manage what is on disk. The recorder panel has two faces rather than one with disabled fields — idle asks what to record (name, topic chips defaulting to the LIO inputs, zstd off), live reports the elapsed clock, bytes written and resolved topic names — and which face is shown comes from `GET /api/v1/recordings/active`, not from a local "we pressed Start" flag, so a recording started from a shell or a second console is shown correctly and one that died is reaped within the second. The list below is every bag on the robot, newest first, with the live one still in it; a finished bag with zero messages is called out, because nothing refuses a topic that does not exist (the recorder waits for it, so it can be armed before bringup) and a typo is otherwise silent. Delete is the row's X, behind the map library's alert dialog, and is refused for the live recording. |
 | `/settings` | Appearance + wifi (`nmcli` through the backend). |
 | `/tasks` | Task console: template library, step composer, dispatch, schedules, the active run. |
+| `/webrtc-test` | The WHIP/WHEP bench — unlisted (no nav rail entry, opened by hand) but built into every image, because the robot only ever runs a production build and that is the one machine where the video path can be tested. The only consumer that exercises WHIP. |
+
+## The masthead
+
+Two controls hang off the status strip in `app/layout.tsx`, so they are on
+every route rather than on whichever page happens to own a viewport: the
+**drive panel** (`DriveDisclosure` → `ManualControl`) and the **camera window**
+(`CameraDisclosure` → `CameraWindow`). Both used to be anchored inside a page —
+driving in the bottom-right corner of three viewports, the camera only on
+`/webrtc-test` — and moving them up means "can I nudge the robot from here" and
+"can I see what it sees from here" have the same answer everywhere.
+
+Collapsing either one **unmounts it**, and that is load-bearing in both cases.
+The drive panel's keyboard half is a window-level WASD listener, so a panel
+kept alive while hidden would be a live teleop with nothing on screen saying
+so; unmounting disarms it and closes the teleop channel, and the backend's
+watchdog zeroes `cmd_vel`. The camera window holds the robot worker's single
+viewer slot, so a hidden-but-alive session would keep the camera away from
+whoever opens it next — including the bench. The cost is that reopening the
+camera renegotiates from scratch, a second or so of "Connecting" before the
+first frame.
+
+The one thing that deliberately outlives its window is a **clip**: the capture
+handle is created in the click handler and owns its recorder and its delivery,
+so closing the camera window mid-capture still writes the file.
 
 ## Layering
 
 ```
 app/          route shells; almost no logic ("chrome only" — a component owns the page)
-components/   console/ (shell: nav rail, status strip, shared providers), dashboard/,
-              mapping/, maps/, recordings/, tasks/, settings/, ui/ (shadcn primitives)
+components/   console/ (shell: nav rail, status strip, shared providers, and the
+              strip's two disclosures — see The masthead), dashboard/, mapping/,
+              maps/, recordings/, tasks/, settings/, webrtc/ (the bench),
+              ui/ (shadcn primitives)
 hooks/        one hook per backend interaction (use-maps, use-active-tasks, use-teleop-sender…)
 lib/api/      typed fetchers per backend router + config.ts + query-keys.ts
 lib/ros/      the WebSocket clients (telemetry, point cloud, teleop) and their frame decoders
