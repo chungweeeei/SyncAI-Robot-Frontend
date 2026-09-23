@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Far from UTC on purpose: clipFilename must name the same instant the same
 // file everywhere, so an implementation that reached for a locale formatter
 // fails here rather than in Berlin. ESM hoists the imports above this line,
-// which is harmless -- nothing reads a Date until a test runs.
+// which is harmless — nothing reads a Date until a test runs.
 process.env.TZ = "Asia/Taipei";
 
 import {

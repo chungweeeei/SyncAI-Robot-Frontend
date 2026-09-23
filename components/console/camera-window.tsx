@@ -1,10 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { GripHorizontalIcon, Volume2Icon, VolumeXIcon } from "lucide-react";
+import {
+  CircleIcon,
+  GripHorizontalIcon,
+  SquareIcon,
+  Volume2Icon,
+  VolumeXIcon,
+} from "lucide-react";
 
-import { overlayPanel } from "@/components/console/instrument";
+import { overlayPanel, RecordDot } from "@/components/console/instrument";
+import { useCameraClip } from "@/hooks/use-camera-clip";
 import { useCameraStream } from "@/hooks/use-camera-stream";
+import { formatDuration, formatSize } from "@/lib/recording/format";
+import type { ClipOutcome } from "@/lib/video/clip";
 import { cn } from "@/lib/utils";
 
 /** Pixel bounds for the window's own size, before the viewport clamps it. */
@@ -15,9 +24,52 @@ const DEFAULT_WIDTH = 320;
 const DEFAULT_HEIGHT = 180;
 /** One keyboard press of the resize handle. Coarse enough to be worth pressing. */
 const KEY_STEP = 16;
+/**
+ * How long the "saved" line sits on the picture.
+ *
+ * The bag recorder holds its receipt until the next run starts, which it can
+ * afford: that is a page with room. This one is printed *on* the 320x180 image
+ * the window exists to show, so it says its piece and gets out of the way.
+ */
+const RECEIPT_MS = 6_000;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * What the operator is told once a capture ends.
+ *
+ * Every sentence names the file's fate, because the file is the point: a clip
+ * that stopped for a reason the operator did not choose still saved, and saying
+ * only that it stopped would read as "lost". None of them names how any of it
+ * works — the operator's word for where it went is "downloads".
+ */
+function receiptFor(outcome: ClipOutcome): { text: string; tone: string } {
+  if (outcome.filename === null) {
+    return outcome.error === null && outcome.end === "error"
+      ? { text: "No picture to save yet.", tone: "text-signal-caution" }
+      : { text: "The clip could not be saved.", tone: "text-signal-warn" };
+  }
+
+  const length = formatDuration(Math.round(outcome.elapsedMs / 1_000));
+  switch (outcome.end) {
+    case "limit":
+      return {
+        text: `Saved automatically at ${length}.`,
+        tone: "text-signal-caution",
+      };
+    case "source":
+      return {
+        text: `The picture stopped — saved ${length}.`,
+        tone: "text-signal-caution",
+      };
+    default:
+      return {
+        text: `Saved ${length} — check your downloads.`,
+        tone: "text-signal-live",
+      };
+  }
 }
 
 /**
@@ -44,9 +96,17 @@ function clamp(value: number, min: number, max: number): number {
  * What it does not have is the bench's readouts. Resolution, bitrate, the
  * candidate pair and the rest answer "why is the video bad", which is a
  * question for /webrtc-test; this window answers "what can the robot see".
+ *
+ * The header's other button saves a clip of the picture to the operator's own
+ * machine. Two consequences worth knowing before editing this file: a capture
+ * deliberately survives the window closing, because the handle it runs on is
+ * not React's (see hooks/use-camera-clip.ts), so an operator who hits Escape
+ * mid-clip still gets the file; and walking between routes does not interrupt
+ * one, because the strip that mounts this window is in the root layout.
  */
 export function CameraWindow({ className }: { className?: string }) {
   const { phase, error, stream, retry } = useCameraStream();
+  const clip = useCameraClip(stream);
 
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const panelRef = React.useRef<HTMLDivElement>(null);
@@ -62,6 +122,24 @@ export function CameraWindow({ className }: { className?: string }) {
    * anchor changing.
    */
   const [offset, setOffset] = React.useState({ x: 0, y: 0 });
+
+  const { last: clipOutcome, dismiss: dismissClip } = clip;
+  React.useEffect(() => {
+    if (!clipOutcome) return;
+    const timer = setTimeout(dismissClip, RECEIPT_MS);
+    return () => clearTimeout(timer);
+  }, [clipOutcome, dismissClip]);
+
+  const clipReceipt = clipOutcome && receiptFor(clipOutcome);
+
+  const unsupportedId = React.useId();
+  const clipTitle = !clip.supported
+    ? "This browser cannot save clips"
+    : phase !== "live"
+      ? "Available once there is a picture"
+      : clip.capturing
+        ? "Stop and save the clip"
+        : "Save a clip to this computer";
 
   // srcObject is a property, not an attribute, so it cannot be JSX. play() is
   // best-effort: the element keeps `controls` as the fallback when a policy
@@ -206,7 +284,11 @@ export function CameraWindow({ className }: { className?: string }) {
         onPointerUp={onRelease}
         onPointerCancel={onRelease}
         onLostPointerCapture={onRelease}
-        onDoubleClick={() => {
+        onDoubleClick={(event) => {
+          // A double-click on a control is aimed at the control. Without this
+          // a quick start-then-stop on the clip button would also snap the
+          // window back to its default size and place.
+          if ((event.target as HTMLElement).closest("button")) return;
           setOffset({ x: 0, y: 0 });
           setSize({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
         }}
@@ -217,25 +299,59 @@ export function CameraWindow({ className }: { className?: string }) {
           <GripHorizontalIcon aria-hidden className="size-3" />
           Camera
         </h2>
-        <button
-          type="button"
-          aria-pressed={!muted}
-          aria-label="Robot audio"
-          onClick={() => setMuted((v) => !v)}
-          title={muted ? "Turn on the robot's audio" : "Mute the robot's audio"}
-          className={cn(
-            "flex size-5 items-center justify-center rounded-sm border transition-colors",
-            muted
-              ? "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground"
-              : "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd",
+        <div className="flex items-center gap-1">
+          {/* Record red rather than the commanded cyan the speaker wears: this
+            * button does not set a value on the robot, it starts something
+            * that is running, and the bag recorder already spends signal-warn
+            * on exactly that. */}
+          <button
+            type="button"
+            aria-pressed={clip.capturing}
+            aria-label="Video clip"
+            aria-describedby={clip.supported ? undefined : unsupportedId}
+            disabled={!clip.supported || phase !== "live"}
+            onClick={() => (clip.capturing ? clip.stop() : clip.start())}
+            title={clipTitle}
+            className={cn(
+              "flex size-5 items-center justify-center rounded-sm border transition-colors",
+              clip.capturing
+                ? "border-signal-warn/50 bg-signal-warn/12 text-signal-warn"
+                : "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground",
+              "disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-muted-foreground",
+            )}
+          >
+            {clip.capturing ? (
+              <SquareIcon aria-hidden className="size-3 fill-current" />
+            ) : (
+              <CircleIcon aria-hidden className="size-3 fill-current" />
+            )}
+          </button>
+          {!clip.supported && (
+            <span id={unsupportedId} className="sr-only">
+              {clipTitle}
+            </span>
           )}
-        >
-          {muted ? (
-            <VolumeXIcon aria-hidden className="size-3" />
-          ) : (
-            <Volume2Icon aria-hidden className="size-3" />
-          )}
-        </button>
+
+          <button
+            type="button"
+            aria-pressed={!muted}
+            aria-label="Robot audio"
+            onClick={() => setMuted((v) => !v)}
+            title={muted ? "Turn on the robot's audio" : "Mute the robot's audio"}
+            className={cn(
+              "flex size-5 items-center justify-center rounded-sm border transition-colors",
+              muted
+                ? "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground"
+                : "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd",
+            )}
+          >
+            {muted ? (
+              <VolumeXIcon aria-hidden className="size-3" />
+            ) : (
+              <Volume2Icon aria-hidden className="size-3" />
+            )}
+          </button>
+        </div>
       </header>
 
       <div className="relative bg-black" style={{ height: size.height }}>
@@ -271,6 +387,39 @@ export function CameraWindow({ className }: { className?: string }) {
               </div>
             )}
           </div>
+        )}
+
+        {clip.capturing && (
+          // aria-hidden: a live region re-reading a duration every second is
+          // unusable. The status line below says the two things that matter.
+          <div
+            aria-hidden
+            className="absolute top-1 left-1 flex items-center gap-1.5 rounded-sm bg-black/60 px-1.5 py-0.5"
+          >
+            <RecordDot />
+            <span className="readout text-[10px] leading-none text-white">
+              {formatDuration(clip.elapsedSeconds)} · {formatSize(clip.bytes)}
+            </span>
+          </div>
+        )}
+
+        <span role="status" className="sr-only">
+          {clip.capturing
+            ? "Saving a clip"
+            : (clipReceipt?.text ?? "")}
+        </span>
+
+        {!clip.capturing && clipReceipt && (
+          // Bottom-right: bottom-left is the resize grip and the middle is
+          // where a failed session puts its sentence.
+          <p
+            className={cn(
+              "readout absolute right-0.5 bottom-0.5 rounded-sm bg-black/60 px-1.5 py-0.5 text-[10px] leading-tight",
+              clipReceipt.tone,
+            )}
+          >
+            {clipReceipt.text}
+          </p>
         )}
 
         {/* Bottom-LEFT, the corner that moves when the window grows — see
