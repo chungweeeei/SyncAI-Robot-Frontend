@@ -33,7 +33,17 @@ export const WEEKDAYS: readonly { value: number; short: string; long: string }[]
   { value: 0, short: "Sun", long: "Sunday" },
 ];
 
-const WEEKDAY_VALUES: readonly number[] = [1, 2, 3, 4, 5];
+/** Short day name by cron number, for the one place a Date's getDay() is read. */
+const SHORT_BY_DAY: readonly string[] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * The three day sets the form offers as one click. Weekdays and weekends are
+ * the two patrols every site asks for; anything else is a Custom pick from the
+ * seven toggles.
+ */
+export const DAILY_DAYS: readonly number[] = [0, 1, 2, 3, 4, 5, 6];
+export const WEEKDAY_DAYS: readonly number[] = [1, 2, 3, 4, 5];
+export const WEEKEND_DAYS: readonly number[] = [0, 6];
 
 /** The only timed trigger the picker can express: a clock time on some days. */
 export interface TimeOfDay {
@@ -127,14 +137,86 @@ function pad(value: number): string {
 function describeDays(days: readonly number[]): string {
   if (days.length === 7) return "Daily";
   if (
-    days.length === WEEKDAY_VALUES.length &&
-    WEEKDAY_VALUES.every((day) => days.includes(day))
+    days.length === WEEKDAY_DAYS.length &&
+    WEEKDAY_DAYS.every((day) => days.includes(day))
   ) {
     return "Weekdays";
+  }
+  if (
+    days.length === WEEKEND_DAYS.length &&
+    WEEKEND_DAYS.every((day) => days.includes(day))
+  ) {
+    return "Weekends";
   }
   return WEEKDAYS.filter((day) => days.includes(day.value))
     .map((day) => day.short)
     .join(", ");
+}
+
+const DAY_MS = 86_400_000;
+
+function startOfDay(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+/**
+ * The first moment after `now` at which a timed trigger fires, in the clock
+ * this JavaScript runtime keeps — which is the operator's, and the zone the
+ * form sends with the trigger, so the two agree by construction. Walking day by
+ * day through the Date constructor rather than adding milliseconds is what keeps
+ * a daylight-saving change from shifting "09:00" to 08:00 or 10:00. Null when
+ * no day is selected, since nothing can fire.
+ */
+export function nextTimedRun({ hour, minute, days }: TimeOfDay, now: Date): Date | null {
+  if (!days.length) return null;
+  for (let offset = 0; offset <= 7; offset++) {
+    const candidate = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + offset,
+      hour,
+      minute,
+    );
+    if (candidate.getTime() > now.getTime() && days.includes(candidate.getDay())) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+/**
+ * `today 09:00` / `tomorrow 09:00` / `Thu 09:00`. Relative words for the two
+ * days an operator can name without a calendar, the weekday beyond that — the
+ * next timed run is always inside a week, so the weekday is never ambiguous.
+ */
+export function describeNextRun(next: Date, now: Date): string {
+  const time = `${pad(next.getHours())}:${pad(next.getMinutes())}`;
+  const dayDiff = Math.round((startOfDay(next) - startOfDay(now)) / DAY_MS);
+  if (dayDiff === 0) return `today ${time}`;
+  if (dayDiff === 1) return `tomorrow ${time}`;
+  return `${SHORT_BY_DAY[next.getDay()]} ${time}`;
+}
+
+/**
+ * `2026-08-04 09:00` in this runtime's local clock — the time the operator
+ * would read off the wall when the robot sets off. For a browser this is the
+ * zone the form registered the trigger in, so the list answers in the same
+ * numbers the form was given.
+ */
+export function formatLocalRunTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/**
+ * `2026-08-04 09:00` sliced straight out of the ISO string, so it is UTC and
+ * needs no clock. The server render's answer: a prerendered page has no idea
+ * where the operator is, and toLocaleString there would hydrate to a different
+ * string in the browser. Same reasoning as map-card's formatTimestamp.
+ */
+export function formatUtcRunTime(iso: string): string {
+  return iso.slice(0, 16).replace("T", " ");
 }
 
 /** `every 30 min` / `Weekdays at 09:00 · Asia/Taipei`. */

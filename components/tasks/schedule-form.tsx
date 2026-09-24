@@ -5,24 +5,42 @@ import { CalendarPlusIcon } from "lucide-react";
 
 import { Segmented } from "@/components/console/instrument";
 import { Input } from "@/components/ui/input";
+import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";
 import type { ScheduleTrigger } from "@/lib/api/schedule";
-import { WEEKDAYS, browserTimeZone, toCron } from "@/lib/task/schedule";
+import {
+  DAILY_DAYS,
+  WEEKDAYS,
+  WEEKDAY_DAYS,
+  WEEKEND_DAYS,
+  describeNextRun,
+  describeTrigger,
+  nextTimedRun,
+  toCron,
+} from "@/lib/task/schedule";
 import { cn } from "@/lib/utils";
 
-type TriggerKind = "interval" | "cron";
+/** The presets: three one-click day sets, a free pick, and a plain interval. */
+type Repeat = "daily" | "weekdays" | "weekends" | "custom" | "interval";
 
-const TRIGGER_OPTIONS = [
-  { value: "interval", label: "Every" },
-  { value: "cron", label: "At a time" },
-] as const satisfies readonly { value: TriggerKind; label: string }[];
+const REPEAT_OPTIONS = [
+  { value: "daily", label: "Daily" },
+  { value: "weekdays", label: "Weekdays" },
+  { value: "weekends", label: "Weekends" },
+  { value: "custom", label: "Custom" },
+  { value: "interval", label: "Interval" },
+] as const satisfies readonly { value: Repeat; label: string }[];
 
-const ALL_DAYS = WEEKDAYS.map((day) => day.value);
+type IntervalUnit = "minutes" | "hours";
+
+const UNIT_OPTIONS = [
+  { value: "minutes", label: "minutes" },
+  { value: "hours", label: "hours" },
+] as const satisfies readonly { value: IntervalUnit; label: string }[];
+
+const SECONDS_PER: Record<IntervalUnit, number> = { minutes: 60, hours: 3600 };
 
 /** What `<input type="time">` yields: `HH:MM`, or `""` when cleared. */
 const TIME_PATTERN = /^(\d{2}):(\d{2})$/;
-
-/** A useSyncExternalStore subscription for a value that cannot change. */
-const neverChanges = () => () => {};
 
 export interface ScheduleFormProps {
   /** Already-registered ids, so a duplicate is refused before the 400. */
@@ -39,32 +57,40 @@ export interface ScheduleFormProps {
 /**
  * Register the authored step list to run on a timer.
  *
- * The trigger is a Segmented rather than two always-visible fields, which is what
- * makes the backend's cron-XOR-interval validator unreachable: only the selected
- * kind is ever built into the request, so "provide exactly one" cannot fail.
+ * One "Repeat" picker instead of a kind switch followed by a value: Daily,
+ * Weekdays and Weekends are the patrols every site asks for and each is one
+ * click, Custom opens the seven day toggles, Interval opens a count and a unit.
+ * Only the selected kind is ever built into the request, which is what makes
+ * the backend's cron-XOR-interval validator unreachable: "provide exactly one"
+ * cannot fail.
  *
- * "At a time" is a clock time and seven day toggles, not the cron string the
- * backend stores. The field used to be that string, with `0 9 * * 1-5` as its
- * placeholder, and it was the one control on this screen an end customer could
- * not fill in without asking an engineer — exactly the vocabulary the UI copy
- * rule keeps off the screen. The form builds the cron itself (`toCron`), and it
- * is the only writer, so what this console registers always reads back as a
- * sentence in the schedule list.
+ * Nothing here is cron. The backend's timed trigger is a cron string and the
+ * field used to be that string, with `0 9 * * 1-5` as its placeholder — the one
+ * control on this screen an end customer could not fill in without asking an
+ * engineer. The form builds it with `toCron` and is the only writer, so what
+ * this console registers always reads back as a sentence in the list. The
+ * interval is entered in minutes or hours for the same reason: nobody thinks in
+ * 1800 seconds.
  *
- * The timezone is this browser's, sent unasked and shown as a muted line rather
- * than offered as a field. A cron without one is read by the backend in UTC, and
- * an operator typing 09:00 means 09:00 where they are standing; the robot is on
- * the same LAN, so that zone is the right one in every case we have met. It is
- * read through useSyncExternalStore with a server snapshot of "", so the server
- * render and the first client render agree — the pane is not prerendered today,
- * but the console does not rely on that.
+ * The preview line under the fields is the same `describeTrigger` the schedule
+ * list renders with, so the words an operator reads before pressing Create are
+ * the words that will appear in the list — one vocabulary, no translation
+ * between the two. A timed trigger also shows its next run, which is the only
+ * way to answer "which 09:00" before the request goes out.
+ *
+ * The timezone is this browser's, sent unasked and named in the preview rather
+ * than offered as a field. A cron without one is read by the backend in UTC,
+ * and an operator typing 09:00 means 09:00 where they are standing; the robot is
+ * on the same LAN, so that zone is the right one in every case we have met.
+ * Until the browser has reported it the local-time sentence is held back, which
+ * is what keeps the server render and the first client render identical.
  *
  * The id is operator-authored with no prefill, unlike a task id. A schedule is a
  * durable named thing they have to recognise in the list a week later, and
  * `robot01-sched-1782786519` is not that.
  *
  * Reset is by remounting — TaskConsole keys this component and bumps the key
- * after a successful create — rather than by clearing five fields in an effect.
+ * after a successful create — rather than by clearing six fields in an effect.
  */
 export function ScheduleForm({
   existingIds,
@@ -75,28 +101,34 @@ export function ScheduleForm({
   onCreate,
 }: ScheduleFormProps) {
   const [id, setId] = React.useState("");
-  const [kind, setKind] = React.useState<TriggerKind>("interval");
-  const [intervalText, setIntervalText] = React.useState("1800");
+  const [repeat, setRepeat] = React.useState<Repeat>("daily");
   const [time, setTime] = React.useState("09:00");
-  const [days, setDays] = React.useState<readonly number[]>(ALL_DAYS);
-  const timeId = React.useId();
-
-  // A browser fact read once the browser exists, not state: it never changes
-  // after mount, so there is nothing to synchronise. The server's answer is ""
-  // and the line that shows the zone stays off until the client has one, which
-  // is what keeps the server and first client render identical.
-  const timezone = React.useSyncExternalStore(
-    neverChanges,
-    browserTimeZone,
-    () => "",
-  );
+  // Only read while `repeat` is "custom"; seeded with the weekdays because a
+  // custom pick is almost always "weekdays, minus one" rather than a build-up
+  // from nothing.
+  const [customDays, setCustomDays] = React.useState<readonly number[]>(WEEKDAY_DAYS);
+  const [amountText, setAmountText] = React.useState("30");
+  const [unit, setUnit] = React.useState<IntervalUnit>("minutes");
+  const timezone = useBrowserTimeZone();
 
   const trimmedId = id.trim();
-  const interval = Number(intervalText.trim());
+
+  const days =
+    repeat === "daily"
+      ? DAILY_DAYS
+      : repeat === "weekdays"
+        ? WEEKDAY_DAYS
+        : repeat === "weekends"
+          ? WEEKEND_DAYS
+          : customDays;
   const timeMatch = TIME_PATTERN.exec(time);
   const timed = timeMatch
     ? { hour: Number(timeMatch[1]), minute: Number(timeMatch[2]), days }
     : null;
+
+  const amount = Number(amountText.trim());
+  const intervalSeconds =
+    Number.isInteger(amount) && amount > 0 ? amount * SECONDS_PER[unit] : null;
 
   // `id: str` has no min_length on the backend, so a blank one would reach
   // Temporal and come back as a 502 rather than a sentence about the name.
@@ -106,20 +138,54 @@ export function ScheduleForm({
     ? "Name the schedule."
     : duplicate
       ? "A schedule with this name already exists."
-      : kind === "cron"
-        ? !timed
+      : repeat === "interval"
+        ? intervalSeconds === null
+          ? "The interval must be a whole number above zero."
+          : null
+        : !timed
           ? "Pick a time."
           : !days.length
             ? "Pick at least one day."
-            : null
-        : !(Number.isInteger(interval) && interval > 0)
-          ? "The interval must be a whole number of seconds above zero."
-          : null;
+            : null;
 
   const submittable = ready && !busy && !localReason;
 
+  /**
+   * What will be sent, built once so the preview and the request cannot drift.
+   * Null while the fields do not yet make a trigger. The zone is omitted rather
+   * than sent blank when the browser could not name one, and never sent for an
+   * interval: the backend applies it only to the cron path, and a request
+   * carrying a field with no effect is a lie in the log.
+   */
+  const trigger: ScheduleTrigger | null =
+    repeat === "interval"
+      ? intervalSeconds === null
+        ? null
+        : { interval_seconds: intervalSeconds }
+      : timed && days.length
+        ? timezone
+          ? { cron: toCron(timed), timezone }
+          : { cron: toCron(timed) }
+        : null;
+
+  // The preview is only shown once the browser has a zone: it is built from the
+  // browser's clock, so a server-rendered version would name a different
+  // moment than the one the operator sees after hydration. Both lines gate on
+  // the same value for that reason.
+  const preview = (() => {
+    if (!trigger || !timezone) return null;
+    if (trigger.interval_seconds) {
+      return `Runs ${describeTrigger({ interval_seconds: trigger.interval_seconds })}.`;
+    }
+    const when = describeTrigger({ cron: trigger.cron });
+    const next = timed ? nextTimedRun(timed, new Date()) : null;
+    return `Runs ${when} in your local time (${timezone}).${
+      next ? ` Next run ${describeNextRun(next, new Date())}.` : ""
+    }`;
+  })();
+
   const toggleDay = (day: number) =>
-    setDays((current) =>
+    setCustomDays((current) =>
       current.includes(day)
         ? current.filter((entry) => entry !== day)
         : [...current, day],
@@ -130,20 +196,8 @@ export function ScheduleForm({
       className="space-y-2"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!submittable) return;
-        if (kind === "interval") {
-          onCreate(trimmedId, { interval_seconds: interval });
-          return;
-        }
-        // `submittable` already required a parsed time; the guard is for the
-        // type, not for a reachable state.
-        if (!timed) return;
-        const cron = toCron(timed);
-        // The zone is omitted rather than sent blank when the browser could not
-        // name one, and never sent for an interval: the backend applies it only
-        // to the cron path, and a request carrying a field with no effect is a
-        // lie in the log.
-        onCreate(trimmedId, timezone ? { cron, timezone } : { cron });
+        if (!submittable || !trigger) return;
+        onCreate(trimmedId, trigger);
       }}
     >
       <label className="block">
@@ -158,63 +212,64 @@ export function ScheduleForm({
       </label>
 
       <div>
-        <span className="instrument-label text-muted-foreground">Trigger</span>
-        <div className="mt-0.5 flex items-center gap-1.5">
-          <Segmented
-            value={kind}
-            options={TRIGGER_OPTIONS}
-            disabled={busy}
-            onChange={setKind}
-          />
-          {kind === "interval" ? (
-            <>
-              <Input
-                inputMode="numeric"
-                value={intervalText}
-                disabled={busy}
-                onChange={(event) => setIntervalText(event.target.value)}
-                className="readout h-7 w-20 rounded-sm text-[13px]"
-              />
-              <span className="instrument-label text-muted-foreground">seconds</span>
-            </>
-          ) : (
-            <>
-              <label htmlFor={timeId} className="sr-only">
-                Time of day
-              </label>
-              <Input
-                id={timeId}
-                type="time"
-                step={60}
-                value={time}
-                disabled={busy}
-                onChange={(event) => setTime(event.target.value)}
-                className="readout h-7 flex-1 rounded-sm text-[13px]"
-              />
-            </>
-          )}
-        </div>
+        <span className="instrument-label text-muted-foreground">Repeat</span>
+        <Segmented
+          stretch
+          className="mt-0.5"
+          value={repeat}
+          options={REPEAT_OPTIONS}
+          disabled={busy}
+          onChange={setRepeat}
+        />
       </div>
 
-      {kind === "cron" && (
+      {repeat === "custom" && (
         <div>
           <span className="instrument-label text-muted-foreground">Days</span>
           <DayToggles
             className="mt-0.5"
-            days={days}
+            days={customDays}
             disabled={busy}
             onToggle={toggleDay}
           />
-          {/* Said in the operator's terms — the zone name is the one piece of
-            * this they can check against their own clock — and only once the
-            * browser has reported one; a line about a zone with no zone in it
-            * would be noise. */}
-          {timezone && (
-            <p className="mt-1 text-[11px] leading-tight text-muted-foreground">
-              Runs at this time in {timezone}, this browser&apos;s timezone.
-            </p>
-          )}
         </div>
+      )}
+
+      {repeat === "interval" ? (
+        <div className="flex items-center gap-1.5">
+          <label className="flex items-center gap-1.5">
+            <span className="instrument-label text-muted-foreground">Every</span>
+            <Input
+              inputMode="numeric"
+              value={amountText}
+              disabled={busy}
+              onChange={(event) => setAmountText(event.target.value)}
+              className="readout h-7 w-16 rounded-sm text-[13px]"
+            />
+          </label>
+          <Segmented
+            value={unit}
+            options={UNIT_OPTIONS}
+            disabled={busy}
+            onChange={setUnit}
+          />
+        </div>
+      ) : (
+        <label className="flex items-center gap-1.5">
+          <span className="instrument-label text-muted-foreground">Time</span>
+          <Input
+            type="time"
+            step={60}
+            value={time}
+            disabled={busy}
+            onChange={(event) => setTime(event.target.value)}
+            className="readout h-7 w-32 rounded-sm text-[13px]"
+          />
+        </label>
+      )}
+
+      {preview && (
+        <p className="text-[11px] leading-snug text-muted-foreground">{preview}</p>
       )}
 
       {error && (
@@ -246,7 +301,7 @@ export function ScheduleForm({
 
 /**
  * Seven pressed/unpressed days, drawn as one strip in Segmented's clothes so
- * the row reads as the same instrument as the trigger picker beside it.
+ * the row reads as the same instrument as the Repeat picker above it.
  * Segmented itself is not reused because it is single-select — a set of days is
  * the one control on the console where several segments can be lit at once.
  * Each button is a real button with `aria-pressed`, so the state is announced

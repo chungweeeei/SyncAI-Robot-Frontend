@@ -256,12 +256,16 @@ test.describe("the task console", () => {
 
     await page.getByRole("button", { name: 'Schedule "Morning round"' }).click();
     await page.getByPlaceholder("robot01-daily-patrol").fill("weekday-patrol");
-    await page.getByRole("button", { name: "At a time" }).click();
-    await page.getByLabel("Time of day").fill("09:00");
-    await page.getByRole("button", { name: "Saturday" }).click();
-    await page.getByRole("button", { name: "Sunday" }).click();
+    await page.getByRole("button", { name: "Weekdays" }).click();
+    await page.getByLabel("Time").fill("09:00");
 
-    // Nothing on the pane may read as cron: no placeholder, no preview.
+    // The preview is the list's own sentence, shown before anything is sent,
+    // and nothing on the pane may read as cron: no placeholder, no preview.
+    await expect(
+      page.getByText(
+        /^Runs Weekdays at 09:00 in your local time \(.+\)\. Next run /,
+      ),
+    ).toBeVisible();
     await expect(page.getByText("* *")).toHaveCount(0);
 
     await page.getByRole("button", { name: "Create schedule" }).click();
@@ -285,39 +289,78 @@ test.describe("the task console", () => {
     expect(body.trigger.interval_seconds).toBeUndefined();
   });
 
-  test("lists registered schedules above the editor, in words", async ({
+  test("posts an interval in seconds from the minutes the operator typed", async ({
     page,
   }) => {
-    await mockBackend(page, {
-      schedules: [
-        {
-          id: "nightly",
-          trigger: { cron: "0 21 * * *", timezone: "Asia/Taipei" },
-          paused: false,
-          next_run_times: [],
-        },
-      ],
-    });
+    // The unit conversion is the one place a screen-only test would pass a
+    // build that registers "every 30 seconds" for a robot meant to go every
+    // 30 minutes.
+    const writes = await mockBackend(page);
     await page.goto("/tasks");
 
-    // The stored cron is read back as a sentence, never shown as itself.
-    await expect(page.getByText("Daily at 21:00 · Asia/Taipei")).toBeVisible();
-    await expect(page.getByText("0 21 * * *")).toHaveCount(0);
+    await page.getByRole("button", { name: 'Schedule "Morning round"' }).click();
+    await page.getByPlaceholder("robot01-daily-patrol").fill("half-hourly");
+    await page.getByRole("button", { name: "Interval" }).click();
+    await page.getByLabel("Every").fill("30");
+    await expect(page.getByText("Runs every 30 min.")).toBeVisible();
 
-    // What the robot already does on its own sits with the library, above the
-    // thing being drafted.
-    const schedules = page.getByRole("heading", { name: "Registered schedules" });
-    const editor = page.getByRole("button", { name: /Task editor/ });
-    await expect(schedules).toBeVisible();
-    const editorFollows = await schedules.evaluate(
-      (heading, editorEl) =>
-        Boolean(
-          heading.compareDocumentPosition(editorEl as Node) &
-            Node.DOCUMENT_POSITION_FOLLOWING,
-        ),
-      await editor.elementHandle(),
-    );
-    expect(editorFollows).toBe(true);
+    await page.getByRole("button", { name: "Create schedule" }).click();
+
+    await expect
+      .poll(() => writes.filter((w) => w.method === "POST"))
+      .toHaveLength(1);
+    const body = writes.find((w) => w.method === "POST")?.body as {
+      trigger: { cron?: string; timezone?: string; interval_seconds?: number };
+    };
+    expect(body.trigger).toEqual({ interval_seconds: 1800 });
+  });
+
+  test.describe("from a browser in Taipei", () => {
+    // Pinned so the local-time assertion below is one number, and so the row
+    // has no reason to name a zone: the schedule's and the browser's agree.
+    test.use({ timezoneId: "Asia/Taipei" });
+
+    test("lists registered schedules above the editor, in words", async ({
+      page,
+    }) => {
+      await mockBackend(page, {
+        schedules: [
+          {
+            id: "nightly",
+            trigger: { cron: "0 21 * * *", timezone: "Asia/Taipei" },
+            paused: false,
+            next_run_times: ["2026-09-24T13:00:00Z"],
+          },
+        ],
+      });
+      await page.goto("/tasks");
+
+      // The stored cron is read back as a sentence, never shown as itself.
+      await expect(page.getByText("Daily at 21:00 · Asia/Taipei")).toBeVisible();
+      await expect(page.getByText("0 21 * * *")).toHaveCount(0);
+
+      // 13:00Z is 21:00 on the operator's clock, and that is the number shown:
+      // the UTC readout was the one that made a correct schedule look wrong.
+      await expect(
+        page.getByText("2026-09-24 21:00", { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByText("UTC", { exact: true })).toHaveCount(0);
+
+      // What the robot already does on its own sits with the library, above the
+      // thing being drafted.
+      const schedules = page.getByRole("heading", { name: "Registered schedules" });
+      const editor = page.getByRole("button", { name: /Task editor/ });
+      await expect(schedules).toBeVisible();
+      const editorFollows = await schedules.evaluate(
+        (heading, editorEl) =>
+          Boolean(
+            heading.compareDocumentPosition(editorEl as Node) &
+              Node.DOCUMENT_POSITION_FOLLOWING,
+          ),
+        await editor.elementHandle(),
+      );
+      expect(editorFollows).toBe(true);
+    });
   });
 });
 

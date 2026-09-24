@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   WEEKDAYS,
+  describeNextRun,
   describeTrigger,
+  formatLocalRunTime,
+  formatUtcRunTime,
   fromCron,
+  nextTimedRun,
   toCron,
 } from "@/lib/task/schedule";
 
@@ -79,7 +83,8 @@ describe("describeTrigger", () => {
     expect(describeTrigger({ cron: "5 18 * * 1,3,5" })).toBe(
       "Mon, Wed, Fri at 18:05",
     );
-    expect(describeTrigger({ cron: "0 22 * * 6,0" })).toBe("Sat, Sun at 22:00");
+    expect(describeTrigger({ cron: "0 22 * * 6,0" })).toBe("Weekends at 22:00");
+    expect(describeTrigger({ cron: "0 22 * * 0" })).toBe("Sun at 22:00");
   });
 
   it("appends the timezone the schedule was registered with", () => {
@@ -100,5 +105,61 @@ describe("describeTrigger", () => {
     expect(describeTrigger({ interval_seconds: 7200 })).toBe("every 2 h");
     expect(describeTrigger({ interval_seconds: 90 })).toBe("every 90 s");
     expect(describeTrigger({})).toBe("—");
+  });
+});
+
+describe("nextTimedRun", () => {
+  // Local-clock dates built from components, so the expectations hold in
+  // whatever zone the test runner happens to be in.
+  const wed = new Date(2026, 8, 23, 10, 30); // Wednesday 2026-09-23 10:30
+
+  it("picks today when the time is still ahead, else the next allowed day", () => {
+    expect(nextTimedRun({ hour: 11, minute: 0, days: [3] }, wed)).toEqual(
+      new Date(2026, 8, 23, 11, 0),
+    );
+    expect(nextTimedRun({ hour: 9, minute: 0, days: [3] }, wed)).toEqual(
+      new Date(2026, 8, 30, 9, 0),
+    );
+    expect(nextTimedRun({ hour: 9, minute: 0, days: [1, 2, 3, 4, 5] }, wed)).toEqual(
+      new Date(2026, 8, 24, 9, 0),
+    );
+    expect(nextTimedRun({ hour: 9, minute: 0, days: [0, 6] }, wed)).toEqual(
+      new Date(2026, 8, 26, 9, 0),
+    );
+  });
+
+  it("treats the exact current minute as already gone", () => {
+    expect(nextTimedRun({ hour: 10, minute: 30, days: [3] }, wed)).toEqual(
+      new Date(2026, 8, 30, 10, 30),
+    );
+  });
+
+  it("has nothing to say when no day is selected", () => {
+    expect(nextTimedRun({ hour: 9, minute: 0, days: [] }, wed)).toBeNull();
+  });
+});
+
+describe("describeNextRun", () => {
+  const now = new Date(2026, 8, 23, 10, 30);
+
+  it("says today and tomorrow, then the weekday", () => {
+    expect(describeNextRun(new Date(2026, 8, 23, 11, 0), now)).toBe("today 11:00");
+    expect(describeNextRun(new Date(2026, 8, 24, 9, 5), now)).toBe("tomorrow 09:05");
+    expect(describeNextRun(new Date(2026, 8, 26, 9, 0), now)).toBe("Sat 09:00");
+  });
+});
+
+describe("run time formatting", () => {
+  it("formats the local clock from any ISO instant", () => {
+    const local = new Date(2026, 8, 24, 9, 0);
+    expect(formatLocalRunTime(local.toISOString())).toBe("2026-09-24 09:00");
+  });
+
+  it("hands back what it cannot parse rather than NaN", () => {
+    expect(formatLocalRunTime("soon")).toBe("soon");
+  });
+
+  it("slices UTC without touching a clock", () => {
+    expect(formatUtcRunTime("2026-09-24T01:00:00Z")).toBe("2026-09-24 01:00");
   });
 });
