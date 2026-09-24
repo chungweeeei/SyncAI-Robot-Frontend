@@ -238,7 +238,7 @@ export function stepDraftError(draft: StepDraft): string | null {
   if (draft.type !== "MOVE") return null;
   // No theta *range* check: out-of-range is what normalizeTheta is for, and
   // refusing 270° when the answer is -90° would be inventing a constraint.
-  return moveParams(draft) ? null : "Needs a numeric X, Y and heading.";
+  return moveParams(draft) ? null : "Pick a waypoint.";
 }
 
 /**

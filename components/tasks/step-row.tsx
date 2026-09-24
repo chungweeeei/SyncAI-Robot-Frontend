@@ -244,8 +244,12 @@ export function StepRow({
           {/* Coordinates and the spoken line are kept in the draft across a type
            * change, so switching to STANDUP and back does not lose what was typed —
            * the wire shape is derived from the type, not stored alongside it. */}
+          {/* The waypoint is the whole of a MOVE row's input: no X / Y / heading
+           * fields. The draft still carries the numbers — they are what is sent,
+           * and a template saved with hand-typed ones still loads and runs — but
+           * an operator places a waypoint on the floor plan, not a coordinate. */}
           {step.type === "MOVE" && (
-            <div className="space-y-1.5">
+            <div>
               <VertexPicker
                 vertices={vertices}
                 status={verticesStatus}
@@ -269,31 +273,6 @@ export function StepRow({
                   })
                 }
               />
-
-              <div className="grid grid-cols-3 gap-1.5">
-                <CoordinateField
-                  label="X"
-                  unit="m"
-                  value={step.x}
-                  disabled={disabled}
-                  onChange={(x) => onPatch({ x, vertexId: null, vertexMissing: false })}
-                />
-                <CoordinateField
-                  label="Y"
-                  unit="m"
-                  value={step.y}
-                  disabled={disabled}
-                  onChange={(y) => onPatch({ y, vertexId: null, vertexMissing: false })}
-                />
-                <CoordinateField
-                  label="Heading"
-                  unit="°"
-                  value={step.theta}
-                  disabled={disabled}
-                  onChange={(theta) => onPatch({ theta, vertexId: null, vertexMissing: false })}
-                  hint={foldHint(step.theta)}
-                />
-              </div>
             </div>
           )}
 
@@ -306,8 +285,7 @@ export function StepRow({
                   disabled={disabled}
                   // No maxLength attribute: it would silently truncate a paste, and
                   // a hidden edit is worse than the row error below saying how far
-                  // over the limit the text is. Same stance as the coordinate
-                  // fields never rewriting under the cursor.
+                  // over the limit the text is.
                   onChange={(event) => onPatch({ text: event.target.value })}
                   placeholder="Delivery arrived — please take your items."
                   className="mt-0.5 h-7 rounded-sm text-[13px]"
@@ -351,65 +329,5 @@ export function StepRow({
         </p>
       )}
     </li>
-  );
-}
-
-/**
- * What the heading will actually be sent as, shown only when the fold changes it.
- *
- * The field itself is never rewritten under the cursor — that would make typing
- * "180" one character at a time impossible, since "1" and "18" are both valid
- * angles the fold would leave alone but "1800" is not. Showing the result instead
- * means the fold is not a surprise discovered after dispatch.
- */
-function foldHint(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  const value = Number(trimmed);
-  if (!Number.isFinite(value)) return null;
-  const folded = normalizeTheta(value);
-  return folded === value ? null : `→ ${folded.toFixed(1)}°`;
-}
-
-function CoordinateField({
-  label,
-  unit,
-  value,
-  disabled,
-  onChange,
-  hint,
-}: {
-  label: string;
-  unit: string;
-  value: string;
-  disabled: boolean;
-  onChange: (value: string) => void;
-  hint?: string | null;
-}) {
-  return (
-    <label className="block">
-      <span className="instrument-label text-muted-foreground">
-        {label} <span className="font-normal">({unit})</span>
-      </span>
-      <Input
-        // Not type="number": the spinners are useless at this size, and a browser
-        // that clears the value on an intermediate string ("1e") would fight the
-        // text-in-parse-once model the draft is built on. inputMode gets the
-        // numeric keypad on a touch console without any of that.
-        inputMode="decimal"
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder="0.00"
-        // Squared off and shortened to match the console's chrome; the shared
-        // Input is sized for the settings forms, which have room.
-        className="readout mt-0.5 h-7 rounded-sm text-[13px]"
-      />
-      {hint && (
-        <span className="readout mt-0.5 block text-[11px] text-signal-caution">
-          {hint}
-        </span>
-      )}
-    </label>
   );
 }

@@ -57,11 +57,12 @@ describe("stepDraftError", () => {
     expect(stepDraftError(move())).toBeNull();
   });
 
-  it("refuses a MOVE with any non-numeric field", () => {
+  it("refuses a MOVE with any non-numeric field, in words about waypoints", () => {
+    // The composer shows no coordinate fields, so a sentence naming X, Y and
+    // heading would point at inputs the operator cannot see; the only way to
+    // fill a MOVE row there is to pick a waypoint.
     for (const over of [{ x: "" }, { y: "abc" }, { theta: "" }, { x: "1,5" }]) {
-      expect(stepDraftError(move(over))).toBe(
-        "Needs a numeric X, Y and heading.",
-      );
+      expect(stepDraftError(move(over))).toBe("Pick a waypoint.");
     }
   });
 

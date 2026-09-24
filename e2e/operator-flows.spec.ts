@@ -420,17 +420,21 @@ test.describe("the step editor", () => {
     await page
       .getByRole("button", { name: 'Load "Morning round" into the editor' })
       .click();
+    // The MOVE row's only input is its waypoint picker.
+    const waypoint = page.getByRole("listitem").getByRole("combobox");
     await expect(page.getByText(/^dock · \(/)).toBeVisible();
-    await expect(page.getByLabel(/^X/)).toHaveCount(0);
+    await expect(waypoint).toHaveCount(0);
 
     await page.getByTitle("Say a line on the robot speaker (TTS).").click();
     const say = page.getByPlaceholder(/Delivery arrived/);
     await expect(say).toBeVisible();
 
     await page.getByRole("button", { name: "Expand all" }).click();
-    await expect(page.getByLabel(/^X/)).toBeVisible();
+    await expect(waypoint).toBeVisible();
+    // Unfolded, a MOVE row is the picker alone: no coordinate fields.
+    await expect(page.getByLabel(/^(X|Y|Heading)\b/)).toHaveCount(0);
     await page.getByRole("button", { name: "Collapse all" }).click();
-    await expect(page.getByLabel(/^X/)).toHaveCount(0);
+    await expect(waypoint).toHaveCount(0);
     // Empty, and folded all the same: the header says what is missing.
     await expect(say).toHaveCount(0);
     const speakRow = page.getByRole("button", { name: /^Speak/, expanded: false });
