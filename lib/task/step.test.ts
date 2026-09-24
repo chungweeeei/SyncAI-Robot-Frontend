@@ -6,10 +6,12 @@ import {
   formatDraftAngle,
   formatDraftPosition,
   fromTemplateSteps,
+  moveStep,
   newStepDraft,
   stepDraftError,
   stepDraftsSubmittable,
   stepIdFor,
+  stepSummary,
   toDispatchSteps,
   toStepRequests,
   toTemplateSteps,
@@ -55,11 +57,12 @@ describe("stepDraftError", () => {
     expect(stepDraftError(move())).toBeNull();
   });
 
-  it("refuses a MOVE with any non-numeric field", () => {
+  it("refuses a MOVE with any non-numeric field, in words about waypoints", () => {
+    // The composer shows no coordinate fields, so a sentence naming X, Y and
+    // heading would point at inputs the operator cannot see; the only way to
+    // fill a MOVE row there is to pick a waypoint.
     for (const over of [{ x: "" }, { y: "abc" }, { theta: "" }, { x: "1,5" }]) {
-      expect(stepDraftError(move(over))).toBe(
-        "Needs a numeric X, Y and heading.",
-      );
+      expect(stepDraftError(move(over))).toBe("Pick a waypoint.");
     }
   });
 
@@ -99,6 +102,62 @@ describe("stepDraftsSubmittable", () => {
   it("needs every row, not just one", () => {
     expect(stepDraftsSubmittable([move(), newStepDraft("STANDUP")])).toBe(true);
     expect(stepDraftsSubmittable([move(), move({ x: "" })])).toBe(false);
+  });
+});
+
+describe("stepSummary", () => {
+  it("leads a MOVE with the waypoint it came from", () => {
+    expect(stepSummary(move({ x: "2.5", y: "1.25", theta: "90" }), "dock")).toBe(
+      "dock · (2.5, 1.25) · 90°",
+    );
+  });
+
+  it("reads back what was typed, not a reformatted number", () => {
+    // A folded row that rounded "2.500" to "2.5" would disagree with the field
+    // the operator sees the moment they unfold it.
+    expect(stepSummary(move({ x: " 2.500 ", y: "-0", theta: "0" }))).toBe(
+      "(2.500, -0) · 0°",
+    );
+  });
+
+  it("has nothing to say for an unfinished row or a bare posture", () => {
+    expect(stepSummary(move({ x: "" }))).toBeNull();
+    expect(stepSummary(newStepDraft("SPEAK"))).toBeNull();
+    expect(stepSummary(newStepDraft("STANDUP"))).toBeNull();
+  });
+
+  it("quotes a spoken line", () => {
+    expect(stepSummary(speak(" Hello "))).toBe("“Hello”");
+  });
+});
+
+describe("moveStep", () => {
+  const twenty = Array.from({ length: 20 }, (_, i) => i + 1);
+
+  it("puts a far row first and shifts the rest down in order", () => {
+    // The case the drag exists for: step 16 of 20 made the first thing run.
+    // Every row in between keeps its relative order — this is an insert, not
+    // the neighbour swap the old up/down buttons did.
+    const moved = moveStep(twenty, 15, 0);
+    expect(moved).toEqual([16, ...twenty.filter((n) => n !== 16)]);
+  });
+
+  it("moves a row to the end", () => {
+    expect(moveStep([1, 2, 3, 4], 0, 3)).toEqual([2, 3, 4, 1]);
+  });
+
+  it("returns the same list for a drop where it started or out of range", () => {
+    // Same reference, so a drag released on its own slot re-renders nothing.
+    const list = [1, 2, 3];
+    expect(moveStep(list, 1, 1)).toBe(list);
+    expect(moveStep(list, -1, 0)).toBe(list);
+    expect(moveStep(list, 0, 3)).toBe(list);
+  });
+
+  it("never mutates its input", () => {
+    const list = [1, 2, 3];
+    moveStep(list, 2, 0);
+    expect(list).toEqual([1, 2, 3]);
   });
 });
 

@@ -129,6 +129,55 @@ export function formatDraftAngle(value: number): string {
 }
 
 /**
+ * The one-line readback a folded row shows in place of its fields, or null when
+ * there is nothing to say yet.
+ *
+ * Built from the draft's own text rather than the parsed numbers, so a folded row
+ * reads exactly what the operator typed; a row whose fields do not parse is never
+ * folded in the first place (see StepRow). The waypoint name leads when the
+ * numbers still came from one, because "dock" is what the operator recognises
+ * when scanning twenty rows — the coordinates follow for telling apart two
+ * waypoints that share a name.
+ */
+export function stepSummary(
+  draft: StepDraft,
+  waypointName: string | null = null,
+): string | null {
+  switch (draft.type) {
+    case "MOVE": {
+      const [x, y, theta] = [draft.x, draft.y, draft.theta].map((v) => v.trim());
+      if (!x || !y || !theta) return null;
+      const pose = `(${x}, ${y}) · ${theta}°`;
+      return waypointName ? `${waypointName} · ${pose}` : pose;
+    }
+    case "SPEAK": {
+      const text = draft.text.trim();
+      return text ? `“${text}”` : null;
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * The list with the item at `from` taken out and put back at `to`.
+ *
+ * Splice-and-insert rather than a swap, because dragging step 16 to the top of a
+ * twenty-step list means "run this first", not "trade places with step 1": every
+ * row in between shifts down one and keeps its relative order. A no-op (same
+ * index, or either end out of range) returns the input itself, so a drop back
+ * where the row started does not re-render the list.
+ */
+export function moveStep<T>(list: T[], from: number, to: number): T[] {
+  if (from === to) return list;
+  if (from < 0 || from >= list.length || to < 0 || to >= list.length) return list;
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item!);
+  return next;
+}
+
+/**
  * The step id the backend sees: `1-move`, `2-standup`, `3-move`.
  *
  * Position plus type, because that is unique within the task by construction,
@@ -189,7 +238,7 @@ export function stepDraftError(draft: StepDraft): string | null {
   if (draft.type !== "MOVE") return null;
   // No theta *range* check: out-of-range is what normalizeTheta is for, and
   // refusing 270° when the answer is -90° would be inventing a constraint.
-  return moveParams(draft) ? null : "Needs a numeric X, Y and heading.";
+  return moveParams(draft) ? null : "Pick a waypoint.";
 }
 
 /**

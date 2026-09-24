@@ -25,11 +25,11 @@ export interface VertexPickerProps {
 }
 
 /**
- * Prefill a MOVE step from a stop already placed on the active map.
+ * Set a MOVE step from a stop already placed on the active map.
  *
- * A convenience, never a gate: hand-typed coordinates are a first-class path, so
- * every unavailable case below degrades to a muted sentence beside the number
- * fields rather than blocking the row. A vertex stores x/y in metres and theta in
+ * This is the only way to set one: the composer has no coordinate fields, so
+ * every unavailable case below says what to do on the map instead, and the row
+ * stays unsendable until a waypoint is picked. A vertex stores x/y in metres and theta in
  * degrees in the map frame precisely so it can be handed to a MOVE step without
  * conversion — the only thing done to it on the way in is the angle fold.
  */
@@ -46,11 +46,11 @@ export function VertexPicker({
   }
 
   if (status === "no-map") {
-    return <Hint>No map is loaded on this robot — type the position instead.</Hint>;
+    return <Hint>No map is loaded on this robot, so there are no waypoints to pick.</Hint>;
   }
 
   if (status === "error") {
-    return <Hint>Could not load this map&apos;s waypoints — type the position instead.</Hint>;
+    return <Hint>Could not load this map&apos;s waypoints.</Hint>;
   }
 
   if (!vertices.length) {
@@ -64,11 +64,11 @@ export function VertexPicker({
               className="underline underline-offset-2 hover:text-foreground"
             >
               place some
-            </Link>
-            , or type the coordinates.
+            </Link>{" "}
+            on the floor plan first.
           </>
         ) : (
-          "No waypoints to pick from — type the position instead."
+          "No waypoints to pick from."
         )}
       </Hint>
     );

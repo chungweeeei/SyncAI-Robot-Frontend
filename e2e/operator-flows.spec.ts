@@ -6,6 +6,7 @@ import {
   mapSummary,
   mockBackend,
   recording,
+  taskTemplate,
 } from "./backend";
 
 /**
@@ -360,5 +361,133 @@ test.describe("the task console", () => {
       );
       expect(editorFollows).toBe(true);
     });
+  });
+});
+
+test.describe("the step editor", () => {
+  test("reorders by menu, drag and keyboard, and saves in the order shown", async ({
+    page,
+  }) => {
+    // Three ways to move a row, one list. The saved body is the half a
+    // screen-only test cannot see: the step ids are positional, so a reorder
+    // that only moved the DOM would still post the old order.
+    await mockBackend(page);
+    // The create answers with its echo, which is schema-checked, so this route
+    // replaces the generic "ok" — and, being the handler that fulfils it, is
+    // where the posted body is read.
+    const saved: unknown[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      saved.push(route.request().postDataJSON());
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({
+            id: "33333333-3333-3333-3333-333333333333",
+            name: "reorder-check",
+          }),
+        ),
+      });
+    });
+    await page.goto("/tasks");
+    await page.getByRole("button", { name: /Task editor/ }).click();
+
+    // The add row's buttons share their labels with each row's type picker,
+    // so they are reached by their hints.
+    await page.getByTitle("Stand up. Nothing to set.").click();
+    await page.getByTitle("Lie down. Nothing to set.").click();
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByPlaceholder(/Delivery arrived/).fill("Hello");
+
+    const rows = page
+      .getByRole("listitem")
+      .filter({ has: page.getByRole("button", { name: /^Reorder step/ }) });
+    // Each row's type label, top to bottom.
+    const order = () =>
+      rows.evaluateAll((items) =>
+        items.map((item) => item.querySelector(".instrument-label")?.textContent),
+      );
+    await expect.poll(order).toEqual(["Stand", "Lie", "Speak"]);
+
+    // Menu: the last row straight to the top.
+    await page.getByRole("button", { name: "More actions for step 3" }).click();
+    await page.getByRole("menuitem", { name: "Move to top" }).click();
+    await expect.poll(order).toEqual(["Speak", "Stand", "Lie"]);
+
+    // Drag: the last row's handle onto the first row.
+    const handle = page.getByRole("button", { name: "Reorder step 3" });
+    const from = (await handle.boundingBox())!;
+    const to = (await rows.first().boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(from.x + from.width / 2, to.y + 4, { steps: 12 });
+    await page.mouse.up();
+    await expect.poll(order).toEqual(["Lie", "Speak", "Stand"]);
+
+    // Keyboard: pick the last row up, one slot up, drop.
+    // Each key waits for the one before it to land: the sensor measures the
+    // rows after pick-up, and a move sent before that is dropped.
+    const grip = page.getByRole("button", { name: "Reorder step 3" });
+    await grip.focus();
+    await page.keyboard.press("Space");
+    await expect(grip).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("ArrowUp");
+    await expect(page.getByText("is over position 2 of 3")).toBeAttached();
+    await page.keyboard.press("Space");
+    await expect.poll(order).toEqual(["Lie", "Stand", "Speak"]);
+
+    await page.getByPlaceholder("Morning patrol").fill("reorder-check");
+    await page.getByRole("button", { name: "Save as new" }).click();
+
+    await expect.poll(() => saved).toHaveLength(1);
+    const body = saved[0] as { steps: { id: string }[] };
+    expect(body.steps.map((step) => step.id)).toEqual([
+      "1-liedown",
+      "2-standup",
+      "3-speak",
+    ]);
+  });
+
+  test("loads a template folded and folds an unfinished row to its problem", async ({
+    page,
+  }) => {
+    // Folded rows are what keep a twenty-step patrol on one screen. The two
+    // rules worth pinning: a loaded template arrives as one-line summaries,
+    // and every row folds — an unfinished one included — with the problem
+    // standing in for its summary, so it is still findable when the operator
+    // goes looking for why Save is greyed out.
+    await mockBackend(page);
+    await page.goto("/tasks");
+
+    await page
+      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .click();
+    // The MOVE row's only input is its waypoint picker.
+    const waypoint = page.getByRole("listitem").getByRole("combobox");
+    await expect(page.getByText(/^dock · \(/)).toBeVisible();
+    await expect(waypoint).toHaveCount(0);
+
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    const say = page.getByPlaceholder(/Delivery arrived/);
+    await expect(say).toBeVisible();
+
+    await page.getByRole("button", { name: "Expand all" }).click();
+    await expect(waypoint).toBeVisible();
+    // Unfolded, a MOVE row is the picker alone: no coordinate fields.
+    await expect(page.getByLabel(/^(X|Y|Heading)\b/)).toHaveCount(0);
+    await page.getByRole("button", { name: "Collapse all" }).click();
+    await expect(waypoint).toHaveCount(0);
+    // Empty, and folded all the same: the header says what is missing.
+    await expect(say).toHaveCount(0);
+    const speakRow = page.getByRole("button", { name: /^Speak/, expanded: false });
+    await expect(speakRow).toHaveText(/Needs something to say\./);
+
+    // Unfold, fill, fold: the line is read back in place of the problem.
+    await speakRow.click();
+    await say.fill("Hello");
+    await page.getByRole("button", { name: /^Speak/, expanded: true }).click();
+    await expect(say).toHaveCount(0);
+    await expect(page.getByText("“Hello”")).toBeVisible();
   });
 });

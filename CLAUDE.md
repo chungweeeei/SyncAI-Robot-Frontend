@@ -109,6 +109,12 @@ The stack as built. Correct this section if a choice changes.
   other consumer and the only one that exercises WHIP: it renders in every
   build — the robot runs a production one — and is kept off an operator's path
   by being unlisted in the nav rail rather than by a 404.
+- **@dnd-kit** (`core` + `sortable`) for the task editor's drag-to-reorder
+  step list. Everything else that drags (the gridmap editor, the camera window,
+  the thumbstick) is hand-rolled pointer capture; a sortable list is the one
+  place a library earned its keep, because it brings the keyboard path, the
+  screen-reader announcements and the auto-scroll that a hand-rolled one
+  would have to rebuild.
 - **zod** for runtime validation of every backend read (see Data layer).
 - **Vitest** for unit tests, **Playwright** for e2e (see Tests). No
   `@vitejs/plugin-react`: esbuild already takes the JSX runtime from tsconfig,

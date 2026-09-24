@@ -422,7 +422,7 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
                 onAdd={drafts.add}
                 onPatch={drafts.patch}
                 onRemove={drafts.remove}
-                onMove={drafts.move}
+                onMoveTo={drafts.moveTo}
               />
             </InstrumentGroup>
           </div>
