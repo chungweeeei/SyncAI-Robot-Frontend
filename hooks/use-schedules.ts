@@ -35,6 +35,13 @@ const PAUSE_SETTLE_MS = 2000;
 
 export interface UseSchedules {
   schedules: ScheduleState[];
+  /**
+   * When this snapshot was read, in epoch ms — what a row measures "next"
+   * against (see `upcomingRun`). The read time rather than `Date.now()` in
+   * render, so the readout is a pure function of the data it came with and
+   * moves exactly when the list does.
+   */
+  readAtMs: number;
   status: SchedulesStatus;
   /** The load failure, or the most recent write failure. Rendered verbatim. */
   error: string | null;
@@ -82,6 +89,12 @@ export interface UseSchedules {
  * number changes, and this screen re-renders with the 2 s job poll. The read
  * goes ahead in a hidden tab too: the library would otherwise skip that tick
  * and wait a whole interval more, and one request at fire time is cheap.
+ *
+ * The interval alone does not keep a row true, which is why `readAtMs` goes out
+ * with the list: between the run and the read that follows it — and after that
+ * read too, while Temporal's describe still reports the run it has just
+ * started — the head of `next_run_times` is a time that has passed, and
+ * `upcomingRun` is what steps over it.
  */
 export function useSchedules(): UseSchedules {
   const queryClient = useQueryClient();
@@ -183,6 +196,7 @@ export function useSchedules(): UseSchedules {
 
   return {
     schedules: query.data ?? [],
+    readAtMs: query.dataUpdatedAt,
     status: query.isPending ? "loading" : query.isError ? "error" : "ok",
     error: write.error ?? query.error?.message ?? null,
     busy: write.busy,

@@ -14,6 +14,7 @@ import {
   nextScheduleRefetchMs,
   nextTimedRun,
   toCron,
+  upcomingRun,
 } from "@/lib/task/schedule";
 
 /**
@@ -166,6 +167,48 @@ describe("run time formatting", () => {
 
   it("slices UTC without touching a clock", () => {
     expect(formatUtcRunTime("2026-09-24T01:00:00Z")).toBe("2026-09-24 01:00");
+  });
+});
+
+describe("upcomingRun", () => {
+  const readAtMs = Date.parse("2026-09-24T09:00:00Z");
+  const row = (over: Partial<ScheduleState>): ScheduleState => ({
+    id: "patrol",
+    trigger: { interval_seconds: 3600 },
+    paused: false,
+    next_run_times: [],
+    ...over,
+  });
+
+  it("skips a run that has already happened rather than calling it next", () => {
+    // The list is a snapshot: once 08:00 has fired, the row must not go on
+    // reporting it as the run still to come — which is what it did before, in
+    // the window between the run and the read that follows it.
+    expect(
+      upcomingRun(
+        row({ next_run_times: ["2026-09-24T08:00:00Z", "2026-09-24T10:00:00Z"] }),
+        readAtMs,
+      ),
+    ).toBe("2026-09-24T10:00:00Z");
+  });
+
+  it("does not count the run firing this very instant as still to come", () => {
+    expect(upcomingRun(row({ next_run_times: ["2026-09-24T09:00:00Z"] }), readAtMs))
+      .toBeUndefined();
+  });
+
+  it("has nothing next for a paused schedule, whatever the list says", () => {
+    expect(
+      upcomingRun(
+        row({ paused: true, next_run_times: ["2026-09-24T10:00:00Z"] }),
+        readAtMs,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("has nothing next once every listed run has passed", () => {
+    expect(upcomingRun(row({ next_run_times: ["2026-09-24T08:00:00Z"] }), readAtMs))
+      .toBeUndefined();
   });
 });
 

@@ -219,6 +219,34 @@ export function formatUtcRunTime(iso: string): string {
   return iso.slice(0, 16).replace("T", " ");
 }
 
+/**
+ * The run a row should call "next": the first of `next_run_times` still ahead
+ * of `readAtMs`, or undefined when there is none or the schedule is paused.
+ *
+ * The list is a snapshot Temporal computed when it was read, so the head of the
+ * array is a time that has passed for as long as the run it names has already
+ * fired. `nextScheduleRefetchMs` closes most of that window by re-reading just
+ * after the run, but not all of it: the read itself takes a moment, and
+ * Temporal's describe can still report the run it has just started. Stepping
+ * over what has passed is what keeps the readout true either side of that read
+ * — without it a row showed the time it fired at as the time it will fire next.
+ *
+ * Measured against the read time rather than the current one so that a row is a
+ * pure function of the snapshot it was drawn from; the two move together
+ * because a re-read is what changes both.
+ *
+ * A paused schedule keeps reporting future times (Temporal computes them from
+ * the spec and pausing does not clear them), dates that will not happen, so a
+ * paused row has no next run at all.
+ */
+export function upcomingRun(
+  schedule: ScheduleState,
+  readAtMs: number,
+): string | undefined {
+  if (schedule.paused) return undefined;
+  return schedule.next_run_times.find((iso) => Date.parse(iso) > readAtMs);
+}
+
 /** `every 30 min` / `Weekdays at 09:00 · Asia/Taipei`. */
 export function describeTrigger(trigger: ScheduleTrigger): string {
   if (trigger.cron) {

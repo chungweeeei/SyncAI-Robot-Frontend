@@ -334,6 +334,8 @@ test.describe("the task console", () => {
           },
         ],
       });
+      // Before the fixture's run, or the row would rightly call it past.
+      await page.clock.setFixedTime(new Date("2026-09-24T12:00:00Z"));
       await page.goto("/tasks");
 
       // The stored cron is read back as a sentence, never shown as itself.

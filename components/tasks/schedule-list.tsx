@@ -22,6 +22,7 @@ import {
   describeTrigger,
   formatLocalRunTime,
   formatUtcRunTime,
+  upcomingRun,
 } from "@/lib/task/schedule";
 import type { TaskTemplate } from "@/lib/api/task-template";
 
@@ -29,6 +30,8 @@ export interface ScheduleListProps {
   schedules: ScheduleState[];
   /** The library, so a row can be diffed against the template it was frozen from. */
   templates: TaskTemplate[];
+  /** What "next" is measured from — `useSchedules().readAtMs`. */
+  readAtMs: number;
   status: SchedulesStatus;
   busy: boolean;
   onPause: (id: string) => void;
@@ -39,6 +42,7 @@ export interface ScheduleListProps {
 export function ScheduleList({
   schedules,
   templates,
+  readAtMs,
   status,
   busy,
   onPause,
@@ -78,6 +82,7 @@ export function ScheduleList({
           key={schedule.id}
           schedule={schedule}
           templates={templates}
+          readAtMs={readAtMs}
           busy={busy}
           onPause={onPause}
           onResume={onResume}
@@ -97,6 +102,7 @@ export function ScheduleList({
 function ScheduleRow({
   schedule,
   templates,
+  readAtMs,
   busy,
   onPause,
   onResume,
@@ -104,6 +110,7 @@ function ScheduleRow({
 }: {
   schedule: ScheduleState;
   templates: TaskTemplate[];
+  readAtMs: number;
   busy: boolean;
   onPause: (id: string) => void;
   onResume: (id: string) => void;
@@ -113,14 +120,10 @@ function ScheduleRow({
   const timezone = useBrowserTimeZone();
 
   /**
-   * A paused schedule keeps reporting future run times — Temporal computes them
-   * from the spec and pausing does not clear them, so the list answers with five
-   * dates that will not happen. Showing them would be the one genuinely
-   * misleading thing on this screen, so paused rows read "—". The array is also
-   * indexed only after a length check, since a spec that can no longer fire
-   * returns an empty one.
+   * Paused rows and runs that have already happened both read "—" or move on
+   * to the one after; upcomingRun has the reasons.
    */
-  const next = schedule.paused ? undefined : schedule.next_run_times[0];
+  const next = upcomingRun(schedule, readAtMs);
 
   /**
    * The next run on the operator's own clock, once the browser has said which
