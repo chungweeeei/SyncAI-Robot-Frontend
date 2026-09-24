@@ -11,7 +11,8 @@ import type { StepType } from "@/lib/api/task";
 
 export interface StepDrafts {
   steps: StepDraft[];
-  add: (type: StepType) => void;
+  /** Returns the new row's key, so the list can unfold the row it just added. */
+  add: (type: StepType) => number;
   remove: (key: number) => void;
   /**
    * Take the row out and put it back at `index` (0-based), shifting the rows in
@@ -51,7 +52,11 @@ export function useStepDrafts(): StepDrafts {
   const [steps, setSteps] = React.useState<StepDraft[]>([]);
 
   const add = React.useCallback((type: StepType) => {
-    setSteps((current) => [...current, newStepDraft(type)]);
+    // Built outside the updater so the key returned is the key stored: an
+    // updater may run twice in development, and each run would mint its own.
+    const draft = newStepDraft(type);
+    setSteps((current) => [...current, draft]);
+    return draft.key;
   }, []);
 
   const remove = React.useCallback((key: number) => {

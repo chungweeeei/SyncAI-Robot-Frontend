@@ -8,6 +8,7 @@ import {
   ArrowDownToLineIcon,
   ArrowUpIcon,
   ArrowUpToLineIcon,
+  ChevronRightIcon,
   EllipsisIcon,
   GripVerticalIcon,
   Trash2Icon,
@@ -33,7 +34,7 @@ import {
   formatDraftAngle,
   formatDraftPosition,
   stepDraftError,
-  stepGlyph,
+  stepSummary,
   type StepDraft,
 } from "@/lib/task/step";
 import type { MapVertex } from "@/lib/types/map";
@@ -56,7 +57,17 @@ export interface StepRowProps {
   onRemove: () => void;
   /** Move this row to a 0-based position; out of range is a no-op. */
   onMoveTo: (index: number) => void;
+  expanded: boolean;
+  /** Has an error, so the list holds it unfolded and the toggle is inert. */
+  pinnedOpen: boolean;
+  onExpandedChange: (open: boolean) => void;
 }
+
+/** What a folded row says in place of a summary it cannot build yet. */
+const EMPTY_SUMMARY: Partial<Record<StepDraft["type"], string>> = {
+  MOVE: "No position yet",
+  SPEAK: "Nothing to say yet",
+};
 
 export function StepRow({
   step,
@@ -70,8 +81,21 @@ export function StepRow({
   onPatch,
   onRemove,
   onMoveTo,
+  expanded,
+  pinnedOpen,
+  onExpandedChange,
 }: StepRowProps) {
   const rowError = stepDraftError(step);
+  // OR-ed for the one render before StepList writes a newly pinned row into its
+  // expanded set.
+  const open = expanded || pinnedOpen;
+  const bodyId = React.useId();
+  const typeLabel = STEP_TYPES.find((spec) => spec.value === step.type)?.label;
+  const waypointName =
+    step.vertexId === null
+      ? null
+      : (vertices.find((vertex) => vertex.id === step.vertexId)?.name ?? null);
+  const summary = stepSummary(step, waypointName);
   const ordinal = index + 1;
   const first = index === 0;
   const last = index === total - 1;
@@ -102,10 +126,10 @@ export function StepRow({
         isDragging && "z-10 bg-elevated shadow-lg ring-1 ring-signal-cmd/40",
       )}
     >
-      {/* flex-wrap because the rail becomes a bottom bar on a narrow console and
-       * this row carries a handle, an ordinal, a four-segment picker, a status
-       * chip and two icon buttons — enough to overflow a phone-width panel otherwise. */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* One line, folded or not: that is what keeps a twenty-step list scannable.
+       * The toggle takes the slack and truncates its summary, so on a narrow
+       * console the text gives way before the controls do. */}
+      <div className="flex items-center gap-2">
         {/* The only part of the row that starts a drag. Making the whole row the
          * activator would turn every press on an input, the type picker or the
          * waypoint picker into a potential drag. `touch-none` stops the browser
@@ -128,16 +152,42 @@ export function StepRow({
         <span className="readout w-4 shrink-0 text-[12px] text-muted-foreground">
           {ordinal}
         </span>
-        <span className="instrument-label w-3 shrink-0 text-muted-foreground">
-          {stepGlyph(step.type)}
-        </span>
 
-        <Segmented
-          value={step.type}
-          options={TYPE_OPTIONS}
-          disabled={disabled}
-          onChange={(type) => onPatch({ type })}
-        />
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          // Not disabled while a run is in flight: folding changes nothing that
+          // is sent, so a running list can still be read either way.
+          disabled={pinnedOpen}
+          title={pinnedOpen ? "Fix this step before collapsing it" : undefined}
+          onClick={() => onExpandedChange(!open)}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-sm py-0.5 text-left transition-colors hover:bg-elevated focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent"
+        >
+          <ChevronRightIcon
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground transition-transform",
+              open && "rotate-90",
+              pinnedOpen && "opacity-30",
+            )}
+            aria-hidden
+          />
+          {/* The type spelled out rather than the glyph the library rows use:
+           * this is the line an operator scans to read the job, and there is
+           * room for the word. Fixed width so the summaries line up. */}
+          <span className="instrument-label w-11 shrink-0">{typeLabel}</span>
+          {summary ? (
+            <span className="readout min-w-0 truncate text-[12px] text-muted-foreground">
+              {summary}
+            </span>
+          ) : (
+            EMPTY_SUMMARY[step.type] && (
+              <span className="min-w-0 truncate text-[11px] text-muted-foreground/70 italic">
+                {EMPTY_SUMMARY[step.type]}
+              </span>
+            )
+          )}
+        </button>
 
         {/* Loaded from a template whose vertex has since been deleted, so these
          * coordinates are the snapshot rather than a live pose. Not an error — the
@@ -149,7 +199,7 @@ export function StepRow({
 
         {state && <TaskStatusChip status={state.status} />}
 
-        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-0.5">
           {/* The one-click jumps a drag makes fiddly: to either end of a long
            * list, or a single slot without aiming at a neighbour. */}
           <DropdownMenu>
@@ -191,91 +241,102 @@ export function StepRow({
         </div>
       </div>
 
-      {/* Coordinates and the spoken line are kept in the draft across a type
-       * change, so switching to STANDUP and back does not lose what was typed —
-       * the wire shape is derived from the type, not stored alongside it. */}
-      {step.type === "MOVE" && (
-        <div className="mt-2 space-y-1.5 pl-[46px]">
-          <VertexPicker
-            vertices={vertices}
-            status={verticesStatus}
-            mapName={mapName}
-            value={step.vertexId}
+      {open && (
+        <div id={bodyId} className="mt-2 space-y-2 pl-[46px]">
+          <Segmented
+            value={step.type}
+            options={TYPE_OPTIONS}
             disabled={disabled}
-            onPick={(vertex) =>
-              // One patch, not four: two updates would render a frame whose
-              // numbers are this vertex's but whose label is still the old one.
-              // normalizeTheta on the way *in* because the vertex table has no
-              // range constraint while MoveParams is (-180, 180] — a row written
-              // by curl can hold exactly -180, which the task endpoint rejects.
-              onPatch({
-                x: formatDraftPosition(vertex.x),
-                y: formatDraftPosition(vertex.y),
-                theta: formatDraftAngle(normalizeTheta(vertex.theta)),
-                vertexId: vertex.id,
-                // Re-picking resolves the provenance, so the stale-snapshot
-                // warning goes with it.
-                vertexMissing: false,
-              })
-            }
+            onChange={(type) => onPatch({ type })}
           />
 
-          <div className="grid grid-cols-3 gap-1.5">
-            <CoordinateField
-              label="X"
-              unit="m"
-              value={step.x}
-              disabled={disabled}
-              onChange={(x) => onPatch({ x, vertexId: null, vertexMissing: false })}
-            />
-            <CoordinateField
-              label="Y"
-              unit="m"
-              value={step.y}
-              disabled={disabled}
-              onChange={(y) => onPatch({ y, vertexId: null, vertexMissing: false })}
-            />
-            <CoordinateField
-              label="Heading"
-              unit="°"
-              value={step.theta}
-              disabled={disabled}
-              onChange={(theta) => onPatch({ theta, vertexId: null, vertexMissing: false })}
-              hint={foldHint(step.theta)}
-            />
-          </div>
-        </div>
-      )}
-
-      {step.type === "SPEAK" && (
-        <div className="mt-2 pl-[46px]">
-          <label className="block">
-            <span className="instrument-label text-muted-foreground">Say</span>
-            <Input
-              value={step.text}
-              disabled={disabled}
-              // No maxLength attribute: it would silently truncate a paste, and
-              // a hidden edit is worse than the row error below saying how far
-              // over the limit the text is. Same stance as the coordinate
-              // fields never rewriting under the cursor.
-              onChange={(event) => onPatch({ text: event.target.value })}
-              placeholder="Delivery arrived — please take your items."
-              className="mt-0.5 h-7 rounded-sm text-[13px]"
-            />
-            {/* The counter appears only near the limit — a line short enough
-             * to obviously fit does not need bookkeeping over it. */}
-            {step.text.length > SPEAK_TEXT_MAX - 100 && (
-              <span
-                className={
-                  step.text.trim().length > SPEAK_TEXT_MAX
-                    ? "readout mt-0.5 block text-[11px] text-signal-warn"
-                    : "readout mt-0.5 block text-[11px] text-signal-caution"
+          {/* Coordinates and the spoken line are kept in the draft across a type
+           * change, so switching to STANDUP and back does not lose what was typed —
+           * the wire shape is derived from the type, not stored alongside it. */}
+          {step.type === "MOVE" && (
+            <div className="space-y-1.5">
+              <VertexPicker
+                vertices={vertices}
+                status={verticesStatus}
+                mapName={mapName}
+                value={step.vertexId}
+                disabled={disabled}
+                onPick={(vertex) =>
+                  // One patch, not four: two updates would render a frame whose
+                  // numbers are this vertex's but whose label is still the old one.
+                  // normalizeTheta on the way *in* because the vertex table has no
+                  // range constraint while MoveParams is (-180, 180] — a row written
+                  // by curl can hold exactly -180, which the task endpoint rejects.
+                  onPatch({
+                    x: formatDraftPosition(vertex.x),
+                    y: formatDraftPosition(vertex.y),
+                    theta: formatDraftAngle(normalizeTheta(vertex.theta)),
+                    vertexId: vertex.id,
+                    // Re-picking resolves the provenance, so the stale-snapshot
+                    // warning goes with it.
+                    vertexMissing: false,
+                  })
                 }
-              >
-                {step.text.length} / {SPEAK_TEXT_MAX}
-              </span>
-            )}
-          </label>
+              />
+
+              <div className="grid grid-cols-3 gap-1.5">
+                <CoordinateField
+                  label="X"
+                  unit="m"
+                  value={step.x}
+                  disabled={disabled}
+                  onChange={(x) => onPatch({ x, vertexId: null, vertexMissing: false })}
+                />
+                <CoordinateField
+                  label="Y"
+                  unit="m"
+                  value={step.y}
+                  disabled={disabled}
+                  onChange={(y) => onPatch({ y, vertexId: null, vertexMissing: false })}
+                />
+                <CoordinateField
+                  label="Heading"
+                  unit="°"
+                  value={step.theta}
+                  disabled={disabled}
+                  onChange={(theta) => onPatch({ theta, vertexId: null, vertexMissing: false })}
+                  hint={foldHint(step.theta)}
+                />
+              </div>
+            </div>
+          )}
+
+          {step.type === "SPEAK" && (
+            <div>
+              <label className="block">
+                <span className="instrument-label text-muted-foreground">Say</span>
+                <Input
+                  value={step.text}
+                  disabled={disabled}
+                  // No maxLength attribute: it would silently truncate a paste, and
+                  // a hidden edit is worse than the row error below saying how far
+                  // over the limit the text is. Same stance as the coordinate
+                  // fields never rewriting under the cursor.
+                  onChange={(event) => onPatch({ text: event.target.value })}
+                  placeholder="Delivery arrived — please take your items."
+                  className="mt-0.5 h-7 rounded-sm text-[13px]"
+                />
+                {/* The counter appears only near the limit — a line short enough
+                 * to obviously fit does not need bookkeeping over it. */}
+                {step.text.length > SPEAK_TEXT_MAX - 100 && (
+                  <span
+                    className={
+                      step.text.trim().length > SPEAK_TEXT_MAX
+                        ? "readout mt-0.5 block text-[11px] text-signal-warn"
+                        : "readout mt-0.5 block text-[11px] text-signal-caution"
+                    }
+                  >
+                    {step.text.length} / {SPEAK_TEXT_MAX}
+                  </span>
+                )}
+              </label>
+            </div>
+          )}
         </div>
       )}
 

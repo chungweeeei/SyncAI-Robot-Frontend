@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import {
   DndContext,
   KeyboardSensor,
@@ -16,12 +17,17 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { PlusIcon } from "lucide-react";
+import { ChevronsDownUpIcon, ChevronsUpDownIcon, PlusIcon } from "lucide-react";
 
 import { StepRow } from "@/components/tasks/step-row";
 import type { ActiveVerticesStatus } from "@/hooks/use-active-map-vertices";
 import type { StepType, TaskStepState } from "@/lib/api/task";
-import { STEP_TYPES, stepIdFor, type StepDraft } from "@/lib/task/step";
+import {
+  STEP_TYPES,
+  stepDraftError,
+  stepIdFor,
+  type StepDraft,
+} from "@/lib/task/step";
 import type { MapVertex } from "@/lib/types/map";
 
 export interface StepListProps {
@@ -33,7 +39,8 @@ export interface StepListProps {
   disabled: boolean;
   /** Per-step state of the tracked task, keyed by the derived step id. */
   stepStates: ReadonlyMap<string, TaskStepState>;
-  onAdd: (type: StepType) => void;
+  /** Returns the new row's key; the list unfolds that row. */
+  onAdd: (type: StepType) => number;
   onPatch: (key: number, changes: Partial<Omit<StepDraft, "key">>) => void;
   onRemove: (key: number) => void;
   onMoveTo: (key: number, index: number) => void;
@@ -72,7 +79,49 @@ export function StepList({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
+  // Which rows are unfolded. Presentation state, so it lives here rather than
+  // in the drafts: nothing sent to the backend depends on it. Folded is the
+  // default because a twenty-step patrol unfolded is three screens of inputs,
+  // and a template loaded to be reviewed or reordered wants the one-line view.
+  // Keys are never reused, so a removed row's key left in the set is inert.
+  const [expanded, setExpanded] = React.useState<ReadonlySet<number>>(
+    () => new Set(),
+  );
+  const setRowExpanded = (key: number, open: boolean) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (open) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+
+  // A row that cannot be sent, or that the robot failed on, is held unfolded:
+  // folding would hide the one row the operator has to find. It is written into
+  // `expanded` rather than OR-ed in at render time, because otherwise the fix
+  // itself folds the row — the first character typed into an empty Speak row
+  // clears its error and the input would vanish from under the cursor. This is
+  // the adjust-state-during-render pattern, so it settles before paint.
+  const stateOf = (step: StepDraft, index: number) =>
+    stepStates.get(stepIdFor(index, step.type)) ?? null;
+  const pinned = new Set(
+    steps
+      .filter(
+        (step, index) =>
+          stepDraftError(step) !== null || Boolean(stateOf(step, index)?.error_msg),
+      )
+      .map((step) => step.key),
+  );
+  if ([...pinned].some((key) => !expanded.has(key))) {
+    setExpanded(new Set([...expanded, ...pinned]));
+  }
+
+  const handleAdd = (type: StepType) => {
+    // A row just added is a row about to be filled in.
+    setRowExpanded(onAdd(type), true);
+  };
+
   const keys = steps.map((step) => step.key);
+  const allExpanded = keys.every((key) => expanded.has(key));
   const position = (id: UniqueIdentifier) => keys.indexOf(Number(id)) + 1;
 
   // dnd-kit's default announcements read the raw ids ("draggable item 7"),
@@ -116,6 +165,22 @@ export function StepList({
           }}
           onDragEnd={handleDragEnd}
         >
+          {steps.length > 1 && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setExpanded(allExpanded ? new Set() : new Set(keys))}
+                className="instrument-label flex h-6 items-center gap-1 rounded-sm px-1.5 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground"
+              >
+                {allExpanded ? (
+                  <ChevronsDownUpIcon className="size-3" aria-hidden />
+                ) : (
+                  <ChevronsUpDownIcon className="size-3" aria-hidden />
+                )}
+                {allExpanded ? "Collapse all" : "Expand all"}
+              </button>
+            </div>
+          )}
           <SortableContext items={keys} strategy={verticalListSortingStrategy}>
             <ul className="space-y-1.5">
               {steps.map((step, index) => (
@@ -130,10 +195,13 @@ export function StepList({
                   verticesStatus={verticesStatus}
                   mapName={mapName}
                   disabled={disabled}
-                  state={stepStates.get(stepIdFor(index, step.type)) ?? null}
+                  state={stateOf(step, index)}
                   onPatch={(changes) => onPatch(step.key, changes)}
                   onRemove={() => onRemove(step.key)}
                   onMoveTo={(to) => onMoveTo(step.key, to)}
+                  expanded={expanded.has(step.key)}
+                  pinnedOpen={pinned.has(step.key)}
+                  onExpandedChange={(open) => setRowExpanded(step.key, open)}
                 />
               ))}
             </ul>
@@ -149,7 +217,7 @@ export function StepList({
             type="button"
             disabled={disabled}
             title={spec.hint}
-            onClick={() => onAdd(spec.value)}
+            onClick={() => handleAdd(spec.value)}
             className="instrument-label flex h-7 items-center gap-1 rounded-sm border border-hairline px-2 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent"
           >
             <PlusIcon className="size-3" aria-hidden />
