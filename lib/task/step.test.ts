@@ -6,6 +6,7 @@ import {
   formatDraftAngle,
   formatDraftPosition,
   fromTemplateSteps,
+  moveStep,
   newStepDraft,
   stepDraftError,
   stepDraftsSubmittable,
@@ -99,6 +100,36 @@ describe("stepDraftsSubmittable", () => {
   it("needs every row, not just one", () => {
     expect(stepDraftsSubmittable([move(), newStepDraft("STANDUP")])).toBe(true);
     expect(stepDraftsSubmittable([move(), move({ x: "" })])).toBe(false);
+  });
+});
+
+describe("moveStep", () => {
+  const twenty = Array.from({ length: 20 }, (_, i) => i + 1);
+
+  it("puts a far row first and shifts the rest down in order", () => {
+    // The case the drag exists for: step 16 of 20 made the first thing run.
+    // Every row in between keeps its relative order — this is an insert, not
+    // the neighbour swap the old up/down buttons did.
+    const moved = moveStep(twenty, 15, 0);
+    expect(moved).toEqual([16, ...twenty.filter((n) => n !== 16)]);
+  });
+
+  it("moves a row to the end", () => {
+    expect(moveStep([1, 2, 3, 4], 0, 3)).toEqual([2, 3, 4, 1]);
+  });
+
+  it("returns the same list for a drop where it started or out of range", () => {
+    // Same reference, so a drag released on its own slot re-renders nothing.
+    const list = [1, 2, 3];
+    expect(moveStep(list, 1, 1)).toBe(list);
+    expect(moveStep(list, -1, 0)).toBe(list);
+    expect(moveStep(list, 0, 3)).toBe(list);
+  });
+
+  it("never mutates its input", () => {
+    const list = [1, 2, 3];
+    moveStep(list, 2, 0);
+    expect(list).toEqual([1, 2, 3]);
   });
 });
 

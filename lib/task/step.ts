@@ -129,6 +129,24 @@ export function formatDraftAngle(value: number): string {
 }
 
 /**
+ * The list with the item at `from` taken out and put back at `to`.
+ *
+ * Splice-and-insert rather than a swap, because dragging step 16 to the top of a
+ * twenty-step list means "run this first", not "trade places with step 1": every
+ * row in between shifts down one and keeps its relative order. A no-op (same
+ * index, or either end out of range) returns the input itself, so a drop back
+ * where the row started does not re-render the list.
+ */
+export function moveStep<T>(list: T[], from: number, to: number): T[] {
+  if (from === to) return list;
+  if (from < 0 || from >= list.length || to < 0 || to >= list.length) return list;
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item!);
+  return next;
+}
+
+/**
  * The step id the backend sees: `1-move`, `2-standup`, `3-move`.
  *
  * Position plus type, because that is unique within the task by construction,
