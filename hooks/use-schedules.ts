@@ -17,6 +17,7 @@ import {
   type ScheduleTrigger,
 } from "@/lib/api/schedule";
 import { scheduleTaskTemplate } from "@/lib/api/task-template";
+import { soonestUpcomingRun } from "@/lib/task/schedule";
 
 export type SchedulesStatus = "loading" | "ok" | "error";
 
@@ -32,8 +33,29 @@ export type SchedulesStatus = "loading" | "ok" | "error";
  */
 const PAUSE_SETTLE_MS = 2000;
 
+/**
+ * How long after a schedule's run time to re-read the list. Temporal starts the
+ * run and only then recomputes `next_run_times`, so a read at the exact second
+ * can still report the run it has just fired; the few seconds are for that.
+ */
+const FIRE_SETTLE_MS = 5000;
+
+/**
+ * The longest a fire timer is set for. `setTimeout` holds its delay in a signed
+ * 32-bit int, and anything past ~24.8 days overflows and fires *at once* — a
+ * weekly schedule is fine, but one Temporal reports months out would otherwise
+ * re-read in a tight loop. Waking once a day and re-arming costs nothing.
+ */
+const MAX_FIRE_WAIT_MS = 86_400_000;
+
 export interface UseSchedules {
   schedules: ScheduleState[];
+  /**
+   * The epoch ms each row's next run is measured from (see `upcomingRun`).
+   * State rather than a `Date.now()` in render so that it moves exactly when
+   * the fire timer does, and the readout changes with the re-read it goes with.
+   */
+  now: number;
   status: SchedulesStatus;
   /** The load failure, or the most recent write failure. Rendered verbatim. */
   error: string | null;
@@ -69,10 +91,14 @@ export interface UseSchedules {
  * Splitting them, and preferring the write, is what makes "Schedule X already
  * exists" survive the reload that follows it.
  *
- * There is no timer. `next_run_times` moves on the minute at best, while the list
+ * There is no poll. `next_run_times` moves on the minute at best, while the list
  * endpoint costs a Temporal list RPC plus a memo decode per schedule — a 1 Hz
- * poll would spend a request a second on data that changes hourly. Same trade
- * useMaps records, with an explicit Refresh as the escape hatch.
+ * poll would spend a request a second on data that changes hourly. But the list
+ * *does* change on its own at one knowable moment: when a schedule fires, and
+ * Temporal moves its next run along. So there is one timer, set for the soonest
+ * run in the list, which re-reads then and re-arms from the answer. With no
+ * timer at all, a page left open showed a run that had already happened as the
+ * next one until something else happened to refresh it.
  */
 export function useSchedules(): UseSchedules {
   const queryClient = useQueryClient();
@@ -85,6 +111,30 @@ export function useSchedules(): UseSchedules {
     () => void queryClient.invalidateQueries({ queryKey: queryKeys.schedules }),
     [queryClient],
   );
+
+  const [now, setNow] = React.useState(() => Date.now());
+
+  /**
+   * Armed from `now` rather than from the wall clock, so a re-read that still
+   * lists the run just fired (see FIRE_SETTLE_MS) aims at the one after it
+   * instead of re-arming on the past run and reading in a loop. Re-armed on
+   * every answer, which is what makes a create, resume or delete move it too.
+   */
+  const data = query.data;
+  React.useEffect(() => {
+    if (!data) return;
+    const soonest = soonestUpcomingRun(data, now);
+    if (soonest === null) return;
+    const wait = Math.min(
+      Math.max(soonest + FIRE_SETTLE_MS - Date.now(), 0),
+      MAX_FIRE_WAIT_MS,
+    );
+    const timer = window.setTimeout(() => {
+      setNow(Date.now());
+      refresh();
+    }, wait);
+    return () => window.clearTimeout(timer);
+  }, [data, now, refresh]);
 
   /**
    * The pending settle refresh, so it can be cleared on unmount and so a second
@@ -171,6 +221,7 @@ export function useSchedules(): UseSchedules {
 
   return {
     schedules: query.data ?? [],
+    now,
     status: query.isPending ? "loading" : query.isError ? "error" : "ok",
     error: write.error ?? query.error?.message ?? null,
     busy: write.busy,

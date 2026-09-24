@@ -219,6 +219,43 @@ export function formatUtcRunTime(iso: string): string {
   return iso.slice(0, 16).replace("T", " ");
 }
 
+/**
+ * The run a row should call "next": the first of `next_run_times` still ahead
+ * of `now`, or undefined when there is none or the schedule is paused.
+ *
+ * The list is a snapshot Temporal computed when it was read, and the console
+ * does not re-read it on a clock, so the head of the array goes stale the
+ * moment that run fires. Skipping what has already passed is what keeps the
+ * readout true in the gap before the re-read lands — and after it, too, since
+ * Temporal's describe can still report the run it has just started.
+ *
+ * A paused schedule keeps reporting future times (Temporal computes them from
+ * the spec and pausing does not clear them), dates that will not happen, so a
+ * paused row has no next run at all.
+ */
+export function upcomingRun(schedule: ScheduleState, now: number): string | undefined {
+  if (schedule.paused) return undefined;
+  return schedule.next_run_times.find((iso) => Date.parse(iso) > now);
+}
+
+/**
+ * The epoch ms at which the soonest unpaused schedule fires next, or null when
+ * none will — the moment the list stops being true and has to be re-read.
+ */
+export function soonestUpcomingRun(
+  schedules: readonly ScheduleState[],
+  now: number,
+): number | null {
+  let soonest: number | null = null;
+  for (const schedule of schedules) {
+    const next = upcomingRun(schedule, now);
+    if (next === undefined) continue;
+    const at = Date.parse(next);
+    if (soonest === null || at < soonest) soonest = at;
+  }
+  return soonest;
+}
+
 /** `every 30 min` / `Weekdays at 09:00 · Asia/Taipei`. */
 export function describeTrigger(trigger: ScheduleTrigger): string {
   if (trigger.cron) {

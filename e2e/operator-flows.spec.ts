@@ -333,6 +333,8 @@ test.describe("the task console", () => {
           },
         ],
       });
+      // Before the fixture's run, or the row would rightly call it past.
+      await page.clock.setFixedTime(new Date("2026-09-24T12:00:00Z"));
       await page.goto("/tasks");
 
       // The stored cron is read back as a sentence, never shown as itself.
@@ -360,6 +362,48 @@ test.describe("the task console", () => {
         await editor.elementHandle(),
       );
       expect(editorFollows).toBe(true);
+    });
+
+    test("re-reads the schedules when one fires, and moves the next run on", async ({
+      page,
+    }) => {
+      // The list is not polled, so the one moment it goes stale on its own —
+      // a run firing — is when it has to be read again. Before this, a page
+      // left open kept showing the run that had just happened as the next one.
+      await mockBackend(page);
+      let reads = 0;
+      await page.route("**/api/v1/schedules", (route) => {
+        if (route.request().method() !== "GET") return route.fallback();
+        reads += 1;
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([
+            {
+              id: "half-hourly",
+              trigger: { interval_seconds: 1800 },
+              paused: false,
+              // Temporal's answer after the 13:00Z run has moved on to 13:30Z.
+              next_run_times:
+                reads === 1
+                  ? ["2026-09-24T13:00:00Z", "2026-09-24T13:30:00Z"]
+                  : ["2026-09-24T13:30:00Z", "2026-09-24T14:00:00Z"],
+            },
+          ]),
+        });
+      });
+      await page.clock.install({ time: new Date("2026-09-24T12:59:30Z") });
+      await page.goto("/tasks");
+
+      await expect(page.getByText("2026-09-24 21:00", { exact: true })).toBeVisible();
+      expect(reads).toBe(1);
+
+      await page.clock.runFor(60_000);
+
+      await expect(page.getByText("2026-09-24 21:30", { exact: true })).toBeVisible();
+      await expect(page.getByText("2026-09-24 21:00", { exact: true })).toHaveCount(0);
+      // Once for the run, not a poll: the next timer is aimed at 13:30Z.
+      expect(reads).toBe(2);
     });
   });
 });

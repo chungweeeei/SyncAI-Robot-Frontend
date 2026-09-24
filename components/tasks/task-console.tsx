@@ -339,6 +339,7 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
           >
             <ScheduleList
               schedules={schedules.schedules}
+              now={schedules.now}
               templates={library.templates}
               status={schedules.status}
               busy={schedules.busy}

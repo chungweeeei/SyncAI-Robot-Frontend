@@ -8,8 +8,11 @@ import {
   formatUtcRunTime,
   fromCron,
   nextTimedRun,
+  soonestUpcomingRun,
   toCron,
+  upcomingRun,
 } from "@/lib/task/schedule";
+import type { ScheduleState } from "@/lib/api/schedule";
 
 /**
  * The boundary these guard: the operator sees a time and some weekdays, the
@@ -161,5 +164,64 @@ describe("run time formatting", () => {
 
   it("slices UTC without touching a clock", () => {
     expect(formatUtcRunTime("2026-09-24T01:00:00Z")).toBe("2026-09-24 01:00");
+  });
+});
+
+function schedule(over: Partial<ScheduleState>): ScheduleState {
+  return {
+    id: "patrol",
+    trigger: { interval_seconds: 3600 },
+    paused: false,
+    next_run_times: [],
+    ...over,
+  };
+}
+
+describe("upcomingRun", () => {
+  const now = Date.parse("2026-09-24T09:00:00Z");
+
+  it("skips a run that has already happened rather than calling it next", () => {
+    // The list is a snapshot: once 08:00 has fired, a page left open must not
+    // go on reporting it as the next run.
+    const row = schedule({
+      next_run_times: ["2026-09-24T08:00:00Z", "2026-09-24T10:00:00Z"],
+    });
+    expect(upcomingRun(row, now)).toBe("2026-09-24T10:00:00Z");
+  });
+
+  it("does not count the run firing this very instant as still to come", () => {
+    const row = schedule({ next_run_times: ["2026-09-24T09:00:00Z"] });
+    expect(upcomingRun(row, now)).toBeUndefined();
+  });
+
+  it("has nothing next for a paused schedule, whatever the list says", () => {
+    const row = schedule({ paused: true, next_run_times: ["2026-09-24T10:00:00Z"] });
+    expect(upcomingRun(row, now)).toBeUndefined();
+  });
+
+  it("has nothing next once every listed run has passed", () => {
+    const row = schedule({ next_run_times: ["2026-09-24T08:00:00Z"] });
+    expect(upcomingRun(row, now)).toBeUndefined();
+  });
+});
+
+describe("soonestUpcomingRun", () => {
+  const now = Date.parse("2026-09-24T09:00:00Z");
+
+  it("is the earliest future run across every unpaused schedule", () => {
+    const rows = [
+      schedule({ id: "a", next_run_times: ["2026-09-24T12:00:00Z"] }),
+      schedule({ id: "b", next_run_times: ["2026-09-24T08:00:00Z", "2026-09-24T11:00:00Z"] }),
+      schedule({ id: "c", paused: true, next_run_times: ["2026-09-24T09:30:00Z"] }),
+    ];
+    expect(soonestUpcomingRun(rows, now)).toBe(Date.parse("2026-09-24T11:00:00Z"));
+  });
+
+  it("is null when nothing will fire, so no re-read is armed for the past", () => {
+    // A timer aimed at a run already behind `now` would fire at once and, if
+    // the answer still listed it, again and again.
+    const rows = [schedule({ next_run_times: ["2026-09-24T08:00:00Z"] })];
+    expect(soonestUpcomingRun(rows, now)).toBeNull();
+    expect(soonestUpcomingRun([], now)).toBeNull();
   });
 });
