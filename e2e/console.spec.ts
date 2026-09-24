@@ -67,11 +67,17 @@ test.describe("the console shell", () => {
 
   test("reaches every operator screen from the rail", async ({ page }) => {
     await page.goto("/");
+    // Wait for the dashboard to be up before the first click. A click that
+    // lands while the page is still hydrating can be swallowed, leaving the
+    // test on "/", and each link added to the rail made that window wider.
+    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+    await expect(page.getByText("robot01").first()).toBeVisible();
 
     for (const [name, heading] of [
       ["Maps", "Maps"],
       ["Recordings", "Recordings"],
       ["Tasks", "Tasks"],
+      ["History", "History"],
       ["Settings", "Settings"],
     ] as const) {
       await page.getByRole("link", { name }).click();

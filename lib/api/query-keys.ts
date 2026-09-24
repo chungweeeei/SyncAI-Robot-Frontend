@@ -20,6 +20,21 @@ export const queryKeys = {
    * entry go away with the run it describes.
    */
   task: (id: string) => ["task", id] as const,
+  /**
+   * GET /api/v1/task_history — the root every filtered history list sits
+   * under, so one invalidation refreshes whichever filter is on screen. Its own
+   * root rather than `["task", …]`: a per-run readback must not be swept up
+   * each time a run finishes, and history must not be swept up by the tracker.
+   */
+  taskHistory: ["task-history"] as const,
+  /**
+   * One page of one filtered history list, addressed by the cursor that
+   * reaches it (null for the first). The status is part of the key because the
+   * backend's token is only valid under the filter it was issued with, so a
+   * filter change has to start again from page one — a new key does that.
+   */
+  taskHistoryPage: (status: string | null, pageToken: string | null) =>
+    ["task-history", status ?? "all", pageToken ?? "first"] as const,
   /** GET /api/v1/maps — the catalogue, read by every screen that needs the active map. */
   maps: ["maps"] as const,
   /** GET /api/v1/maps/<name>/vertices — one map's stops, keyed by map name. */
