@@ -58,16 +58,8 @@ export interface StepRowProps {
   /** Move this row to a 0-based position; out of range is a no-op. */
   onMoveTo: (index: number) => void;
   expanded: boolean;
-  /** Has an error, so the list holds it unfolded and the toggle is inert. */
-  pinnedOpen: boolean;
   onExpandedChange: (open: boolean) => void;
 }
-
-/** What a folded row says in place of a summary it cannot build yet. */
-const EMPTY_SUMMARY: Partial<Record<StepDraft["type"], string>> = {
-  MOVE: "No position yet",
-  SPEAK: "Nothing to say yet",
-};
 
 export function StepRow({
   step,
@@ -81,14 +73,15 @@ export function StepRow({
   onPatch,
   onRemove,
   onMoveTo,
-  expanded,
-  pinnedOpen,
+  expanded: open,
   onExpandedChange,
 }: StepRowProps) {
   const rowError = stepDraftError(step);
-  // OR-ed for the one render before StepList writes a newly pinned row into its
-  // expanded set.
-  const open = expanded || pinnedOpen;
+  // Any row folds, errors included — an unfinished row that refused to fold made
+  // the fold useless exactly while a list was being built. What a folded row
+  // with a problem shows instead is the problem itself, in place of the summary
+  // and in warn tone, so it is still the row the eye lands on.
+  const problem = rowError ?? state?.error_msg ?? null;
   const bodyId = React.useId();
   const typeLabel = STEP_TYPES.find((spec) => spec.value === step.type)?.label;
   const waypointName =
@@ -123,6 +116,7 @@ export function StepRow({
       className={cn(
         "relative rounded-sm border border-hairline bg-elevated/40 px-2 py-2",
         // Opaque while lifted, or the rows it slides over show through it.
+        !open && problem && "border-signal-warn/50",
         isDragging && "z-10 bg-elevated shadow-lg ring-1 ring-signal-cmd/40",
       )}
     >
@@ -159,16 +153,13 @@ export function StepRow({
           aria-controls={bodyId}
           // Not disabled while a run is in flight: folding changes nothing that
           // is sent, so a running list can still be read either way.
-          disabled={pinnedOpen}
-          title={pinnedOpen ? "Fix this step before collapsing it" : undefined}
           onClick={() => onExpandedChange(!open)}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-sm py-0.5 text-left transition-colors hover:bg-elevated focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-sm py-0.5 text-left transition-colors hover:bg-elevated focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           <ChevronRightIcon
             className={cn(
               "size-3.5 shrink-0 text-muted-foreground transition-transform",
               open && "rotate-90",
-              pinnedOpen && "opacity-30",
             )}
             aria-hidden
           />
@@ -176,14 +167,14 @@ export function StepRow({
            * this is the line an operator scans to read the job, and there is
            * room for the word. Fixed width so the summaries line up. */}
           <span className="instrument-label w-11 shrink-0">{typeLabel}</span>
-          {summary ? (
-            <span className="readout min-w-0 truncate text-[12px] text-muted-foreground">
-              {summary}
+          {!open && problem ? (
+            <span className="min-w-0 truncate text-[11px] text-signal-warn">
+              {problem}
             </span>
           ) : (
-            EMPTY_SUMMARY[step.type] && (
-              <span className="min-w-0 truncate text-[11px] text-muted-foreground/70 italic">
-                {EMPTY_SUMMARY[step.type]}
+            summary && (
+              <span className="readout min-w-0 truncate text-[12px] text-muted-foreground">
+                {summary}
               </span>
             )
           )}
@@ -340,7 +331,9 @@ export function StepRow({
         </div>
       )}
 
-      {rowError && (
+      {/* Folded, the header line already carries the problem; saying it twice
+       * would make a folded row two lines again. */}
+      {open && rowError && (
         <p
           role="alert"
           className="mt-1.5 pl-[46px] text-[11px] leading-snug break-words text-signal-warn"
@@ -349,7 +342,7 @@ export function StepRow({
         </p>
       )}
 
-      {state?.error_msg && (
+      {open && state?.error_msg && (
         <p
           role="alert"
           className="mt-1.5 pl-[46px] text-[11px] leading-snug break-words text-signal-warn"

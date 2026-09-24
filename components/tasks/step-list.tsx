@@ -22,12 +22,7 @@ import { ChevronsDownUpIcon, ChevronsUpDownIcon, PlusIcon } from "lucide-react";
 import { StepRow } from "@/components/tasks/step-row";
 import type { ActiveVerticesStatus } from "@/hooks/use-active-map-vertices";
 import type { StepType, TaskStepState } from "@/lib/api/task";
-import {
-  STEP_TYPES,
-  stepDraftError,
-  stepIdFor,
-  type StepDraft,
-} from "@/lib/task/step";
+import { STEP_TYPES, stepIdFor, type StepDraft } from "@/lib/task/step";
 import type { MapVertex } from "@/lib/types/map";
 
 export interface StepListProps {
@@ -94,26 +89,6 @@ export function StepList({
       else next.delete(key);
       return next;
     });
-
-  // A row that cannot be sent, or that the robot failed on, is held unfolded:
-  // folding would hide the one row the operator has to find. It is written into
-  // `expanded` rather than OR-ed in at render time, because otherwise the fix
-  // itself folds the row — the first character typed into an empty Speak row
-  // clears its error and the input would vanish from under the cursor. This is
-  // the adjust-state-during-render pattern, so it settles before paint.
-  const stateOf = (step: StepDraft, index: number) =>
-    stepStates.get(stepIdFor(index, step.type)) ?? null;
-  const pinned = new Set(
-    steps
-      .filter(
-        (step, index) =>
-          stepDraftError(step) !== null || Boolean(stateOf(step, index)?.error_msg),
-      )
-      .map((step) => step.key),
-  );
-  if ([...pinned].some((key) => !expanded.has(key))) {
-    setExpanded(new Set([...expanded, ...pinned]));
-  }
 
   const handleAdd = (type: StepType) => {
     // A row just added is a row about to be filled in.
@@ -195,13 +170,11 @@ export function StepList({
                   verticesStatus={verticesStatus}
                   mapName={mapName}
                   disabled={disabled}
-                  state={stateOf(step, index)}
+                  state={stepStates.get(stepIdFor(index, step.type)) ?? null}
                   onPatch={(changes) => onPatch(step.key, changes)}
                   onRemove={() => onRemove(step.key)}
                   onMoveTo={(to) => onMoveTo(step.key, to)}
-                  expanded={expanded.has(step.key)}
-                  pinnedOpen={pinned.has(step.key)}
-                  onExpandedChange={(open) => setRowExpanded(step.key, open)}
+                  expanded={expanded.has(step.key)}                  onExpandedChange={(open) => setRowExpanded(step.key, open)}
                 />
               ))}
             </ul>

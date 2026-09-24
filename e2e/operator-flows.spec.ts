@@ -406,13 +406,14 @@ test.describe("the step editor", () => {
     ]);
   });
 
-  test("loads a template folded and keeps an unfinished row open", async ({
+  test("loads a template folded and folds an unfinished row to its problem", async ({
     page,
   }) => {
     // Folded rows are what keep a twenty-step patrol on one screen. The two
     // rules worth pinning: a loaded template arrives as one-line summaries,
-    // and a row that cannot be sent refuses to fold, so it is never the one
-    // hidden when the operator goes looking for why Save is greyed out.
+    // and every row folds — an unfinished one included — with the problem
+    // standing in for its summary, so it is still findable when the operator
+    // goes looking for why Save is greyed out.
     await mockBackend(page);
     await page.goto("/tasks");
 
@@ -430,12 +431,15 @@ test.describe("the step editor", () => {
     await expect(page.getByLabel(/^X/)).toBeVisible();
     await page.getByRole("button", { name: "Collapse all" }).click();
     await expect(page.getByLabel(/^X/)).toHaveCount(0);
-    // Empty, so pinned open through Collapse all.
-    await expect(say).toBeVisible();
+    // Empty, and folded all the same: the header says what is missing.
+    await expect(say).toHaveCount(0);
+    const speakRow = page.getByRole("button", { name: /^Speak/, expanded: false });
+    await expect(speakRow).toHaveText(/Needs something to say\./);
 
-    // Once it has a line it folds like the rest, and reads the line back.
+    // Unfold, fill, fold: the line is read back in place of the problem.
+    await speakRow.click();
     await say.fill("Hello");
-    await page.getByRole("button", { name: /Speak.*Hello/ }).click();
+    await page.getByRole("button", { name: /^Speak/, expanded: true }).click();
     await expect(say).toHaveCount(0);
     await expect(page.getByText("“Hello”")).toBeVisible();
   });
