@@ -129,6 +129,37 @@ export function formatDraftAngle(value: number): string {
 }
 
 /**
+ * The one-line readback a folded row shows in place of its fields, or null when
+ * there is nothing to say yet.
+ *
+ * Built from the draft's own text rather than the parsed numbers, so a folded row
+ * reads exactly what the operator typed; a row whose fields do not parse is never
+ * folded in the first place (see StepRow). The waypoint name leads when the
+ * numbers still came from one, because "dock" is what the operator recognises
+ * when scanning twenty rows — the coordinates follow for telling apart two
+ * waypoints that share a name.
+ */
+export function stepSummary(
+  draft: StepDraft,
+  waypointName: string | null = null,
+): string | null {
+  switch (draft.type) {
+    case "MOVE": {
+      const [x, y, theta] = [draft.x, draft.y, draft.theta].map((v) => v.trim());
+      if (!x || !y || !theta) return null;
+      const pose = `(${x}, ${y}) · ${theta}°`;
+      return waypointName ? `${waypointName} · ${pose}` : pose;
+    }
+    case "SPEAK": {
+      const text = draft.text.trim();
+      return text ? `“${text}”` : null;
+    }
+    default:
+      return null;
+  }
+}
+
+/**
  * The list with the item at `from` taken out and put back at `to`.
  *
  * Splice-and-insert rather than a swap, because dragging step 16 to the top of a

@@ -11,6 +11,7 @@ import {
   stepDraftError,
   stepDraftsSubmittable,
   stepIdFor,
+  stepSummary,
   toDispatchSteps,
   toStepRequests,
   toTemplateSteps,
@@ -100,6 +101,32 @@ describe("stepDraftsSubmittable", () => {
   it("needs every row, not just one", () => {
     expect(stepDraftsSubmittable([move(), newStepDraft("STANDUP")])).toBe(true);
     expect(stepDraftsSubmittable([move(), move({ x: "" })])).toBe(false);
+  });
+});
+
+describe("stepSummary", () => {
+  it("leads a MOVE with the waypoint it came from", () => {
+    expect(stepSummary(move({ x: "2.5", y: "1.25", theta: "90" }), "dock")).toBe(
+      "dock · (2.5, 1.25) · 90°",
+    );
+  });
+
+  it("reads back what was typed, not a reformatted number", () => {
+    // A folded row that rounded "2.500" to "2.5" would disagree with the field
+    // the operator sees the moment they unfold it.
+    expect(stepSummary(move({ x: " 2.500 ", y: "-0", theta: "0" }))).toBe(
+      "(2.500, -0) · 0°",
+    );
+  });
+
+  it("has nothing to say for an unfinished row or a bare posture", () => {
+    expect(stepSummary(move({ x: "" }))).toBeNull();
+    expect(stepSummary(newStepDraft("SPEAK"))).toBeNull();
+    expect(stepSummary(newStepDraft("STANDUP"))).toBeNull();
+  });
+
+  it("quotes a spoken line", () => {
+    expect(stepSummary(speak(" Hello "))).toBe("“Hello”");
   });
 });
 
