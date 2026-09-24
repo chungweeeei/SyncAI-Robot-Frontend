@@ -141,8 +141,9 @@ components/
   ui/           shadcn primitives (lint-ignored)
 hooks/          one hook per backend interaction; the only place components get data.
                 A few talk to no backend at all (use-joystick, use-step-drafts,
-                use-camera-clip, use-mobile): React glue over a lib/ module or a
-                browser API, never a second home for the logic itself
+                use-camera-clip, use-browser-time-zone, use-mobile): React glue
+                over a lib/ module or a browser API, never a second home for the
+                logic itself
 lib/
   api/          typed fetchers per backend router, config.ts, http.ts, query-keys.ts
                 (requests only — mirrored validation rules live with their domain)
@@ -288,6 +289,19 @@ touch one, prefer moving it toward the rule.
   Two console-wide polls are mounted once in `app/layout.tsx`:
   `RobotStateProvider` (1 Hz) and `ActiveTaskProvider` (2 s). Pages read those
   providers; they do not start their own `robotState` poll.
+- **A knowable moment beats a poll.** When the data itself says when it will
+  next change, derive the interval from it rather than choosing one: the
+  schedule list costs a Temporal list RPC plus a memo decode per row, so it is
+  not polled, but the soonest `next_run_times[0]` across the unpaused rows is
+  exactly when it stops being true. `useSchedules` hands TanStack
+  `nextScheduleRefetchMs(data, dataUpdatedAt)` — one read just after that
+  moment, and the answer sets the next one. Two rules come with it. Measure
+  from the snapshot's `dataUpdatedAt`, never `Date.now()`: the library restarts
+  the timer whenever the number it is handed changes, and a screen that
+  re-renders on someone else's poll would reset a wall-clock interval before it
+  could ever fire. And a derived interval does not by itself keep a readout
+  true — between the moment and the read that follows it the snapshot still
+  names a time that has passed, which is what `upcomingRun` steps over.
 - **Invalidate across keys.** A rename or activate on a map changes task
   templates (`map_name`, `map_matches_active`); vertex CRUD changes map
   vertex counts and template resolution. Those are wired in the write hooks
