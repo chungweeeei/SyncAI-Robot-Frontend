@@ -135,6 +135,7 @@ components/
   maps/         map library cards and the gridmap editor (grid-canvas)
   recordings/   bag recorder and list
   tasks/        template library, step composer, dispatch, schedules
+  history/      finished-job list: filters, cursor paging, per-run step detail
   settings/     appearance and Wi-Fi
   webrtc/       WHIP/WHEP bench (unlisted developer route — see deviations)
   ui/           shadcn primitives (lint-ignored)
@@ -151,7 +152,7 @@ lib/
   scene/        three.js scene building for the 3D viewport: theme, markers,
                 vertex layer, path ribbon, camera policy, picking, robot mesh
   theme/        the signal hues both canvases draw with
-  task/         step and schedule domain helpers, template name limit
+  task/         step, schedule and history domain helpers, template name limit
   recording/    bag size/duration formatting and the bag name rule
   robot/        G23 joint table (URDF link names ↔ GLB node names)
   video/        WHIP/WHEP signalling, and the camera window's clip capture

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { queryKeys } from "@/lib/api/query-keys";
 import { fetchActiveTasks, type ActiveTask } from "@/lib/api/task";
@@ -58,6 +58,24 @@ export function useActiveTasks(
     queryFn: ({ signal }) => fetchActiveTasks(signal),
     refetchInterval: pollMs,
   });
+
+  // A run leaving this list is a run that finished, and this poll is the only
+  // place in the console that sees *every* run finish — a schedule's, another
+  // console's, this tab's own. So it is what refreshes the job history, rather
+  // than the history screen polling a second visibility query to learn the
+  // same thing. Keyed off `data`, which structural sharing keeps referentially
+  // stable while the list is unchanged, so an idle robot costs nothing here.
+  const queryClient = useQueryClient();
+  const previousIds = React.useRef<Set<string> | null>(null);
+  React.useEffect(() => {
+    if (!data) return;
+    const ids = new Set(data.tasks.map((task) => task.id));
+    const previous = previousIds.current;
+    previousIds.current = ids;
+    if (previous && [...previous].some((id) => !ids.has(id))) {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.taskHistory });
+    }
+  }, [data, queryClient]);
 
   const refresh = React.useCallback(() => {
     void refetch();
