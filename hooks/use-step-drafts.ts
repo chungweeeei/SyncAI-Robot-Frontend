@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import {
+  moveStep,
   newStepDraft,
   type StepDraft,
 } from "@/lib/task/step";
@@ -12,8 +13,12 @@ export interface StepDrafts {
   steps: StepDraft[];
   add: (type: StepType) => void;
   remove: (key: number) => void;
-  /** Swap with the neighbour. -1 is a no-op on the first row, +1 on the last. */
-  move: (key: number, delta: -1 | 1) => void;
+  /**
+   * Take the row out and put it back at `index` (0-based), shifting the rows in
+   * between. An out-of-range index is a no-op, so "up" on the first row and
+   * "down" on the last need no guard at the call site.
+   */
+  moveTo: (key: number, index: number) => void;
   patch: (key: number, changes: Partial<Omit<StepDraft, "key">>) => void;
   /**
    * Swap the whole list, for loading a template into the editor.
@@ -35,10 +40,12 @@ export interface StepDrafts {
  * list and has nothing to do with task tracking: one combined hook would carry a
  * `taskStatus` into a schedule footer that has no status to show.
  *
- * Reordering is two buttons per row rather than drag-and-drop. Dragging needs
- * pointer capture, an insertion indicator, and a keyboard equivalent to stay
- * usable without a mouse — gridmap-editor-scale work for a list that is three to
- * six rows long, and the console has no drag-and-drop primitive to reuse.
+ * Reordering is drag-and-drop on a per-row handle, with a row menu for the
+ * one-click jumps (top, bottom, one either way). It used to be two neighbour-swap
+ * buttons on the assumption that a task is three to six rows; patrol templates
+ * run to twenty and beyond, and fifteen clicks to make step 16 the first one is
+ * not an edit anyone should have to make. Every gesture lands here as one
+ * `moveTo`, so the hook knows nothing about how the operator asked for it.
  */
 export function useStepDrafts(): StepDrafts {
   const [steps, setSteps] = React.useState<StepDraft[]>([]);
@@ -51,17 +58,14 @@ export function useStepDrafts(): StepDrafts {
     setSteps((current) => current.filter((step) => step.key !== key));
   }, []);
 
-  const move = React.useCallback((key: number, delta: -1 | 1) => {
-    setSteps((current) => {
-      const from = current.findIndex((step) => step.key === key);
-      const to = from + delta;
-      if (from < 0 || to < 0 || to >= current.length) return current;
-      const next = [...current];
-      // Swap rather than splice-and-insert: a neighbour exchange is what the two
-      // buttons mean, and it keeps the other rows' identities untouched.
-      [next[from], next[to]] = [next[to]!, next[from]!];
-      return next;
-    });
+  const moveTo = React.useCallback((key: number, index: number) => {
+    setSteps((current) =>
+      moveStep(
+        current,
+        current.findIndex((step) => step.key === key),
+        index,
+      ),
+    );
   }, []);
 
   /**
@@ -83,5 +87,5 @@ export function useStepDrafts(): StepDrafts {
 
   const clear = React.useCallback(() => setSteps([]), []);
 
-  return { steps, add, remove, move, patch, replace, clear };
+  return { steps, add, remove, moveTo, patch, replace, clear };
 }

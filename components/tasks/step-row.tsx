@@ -1,12 +1,28 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDownIcon, ChevronUpIcon, Trash2Icon } from "lucide-react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
+  ArrowDownIcon,
+  ArrowDownToLineIcon,
+  ArrowUpIcon,
+  ArrowUpToLineIcon,
+  EllipsisIcon,
+  GripVerticalIcon,
+  Trash2Icon,
+} from "lucide-react";
 
 import { Chip, Segmented } from "@/components/console/instrument";
 import { IconButton } from "@/components/tasks/icon-button";
 import { TaskStatusChip } from "@/components/console/task-chip";
 import { VertexPicker } from "@/components/tasks/vertex-picker";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import type { ActiveVerticesStatus } from "@/hooks/use-active-map-vertices";
 import { normalizeTheta } from "@/lib/angle";
@@ -21,6 +37,7 @@ import {
   type StepDraft,
 } from "@/lib/task/step";
 import type { MapVertex } from "@/lib/types/map";
+import { cn } from "@/lib/utils";
 
 const TYPE_OPTIONS = STEP_TYPES.map(({ value, label }) => ({ value, label }));
 
@@ -37,7 +54,8 @@ export interface StepRowProps {
   state: TaskStepState | null;
   onPatch: (changes: Partial<Omit<StepDraft, "key">>) => void;
   onRemove: () => void;
-  onMove: (delta: -1 | 1) => void;
+  /** Move this row to a 0-based position; out of range is a no-op. */
+  onMoveTo: (index: number) => void;
 }
 
 export function StepRow({
@@ -51,18 +69,64 @@ export function StepRow({
   state,
   onPatch,
   onRemove,
-  onMove,
+  onMoveTo,
 }: StepRowProps) {
   const rowError = stepDraftError(step);
+  const ordinal = index + 1;
+  const first = index === 0;
+  const last = index === total - 1;
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: step.key, disabled });
 
   return (
-    <li className="rounded-sm border border-hairline bg-elevated/40 px-2 py-2">
+    <li
+      ref={setNodeRef}
+      style={{
+        // Translate only: the default Transform also scales a row to the height
+        // of the one it is passing, which squashes a MOVE row's inputs into a
+        // STANDUP row's single line mid-drag.
+        transform: CSS.Translate.toString(transform),
+        transition,
+      }}
+      className={cn(
+        "relative rounded-sm border border-hairline bg-elevated/40 px-2 py-2",
+        // Opaque while lifted, or the rows it slides over show through it.
+        isDragging && "z-10 bg-elevated shadow-lg ring-1 ring-signal-cmd/40",
+      )}
+    >
       {/* flex-wrap because the rail becomes a bottom bar on a narrow console and
-       * this row carries an ordinal, a three-segment picker, a status chip and
-       * three icon buttons — enough to overflow a phone-width panel otherwise. */}
+       * this row carries a handle, an ordinal, a four-segment picker, a status
+       * chip and two icon buttons — enough to overflow a phone-width panel otherwise. */}
       <div className="flex flex-wrap items-center gap-2">
+        {/* The only part of the row that starts a drag. Making the whole row the
+         * activator would turn every press on an input, the type picker or the
+         * waypoint picker into a potential drag. `touch-none` stops the browser
+         * claiming a finger on the handle as a page scroll. */}
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          aria-label={`Reorder step ${ordinal}`}
+          title="Drag to reorder"
+          disabled={disabled}
+          className={cn(
+            "-ml-1 flex h-6 w-4 shrink-0 touch-none items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-30 disabled:hover:bg-transparent",
+            disabled ? "cursor-default" : isDragging ? "cursor-grabbing" : "cursor-grab",
+          )}
+        >
+          <GripVerticalIcon className="size-3.5" aria-hidden />
+        </button>
         <span className="readout w-4 shrink-0 text-[12px] text-muted-foreground">
-          {index + 1}
+          {ordinal}
         </span>
         <span className="instrument-label w-3 shrink-0 text-muted-foreground">
           {stepGlyph(step.type)}
@@ -86,20 +150,36 @@ export function StepRow({
         {state && <TaskStatusChip status={state.status} />}
 
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          <IconButton
-            label="Move step up"
-            disabled={disabled || index === 0}
-            onClick={() => onMove(-1)}
-          >
-            <ChevronUpIcon className="size-3.5" aria-hidden />
-          </IconButton>
-          <IconButton
-            label="Move step down"
-            disabled={disabled || index === total - 1}
-            onClick={() => onMove(1)}
-          >
-            <ChevronDownIcon className="size-3.5" aria-hidden />
-          </IconButton>
+          {/* The one-click jumps a drag makes fiddly: to either end of a long
+           * list, or a single slot without aiming at a neighbour. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label={`More actions for step ${ordinal}`}
+              title="More actions"
+              disabled={disabled}
+              className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+            >
+              <EllipsisIcon className="size-3.5" aria-hidden />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem disabled={first} onClick={() => onMoveTo(0)}>
+                <ArrowUpToLineIcon aria-hidden />
+                Move to top
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={first} onClick={() => onMoveTo(index - 1)}>
+                <ArrowUpIcon aria-hidden />
+                Move up
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={last} onClick={() => onMoveTo(index + 1)}>
+                <ArrowDownIcon aria-hidden />
+                Move down
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={last} onClick={() => onMoveTo(total - 1)}>
+                <ArrowDownToLineIcon aria-hidden />
+                Move to bottom
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <IconButton
             label="Remove step"
             disabled={disabled}
@@ -115,7 +195,7 @@ export function StepRow({
        * change, so switching to STANDUP and back does not lose what was typed —
        * the wire shape is derived from the type, not stored alongside it. */}
       {step.type === "MOVE" && (
-        <div className="mt-2 space-y-1.5 pl-[26px]">
+        <div className="mt-2 space-y-1.5 pl-[46px]">
           <VertexPicker
             vertices={vertices}
             status={verticesStatus}
@@ -168,7 +248,7 @@ export function StepRow({
       )}
 
       {step.type === "SPEAK" && (
-        <div className="mt-2 pl-[26px]">
+        <div className="mt-2 pl-[46px]">
           <label className="block">
             <span className="instrument-label text-muted-foreground">Say</span>
             <Input
@@ -202,7 +282,7 @@ export function StepRow({
       {rowError && (
         <p
           role="alert"
-          className="mt-1.5 pl-[26px] text-[11px] leading-snug break-words text-signal-warn"
+          className="mt-1.5 pl-[46px] text-[11px] leading-snug break-words text-signal-warn"
         >
           {rowError}
         </p>
@@ -211,7 +291,7 @@ export function StepRow({
       {state?.error_msg && (
         <p
           role="alert"
-          className="mt-1.5 pl-[26px] text-[11px] leading-snug break-words text-signal-warn"
+          className="mt-1.5 pl-[46px] text-[11px] leading-snug break-words text-signal-warn"
         >
           {state.error_msg}
         </p>
