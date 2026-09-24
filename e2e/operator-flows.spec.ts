@@ -360,16 +360,17 @@ test.describe("the step editor", () => {
     const rows = page
       .getByRole("listitem")
       .filter({ has: page.getByRole("button", { name: /^Reorder step/ }) });
-    const glyphs = () =>
+    // Each row's type label, top to bottom.
+    const order = () =>
       rows.evaluateAll((items) =>
         items.map((item) => item.querySelector(".instrument-label")?.textContent),
       );
-    await expect.poll(glyphs).toEqual(["S", "L", "T"]);
+    await expect.poll(order).toEqual(["Stand", "Lie", "Speak"]);
 
     // Menu: the last row straight to the top.
     await page.getByRole("button", { name: "More actions for step 3" }).click();
     await page.getByRole("menuitem", { name: "Move to top" }).click();
-    await expect.poll(glyphs).toEqual(["T", "S", "L"]);
+    await expect.poll(order).toEqual(["Speak", "Stand", "Lie"]);
 
     // Drag: the last row's handle onto the first row.
     const handle = page.getByRole("button", { name: "Reorder step 3" });
@@ -379,7 +380,7 @@ test.describe("the step editor", () => {
     await page.mouse.down();
     await page.mouse.move(from.x + from.width / 2, to.y + 4, { steps: 12 });
     await page.mouse.up();
-    await expect.poll(glyphs).toEqual(["L", "T", "S"]);
+    await expect.poll(order).toEqual(["Lie", "Speak", "Stand"]);
 
     // Keyboard: pick the last row up, one slot up, drop.
     // Each key waits for the one before it to land: the sensor measures the
@@ -391,7 +392,7 @@ test.describe("the step editor", () => {
     await page.keyboard.press("ArrowUp");
     await expect(page.getByText("is over position 2 of 3")).toBeAttached();
     await page.keyboard.press("Space");
-    await expect.poll(glyphs).toEqual(["L", "S", "T"]);
+    await expect.poll(order).toEqual(["Lie", "Stand", "Speak"]);
 
     await page.getByPlaceholder("Morning patrol").fill("reorder-check");
     await page.getByRole("button", { name: "Save as new" }).click();
@@ -403,5 +404,39 @@ test.describe("the step editor", () => {
       "2-standup",
       "3-speak",
     ]);
+  });
+
+  test("loads a template folded and keeps an unfinished row open", async ({
+    page,
+  }) => {
+    // Folded rows are what keep a twenty-step patrol on one screen. The two
+    // rules worth pinning: a loaded template arrives as one-line summaries,
+    // and a row that cannot be sent refuses to fold, so it is never the one
+    // hidden when the operator goes looking for why Save is greyed out.
+    await mockBackend(page);
+    await page.goto("/tasks");
+
+    await page
+      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .click();
+    await expect(page.getByText(/^dock · \(/)).toBeVisible();
+    await expect(page.getByLabel(/^X/)).toHaveCount(0);
+
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    const say = page.getByPlaceholder(/Delivery arrived/);
+    await expect(say).toBeVisible();
+
+    await page.getByRole("button", { name: "Expand all" }).click();
+    await expect(page.getByLabel(/^X/)).toBeVisible();
+    await page.getByRole("button", { name: "Collapse all" }).click();
+    await expect(page.getByLabel(/^X/)).toHaveCount(0);
+    // Empty, so pinned open through Collapse all.
+    await expect(say).toBeVisible();
+
+    // Once it has a line it folds like the rest, and reads the line back.
+    await say.fill("Hello");
+    await page.getByRole("button", { name: /Speak.*Hello/ }).click();
+    await expect(say).toHaveCount(0);
+    await expect(page.getByText("“Hello”")).toBeVisible();
   });
 });
