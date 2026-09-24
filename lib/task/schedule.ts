@@ -236,6 +236,63 @@ export function describeTrigger(trigger: ScheduleTrigger): string {
 }
 
 /**
+ * How long after a schedule's fire time the list is re-read. The row is only
+ * wrong once the run has actually started, and Temporal recomputes
+ * `next_run_times` from the spec the moment it fires, so a couple of seconds
+ * is slack for the two clocks disagreeing rather than for anything settling.
+ */
+export const RUN_REFETCH_SLACK_MS = 2000;
+
+/**
+ * The retry when the soonest run is already in the past and the list still
+ * says so — the robot missed its slot, or the browser's clock is ahead of the
+ * server's. Re-reading at once would loop as fast as the backend answers.
+ */
+export const OVERDUE_REFETCH_MS = 30_000;
+
+/**
+ * The longest a refetch is ever deferred. A timer past 2^31 - 1 ms overflows
+ * and fires immediately, and a schedule a month out would otherwise set one.
+ */
+export const MAX_REFETCH_MS = 86_400_000;
+
+/**
+ * When to re-read the schedule list next, in ms, or false for never.
+ *
+ * The list is not polled — see useSchedules for the cost — but it is also the
+ * one thing on the screen that changes at a knowable moment: the soonest
+ * `next_run_times[0]` across the unpaused rows is when one of them stops
+ * being true. So the list is read exactly once, just after that moment, and
+ * the answer sets the next one. Paused rows are skipped because their times
+ * are hidden and will not fire; unparseable ones because a bad date must not
+ * become a bad timer.
+ *
+ * `readAtMs` is when the list was read, not the current time, and the
+ * difference is load-bearing: the value has to be a pure function of the
+ * snapshot. TanStack restarts the timer whenever the interval it is handed
+ * changes, and the task console re-renders every two seconds with the active
+ * job poll — an interval measured from `Date.now()` was reset before it could
+ * ever fire.
+ */
+export function nextScheduleRefetchMs(
+  schedules: readonly ScheduleState[],
+  readAtMs: number,
+): number | false {
+  let soonest = Number.POSITIVE_INFINITY;
+  for (const schedule of schedules) {
+    if (schedule.paused) continue;
+    const next = schedule.next_run_times[0];
+    if (!next) continue;
+    const at = new Date(next).getTime();
+    if (!Number.isNaN(at) && at < soonest) soonest = at;
+  }
+  if (soonest === Number.POSITIVE_INFINITY) return false;
+  const untilRun = soonest - readAtMs;
+  if (untilRun <= 0) return OVERDUE_REFETCH_MS;
+  return Math.min(untilRun + RUN_REFETCH_SLACK_MS, MAX_REFETCH_MS);
+}
+
+/**
  * The registered schedules that were frozen from each template, keyed by
  * template id.
  *

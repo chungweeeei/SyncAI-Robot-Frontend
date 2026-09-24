@@ -362,6 +362,49 @@ test.describe("the task console", () => {
       );
       expect(editorFollows).toBe(true);
     });
+
+    test("re-reads the list once the soonest run has passed, and only then", async ({
+      page,
+    }) => {
+      // The list is not polled, so a schedule that fired while the page was
+      // open used to keep showing the time it fired at until Refresh. The
+      // soonest run time now sets one timer. This fake answers the first read
+      // with a run a moment away and the second with the recomputed time
+      // Temporal would give, so the row moving is proof the read happened.
+      await mockBackend(page);
+      let reads = 0;
+      await page.route("**/api/v1/schedules", (route) => {
+        if (route.request().method() !== "GET") return route.fallback();
+        reads += 1;
+        const next =
+          reads === 1
+            ? new Date(Date.now() + 1500).toISOString()
+            : "2027-01-01T01:00:00Z";
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([
+            {
+              id: "nightly",
+              trigger: { cron: "0 21 * * *", timezone: "Asia/Taipei" },
+              paused: false,
+              next_run_times: [next],
+            },
+          ]),
+        });
+      });
+      await page.goto("/tasks");
+
+      await expect(
+        page.getByText("2027-01-01 09:00", { exact: true }),
+      ).toBeVisible({ timeout: 10_000 });
+      expect(reads).toBe(2);
+
+      // A run months away sets no further read: the timer is the data's, not
+      // a poll, and the second answer must not have started one.
+      await page.waitForTimeout(2000);
+      expect(reads).toBe(2);
+    });
   });
 });
 

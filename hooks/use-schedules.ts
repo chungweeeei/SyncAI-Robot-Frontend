@@ -17,6 +17,7 @@ import {
   type ScheduleTrigger,
 } from "@/lib/api/schedule";
 import { scheduleTaskTemplate } from "@/lib/api/task-template";
+import { nextScheduleRefetchMs } from "@/lib/task/schedule";
 
 export type SchedulesStatus = "loading" | "ok" | "error";
 
@@ -69,16 +70,27 @@ export interface UseSchedules {
  * Splitting them, and preferring the write, is what makes "Schedule X already
  * exists" survive the reload that follows it.
  *
- * There is no timer. `next_run_times` moves on the minute at best, while the list
- * endpoint costs a Temporal list RPC plus a memo decode per schedule — a 1 Hz
- * poll would spend a request a second on data that changes hourly. Same trade
- * useMaps records, with an explicit Refresh as the escape hatch.
+ * There is no poll. `next_run_times` moves only when a schedule fires, while
+ * the list endpoint costs a Temporal list RPC plus a memo decode per schedule —
+ * a 1 Hz poll would spend a request a second on data that changes hourly. But
+ * the moment it moves is in the data itself, so the interval is *derived*: one
+ * read just after the soonest run, and the answer sets the next one
+ * (nextScheduleRefetchMs). Before this the row kept showing a time that had
+ * passed until someone pressed Refresh, which still exists as the escape hatch.
+ * The interval is measured from the snapshot's own `dataUpdatedAt` so that it
+ * is the same number on every render — the library restarts the timer when the
+ * number changes, and this screen re-renders with the 2 s job poll. The read
+ * goes ahead in a hidden tab too: the library would otherwise skip that tick
+ * and wait a whole interval more, and one request at fire time is cheap.
  */
 export function useSchedules(): UseSchedules {
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: queryKeys.schedules,
     queryFn: ({ signal }) => listSchedules(signal),
+    refetchInterval: (query) =>
+      nextScheduleRefetchMs(query.state.data ?? [], query.state.dataUpdatedAt),
+    refetchIntervalInBackground: true,
   });
 
   const refresh = React.useCallback(
