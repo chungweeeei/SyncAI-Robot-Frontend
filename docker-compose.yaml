@@ -29,7 +29,7 @@ services:
 
   frontend:
     image: ${FRONTEND_IMAGE:-syncai-frontend}:${FRONTEND_TAG:-local}
-    container_name: syncai-frontend
+    container_name: syncai_frontend
     restart: unless-stopped
     # server.js is PID 1 otherwise and does not forward SIGTERM to itself
     # cleanly; tini makes `docker compose stop` a fast stop, not a 10 s kill.
