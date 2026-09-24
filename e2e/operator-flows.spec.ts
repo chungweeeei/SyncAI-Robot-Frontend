@@ -6,6 +6,7 @@ import {
   mapSummary,
   mockBackend,
   recording,
+  taskHistoryEntry,
   taskTemplate,
 } from "./backend";
 
@@ -364,45 +365,46 @@ test.describe("the task console", () => {
       expect(editorFollows).toBe(true);
     });
 
-    test("re-reads the schedules when one fires, and moves the next run on", async ({
+    test("re-reads the list once the soonest run has passed, and only then", async ({
       page,
     }) => {
-      // The list is not polled, so the one moment it goes stale on its own —
-      // a run firing — is when it has to be read again. Before this, a page
-      // left open kept showing the run that had just happened as the next one.
+      // The list is not polled, so a schedule that fired while the page was
+      // open used to keep showing the time it fired at until Refresh. The
+      // soonest run time now sets one timer. This fake answers the first read
+      // with a run a moment away and the second with the recomputed time
+      // Temporal would give, so the row moving is proof the read happened.
       await mockBackend(page);
       let reads = 0;
       await page.route("**/api/v1/schedules", (route) => {
         if (route.request().method() !== "GET") return route.fallback();
         reads += 1;
+        const next =
+          reads === 1
+            ? new Date(Date.now() + 1500).toISOString()
+            : "2027-01-01T01:00:00Z";
         return route.fulfill({
           status: 200,
           contentType: "application/json",
           body: JSON.stringify([
             {
-              id: "half-hourly",
-              trigger: { interval_seconds: 1800 },
+              id: "nightly",
+              trigger: { cron: "0 21 * * *", timezone: "Asia/Taipei" },
               paused: false,
-              // Temporal's answer after the 13:00Z run has moved on to 13:30Z.
-              next_run_times:
-                reads === 1
-                  ? ["2026-09-24T13:00:00Z", "2026-09-24T13:30:00Z"]
-                  : ["2026-09-24T13:30:00Z", "2026-09-24T14:00:00Z"],
+              next_run_times: [next],
             },
           ]),
         });
       });
-      await page.clock.install({ time: new Date("2026-09-24T12:59:30Z") });
       await page.goto("/tasks");
 
-      await expect(page.getByText("2026-09-24 21:00", { exact: true })).toBeVisible();
-      expect(reads).toBe(1);
+      await expect(
+        page.getByText("2027-01-01 09:00", { exact: true }),
+      ).toBeVisible({ timeout: 10_000 });
+      expect(reads).toBe(2);
 
-      await page.clock.runFor(60_000);
-
-      await expect(page.getByText("2026-09-24 21:30", { exact: true })).toBeVisible();
-      await expect(page.getByText("2026-09-24 21:00", { exact: true })).toHaveCount(0);
-      // Once for the run, not a poll: the next timer is aimed at 13:30Z.
+      // A run months away sets no further read: the timer is the data's, not
+      // a poll, and the second answer must not have started one.
+      await page.waitForTimeout(2000);
       expect(reads).toBe(2);
     });
   });
@@ -533,5 +535,152 @@ test.describe("the step editor", () => {
     await page.getByRole("button", { name: /^Speak/, expanded: true }).click();
     await expect(say).toHaveCount(0);
     await expect(page.getByText("“Hello”")).toBeVisible();
+  });
+});
+
+test.describe("the job history", () => {
+  let errors: string[];
+
+  test.beforeEach(async ({ page }) => {
+    errors = [];
+    failOnConsoleErrors(page, errors);
+  });
+
+  test.afterEach(() => {
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  const finished = [
+    taskHistoryEntry(),
+    taskHistoryEntry({
+      id: "nightly-2026-09-18T01:00:00Z",
+      run_id: "run-2",
+      status: "FAILED",
+      started_at: "2026-09-18T01:00:00Z",
+      closed_at: "2026-09-18T01:12:30Z",
+      source: "SCHEDULE",
+      schedule_id: "nightly",
+    }),
+  ];
+
+  test("lists each job by id, with who started it and how long it took", async ({
+    page,
+  }) => {
+    await mockBackend(page, { taskHistory: finished });
+    const listed = page.waitForRequest((request) =>
+      request.url().includes("/api/v1/task_history"),
+    );
+    await page.goto("/history");
+    // Ten a page, asked for explicitly rather than left to the backend's 20.
+    expect(new URL((await listed).url()).searchParams.get("page_size")).toBe("10");
+
+    await expect(page.getByText("robot01-task-1758000000-1")).toBeVisible();
+    await expect(page.getByText("Started directly")).toBeVisible();
+    await expect(page.getByText("Scheduled · nightly")).toBeVisible();
+    // 09:40:00 → 09:44:12, measured between the backend's own timestamps.
+    await expect(page.getByText("4:12", { exact: true })).toBeVisible();
+    await expect(page.getByText("12:30", { exact: true })).toBeVisible();
+    // Everything fits on one page, so there is nothing to page through.
+    await expect(page.getByRole("navigation", { name: "History pages" })).toBeHidden();
+  });
+
+  test("asks the robot for failed jobs only when that filter is picked", async ({
+    page,
+  }) => {
+    await mockBackend(page, { taskHistory: finished });
+    await page.goto("/history");
+    await expect(page.getByText("Started directly")).toBeVisible();
+
+    const filtered = page.waitForRequest(
+      (request) =>
+        request.url().includes("/api/v1/task_history") &&
+        new URL(request.url()).searchParams.get("status") === "FAILED",
+    );
+    await page.getByRole("button", { name: "Failed", exact: true }).click();
+    await filtered;
+
+    await expect(page.getByText("Scheduled · nightly")).toBeVisible();
+    await expect(page.getByText("Started directly")).toBeHidden();
+  });
+
+  test("pages forward with the cursor it was handed, and back without one", async ({
+    page,
+  }) => {
+    await mockBackend(page, { taskHistory: finished, taskHistoryPageSize: 1 });
+    await page.goto("/history");
+    await expect(page.getByText("Started directly")).toBeVisible();
+    await expect(page.getByText("Page 1")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Previous" })).toBeDisabled();
+
+    const next = page.waitForRequest(
+      (request) =>
+        new URL(request.url()).searchParams.get("page_token") === "1",
+    );
+    await page.getByRole("button", { name: "Next" }).click();
+    await next;
+
+    // Replaced, not appended: this is page two, and it is the last one.
+    await expect(page.getByText("Scheduled · nightly")).toBeVisible();
+    await expect(page.getByText("Started directly")).toBeHidden();
+    await expect(page.getByText("Page 2")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Next" })).toBeDisabled();
+
+    await page.getByRole("button", { name: "Previous" }).click();
+    await expect(page.getByText("Started directly")).toBeVisible();
+    await expect(page.getByText("Page 1")).toBeVisible();
+  });
+
+  test("opens a job from anywhere on its row, with the reason a step failed", async ({
+    page,
+  }) => {
+    await mockBackend(page, {
+      taskHistory: finished,
+      taskStates: {
+        "nightly-2026-09-18T01:00:00Z": {
+          id: "nightly-2026-09-18T01:00:00Z",
+          status: "FAILED",
+          steps: [
+            { id: "1-move", status: "COMPLETED", error_msg: "" },
+            { id: "2-move", status: "FAILED", error_msg: "Goal is blocked." },
+          ],
+        },
+      },
+    });
+    await page.goto("/history");
+
+    const described = page.waitForRequest((request) =>
+      new URL(request.url()).pathname.endsWith(
+        `/api/v1/tasks/${encodeURIComponent("nightly-2026-09-18T01:00:00Z")}`,
+      ),
+    );
+    await page.getByText("nightly-2026-09-18T01:00:00Z").click();
+    await described;
+
+    await expect(
+      page.getByRole("button", { name: /nightly-2026-09-18T01:00:00Z/ }),
+    ).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByText("2-move")).toBeVisible();
+    await expect(page.getByText("Goal is blocked.")).toBeVisible();
+  });
+});
+
+test.describe("the job history when the robot cannot answer", () => {
+  // No console-error guard here: the browser logs the 502 itself, which is
+  // exactly the response under test.
+  test("shows the backend's own sentence and a way to try again", async ({
+    page,
+  }) => {
+    await mockBackend(page);
+    await page.route("**/api/v1/task_history**", (route) =>
+      route.fulfill({
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "List task history failed" }),
+      }),
+    );
+    await page.goto("/history");
+
+    await expect(page.getByText("List task history failed")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
   });
 });

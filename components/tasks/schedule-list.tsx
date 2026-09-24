@@ -30,8 +30,8 @@ export interface ScheduleListProps {
   schedules: ScheduleState[];
   /** The library, so a row can be diffed against the template it was frozen from. */
   templates: TaskTemplate[];
-  /** What "next" is measured from — `useSchedules().now`. */
-  now: number;
+  /** What "next" is measured from — `useSchedules().readAtMs`. */
+  readAtMs: number;
   status: SchedulesStatus;
   busy: boolean;
   onPause: (id: string) => void;
@@ -42,7 +42,7 @@ export interface ScheduleListProps {
 export function ScheduleList({
   schedules,
   templates,
-  now,
+  readAtMs,
   status,
   busy,
   onPause,
@@ -82,7 +82,7 @@ export function ScheduleList({
           key={schedule.id}
           schedule={schedule}
           templates={templates}
-          now={now}
+          readAtMs={readAtMs}
           busy={busy}
           onPause={onPause}
           onResume={onResume}
@@ -102,7 +102,7 @@ export function ScheduleList({
 function ScheduleRow({
   schedule,
   templates,
-  now,
+  readAtMs,
   busy,
   onPause,
   onResume,
@@ -110,7 +110,7 @@ function ScheduleRow({
 }: {
   schedule: ScheduleState;
   templates: TaskTemplate[];
-  now: number;
+  readAtMs: number;
   busy: boolean;
   onPause: (id: string) => void;
   onResume: (id: string) => void;
@@ -123,7 +123,7 @@ function ScheduleRow({
    * Paused rows and runs that have already happened both read "—" or move on
    * to the one after; upcomingRun has the reasons.
    */
-  const next = upcomingRun(schedule, now);
+  const next = upcomingRun(schedule, readAtMs);
 
   /**
    * The next run on the operator's own clock, once the browser has said which

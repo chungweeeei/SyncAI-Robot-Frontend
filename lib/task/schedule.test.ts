@@ -1,18 +1,21 @@
 import { describe, expect, it } from "vitest";
 
+import type { ScheduleState } from "@/lib/api/schedule";
 import {
+  MAX_REFETCH_MS,
+  OVERDUE_REFETCH_MS,
+  RUN_REFETCH_SLACK_MS,
   WEEKDAYS,
   describeNextRun,
   describeTrigger,
   formatLocalRunTime,
   formatUtcRunTime,
   fromCron,
+  nextScheduleRefetchMs,
   nextTimedRun,
-  soonestUpcomingRun,
   toCron,
   upcomingRun,
 } from "@/lib/task/schedule";
-import type { ScheduleState } from "@/lib/api/schedule";
 
 /**
  * The boundary these guard: the operator sees a time and some weekdays, the
@@ -167,61 +170,102 @@ describe("run time formatting", () => {
   });
 });
 
-function schedule(over: Partial<ScheduleState>): ScheduleState {
-  return {
+describe("upcomingRun", () => {
+  const readAtMs = Date.parse("2026-09-24T09:00:00Z");
+  const row = (over: Partial<ScheduleState>): ScheduleState => ({
     id: "patrol",
     trigger: { interval_seconds: 3600 },
     paused: false,
     next_run_times: [],
     ...over,
-  };
-}
-
-describe("upcomingRun", () => {
-  const now = Date.parse("2026-09-24T09:00:00Z");
+  });
 
   it("skips a run that has already happened rather than calling it next", () => {
-    // The list is a snapshot: once 08:00 has fired, a page left open must not
-    // go on reporting it as the next run.
-    const row = schedule({
-      next_run_times: ["2026-09-24T08:00:00Z", "2026-09-24T10:00:00Z"],
-    });
-    expect(upcomingRun(row, now)).toBe("2026-09-24T10:00:00Z");
+    // The list is a snapshot: once 08:00 has fired, the row must not go on
+    // reporting it as the run still to come — which is what it did before, in
+    // the window between the run and the read that follows it.
+    expect(
+      upcomingRun(
+        row({ next_run_times: ["2026-09-24T08:00:00Z", "2026-09-24T10:00:00Z"] }),
+        readAtMs,
+      ),
+    ).toBe("2026-09-24T10:00:00Z");
   });
 
   it("does not count the run firing this very instant as still to come", () => {
-    const row = schedule({ next_run_times: ["2026-09-24T09:00:00Z"] });
-    expect(upcomingRun(row, now)).toBeUndefined();
+    expect(upcomingRun(row({ next_run_times: ["2026-09-24T09:00:00Z"] }), readAtMs))
+      .toBeUndefined();
   });
 
   it("has nothing next for a paused schedule, whatever the list says", () => {
-    const row = schedule({ paused: true, next_run_times: ["2026-09-24T10:00:00Z"] });
-    expect(upcomingRun(row, now)).toBeUndefined();
+    expect(
+      upcomingRun(
+        row({ paused: true, next_run_times: ["2026-09-24T10:00:00Z"] }),
+        readAtMs,
+      ),
+    ).toBeUndefined();
   });
 
   it("has nothing next once every listed run has passed", () => {
-    const row = schedule({ next_run_times: ["2026-09-24T08:00:00Z"] });
-    expect(upcomingRun(row, now)).toBeUndefined();
+    expect(upcomingRun(row({ next_run_times: ["2026-09-24T08:00:00Z"] }), readAtMs))
+      .toBeUndefined();
   });
 });
 
-describe("soonestUpcomingRun", () => {
+describe("nextScheduleRefetchMs", () => {
   const now = Date.parse("2026-09-24T09:00:00Z");
-
-  it("is the earliest future run across every unpaused schedule", () => {
-    const rows = [
-      schedule({ id: "a", next_run_times: ["2026-09-24T12:00:00Z"] }),
-      schedule({ id: "b", next_run_times: ["2026-09-24T08:00:00Z", "2026-09-24T11:00:00Z"] }),
-      schedule({ id: "c", paused: true, next_run_times: ["2026-09-24T09:30:00Z"] }),
-    ];
-    expect(soonestUpcomingRun(rows, now)).toBe(Date.parse("2026-09-24T11:00:00Z"));
+  const schedule = (over: Partial<ScheduleState>): ScheduleState => ({
+    id: "s",
+    trigger: { interval_seconds: 3600 },
+    paused: false,
+    next_run_times: [],
+    ...over,
   });
 
-  it("is null when nothing will fire, so no re-read is armed for the past", () => {
-    // A timer aimed at a run already behind `now` would fire at once and, if
-    // the answer still listed it, again and again.
-    const rows = [schedule({ next_run_times: ["2026-09-24T08:00:00Z"] })];
-    expect(soonestUpcomingRun(rows, now)).toBeNull();
-    expect(soonestUpcomingRun([], now)).toBeNull();
+  it("reads once, just after the soonest run", () => {
+    // Two rows; the later one must not be what sets the timer.
+    const rows = [
+      schedule({ id: "a", next_run_times: ["2026-09-24T10:00:00Z"] }),
+      schedule({ id: "b", next_run_times: ["2026-09-24T09:05:00Z", "2026-09-24T09:10:00Z"] }),
+    ];
+    expect(nextScheduleRefetchMs(rows, now)).toBe(5 * 60_000 + RUN_REFETCH_SLACK_MS);
+  });
+
+  it("never polls with nothing to wait for", () => {
+    // No schedules, a spec that can no longer fire, and a paused row whose
+    // times are hidden anyway: none of them earns a request.
+    expect(nextScheduleRefetchMs([], now)).toBe(false);
+    expect(nextScheduleRefetchMs([schedule({ next_run_times: [] })], now)).toBe(false);
+    expect(
+      nextScheduleRefetchMs(
+        [schedule({ paused: true, next_run_times: ["2026-09-24T09:05:00Z"] })],
+        now,
+      ),
+    ).toBe(false);
+  });
+
+  it("backs off when the list still names a time that has passed", () => {
+    // The robot missed its slot, or the browser's clock is ahead: re-reading
+    // at once would loop as fast as the backend answers.
+    const rows = [schedule({ next_run_times: ["2026-09-24T08:59:59Z"] })];
+    expect(nextScheduleRefetchMs(rows, now)).toBe(OVERDUE_REFETCH_MS);
+    expect(nextScheduleRefetchMs(rows, Date.parse("2026-09-24T08:59:59Z"))).toBe(
+      OVERDUE_REFETCH_MS,
+    );
+  });
+
+  it("caps a far-off run below the timer overflow", () => {
+    const rows = [schedule({ next_run_times: ["2026-11-24T09:00:00Z"] })];
+    expect(nextScheduleRefetchMs(rows, now)).toBe(MAX_REFETCH_MS);
+    expect(MAX_REFETCH_MS).toBeLessThan(2 ** 31);
+  });
+
+  it("ignores a time it cannot parse rather than setting a NaN timer", () => {
+    const rows = [
+      schedule({ id: "bad", next_run_times: ["soon"] }),
+      schedule({ id: "good", next_run_times: ["2026-09-24T09:01:00Z"] }),
+    ];
+    expect(nextScheduleRefetchMs(rows, now)).toBe(60_000 + RUN_REFETCH_SLACK_MS);
+    expect(nextScheduleRefetchMs([rows[0]], now)).toBe(false);
   });
 });

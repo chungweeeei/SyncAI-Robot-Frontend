@@ -12,11 +12,13 @@
 // answering, so a 200 means the workflow is queued and the robot is about to
 // act. There is no separate run/execute call.
 //
-// There is no GET collection of *all* tasks — nothing stores them, and Temporal
-// forgets a closed workflow inside a day — but there is one of the **running**
-// ones: `fetchActiveTasks`. That is how a caller recovers an id it never had,
+// Two collections, split by whether the run is still going. `fetchActiveTasks`
+// is the **running** ones: that is how a caller recovers an id it never had,
 // which is every id after a reload and every id belonging to a run a schedule
-// started while nobody was watching.
+// started while nobody was watching. `fetchTaskHistory` is the **finished**
+// ones. Neither is stored by the backend — both are pages of Temporal's
+// visibility index — so history reaches back only as far as the namespace's
+// retention (a day by default) and a run older than that is simply gone.
 
 import { z } from "zod";
 
@@ -318,4 +320,85 @@ export function cancelTask(id: string): Promise<void> {
     method: "DELETE",
     parse: false,
   });
+}
+
+/** The statuses a *finished* run can have — the history filter's vocabulary. */
+export type TaskHistoryStatus = "COMPLETED" | "FAILED" | "CANCELED";
+
+/**
+ * `TaskHistoryEntryResponse`, verbatim: an `ActiveTask` plus the time it
+ * closed, with the status narrowed to the three a run can end in. The backend
+ * folds Temporal's TimedOut into FAILED and Terminated into CANCELED, so an
+ * operator never sees a status this console has no colour for.
+ */
+export interface TaskHistoryEntry {
+  /** Workflow id — the same id `fetchTaskState` takes for the per-step detail. */
+  id: string;
+  run_id: string;
+  status: TaskHistoryStatus;
+  /** ISO 8601, UTC. */
+  started_at: string;
+  /** ISO 8601, UTC. Typed nullable because the backend's model is. */
+  closed_at: string | null;
+  source: TaskSource;
+  /** Set only when `source` is "SCHEDULE". */
+  schedule_id: string | null;
+}
+
+export interface TaskHistoryResponse {
+  /** Newest close first; the backend offers no other order. */
+  tasks: TaskHistoryEntry[];
+  /**
+   * Opaque cursor for the next page, null on the last one. Only valid with the
+   * same `status` it was issued under — see queryKeys.taskHistoryPage.
+   */
+  next_page_token: string | null;
+}
+
+const TaskHistoryResponseSchema: z.ZodType<TaskHistoryResponse> = z.object({
+  tasks: z.array(
+    z.object({
+      id: z.string(),
+      run_id: z.string(),
+      status: z.enum(["COMPLETED", "FAILED", "CANCELED"]),
+      started_at: z.string(),
+      closed_at: z.string().nullable(),
+      source: z.enum(["DIRECT", "SCHEDULE"]),
+      schedule_id: z.string().nullable(),
+    }),
+  ),
+  next_page_token: z.string().nullable(),
+});
+
+export interface TaskHistoryQuery {
+  /** Only runs that finished this way; omitted for all three. */
+  status?: TaskHistoryStatus;
+  pageToken?: string;
+  pageSize?: number;
+}
+
+/**
+ * One page of finished runs on this robot, newest close first.
+ *
+ * Cursor paging only: the backend is reading one page of Temporal's visibility
+ * index per call and has no count to offer, so a caller can step forward with
+ * the token it was handed and back with the ones it kept — never jump to
+ * "page 3 of 7".
+ *
+ * The backend's `since` bound is not exposed. With history kept for about a
+ * day, a time-range filter was a second control that changed almost nothing.
+ */
+export function fetchTaskHistory(
+  { status, pageToken, pageSize }: TaskHistoryQuery,
+  signal?: AbortSignal,
+): Promise<TaskHistoryResponse> {
+  const params = new URLSearchParams();
+  if (pageSize !== undefined) params.set("page_size", String(pageSize));
+  if (pageToken) params.set("page_token", pageToken);
+  if (status) params.set("status", status);
+  const query = params.toString();
+  return requestJson<TaskHistoryResponse>(
+    apiUrl(`/api/v1/task_history${query ? `?${query}` : ""}`),
+    { signal, schema: TaskHistoryResponseSchema },
+  );
 }

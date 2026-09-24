@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   CircleDotIcon,
   CompassIcon,
+  HistoryIcon,
   ListChecksIcon,
   MapIcon,
   RadarIcon,
@@ -34,6 +35,9 @@ const navItems = [
   // rail is a list of screens, not a sequence.
   { title: "Recordings", href: "/recordings", icon: CircleDotIcon },
   { title: "Tasks", href: "/tasks", icon: ListChecksIcon },
+  // Straight after Tasks: it is what a task becomes once it ends, and the two
+  // are read together — start a job there, see how it went here.
+  { title: "History", href: "/history", icon: HistoryIcon },
   { title: "Settings", href: "/settings", icon: SlidersHorizontalIcon },
 ];
 

@@ -123,6 +123,19 @@ export function taskTemplate(over: Record<string, unknown> = {}) {
   };
 }
 
+export function taskHistoryEntry(over: Record<string, unknown> = {}) {
+  return {
+    id: "robot01-task-1758000000-1",
+    run_id: "run-1",
+    status: "COMPLETED",
+    started_at: "2026-09-18T09:40:00Z",
+    closed_at: "2026-09-18T09:44:12Z",
+    source: "DIRECT",
+    schedule_id: null,
+    ...over,
+  };
+}
+
 /** What every screen needs before it will render anything but a guard state. */
 export interface BackendOverrides {
   /** Null makes GET /robot/state 404, which is the pre-localization state. */
@@ -134,6 +147,12 @@ export interface BackendOverrides {
   templates?: Record<string, unknown>[];
   schedules?: Record<string, unknown>[];
   activeTasks?: Record<string, unknown>[];
+  /** Finished runs, newest close first, as GET /task_history pages them. */
+  taskHistory?: Record<string, unknown>[];
+  /** Rows per history page; the fake's cursor is the offset of the next one. */
+  taskHistoryPageSize?: number;
+  /** GET /tasks/<id> bodies by id; an id with none answers 404. */
+  taskStates?: Record<string, Record<string, unknown>>;
 }
 
 /**
@@ -176,10 +195,14 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   const templates = over.templates ?? [taskTemplate()];
   const schedules = over.schedules ?? [];
   const activeTasks = over.activeTasks ?? [];
+  const taskHistory = over.taskHistory ?? [];
+  const taskHistoryPageSize = over.taskHistoryPageSize ?? 20;
+  const taskStates = over.taskStates ?? {};
 
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
-    const path = new URL(request.url()).pathname;
+    const url = new URL(request.url());
+    const path = url.pathname;
     const method = request.method();
 
     if (method !== "GET") {
@@ -194,6 +217,28 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     }
     if (path === "/api/v1/active_tasks") {
       return json(route, { tasks: activeTasks, as_of: "2026-09-18T09:45:00Z" });
+    }
+    if (path === "/api/v1/task_history") {
+      // Filters and a cursor the way the backend applies them: status is an
+      // exact match, and the token is only meaningful to the fake that issued
+      // it — here, the offset of the next page's first row.
+      const status = url.searchParams.get("status");
+      const rows = status
+        ? taskHistory.filter((row) => row.status === status)
+        : taskHistory;
+      const offset = Number(url.searchParams.get("page_token") ?? 0);
+      const end = offset + taskHistoryPageSize;
+      return json(route, {
+        tasks: rows.slice(offset, end),
+        next_page_token: end < rows.length ? String(end) : null,
+      });
+    }
+    const taskMatch = /^\/api\/v1\/tasks\/([^/]+)$/.exec(path);
+    if (taskMatch && method === "GET") {
+      const id = decodeURIComponent(taskMatch[1]);
+      return taskStates[id]
+        ? json(route, taskStates[id])
+        : json(route, { detail: `Task ${id} not found` }, 404);
     }
     if (path === "/api/v1/maps" && method === "GET") return json(route, maps);
     if (path.endsWith("/vertices") && method === "GET") {
