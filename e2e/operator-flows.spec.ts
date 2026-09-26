@@ -568,7 +568,13 @@ test.describe("the step editor", () => {
     await page.getByRole("button", { name: /Task editor/ }).click();
     await page.getByTitle("Drive to a pose in the map frame.").click();
 
+    // Closed until asked for: a map under every row would bury the list.
     const plan = page.getByRole("img", { name: /^Floor plan of dp2f with 2 waypoints/ });
+    await expect(plan).toHaveCount(0);
+    const toggle = page.getByRole("button", { name: "Floor plan" });
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await expect(plan).toBeVisible();
     await expect(plan).toHaveAccessibleName(/waypoints\.$/);
 

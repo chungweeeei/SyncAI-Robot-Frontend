@@ -11,6 +11,7 @@ import {
   ChevronRightIcon,
   EllipsisIcon,
   GripVerticalIcon,
+  MapIcon,
   Trash2Icon,
 } from "lucide-react";
 
@@ -115,10 +116,13 @@ export function StepRow({
       vertexMissing: false,
     });
   // The preview only has something to say once there are stops to draw; every
-  // other state is the picker's hint, and a second box repeating it would not
-  // help.
-  const showPreview =
+  // other state is the picker's hint, and a button opening a box that repeats
+  // it would not help. Closed by default, and the choice lives with the row:
+  // folding it keeps the map open for when it is unfolded again.
+  const canPreview =
     verticesStatus === "ok" && vertices.length > 0 && mapGrid !== null && mapName !== null;
+  const [previewOpen, setPreviewOpen] = React.useState(false);
+  const previewId = React.useId();
 
   const {
     attributes,
@@ -275,24 +279,49 @@ export function StepRow({
            * fields. The draft still carries the numbers — they are what is sent,
            * and a template saved with hand-typed ones still loads and runs — but
            * an operator places a waypoint on the floor plan, not a coordinate. */}
-          {/* The picker and, beside it, the floor plan it picks from: a name in
-           * a list is not a place, and the map is what says which stop `v2` is.
-           * Wraps on a narrow console so the map keeps its width rather than
-           * shrinking to a strip nothing can be read on. */}
+          {/* The picker and, on request, the floor plan it picks from: a name
+           * in a list is not a place, and the map is what says which stop `v2`
+           * is. Opened by its button rather than always shown — a twenty-step
+           * patrol with a map under every row is a wall of maps, and most picks
+           * are made by an operator who already knows the name. */}
           {step.type === "MOVE" && (
-            <div className="flex flex-wrap items-start gap-2">
-              <div className="min-w-[12rem] flex-1">
-                <VertexPicker
-                  vertices={vertices}
-                  status={verticesStatus}
-                  mapName={mapName}
-                  value={step.vertexId}
-                  disabled={disabled}
-                  onPick={pickWaypoint}
-                />
+            <div className="space-y-2">
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <VertexPicker
+                    vertices={vertices}
+                    status={verticesStatus}
+                    mapName={mapName}
+                    value={step.vertexId}
+                    disabled={disabled}
+                    onPick={pickWaypoint}
+                  />
+                </div>
+                {canPreview && (
+                  <button
+                    type="button"
+                    aria-pressed={previewOpen}
+                    aria-controls={previewId}
+                    title={
+                      previewOpen
+                        ? "Hide the floor plan"
+                        : "Show where each waypoint is on the floor plan"
+                    }
+                    onClick={() => setPreviewOpen((open) => !open)}
+                    className={cn(
+                      "instrument-label flex h-7 shrink-0 items-center gap-1 rounded-sm border px-2 transition-colors",
+                      previewOpen
+                        ? "border-signal-cmd/40 bg-signal-cmd/8 text-signal-cmd hover:bg-signal-cmd/16"
+                        : "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground",
+                    )}
+                  >
+                    <MapIcon className="size-3" aria-hidden />
+                    Floor plan
+                  </button>
+                )}
               </div>
-              {showPreview && (
-                <div className="w-full shrink-0 sm:w-80">
+              {canPreview && previewOpen && (
+                <div id={previewId}>
                   <WaypointPreview
                     mapName={mapName}
                     meta={mapGrid}

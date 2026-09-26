@@ -21,13 +21,14 @@ export interface WaypointPreviewProps {
 }
 
 /**
- * The floor plan beside a MOVE row's waypoint picker.
+ * The floor plan a MOVE row opens under its waypoint picker.
  *
  * It exists because a name in a dropdown is not a place: by the time an
  * operator is composing a job they have forgotten which of `dock`, `v2` and
  * `room-a` is the one by the lift, and the only other way to find out was to
  * leave for the map editor. Every stop is drawn with its name, the row's pick
- * is lit, and a click on a marker picks it.
+ * is lit, and a click on a marker picks it. Mounted only while open, so the
+ * raster is not fetched for a row that never asks.
  *
  * The click is a mouse convenience, not the control: the Select next to it is
  * the keyboard and screen-reader path, which is why this is a `role="img"`
@@ -144,7 +145,7 @@ export function WaypointPreview({
     <div
       ref={containerRef}
       className={cn(
-        "relative h-52 w-full overflow-hidden rounded-sm border border-hairline",
+        "relative h-64 w-full overflow-hidden rounded-sm border border-hairline",
         hoveredId && !disabled && "cursor-pointer",
       )}
     >
