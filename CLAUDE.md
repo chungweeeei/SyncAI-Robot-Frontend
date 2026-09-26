@@ -141,9 +141,9 @@ components/
   ui/           shadcn primitives (lint-ignored)
 hooks/          one hook per backend interaction; the only place components get data.
                 A few talk to no backend at all (use-joystick, use-step-drafts,
-                use-camera-clip, use-browser-time-zone, use-mobile): React glue
-                over a lib/ module or a browser API, never a second home for the
-                logic itself
+                use-task-draft, use-camera-clip, use-browser-time-zone,
+                use-mobile): React glue over a lib/ module or a browser API,
+                never a second home for the logic itself
 lib/
   api/          typed fetchers per backend router, config.ts, http.ts, query-keys.ts
                 (requests only — mirrored validation rules live with their domain)
@@ -155,7 +155,9 @@ lib/
   scene/        three.js scene building for the 3D viewport: theme, markers,
                 vertex layer, path ribbon, camera policy, picking, robot mesh
   theme/        the signal hues both canvases draw with
-  task/         step, schedule and history domain helpers, template name limit
+  task/         step, schedule and history domain helpers, template name limit,
+                and the editor's unsaved draft (draft-store.ts — the one place
+                that touches browser storage)
   recording/    bag size/duration formatting and the bag name rule
   robot/        G23 joint table (URDF link names ↔ GLB node names)
   video/        WHIP/WHEP signalling, and the camera window's clip capture
@@ -426,6 +428,17 @@ it is run in, so it does not belong to any one of them.
 - Comments in this codebase explain *why* a choice was made (backpressure,
   poll economics, a backend quirk), not what the code does. Keep that standard;
   a decision without its reason will be undone by the next reader.
+- **Browser storage is one module.** The task editor's unsaved draft lives in
+  `sessionStorage` through `lib/task/draft-store.ts`, and nothing else reads
+  or writes storage. The store takes its `Storage` by injection (the server
+  has none, tests pass a Map), wraps every access in try/catch because a
+  private window or blocked site data must cost the cache and not the page,
+  and is consumed through `useSyncExternalStore` (`hooks/use-task-draft.ts`)
+  rather than restored in an effect: `/tasks` is server-rendered, so the
+  first client render has to match an empty server one, and a synchronous
+  setState in an effect is what the compiler lint rejects. Put the next
+  browser-side value that has to outlive a screen beside it, not in a new
+  `localStorage` call.
 - Backend addressing: never hardcode a host. Every REST and WebSocket path goes
   through `apiUrl()` / `wsUrl()` in `lib/api/config.ts`, which default to the
   page's own hostname on port 3000 and are overridable via
