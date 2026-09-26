@@ -100,6 +100,19 @@ export function newStepDraft(type: StepType): StepDraft {
 }
 
 /**
+ * The same rows under keys minted now.
+ *
+ * For rows that come back from storage: the counter above restarts with the
+ * module, so a list saved with keys 1..n and restored after a reload would
+ * collide with the next row added. Every restored row therefore gets a key
+ * that has never been mounted — which is also what `replace` asks of the
+ * rows it is handed, for the same reason.
+ */
+export function reissueStepKeys(drafts: readonly StepDraft[]): StepDraft[] {
+  return drafts.map((draft) => ({ ...draft, key: newStepDraft(draft.type).key }));
+}
+
+/**
  * Render a stored number into a draft field.
  *
  * Vertices come off the wire as raw doubles — `6.8344510000000005`,
