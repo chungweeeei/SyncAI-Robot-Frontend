@@ -40,9 +40,11 @@ export function useRenameMap() {
   return useMutation({
     mutationFn: ({ from, to }: { from: string; to: string }) => renameMap(from, to),
     onSuccess: (_result, { from }) => {
-      // The per-map vertex cache is keyed by the old name and nothing will
-      // read it again; drop it rather than let it sit until eviction.
+      // The per-map vertex and raster caches are keyed by the old name and
+      // nothing will read them again; drop them rather than let them sit
+      // until eviction.
       queryClient.removeQueries({ queryKey: queryKeys.mapVertices(from) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapImage(from) });
       // The catalogue now lists the map under its new name; the refetch is
       // what replaces its card with one keyed on that name.
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
@@ -60,6 +62,7 @@ export function useDeleteMap() {
     mutationFn: (name: string) => deleteMap(name),
     onSuccess: (_result, name) => {
       queryClient.removeQueries({ queryKey: queryKeys.mapVertices(name) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapImage(name) });
       // The catalogue no longer lists the map; the refetch is what unmounts
       // its card. Templates need nothing: the backend refuses the delete while
       // any template is still bound (409 `template_bound`).
@@ -109,8 +112,13 @@ export function useConvertMapGrid() {
   return useMutation({
     mutationFn: ({ name, recipe, overwriteEdits }: ConvertMapGridVariables) =>
       convertMapGrid(name, { recipe, overwriteEdits }),
-    onSuccess: () => {
+    onSuccess: (_result, { name }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
+      // The conversion is about to replace the .pgm the preview raster was
+      // decoded from. Dropped rather than invalidated: an immediate refetch
+      // would race the conversion and cache the *old* bytes as fresh; the next
+      // mount after the catalogue reports `ok` reads the new ones.
+      queryClient.removeQueries({ queryKey: queryKeys.mapImage(name) });
     },
   });
 }
@@ -129,16 +137,18 @@ export function isHandEditConflict(error: unknown): error is ConvertConflictErro
  *
  * The grid itself is deliberately not refetched: the caller's buffer *is* what
  * was written, byte for byte, and a reload would need a new GridSession and
- * throw away the operator's undo history as the reward for saving. Only the
- * catalogue is marked stale, for the `modified_at` and size its card shows.
+ * throw away the operator's undo history as the reward for saving. The
+ * catalogue is marked stale, for the `modified_at` and size its card shows,
+ * and so is the preview raster the task editor draws from the same file.
  */
 export function useSaveMapGrid() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ name, grid }: { name: string; grid: MapGrid }) =>
       saveMapGrid(name, grid),
-    onSuccess: () => {
+    onSuccess: (_result, { name }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.mapImage(name) });
     },
   });
 }
