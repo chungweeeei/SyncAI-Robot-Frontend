@@ -308,9 +308,11 @@ touch one, prefer moving it toward the rule.
   names a time that has passed, which is what `upcomingRun` steps over.
 - **Invalidate across keys.** A rename or activate on a map changes task
   templates (`map_name`, `map_matches_active`); vertex CRUD changes map
-  vertex counts and template resolution. Those are wired in the write hooks
-  now — when adding a write, list every key its response affects in its
-  `onSuccess`, not only the key it was fetched under.
+  vertex counts and template resolution; a grid save or convert, a mapping
+  save, and a map rename or delete change the floor plan raster the task
+  editor draws (`mapImage`). Those are wired in the write hooks now — when
+  adding a write, list every key its response affects in its `onSuccess`,
+  not only the key it was fetched under.
 - **Wire types** are split between `lib/types/` and the fetcher modules with no
   rule yet. Prefer `lib/types/` for anything more than one router shares.
 
@@ -358,7 +360,8 @@ As built:
   the track, which has the browser flushing the recorder while the explicit
   stop is still on its way.
 
-Both canvases read their signal hues from `lib/theme/signal.ts` — three.js
+Both canvases read their signal hues from `lib/theme/signal.ts`, and the task
+editor's floor plan preview inherits them through `lib/map/draw.ts`'s palette — three.js
 wants a number and a 2D context wants a string, and neither can read a CSS
 custom property, so the values are transcribed from `app/globals.css` exactly
 once. A token moved there is a two-file change, and the second file says so.
