@@ -17,6 +17,7 @@ import { ScheduleList } from "@/components/tasks/schedule-list";
 import { StepList } from "@/components/tasks/step-list";
 import { TaskLibrary } from "@/components/tasks/task-library";
 import { useActiveMapVertices } from "@/hooks/use-active-map-vertices";
+import { useActiveMap } from "@/hooks/use-maps";
 import { useTaskTemplates } from "@/hooks/use-task-templates";
 import { useScheduleTaskTemplate, useSchedules } from "@/hooks/use-schedules";
 import { useStepDrafts } from "@/hooks/use-step-drafts";
@@ -76,6 +77,12 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
   const scheduleTemplate = useScheduleTaskTemplate();
   const library = useTaskTemplates();
   const { vertices, status: verticesStatus, mapName } = useActiveMapVertices();
+  // The active map's geometry, for the floor plan preview beside each MOVE
+  // row's picker. A second observer of the `maps` entry the vertices hook
+  // already mounted, so it costs no request; read here rather than in each
+  // row so unfolding a row never refetches the catalogue.
+  const { map: activeMap } = useActiveMap();
+  const mapGrid = activeMap?.grid ?? null;
 
   /**
    * Which template is loaded in the composer, so Save can offer to overwrite it.
@@ -418,6 +425,7 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
                 vertices={vertices}
                 verticesStatus={verticesStatus}
                 mapName={mapName}
+                mapGrid={mapGrid}
                 disabled={dispatch.running}
                 stepStates={dispatch.stepStates}
                 onAdd={drafts.add}

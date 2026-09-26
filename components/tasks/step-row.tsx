@@ -18,6 +18,7 @@ import { Chip, Segmented } from "@/components/console/instrument";
 import { IconButton } from "@/components/tasks/icon-button";
 import { TaskStatusChip } from "@/components/console/task-chip";
 import { VertexPicker } from "@/components/tasks/vertex-picker";
+import { WaypointPreview } from "@/components/tasks/waypoint-preview";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +39,7 @@ import {
   type StepDraft,
 } from "@/lib/task/step";
 import type { MapVertex } from "@/lib/types/map";
+import type { MapMetadata } from "@/lib/types/robot";
 import { cn } from "@/lib/utils";
 
 const TYPE_OPTIONS = STEP_TYPES.map(({ value, label }) => ({ value, label }));
@@ -50,6 +52,8 @@ export interface StepRowProps {
   vertices: MapVertex[];
   verticesStatus: ActiveVerticesStatus;
   mapName: string | null;
+  /** The active map's geometry; null when it has no floor plan to preview. */
+  mapGrid: MapMetadata | null;
   disabled: boolean;
   /** Tracked status + error_msg for this step, or null when nothing is tracked. */
   state: TaskStepState | null;
@@ -68,6 +72,7 @@ export function StepRow({
   vertices,
   verticesStatus,
   mapName,
+  mapGrid,
   disabled,
   state,
   onPatch,
@@ -92,6 +97,28 @@ export function StepRow({
   const ordinal = index + 1;
   const first = index === 0;
   const last = index === total - 1;
+
+  // One patch, not four: two updates would render a frame whose numbers are
+  // this vertex's but whose label is still the old one. normalizeTheta on the
+  // way *in* because the vertex table has no range constraint while MoveParams
+  // is (-180, 180] — a row written by curl can hold exactly -180, which the
+  // task endpoint rejects. Shared by the picker and the floor plan, so a click
+  // on the map sets exactly what a pick from the list does.
+  const pickWaypoint = (vertex: MapVertex) =>
+    onPatch({
+      x: formatDraftPosition(vertex.x),
+      y: formatDraftPosition(vertex.y),
+      theta: formatDraftAngle(normalizeTheta(vertex.theta)),
+      vertexId: vertex.id,
+      // Re-picking resolves the provenance, so the stale-snapshot warning
+      // goes with it.
+      vertexMissing: false,
+    });
+  // The preview only has something to say once there are stops to draw; every
+  // other state is the picker's hint, and a second box repeating it would not
+  // help.
+  const showPreview =
+    verticesStatus === "ok" && vertices.length > 0 && mapGrid !== null && mapName !== null;
 
   const {
     attributes,
@@ -248,31 +275,34 @@ export function StepRow({
            * fields. The draft still carries the numbers — they are what is sent,
            * and a template saved with hand-typed ones still loads and runs — but
            * an operator places a waypoint on the floor plan, not a coordinate. */}
+          {/* The picker and, beside it, the floor plan it picks from: a name in
+           * a list is not a place, and the map is what says which stop `v2` is.
+           * Wraps on a narrow console so the map keeps its width rather than
+           * shrinking to a strip nothing can be read on. */}
           {step.type === "MOVE" && (
-            <div>
-              <VertexPicker
-                vertices={vertices}
-                status={verticesStatus}
-                mapName={mapName}
-                value={step.vertexId}
-                disabled={disabled}
-                onPick={(vertex) =>
-                  // One patch, not four: two updates would render a frame whose
-                  // numbers are this vertex's but whose label is still the old one.
-                  // normalizeTheta on the way *in* because the vertex table has no
-                  // range constraint while MoveParams is (-180, 180] — a row written
-                  // by curl can hold exactly -180, which the task endpoint rejects.
-                  onPatch({
-                    x: formatDraftPosition(vertex.x),
-                    y: formatDraftPosition(vertex.y),
-                    theta: formatDraftAngle(normalizeTheta(vertex.theta)),
-                    vertexId: vertex.id,
-                    // Re-picking resolves the provenance, so the stale-snapshot
-                    // warning goes with it.
-                    vertexMissing: false,
-                  })
-                }
-              />
+            <div className="flex flex-wrap items-start gap-2">
+              <div className="min-w-[12rem] flex-1">
+                <VertexPicker
+                  vertices={vertices}
+                  status={verticesStatus}
+                  mapName={mapName}
+                  value={step.vertexId}
+                  disabled={disabled}
+                  onPick={pickWaypoint}
+                />
+              </div>
+              {showPreview && (
+                <div className="w-full shrink-0 sm:w-64">
+                  <WaypointPreview
+                    mapName={mapName}
+                    meta={mapGrid}
+                    vertices={vertices}
+                    selectedId={step.vertexId}
+                    disabled={disabled}
+                    onPick={pickWaypoint}
+                  />
+                </div>
+              )}
             </div>
           )}
 

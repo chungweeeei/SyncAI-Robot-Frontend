@@ -24,12 +24,15 @@ import type { ActiveVerticesStatus } from "@/hooks/use-active-map-vertices";
 import type { StepType, TaskStepState } from "@/lib/api/task";
 import { STEP_TYPES, stepIdFor, type StepDraft } from "@/lib/task/step";
 import type { MapVertex } from "@/lib/types/map";
+import type { MapMetadata } from "@/lib/types/robot";
 
 export interface StepListProps {
   steps: StepDraft[];
   vertices: MapVertex[];
   verticesStatus: ActiveVerticesStatus;
   mapName: string | null;
+  /** The active map's geometry, for the floor plan preview; null with no floor plan. */
+  mapGrid: MapMetadata | null;
   /** True while a dispatched task is running — see the note below. */
   disabled: boolean;
   /** Per-step state of the tracked task, keyed by the derived step id. */
@@ -57,6 +60,7 @@ export function StepList({
   vertices,
   verticesStatus,
   mapName,
+  mapGrid,
   disabled,
   stepStates,
   onAdd,
@@ -169,6 +173,7 @@ export function StepList({
                   vertices={vertices}
                   verticesStatus={verticesStatus}
                   mapName={mapName}
+                  mapGrid={mapGrid}
                   disabled={disabled}
                   state={stepStates.get(stepIdFor(index, step.type)) ?? null}
                   onPatch={(changes) => onPatch(step.key, changes)}
