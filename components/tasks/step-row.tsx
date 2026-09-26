@@ -302,6 +302,10 @@ export function StepRow({
                     type="button"
                     aria-pressed={previewOpen}
                     aria-controls={previewId}
+                    // Icon only: the row is already dense with words, and the
+                    // pressed state says more than a label that would have to
+                    // flip between "Show" and "Hide" to keep up.
+                    aria-label="Floor plan"
                     title={
                       previewOpen
                         ? "Hide the floor plan"
@@ -309,14 +313,13 @@ export function StepRow({
                     }
                     onClick={() => setPreviewOpen((open) => !open)}
                     className={cn(
-                      "instrument-label flex h-7 shrink-0 items-center gap-1 rounded-sm border px-2 transition-colors",
+                      "flex size-7 shrink-0 items-center justify-center rounded-sm border transition-colors",
                       previewOpen
                         ? "border-signal-cmd/40 bg-signal-cmd/8 text-signal-cmd hover:bg-signal-cmd/16"
                         : "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground",
                     )}
                   >
-                    <MapIcon className="size-3" aria-hidden />
-                    Floor plan
+                    <MapIcon className="size-3.5" aria-hidden />
                   </button>
                 )}
               </div>
