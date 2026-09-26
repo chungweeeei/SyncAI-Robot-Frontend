@@ -241,6 +241,16 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         : json(route, { detail: `Task ${id} not found` }, 404);
     }
     if (path === "/api/v1/maps" && method === "GET") return json(route, maps);
+    const mapMatch = /^\/api\/v1\/maps\/([^/]+)$/.exec(path);
+    if (mapMatch && method === "GET") {
+      // The editor's first request; a name not in the catalogue is a 404
+      // sentence, the way the backend answers.
+      const name = decodeURIComponent(mapMatch[1]);
+      const map = maps.find((entry) => entry.name === name);
+      return map
+        ? json(route, map)
+        : json(route, { detail: `Map "${name}" not found` }, 404);
+    }
     const verticesMatch = /^\/api\/v1\/maps\/([^/]+)\/vertices$/.exec(path);
     if (verticesMatch && method === "GET") {
       // Per map, the way the backend answers: the editor can now read a map

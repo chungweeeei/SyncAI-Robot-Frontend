@@ -233,6 +233,55 @@ test.describe("the task console", () => {
     ).toBeEnabled();
   });
 
+  test("keeps an unsaved job while waypoints are placed on the map", async ({
+    page,
+  }) => {
+    // The complaint: halfway through a job the operator notices the map is
+    // missing a stop, and the only way to add one was to leave — which threw
+    // the job away. The link opens that map's editor in Waypoints mode, the
+    // editor's back button returns here, and the draft (steps, the loaded
+    // template, the renamed field, the unfolded composer) is as it was,
+    // across a reload too.
+    await mockBackend(page);
+    await page.goto("/tasks");
+    await page
+      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .click();
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
+    await page.getByPlaceholder("Morning patrol").fill("night run");
+
+    await page.getByRole("link", { name: "Add waypoints on the floor plan" }).click();
+    await expect(page).toHaveURL(/\/maps\/dp2f\/edit\?mode=vertex&from=tasks$/);
+    // Opened in Waypoints mode, not the Grid mode the editor defaults to.
+    await expect(page.getByRole("button", { name: "Waypoints" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await page.getByRole("button", { name: "Back to tasks" }).click();
+    await expect(page).toHaveURL(/\/tasks$/);
+    const asLeft = async () => {
+      await expect(page.getByText("Editing Morning round")).toBeVisible();
+      await expect(page.getByText(/^dock · \(/)).toBeVisible();
+      await expect(page.getByText("\u201cArrived\u201d")).toBeVisible();
+      await expect(page.getByPlaceholder("Morning patrol")).toHaveValue("night run");
+    };
+    await asLeft();
+
+    // A reload is the other way to lose the draft; the tab keeps it.
+    await page.reload();
+    await asLeft();
+
+    // Stop editing empties it, and empty is what a reload then finds.
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: /Stop editing/ }).click();
+    await expect(page.getByText("Editing Morning round")).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByText("Editing Morning round")).toHaveCount(0);
+    await expect(page.getByText(/^dock · \(/)).toHaveCount(0);
+  });
+
   test("authors a job for a map the robot is not on", async ({ page }) => {
     // The map picker is what lets a job be built for the second floor while
     // the robot is on the first. Both halves matter: the picker must list that
