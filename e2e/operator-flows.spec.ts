@@ -8,6 +8,7 @@ import {
   recording,
   taskHistoryEntry,
   taskTemplate,
+  vertex,
 } from "./backend";
 
 /**
@@ -535,6 +536,74 @@ test.describe("the step editor", () => {
     await page.getByRole("button", { name: /^Speak/, expanded: true }).click();
     await expect(say).toHaveCount(0);
     await expect(page.getByText("“Hello”")).toBeVisible();
+  });
+
+  test("picks a waypoint by clicking it on the floor plan", async ({ page }) => {
+    // A name in the picker is not a place. The floor plan beside it is drawn
+    // in the same frame the map editor uses, so a click on a marker has to
+    // land on the stop the editor placed there — and what the console then
+    // saves has to be that stop's pose, not the one under the pointer.
+    const room = vertex({
+      id: "44444444-4444-4444-4444-444444444444",
+      name: "room-a",
+      type: "GENERAL",
+      x: -3,
+      y: 4,
+      theta: 0,
+    });
+    await mockBackend(page, { vertices: [vertex(), room] });
+    const saved: unknown[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      saved.push(route.request().postDataJSON());
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({ id: "33333333-3333-3333-3333-333333333333", name: "to room" }),
+        ),
+      });
+    });
+    await page.goto("/tasks");
+    await page.getByRole("button", { name: /Task editor/ }).click();
+    await page.getByTitle("Drive to a pose in the map frame.").click();
+
+    const plan = page.getByRole("img", { name: /^Floor plan of dp2f with 2 waypoints/ });
+    await expect(plan).toBeVisible();
+    await expect(plan).toHaveAccessibleName(/waypoints\.$/);
+
+    // Where the marker is, from the mock's own geometry: the same fit-and-
+    // centre the preview draws with (lib/map/preview.ts previewView, which is
+    // fitView inside PREVIEW_INSET, then worldToGrid).
+    const grid = mapSummary().grid;
+    const box = (await plan.boundingBox())!;
+    const inset = { top: 20, right: 48, bottom: 20, left: 20 };
+    const innerW = box.width - inset.left - inset.right;
+    const innerH = box.height - inset.top - inset.bottom;
+    const scale = Math.min(innerW / grid.width, innerH / grid.height);
+    const ox = inset.left + (innerW - grid.width * scale) / 2;
+    const oy = inset.top + (innerH - grid.height * scale) / 2;
+    const px = (room.x - grid.origin.x) / grid.resolution;
+    const py = grid.height - (room.y - grid.origin.y) / grid.resolution;
+    await page.mouse.click(box.x + ox + px * scale, box.y + oy + py * scale);
+
+    // Both faces of the row agree on the pick, and the map says so too.
+    await expect(page.getByRole("listitem").getByRole("combobox")).toContainText("room-a");
+    await expect(plan).toHaveAccessibleName(/room-a is picked\.$/);
+    await page.getByRole("button", { name: /^Move/, expanded: true }).click();
+    await expect(page.getByText(/^room-a · \(/)).toBeVisible();
+
+    await page.getByPlaceholder("Morning patrol").fill("to room");
+    await page.getByRole("button", { name: "Save as new" }).click();
+
+    await expect.poll(() => saved).toHaveLength(1);
+    const body = saved[0] as {
+      steps: { id: string; vertex_id: string; params: { x: number; y: number } }[];
+    };
+    expect(body.steps).toHaveLength(1);
+    expect(body.steps[0].id).toBe("1-move");
+    expect(body.steps[0].vertex_id).toBe(room.id);
+    expect(body.steps[0].params).toMatchObject({ x: -3, y: 4 });
   });
 });
 
