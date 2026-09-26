@@ -149,7 +149,9 @@ lib/
                 (requests only — mirrored validation rules live with their domain)
   ros/          WebSocket clients + frame decoders (telemetry, point cloud, teleop)
   map/          gridmap maths: view transforms, patches, session, vertex helpers,
-                name rule, the 2D drawing (draw.ts) and the editor's vocabulary
+                name rule, the 2D drawing (draw.ts), the editor's vocabulary and
+                the task editor's floor plan preview (preview.ts: fit, markers,
+                hit test)
   scene/        three.js scene building for the 3D viewport: theme, markers,
                 vertex layer, path ribbon, camera policy, picking, robot mesh
   theme/        the signal hues both canvases draw with
