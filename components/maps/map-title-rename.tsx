@@ -103,7 +103,9 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
           // replace, not push: the URL this page was opened at names a
           // directory that no longer exists, so leaving it in the history is
           // leaving a Back button that lands on a 404.
-          router.replace(`/maps/${encodeURIComponent(trimmed)}/edit`);
+          // The query rides along: it is what says which mode this editor
+          // opened in and where its back button leads (see the page).
+          router.replace(`/maps/${encodeURIComponent(trimmed)}/edit${window.location.search}`);
         },
       },
     );

@@ -84,9 +84,16 @@ const DEFAULT_VERTEX_TOOL: VertexTool = "pan";
  */
 export function MapGridEditor({
   name,
+  initialMode = "grid",
   onDirtyChange,
 }: {
   name: string;
+  /**
+   * The mode the surface opens in. Grid unless a link asked for Waypoints —
+   * the task editor's does, for an operator who came here to add one stop.
+   * The tool still opens on Pan either way; see the note above DEFAULT_TOOL.
+   */
+  initialMode?: EditMode;
   /** Lets the page guard its back button; see its comment on why it needs this. */
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -124,6 +131,7 @@ export function MapGridEditor({
       key={session.id}
       session={session}
       vertices={vertices}
+      initialMode={initialMode}
       onDirtyChange={onDirtyChange}
     />
   );
@@ -140,13 +148,15 @@ export function MapGridEditor({
 function EditorSurface({
   session,
   vertices,
+  initialMode,
   onDirtyChange,
 }: {
   session: GridSession;
   vertices: UseMapVertices;
+  initialMode: EditMode;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [mode, setMode] = React.useState<EditMode>("grid");
+  const [mode, setMode] = React.useState<EditMode>(initialMode);
   const [tool, setTool] = React.useState<EditTool>(DEFAULT_TOOL);
   const [vertexTool, setVertexTool] = React.useState<VertexTool>(DEFAULT_VERTEX_TOOL);
   // Free by default: erasing phantom obstacles is the reason this screen exists.
