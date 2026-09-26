@@ -1,9 +1,11 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import {
   ChevronDownIcon,
   ChevronRightIcon,
+  MapPinPlusIcon,
   RefreshCwIcon,
   XIcon,
 } from "lucide-react";
@@ -23,7 +25,10 @@ import { useTaskTemplates } from "@/hooks/use-task-templates";
 import { useScheduleTaskTemplate, useSchedules } from "@/hooks/use-schedules";
 import { useStepDrafts } from "@/hooks/use-step-drafts";
 import { useTaskDispatch } from "@/hooks/use-task-dispatch";
+import { useTaskDraft } from "@/hooks/use-task-draft";
 import type { TaskTemplate } from "@/lib/api/task-template";
+import { waypointEditorHref } from "@/lib/map/links";
+import type { TaskDraft, TaskEditorMode } from "@/lib/task/draft-store";
 import {
   fromTemplateSteps,
   stepDraftsSubmittable,
@@ -32,7 +37,7 @@ import {
   toStepRequests,
 } from "@/lib/task/step";
 
-type TaskMode = "now" | "schedule";
+type TaskMode = TaskEditorMode;
 
 const MODE_OPTIONS = [
   { value: "now", label: "Run now" },
@@ -71,8 +76,45 @@ const MODE_OPTIONS = [
  * outside both panes.
  */
 export function TaskConsole({ robotId }: { robotId: string | null }) {
-  const [mode, setMode] = React.useState<TaskMode>("now");
-  const drafts = useStepDrafts();
+  /**
+   * Everything authored and not yet saved — the steps, the loaded template,
+   * the map override, the composer's fold and the name being typed — lives in
+   * the tab's task draft rather than in this component's state, so leaving
+   * for the map editor to place a missing stop and coming back finds the job
+   * as it was. The setters below keep the call sites reading like state.
+   */
+  const [draft, updateDraft, clearDraft] = useTaskDraft();
+  const { mode, editing, chosenMap, composerOpen, name: draftName } = draft;
+  const setMode = React.useCallback(
+    (mode: TaskMode) => updateDraft((current) => ({ ...current, mode })),
+    [updateDraft],
+  );
+  const setEditing = React.useCallback(
+    (editing: TaskDraft["editing"]) => updateDraft((current) => ({ ...current, editing })),
+    [updateDraft],
+  );
+  const setChosenMap = React.useCallback(
+    (chosenMap: string | null) => updateDraft((current) => ({ ...current, chosenMap })),
+    [updateDraft],
+  );
+  const setComposerOpen = React.useCallback(
+    (open: boolean | ((current: boolean) => boolean)) =>
+      updateDraft((current) => ({
+        ...current,
+        composerOpen: typeof open === "function" ? open(current.composerOpen) : open,
+      })),
+    [updateDraft],
+  );
+  const setDraftName = React.useCallback(
+    (name: string) => updateDraft((current) => ({ ...current, name })),
+    [updateDraft],
+  );
+  const setSteps = React.useCallback(
+    (change: (current: TaskDraft["steps"]) => TaskDraft["steps"]) =>
+      updateDraft((current) => ({ ...current, steps: change(current.steps) })),
+    [updateDraft],
+  );
+  const drafts = useStepDrafts(draft.steps, setSteps);
   const dispatch = useTaskDispatch(robotId);
   const schedules = useSchedules();
   const scheduleTemplate = useScheduleTaskTemplate();
@@ -81,15 +123,14 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
   const activeMapName = maps?.find((map) => map.active)?.name ?? null;
 
   /**
-   * The map the editor is authoring for. Null means "follow the loaded map",
-   * which is what nearly every job wants and what a fresh editor starts on;
-   * a name is the operator's own choice (or the map of a template they loaded)
-   * and survives until the editor is emptied. Kept as an override rather than
-   * copied from the catalogue so a robot that switches maps underneath an
-   * untouched editor follows it, while one the operator pointed elsewhere
-   * stays pointed there.
+   * The map the editor is authoring for. `chosenMap` null means "follow the
+   * loaded map", which is what nearly every job wants and what a fresh editor
+   * starts on; a name is the operator's own choice (or the map of a template
+   * they loaded) and survives until the editor is emptied. Kept as an override
+   * rather than copied from the catalogue so a robot that switches maps
+   * underneath an untouched editor follows it, while one the operator pointed
+   * elsewhere stays pointed there.
    */
-  const [chosenMap, setChosenMap] = React.useState<string | null>(null);
   const mapName = chosenMap ?? activeMapName;
   const editorMap = React.useMemo(
     () => maps?.find((map) => map.name === mapName) ?? null,
@@ -107,13 +148,9 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
   const verticesStatus =
     mapsStatus === "loading" ? "loading" : mapsStatus === "error" ? "error" : list.status;
 
-  /**
-   * Which template is loaded in the composer, so Save can offer to overwrite it.
-   * Null when the operator is authoring something new.
-   */
-  const [editing, setEditing] = React.useState<{ id: string; name: string } | null>(
-    null,
-  );
+  // `editing` (in the draft) is the template loaded in the composer, so Save
+  // can offer to overwrite it; null when the operator is authoring something
+  // new.
 
   /**
    * Which template the in-flight run came from; null when it came from the
@@ -132,16 +169,16 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
   const [saveNonce, setSaveNonce] = React.useState(0);
 
   /**
-   * Whether the composer is unfolded. Starts closed: a fresh mount has an empty
-   * step list, and an empty composer is three panels of chrome standing between
-   * the operator and the library they came to read.
+   * `composerOpen` (in the draft) is whether the composer is unfolded. Starts
+   * closed: a fresh mount has an empty step list, and an empty composer is
+   * three panels of chrome standing between the operator and the library they
+   * came to read.
    *
    * It is forced open while a task is in flight, because Cancel lives in
    * DispatchPanel — the same one-stop-button rule the mode picker's `disabled`
    * and `dispatchSaved` already follow. A collapsed composer over a moving robot
    * would hide the only way to stop it.
    */
-  const [composerOpen, setComposerOpen] = React.useState(false);
   const editorOpen = composerOpen || dispatch.running;
 
   const stepsOk = stepDraftsSubmittable(drafts.steps);
@@ -253,13 +290,10 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
     ) {
       return;
     }
-    drafts.clear();
-    setEditing(null);
-    setChosenMap(null);
-    // Remount SaveGroup so the name field comes back empty rather than still
-    // holding the task that was just let go of.
+    // The whole draft at once: steps, template, map, name and the fold.
+    clearDraft();
+    // Remount SaveGroup so nothing local outlives the task just let go of.
     setSaveNonce((n) => n + 1);
-    setComposerOpen(false);
   };
 
   const loadTemplate = (template: TaskTemplate) => {
@@ -270,13 +304,18 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
     // A template for another map opens on that map: its waypoints, floor plan
     // and the saved map_name all follow. One with no MOVE step names none and
     // leaves the choice alone.
-    if (template.map_name !== null) setChosenMap(template.map_name);
-    setEditing({ id: template.id, name: template.name });
+    // One draft update for the rest, so no frame shows the new steps under
+    // the old name. Loading a template *is* the start of editing it, so the
+    // composer unfolds whether or not the operator opened it — otherwise the
+    // pencil button would look like it did nothing.
+    updateDraft((current) => ({
+      ...current,
+      chosenMap: template.map_name ?? current.chosenMap,
+      editing: { id: template.id, name: template.name },
+      name: template.name,
+      composerOpen: true,
+    }));
     setSaveNonce((n) => n + 1);
-    // Loading a template *is* the start of editing it, so the composer unfolds
-    // whether or not the operator opened it — otherwise the pencil button would
-    // look like it did nothing.
-    setComposerOpen(true);
   };
 
   const dispatchTemplate = (template: TaskTemplate) => {
@@ -481,12 +520,36 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
             <InstrumentGroup
               label="Steps"
               action={
-                <MapPicker
-                  maps={maps}
-                  value={mapName}
-                  disabled={dispatch.running}
-                  onPick={selectMap}
-                />
+                <div className="flex items-center gap-1.5">
+                  <MapPicker
+                    maps={maps}
+                    value={mapName}
+                    disabled={dispatch.running}
+                    onPick={selectMap}
+                  />
+                  {/* The stop that is missing gets placed on the map, not here:
+                   * this opens that map's editor in Waypoints mode, and its back
+                   * button returns to this draft. A map with no floor plan has
+                   * nothing to place on, so the link is a disabled span (the
+                   * map card's Edit makes the same choice). */}
+                  {mapName !== null && mapGrid !== null ? (
+                    <Link
+                      href={waypointEditorHref(mapName, { from: "tasks" })}
+                      aria-label="Add waypoints on the floor plan"
+                      title="Add waypoints on the floor plan"
+                      className="flex size-6 items-center justify-center rounded-sm border border-hairline text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground"
+                    >
+                      <MapPinPlusIcon className="size-3.5" aria-hidden />
+                    </Link>
+                  ) : (
+                    <span
+                      aria-hidden
+                      className="flex size-6 items-center justify-center rounded-sm border border-hairline text-muted-foreground opacity-40"
+                    >
+                      <MapPinPlusIcon className="size-3.5" />
+                    </span>
+                  )}
+                </div>
               }
               caption={mismatchReason ?? undefined}
             >
@@ -516,6 +579,8 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
               <SaveGroup
                 key={saveNonce}
                 editing={editing}
+                name={draftName}
+                onNameChange={setDraftName}
                 ready={stepsOk && saveReason === null}
                 reason={saveReason}
                 busy={library.busy}
@@ -530,7 +595,11 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
                     })
                     .then((created) => {
                       if (created) {
-                        setEditing({ id: created.id, name: created.name });
+                        updateDraft((current) => ({
+                          ...current,
+                          editing: { id: created.id, name: created.name },
+                          name: created.name,
+                        }));
                         setSaveNonce((n) => n + 1);
                       }
                     });
@@ -544,7 +613,11 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
                     })
                     .then((updated) => {
                       if (updated) {
-                        setEditing({ id: updated.id, name: updated.name });
+                        updateDraft((current) => ({
+                          ...current,
+                          editing: { id: updated.id, name: updated.name },
+                          name: updated.name,
+                        }));
                         setSaveNonce((n) => n + 1);
                       }
                     });

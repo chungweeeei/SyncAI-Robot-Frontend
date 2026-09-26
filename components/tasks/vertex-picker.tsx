@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ActiveVerticesStatus } from "@/hooks/use-active-map-vertices";
+import { waypointEditorHref } from "@/lib/map/links";
 import type { MapVertex } from "@/lib/types/map";
 
 export interface VertexPickerProps {
@@ -60,7 +61,7 @@ export function VertexPicker({
           <>
             <span className="readout">{mapName}</span> has no waypoints yet —{" "}
             <Link
-              href={`/maps/${encodeURIComponent(mapName)}/edit`}
+              href={waypointEditorHref(mapName, { from: "tasks" })}
               className="underline underline-offset-2 hover:text-foreground"
             >
               place some
