@@ -9,6 +9,12 @@ import { TASK_TEMPLATE_NAME_MAX } from "@/lib/task/template";
 export interface SaveGroupProps {
   /** The template currently loaded in the editor, or null when authoring fresh. */
   editing: { id: string; name: string } | null;
+  /**
+   * The name field, as typed. Held by the console's task draft rather than
+   * here so a half-named job survives a trip to the map editor.
+   */
+  name: string;
+  onNameChange: (name: string) => void;
   /** False when the step list is not savable (see the composer's own gate). */
   ready: boolean;
   /** Why not, as a muted line. Null when ready. */
@@ -32,12 +38,15 @@ export interface SaveGroupProps {
  * honest, and they make "load A, tweak it, save it as B" a first-class action
  * instead of something you have to know is possible.
  *
- * Reset is by remounting: TaskConsole keys this component, so loading a different
- * template arrives as a fresh mount with that template's name in the field, rather
- * than as state cleared in an effect. Same trick as the vertex panel's form.
+ * The name is the console's, not this form's: it is part of the unsaved draft
+ * that outlives this screen. The console sets it alongside `editing` when a
+ * template is loaded, saved or let go of, which is the reset a remount used
+ * to do.
  */
 export function SaveGroup({
   editing,
+  name,
+  onNameChange,
   ready,
   reason,
   busy,
@@ -46,7 +55,6 @@ export function SaveGroup({
   onCreate,
   onUpdate,
 }: SaveGroupProps) {
-  const [name, setName] = React.useState(editing?.name ?? "");
 
   const trimmed = name.trim();
   // The backend strips and rejects a blank name, but as a 422 whose detail is a
@@ -83,7 +91,7 @@ export function SaveGroup({
           value={name}
           disabled={busy}
           maxLength={TASK_TEMPLATE_NAME_MAX}
-          onChange={(event) => setName(event.target.value)}
+          onChange={(event) => onNameChange(event.target.value)}
           placeholder="Morning patrol"
           className="readout mt-0.5 h-7 rounded-sm text-[13px]"
         />

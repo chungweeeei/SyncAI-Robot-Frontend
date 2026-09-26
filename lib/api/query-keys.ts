@@ -39,6 +39,15 @@ export const queryKeys = {
   maps: ["maps"] as const,
   /** GET /api/v1/maps/<name>/vertices — one map's stops, keyed by map name. */
   mapVertices: (name: string) => ["map-vertices", name] as const,
+  /**
+   * GET /api/v1/maps/<name>/image, decoded for drawing — the floor plan under
+   * the task editor's waypoint preview. One entry per map, shared by every
+   * expanded MOVE row, so ten open rows cost one request and one decode. Never
+   * stale on its own: the raster only changes through writes this console
+   * makes (grid save / convert, rename, delete, a mapping save), and each of
+   * those hooks drops or invalidates it.
+   */
+  mapImage: (name: string) => ["map-image", name] as const,
   /** GET /api/v1/task_templates — the operator's template library. */
   taskTemplates: ["task-templates"] as const,
   /** GET /api/v1/schedules — Temporal's schedule list. */

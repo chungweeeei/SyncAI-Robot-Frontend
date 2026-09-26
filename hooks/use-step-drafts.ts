@@ -34,8 +34,13 @@ export interface StepDrafts {
 }
 
 /**
- * The step list an operator is authoring. Pure state — no network, no error, no
- * busy flag.
+ * The step list an operator is authoring. Pure edits over a list somebody else
+ * holds — no network, no error, no busy flag.
+ *
+ * The list and its setter are passed in rather than owned here: the console
+ * keeps them in the task draft (hooks/use-task-draft.ts), so a trip to the map
+ * editor and back finds the same rows. `setSteps` takes an updater, the way
+ * React's does, and every edit below is written as one.
  *
  * Kept apart from useTaskDispatch because the schedule path sends the identical
  * list and has nothing to do with task tracking: one combined hook would carry a
@@ -48,30 +53,41 @@ export interface StepDrafts {
  * not an edit anyone should have to make. Every gesture lands here as one
  * `moveTo`, so the hook knows nothing about how the operator asked for it.
  */
-export function useStepDrafts(): StepDrafts {
-  const [steps, setSteps] = React.useState<StepDraft[]>([]);
+export function useStepDrafts(
+  steps: StepDraft[],
+  setSteps: (change: (current: StepDraft[]) => StepDraft[]) => void,
+): StepDrafts {
 
-  const add = React.useCallback((type: StepType) => {
-    // Built outside the updater so the key returned is the key stored: an
-    // updater may run twice in development, and each run would mint its own.
-    const draft = newStepDraft(type);
-    setSteps((current) => [...current, draft]);
-    return draft.key;
-  }, []);
+  const add = React.useCallback(
+    (type: StepType) => {
+      // Built outside the updater so the key returned is the key stored: an
+      // updater may run twice in development, and each run would mint its own.
+      const draft = newStepDraft(type);
+      setSteps((current) => [...current, draft]);
+      return draft.key;
+    },
+    [setSteps],
+  );
 
-  const remove = React.useCallback((key: number) => {
-    setSteps((current) => current.filter((step) => step.key !== key));
-  }, []);
+  const remove = React.useCallback(
+    (key: number) => {
+      setSteps((current) => current.filter((step) => step.key !== key));
+    },
+    [setSteps],
+  );
 
-  const moveTo = React.useCallback((key: number, index: number) => {
-    setSteps((current) =>
-      moveStep(
-        current,
-        current.findIndex((step) => step.key === key),
-        index,
-      ),
-    );
-  }, []);
+  const moveTo = React.useCallback(
+    (key: number, index: number) => {
+      setSteps((current) =>
+        moveStep(
+          current,
+          current.findIndex((step) => step.key === key),
+          index,
+        ),
+      );
+    },
+    [setSteps],
+  );
 
   /**
    * One addressed setter rather than a setter per field, because picking a vertex
@@ -85,12 +101,15 @@ export function useStepDrafts(): StepDrafts {
         current.map((step) => (step.key === key ? { ...step, ...changes } : step)),
       );
     },
-    [],
+    [setSteps],
   );
 
-  const replace = React.useCallback((drafts: StepDraft[]) => setSteps(drafts), []);
+  const replace = React.useCallback(
+    (drafts: StepDraft[]) => setSteps(() => drafts),
+    [setSteps],
+  );
 
-  const clear = React.useCallback(() => setSteps([]), []);
+  const clear = React.useCallback(() => setSteps(() => []), [setSteps]);
 
   return { steps, add, remove, moveTo, patch, replace, clear };
 }

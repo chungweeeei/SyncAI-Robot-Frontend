@@ -11,6 +11,7 @@ import {
   ChevronRightIcon,
   EllipsisIcon,
   GripVerticalIcon,
+  MapIcon,
   Trash2Icon,
 } from "lucide-react";
 
@@ -18,6 +19,7 @@ import { Chip, Segmented } from "@/components/console/instrument";
 import { IconButton } from "@/components/tasks/icon-button";
 import { TaskStatusChip } from "@/components/console/task-chip";
 import { VertexPicker } from "@/components/tasks/vertex-picker";
+import { WaypointPreview } from "@/components/tasks/waypoint-preview";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +40,7 @@ import {
   type StepDraft,
 } from "@/lib/task/step";
 import type { MapVertex } from "@/lib/types/map";
+import type { MapMetadata } from "@/lib/types/robot";
 import { cn } from "@/lib/utils";
 
 const TYPE_OPTIONS = STEP_TYPES.map(({ value, label }) => ({ value, label }));
@@ -50,6 +53,8 @@ export interface StepRowProps {
   vertices: MapVertex[];
   verticesStatus: ActiveVerticesStatus;
   mapName: string | null;
+  /** The active map's geometry; null when it has no floor plan to preview. */
+  mapGrid: MapMetadata | null;
   disabled: boolean;
   /** Tracked status + error_msg for this step, or null when nothing is tracked. */
   state: TaskStepState | null;
@@ -68,6 +73,7 @@ export function StepRow({
   vertices,
   verticesStatus,
   mapName,
+  mapGrid,
   disabled,
   state,
   onPatch,
@@ -92,6 +98,31 @@ export function StepRow({
   const ordinal = index + 1;
   const first = index === 0;
   const last = index === total - 1;
+
+  // One patch, not four: two updates would render a frame whose numbers are
+  // this vertex's but whose label is still the old one. normalizeTheta on the
+  // way *in* because the vertex table has no range constraint while MoveParams
+  // is (-180, 180] — a row written by curl can hold exactly -180, which the
+  // task endpoint rejects. Shared by the picker and the floor plan, so a click
+  // on the map sets exactly what a pick from the list does.
+  const pickWaypoint = (vertex: MapVertex) =>
+    onPatch({
+      x: formatDraftPosition(vertex.x),
+      y: formatDraftPosition(vertex.y),
+      theta: formatDraftAngle(normalizeTheta(vertex.theta)),
+      vertexId: vertex.id,
+      // Re-picking resolves the provenance, so the stale-snapshot warning
+      // goes with it.
+      vertexMissing: false,
+    });
+  // The preview only has something to say once there are stops to draw; every
+  // other state is the picker's hint, and a button opening a box that repeats
+  // it would not help. Closed by default, and the choice lives with the row:
+  // folding it keeps the map open for when it is unfolded again.
+  const canPreview =
+    verticesStatus === "ok" && vertices.length > 0 && mapGrid !== null && mapName !== null;
+  const [previewOpen, setPreviewOpen] = React.useState(false);
+  const previewId = React.useId();
 
   const {
     attributes,
@@ -248,31 +279,62 @@ export function StepRow({
            * fields. The draft still carries the numbers — they are what is sent,
            * and a template saved with hand-typed ones still loads and runs — but
            * an operator places a waypoint on the floor plan, not a coordinate. */}
+          {/* The picker and, on request, the floor plan it picks from: a name
+           * in a list is not a place, and the map is what says which stop `v2`
+           * is. Opened by its button rather than always shown — a twenty-step
+           * patrol with a map under every row is a wall of maps, and most picks
+           * are made by an operator who already knows the name. */}
           {step.type === "MOVE" && (
-            <div>
-              <VertexPicker
-                vertices={vertices}
-                status={verticesStatus}
-                mapName={mapName}
-                value={step.vertexId}
-                disabled={disabled}
-                onPick={(vertex) =>
-                  // One patch, not four: two updates would render a frame whose
-                  // numbers are this vertex's but whose label is still the old one.
-                  // normalizeTheta on the way *in* because the vertex table has no
-                  // range constraint while MoveParams is (-180, 180] — a row written
-                  // by curl can hold exactly -180, which the task endpoint rejects.
-                  onPatch({
-                    x: formatDraftPosition(vertex.x),
-                    y: formatDraftPosition(vertex.y),
-                    theta: formatDraftAngle(normalizeTheta(vertex.theta)),
-                    vertexId: vertex.id,
-                    // Re-picking resolves the provenance, so the stale-snapshot
-                    // warning goes with it.
-                    vertexMissing: false,
-                  })
-                }
-              />
+            <div className="space-y-2">
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <VertexPicker
+                    vertices={vertices}
+                    status={verticesStatus}
+                    mapName={mapName}
+                    value={step.vertexId}
+                    disabled={disabled}
+                    onPick={pickWaypoint}
+                  />
+                </div>
+                {canPreview && (
+                  <button
+                    type="button"
+                    aria-pressed={previewOpen}
+                    aria-controls={previewId}
+                    // Icon only: the row is already dense with words, and the
+                    // pressed state says more than a label that would have to
+                    // flip between "Show" and "Hide" to keep up.
+                    aria-label="Floor plan"
+                    title={
+                      previewOpen
+                        ? "Hide the floor plan"
+                        : "Show where each waypoint is on the floor plan"
+                    }
+                    onClick={() => setPreviewOpen((open) => !open)}
+                    className={cn(
+                      "flex size-7 shrink-0 items-center justify-center rounded-sm border transition-colors",
+                      previewOpen
+                        ? "border-signal-cmd/40 bg-signal-cmd/8 text-signal-cmd hover:bg-signal-cmd/16"
+                        : "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground",
+                    )}
+                  >
+                    <MapIcon className="size-3.5" aria-hidden />
+                  </button>
+                )}
+              </div>
+              {canPreview && previewOpen && (
+                <div id={previewId}>
+                  <WaypointPreview
+                    mapName={mapName}
+                    meta={mapGrid}
+                    vertices={vertices}
+                    selectedId={step.vertexId}
+                    disabled={disabled}
+                    onPick={pickWaypoint}
+                  />
+                </div>
+              )}
             </div>
           )}
 

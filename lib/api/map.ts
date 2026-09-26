@@ -179,6 +179,26 @@ export async function fetchMapGrid(
   return { summary, grid: await decodeGrid(await image.blob()) };
 }
 
+/**
+ * The same PNG, decoded only to be drawn — the task editor's floor plan preview.
+ *
+ * None of `decodeGrid`'s flags apply: nothing reads a pixel back, so a colour-
+ * managed 204 where the file says 205 is invisible, and an ImageBitmap is the
+ * cheapest thing `drawImage` accepts. Returned as-is rather than wrapped in a
+ * session because it is immutable, which is what lets the query cache share one
+ * decode between every open MOVE row.
+ */
+export async function fetchMapImage(
+  name: string,
+  signal?: AbortSignal,
+): Promise<ImageBitmap> {
+  const encoded = encodeURIComponent(name);
+  const image = await requestRaw(apiUrl(`/api/v1/maps/${encoded}/image`), {
+    signal,
+  });
+  return createImageBitmap(await image.blob());
+}
+
 /** `SaveGridmapResponse`. Every field is already the app's type. */
 export interface SaveGridResult {
   name: string;

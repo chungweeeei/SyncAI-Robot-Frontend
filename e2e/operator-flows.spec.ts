@@ -8,6 +8,7 @@ import {
   recording,
   taskHistoryEntry,
   taskTemplate,
+  vertex,
 } from "./backend";
 
 /**
@@ -198,6 +199,155 @@ test.describe("the task console", () => {
     await mockBackend(page);
     await page.goto("/tasks");
     await expect(page.getByText("Morning round")).toBeVisible();
+  });
+
+  test("lists another map's jobs, marked and not runnable", async ({ page }) => {
+    // A job for a map the robot is not on is still the operator's work: it is
+    // listed and can be opened, but its coordinates are in another frame, so
+    // the two buttons that would move the robot are held.
+    await mockBackend(page, {
+      templates: [
+        taskTemplate(),
+        taskTemplate({
+          id: "55555555-5555-5555-5555-555555555555",
+          name: "Second floor",
+          map_name: "wh1",
+          map_matches_active: false,
+        }),
+      ],
+    });
+    await page.goto("/tasks");
+
+    await expect(page.getByText("Second floor")).toBeVisible();
+    await expect(page.getByText("Saved for wh1; the robot has dp2f loaded.")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: 'Dispatch "Second floor" now' }),
+    ).toBeDisabled();
+    await expect(page.getByRole("button", { name: 'Schedule "Second floor"' })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: 'Load "Second floor" into the editor' }),
+    ).toBeEnabled();
+    // The loaded map's job is untouched by the other one's presence.
+    await expect(
+      page.getByRole("button", { name: 'Dispatch "Morning round" now' }),
+    ).toBeEnabled();
+  });
+
+  test("keeps an unsaved job while waypoints are placed on the map", async ({
+    page,
+  }) => {
+    // The complaint: halfway through a job the operator notices the map is
+    // missing a stop, and the only way to add one was to leave — which threw
+    // the job away. The link opens that map's editor in Waypoints mode, the
+    // editor's back button returns here, and the draft (steps, the loaded
+    // template, the renamed field, the unfolded composer) is as it was,
+    // across a reload too.
+    await mockBackend(page);
+    await page.goto("/tasks");
+    await page
+      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .click();
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
+    await page.getByPlaceholder("Morning patrol").fill("night run");
+
+    await page.getByRole("link", { name: "Add waypoints on the floor plan" }).click();
+    await expect(page).toHaveURL(/\/maps\/dp2f\/edit\?mode=vertex&from=tasks$/);
+    // Opened in Waypoints mode, not the Grid mode the editor defaults to.
+    await expect(page.getByRole("button", { name: "Waypoints" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await page.getByRole("button", { name: "Back to tasks" }).click();
+    await expect(page).toHaveURL(/\/tasks$/);
+    const asLeft = async () => {
+      await expect(page.getByText("Editing Morning round")).toBeVisible();
+      await expect(page.getByText(/^dock · \(/)).toBeVisible();
+      await expect(page.getByText("\u201cArrived\u201d")).toBeVisible();
+      await expect(page.getByPlaceholder("Morning patrol")).toHaveValue("night run");
+    };
+    await asLeft();
+
+    // A reload is the other way to lose the draft; the tab keeps it.
+    await page.reload();
+    await asLeft();
+
+    // Stop editing empties it, and empty is what a reload then finds.
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: /Stop editing/ }).click();
+    await expect(page.getByText("Editing Morning round")).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByText("Editing Morning round")).toHaveCount(0);
+    await expect(page.getByText(/^dock · \(/)).toHaveCount(0);
+  });
+
+  test("authors a job for a map the robot is not on", async ({ page }) => {
+    // The map picker is what lets a job be built for the second floor while
+    // the robot is on the first. Both halves matter: the picker must list that
+    // map's waypoints and no other's, and the saved body must name that map —
+    // while the run button stays held, because the robot is not there.
+    const bay = vertex({
+      id: "66666666-6666-6666-6666-666666666666",
+      name: "bay-1",
+      type: "GENERAL",
+      map_name: "wh1",
+      x: 1,
+      y: 2,
+      theta: 0,
+    });
+    await mockBackend(page, {
+      maps: [mapSummary(), mapSummary({ name: "wh1", active: false, vertex_count: 1 })],
+      vertices: [vertex(), bay],
+    });
+    const saved: unknown[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      saved.push(route.request().postDataJSON());
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({
+            id: "33333333-3333-3333-3333-333333333333",
+            name: "to bay",
+            map_name: "wh1",
+            map_matches_active: false,
+          }),
+        ),
+      });
+    });
+    await page.goto("/tasks");
+    await page.getByRole("button", { name: /Task editor/ }).click();
+    await page.getByTitle("Drive to a pose in the map frame.").click();
+
+    // Opens on the loaded map, and says so.
+    const map = page.getByRole("combobox", { name: "Map" });
+    await expect(map).toContainText("dp2f · loaded");
+    await map.click();
+    await page.getByRole("option", { name: "wh1" }).click();
+    await expect(map).toContainText("wh1");
+
+    const waypoint = page.getByRole("listitem").getByRole("combobox");
+    await waypoint.click();
+    await expect(page.getByRole("option", { name: "bay-1" })).toBeVisible();
+    await expect(page.getByRole("option", { name: "dock" })).toHaveCount(0);
+    await page.getByRole("option", { name: "bay-1" }).click();
+    await expect(waypoint).toContainText("bay-1");
+
+    // Held, with the reason, until that map is the loaded one.
+    await expect(page.getByRole("button", { name: "Dispatch", exact: true })).toBeDisabled();
+    await expect(
+      page.getByText("This job is for wh1; the robot has dp2f loaded", { exact: false }).first(),
+    ).toBeVisible();
+
+    await page.getByPlaceholder("Morning patrol").fill("to bay");
+    await page.getByRole("button", { name: "Save as new" }).click();
+
+    await expect.poll(() => saved).toHaveLength(1);
+    const body = saved[0] as { map_name: string; steps: { vertex_id: string }[] };
+    expect(body.map_name).toBe("wh1");
+    expect(body.steps[0].vertex_id).toBe(bay.id);
   });
 
   test("announces a run this tab did not start", async ({ page }) => {
@@ -535,6 +685,80 @@ test.describe("the step editor", () => {
     await page.getByRole("button", { name: /^Speak/, expanded: true }).click();
     await expect(say).toHaveCount(0);
     await expect(page.getByText("“Hello”")).toBeVisible();
+  });
+
+  test("picks a waypoint by clicking it on the floor plan", async ({ page }) => {
+    // A name in the picker is not a place. The floor plan beside it is drawn
+    // in the same frame the map editor uses, so a click on a marker has to
+    // land on the stop the editor placed there — and what the console then
+    // saves has to be that stop's pose, not the one under the pointer.
+    const room = vertex({
+      id: "44444444-4444-4444-4444-444444444444",
+      name: "room-a",
+      type: "GENERAL",
+      x: -3,
+      y: 4,
+      theta: 0,
+    });
+    await mockBackend(page, { vertices: [vertex(), room] });
+    const saved: unknown[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      saved.push(route.request().postDataJSON());
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({ id: "33333333-3333-3333-3333-333333333333", name: "to room" }),
+        ),
+      });
+    });
+    await page.goto("/tasks");
+    await page.getByRole("button", { name: /Task editor/ }).click();
+    await page.getByTitle("Drive to a pose in the map frame.").click();
+
+    // Closed until asked for: a map under every row would bury the list.
+    const plan = page.getByRole("img", { name: /^Floor plan of dp2f with 2 waypoints/ });
+    await expect(plan).toHaveCount(0);
+    const toggle = page.getByRole("button", { name: "Floor plan" });
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect(plan).toBeVisible();
+    await expect(plan).toHaveAccessibleName(/waypoints\.$/);
+
+    // Where the marker is, from the mock's own geometry: the same fit-and-
+    // centre the preview draws with (lib/map/preview.ts previewView, which is
+    // fitView inside PREVIEW_INSET, then worldToGrid).
+    const grid = mapSummary().grid;
+    const box = (await plan.boundingBox())!;
+    const inset = { top: 20, right: 48, bottom: 20, left: 20 };
+    const innerW = box.width - inset.left - inset.right;
+    const innerH = box.height - inset.top - inset.bottom;
+    const scale = Math.min(innerW / grid.width, innerH / grid.height);
+    const ox = inset.left + (innerW - grid.width * scale) / 2;
+    const oy = inset.top + (innerH - grid.height * scale) / 2;
+    const px = (room.x - grid.origin.x) / grid.resolution;
+    const py = grid.height - (room.y - grid.origin.y) / grid.resolution;
+    await page.mouse.click(box.x + ox + px * scale, box.y + oy + py * scale);
+
+    // Both faces of the row agree on the pick, and the map says so too.
+    await expect(page.getByRole("listitem").getByRole("combobox")).toContainText("room-a");
+    await expect(plan).toHaveAccessibleName(/room-a is picked\.$/);
+    await page.getByRole("button", { name: /^Move/, expanded: true }).click();
+    await expect(page.getByText(/^room-a · \(/)).toBeVisible();
+
+    await page.getByPlaceholder("Morning patrol").fill("to room");
+    await page.getByRole("button", { name: "Save as new" }).click();
+
+    await expect.poll(() => saved).toHaveLength(1);
+    const body = saved[0] as {
+      steps: { id: string; vertex_id: string; params: { x: number; y: number } }[];
+    };
+    expect(body.steps).toHaveLength(1);
+    expect(body.steps[0].id).toBe("1-move");
+    expect(body.steps[0].vertex_id).toBe(room.id);
+    expect(body.steps[0].params).toMatchObject({ x: -3, y: 4 });
   });
 });
 

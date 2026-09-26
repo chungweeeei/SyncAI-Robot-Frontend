@@ -13,10 +13,12 @@ import { schedulesByTemplate } from "@/lib/task/schedule";
 const EMPTY_SCHEDULES: readonly ScheduleState[] = [];
 
 export interface TaskLibraryProps {
-  /** Rows to show — already scoped by the caller (see TaskConsole). */
+  /**
+   * Every saved job, whichever map it is for. A row for another map is
+   * marked and cannot be run from here, but it is listed: hiding it is how an
+   * operator concludes their work was lost.
+   */
   templates: TaskTemplate[];
-  /** How many rows were withheld because they belong to another map. */
-  hiddenCount: number;
   /**
    * Every registered schedule, not the ones for a given row: the rows are
    * matched here so the caller does not have to build the same index once per
@@ -56,7 +58,6 @@ export interface TaskLibraryProps {
  */
 export function TaskLibrary({
   templates,
-  hiddenCount,
   schedules,
   unlinkedScheduleCount,
   status,
@@ -96,8 +97,7 @@ export function TaskLibrary({
     <div className="space-y-1.5">
       {templates.length === 0 ? (
         <p className="text-[11px] leading-tight text-muted-foreground">
-          No templates for this map yet. Build a list below, name it, and press
-          Save as new.
+          No saved jobs yet. Build a list below, name it, and press Save as new.
         </p>
       ) : (
         <ul className="max-h-56 space-y-1.5 overflow-y-auto">
@@ -123,21 +123,7 @@ export function TaskLibrary({
       )}
 
       {/*
-       * The honesty footnote. The library is scoped to the loaded map, which is
-       * what was asked for — but silently dropping the rest is exactly how an
-       * operator concludes their work was lost, which is the complaint this whole
-       * feature answers. Saying how many are hidden costs one line and closes it.
-       */}
-      {hiddenCount > 0 && (
-        <p className="text-[11px] leading-tight text-muted-foreground">
-          {hiddenCount} {hiddenCount === 1 ? "template is" : "templates are"} saved
-          for other maps and not shown here.
-        </p>
-      )}
-
-      {/*
-       * The same kind of footnote, for the other direction. A schedule
-       * registered from loose steps — the composer's Schedule pane with nothing
+       * The honesty footnote. A schedule registered from loose steps — the composer's Schedule pane with nothing
        * loaded — records no source, so no row above can carry its clock chip. It
        * still runs the robot unattended, and an operator reading a library with
        * no clock chips on it would otherwise conclude nothing does.

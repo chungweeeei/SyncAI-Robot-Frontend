@@ -62,7 +62,7 @@ export function InitialPoseControl({
         )}
       >
         <LocateFixedIcon className="size-3.5" />
-        {armed ? "Press the map, then drag to aim" : "Tell the robot where it is"}
+        {armed ? "Press the map, then drag to aim" : "Set initial pose"}
       </button>
 
       {(pose || error) && (

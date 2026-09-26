@@ -1,15 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { useMapVertexList, type MapVertexListStatus } from "@/hooks/use-map-vertex-list";
 import { useActiveMap } from "@/hooks/use-maps";
 import { queryKeys } from "@/lib/api/query-keys";
-import { listVertices, updateVertex } from "@/lib/api/vertex";
+import { updateVertex } from "@/lib/api/vertex";
 import type { MapVertex } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
-export type ActiveVerticesStatus = "loading" | "ok" | "error" | "no-map";
+export type ActiveVerticesStatus = MapVertexListStatus;
 
 export interface UseActiveMapVertices {
   /** The active map's directory name, or null when the robot has none loaded. */
@@ -32,16 +33,13 @@ export interface UseActiveMapVertices {
 }
 
 /**
- * The active map's vertices: the destinations a MOVE step can be prefilled from,
- * the markers the dashboard draws on the floor, and — through `moveVertex` — the
- * one field those consumers may write.
+ * The active map's vertices: the markers the dashboard draws on the floor, and
+ * — through `moveVertex` — the one field it may write.
  *
- * Deliberately not useMapVertices, which the gridmap editor uses. That hook
- * needs a map name at first render, and the active map's name only exists after
- * the catalogue answers, so `map?.name ?? ""` would fire a request at
- * /api/v1/maps//vertices and turn a normal first paint into a failure banner
- * (`enabled` below is what holds that request). It also exposes create /
- * remove, and a task screen with a vertex-delete in reach is an invitation.
+ * The list itself is useMapVertexList, keyed by the loaded map's name; this
+ * hook adds where that name comes from and the one write. (The task editor
+ * used to read through here too, and now reads useMapVertexList directly with
+ * whichever map it is authoring for.)
  *
  * Position is the exception, and only because the dashboard is where the mistake
  * is *visible*: a stop drawn half a metre inside a wall is obvious with the live
@@ -54,27 +52,12 @@ export interface UseActiveMapVertices {
  * useMapVertices shares its `error`: here the two really can be live at once —
  * the list loads fine and a re-place fails — and a failed write must not make
  * the layer read as unloaded.
- *
- * There is no `refresh`. The cache entry is the same one the gridmap editor
- * writes through (see lib/api/query-keys.ts), so an edit made there is current
- * here the moment it lands; and the App Router unmounts this page on
- * navigation, so a fresh mount refetches anyway — which is every visit.
  */
 export function useActiveMapVertices(): UseActiveMapVertices {
   const { map, status: mapsStatus } = useActiveMap();
   const name = map?.name ?? null;
   const queryClient = useQueryClient();
-
-  const query = useQuery({
-    queryKey: queryKeys.mapVertices(name ?? ""),
-    queryFn: ({ signal }) => listVertices(name ?? "", signal),
-    enabled: name !== null,
-    // Sorted for the picker — the list endpoint answers in DB order, and a
-    // dropdown whose order changes between mounts is unusable — but sorted in
-    // `select`, per observer, so the shared cache entry keeps the editor's DB
-    // order and its append-on-create semantics.
-    select: sortByName,
-  });
+  const list = useMapVertexList(name);
 
   // The map name travels in the variables rather than being read from the
   // closure: a write that lands after the active map changed must patch the
@@ -113,31 +96,18 @@ export function useActiveMapVertices(): UseActiveMapVertices {
 
   const clearWriteError = React.useCallback(() => resetMove(), [resetMove]);
 
+  // The catalogue's own state first: until it answers there is no name, and
+  // "no-map" must mean the robot has none loaded, not that we have not asked.
   const status: ActiveVerticesStatus =
-    mapsStatus === "loading"
-      ? "loading"
-      : mapsStatus === "error"
-        ? "error"
-        : !name
-          ? "no-map"
-          : query.isPending
-            ? "loading"
-            : query.isError
-              ? "error"
-              : "ok";
+    mapsStatus === "loading" ? "loading" : mapsStatus === "error" ? "error" : list.status;
 
   return {
     mapName: name,
-    vertices: query.data ?? [],
+    vertices: list.vertices,
     status,
     busy: move.isPending,
     writeError: move.error?.message ?? null,
     moveVertex,
     clearWriteError,
   };
-}
-
-/** Module-level so `select` keeps one identity and the sort is not re-run per render. */
-function sortByName(vertices: MapVertex[]): MapVertex[] {
-  return [...vertices].sort((a, b) => a.name.localeCompare(b.name));
 }

@@ -18,9 +18,9 @@
 // therefore a projection of three keys (`toDispatchSteps`, in lib/task/step.ts
 // with the rest of the step conversions) rather than a
 // reimplementation of "prefer the vertex, fall back to the snapshot". That rule
-// lives once, on the server, where a template for a *non-active* map can still
-// be resolved — something this client cannot do, since it only ever holds the
-// active map's vertices.
+// lives once, on the server, which holds every map's vertices — this client
+// reads one map at a time, and the loaded map's is the only list it can trust
+// to be the one a dispatch runs against.
 
 import { z } from "zod";
 

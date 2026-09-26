@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ActiveVerticesStatus } from "@/hooks/use-active-map-vertices";
+import { waypointEditorHref } from "@/lib/map/links";
 import type { MapVertex } from "@/lib/types/map";
 
 export interface VertexPickerProps {
@@ -46,7 +47,7 @@ export function VertexPicker({
   }
 
   if (status === "no-map") {
-    return <Hint>No map is loaded on this robot, so there are no waypoints to pick.</Hint>;
+    return <Hint>Pick a map for this job first; its waypoints can be picked here.</Hint>;
   }
 
   if (status === "error") {
@@ -60,7 +61,7 @@ export function VertexPicker({
           <>
             <span className="readout">{mapName}</span> has no waypoints yet —{" "}
             <Link
-              href={`/maps/${encodeURIComponent(mapName)}/edit`}
+              href={waypointEditorHref(mapName, { from: "tasks" })}
               className="underline underline-offset-2 hover:text-foreground"
             >
               place some
