@@ -201,6 +201,106 @@ test.describe("the task console", () => {
     await expect(page.getByText("Morning round")).toBeVisible();
   });
 
+  test("lists another map's jobs, marked and not runnable", async ({ page }) => {
+    // A job for a map the robot is not on is still the operator's work: it is
+    // listed and can be opened, but its coordinates are in another frame, so
+    // the two buttons that would move the robot are held.
+    await mockBackend(page, {
+      templates: [
+        taskTemplate(),
+        taskTemplate({
+          id: "55555555-5555-5555-5555-555555555555",
+          name: "Second floor",
+          map_name: "wh1",
+          map_matches_active: false,
+        }),
+      ],
+    });
+    await page.goto("/tasks");
+
+    await expect(page.getByText("Second floor")).toBeVisible();
+    await expect(page.getByText("Saved for wh1; the robot has dp2f loaded.")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: 'Dispatch "Second floor" now' }),
+    ).toBeDisabled();
+    await expect(page.getByRole("button", { name: 'Schedule "Second floor"' })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: 'Load "Second floor" into the editor' }),
+    ).toBeEnabled();
+    // The loaded map's job is untouched by the other one's presence.
+    await expect(
+      page.getByRole("button", { name: 'Dispatch "Morning round" now' }),
+    ).toBeEnabled();
+  });
+
+  test("authors a job for a map the robot is not on", async ({ page }) => {
+    // The map picker is what lets a job be built for the second floor while
+    // the robot is on the first. Both halves matter: the picker must list that
+    // map's waypoints and no other's, and the saved body must name that map —
+    // while the run button stays held, because the robot is not there.
+    const bay = vertex({
+      id: "66666666-6666-6666-6666-666666666666",
+      name: "bay-1",
+      type: "GENERAL",
+      map_name: "wh1",
+      x: 1,
+      y: 2,
+      theta: 0,
+    });
+    await mockBackend(page, {
+      maps: [mapSummary(), mapSummary({ name: "wh1", active: false, vertex_count: 1 })],
+      vertices: [vertex(), bay],
+    });
+    const saved: unknown[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      saved.push(route.request().postDataJSON());
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({
+            id: "33333333-3333-3333-3333-333333333333",
+            name: "to bay",
+            map_name: "wh1",
+            map_matches_active: false,
+          }),
+        ),
+      });
+    });
+    await page.goto("/tasks");
+    await page.getByRole("button", { name: /Task editor/ }).click();
+    await page.getByTitle("Drive to a pose in the map frame.").click();
+
+    // Opens on the loaded map, and says so.
+    const map = page.getByRole("combobox", { name: "Map" });
+    await expect(map).toContainText("dp2f · loaded");
+    await map.click();
+    await page.getByRole("option", { name: "wh1" }).click();
+    await expect(map).toContainText("wh1");
+
+    const waypoint = page.getByRole("listitem").getByRole("combobox");
+    await waypoint.click();
+    await expect(page.getByRole("option", { name: "bay-1" })).toBeVisible();
+    await expect(page.getByRole("option", { name: "dock" })).toHaveCount(0);
+    await page.getByRole("option", { name: "bay-1" }).click();
+    await expect(waypoint).toContainText("bay-1");
+
+    // Held, with the reason, until that map is the loaded one.
+    await expect(page.getByRole("button", { name: "Dispatch", exact: true })).toBeDisabled();
+    await expect(
+      page.getByText("This job is for wh1; the robot has dp2f loaded", { exact: false }).first(),
+    ).toBeVisible();
+
+    await page.getByPlaceholder("Morning patrol").fill("to bay");
+    await page.getByRole("button", { name: "Save as new" }).click();
+
+    await expect.poll(() => saved).toHaveLength(1);
+    const body = saved[0] as { map_name: string; steps: { vertex_id: string }[] };
+    expect(body.map_name).toBe("wh1");
+    expect(body.steps[0].vertex_id).toBe(bay.id);
+  });
+
   test("announces a run this tab did not start", async ({ page }) => {
     // The banner exists because a reload, a second browser or an overnight
     // schedule all leave a robot executing with no Cancel anywhere on screen.

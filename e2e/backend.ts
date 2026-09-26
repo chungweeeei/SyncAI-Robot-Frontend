@@ -241,8 +241,16 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         : json(route, { detail: `Task ${id} not found` }, 404);
     }
     if (path === "/api/v1/maps" && method === "GET") return json(route, maps);
-    if (path.endsWith("/vertices") && method === "GET") {
-      return json(route, vertices);
+    const verticesMatch = /^\/api\/v1\/maps\/([^/]+)\/vertices$/.exec(path);
+    if (verticesMatch && method === "GET") {
+      // Per map, the way the backend answers: the editor can now read a map
+      // the robot is not on, and a fake that handed every map the same list
+      // would pass a picker that ignored the choice.
+      const name = decodeURIComponent(verticesMatch[1]);
+      return json(
+        route,
+        vertices.filter((entry) => entry.map_name === name),
+      );
     }
     if (path === "/api/v1/recordings" && method === "GET") {
       return json(route, { recordings });
