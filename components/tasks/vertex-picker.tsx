@@ -46,7 +46,7 @@ export function VertexPicker({
   }
 
   if (status === "no-map") {
-    return <Hint>No map is loaded on this robot, so there are no waypoints to pick.</Hint>;
+    return <Hint>Pick a map for this job first; its waypoints can be picked here.</Hint>;
   }
 
   if (status === "error") {

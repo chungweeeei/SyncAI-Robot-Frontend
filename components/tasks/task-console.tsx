@@ -11,13 +11,14 @@ import {
 import { Chip, InstrumentGroup, Segmented } from "@/components/console/instrument";
 import { ActiveRunBanner } from "@/components/tasks/active-run-banner";
 import { DispatchPanel } from "@/components/tasks/dispatch-panel";
+import { MapPicker } from "@/components/tasks/map-picker";
 import { SaveGroup } from "@/components/tasks/save-group";
 import { ScheduleForm } from "@/components/tasks/schedule-form";
 import { ScheduleList } from "@/components/tasks/schedule-list";
 import { StepList } from "@/components/tasks/step-list";
 import { TaskLibrary } from "@/components/tasks/task-library";
-import { useActiveMapVertices } from "@/hooks/use-active-map-vertices";
-import { useActiveMap } from "@/hooks/use-maps";
+import { useMapVertexList } from "@/hooks/use-map-vertex-list";
+import { useMaps } from "@/hooks/use-maps";
 import { useTaskTemplates } from "@/hooks/use-task-templates";
 import { useScheduleTaskTemplate, useSchedules } from "@/hooks/use-schedules";
 import { useStepDrafts } from "@/hooks/use-step-drafts";
@@ -76,13 +77,35 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
   const schedules = useSchedules();
   const scheduleTemplate = useScheduleTaskTemplate();
   const library = useTaskTemplates();
-  const { vertices, status: verticesStatus, mapName } = useActiveMapVertices();
-  // The active map's geometry, for the floor plan preview beside each MOVE
-  // row's picker. A second observer of the `maps` entry the vertices hook
-  // already mounted, so it costs no request; read here rather than in each
-  // row so unfolding a row never refetches the catalogue.
-  const { map: activeMap } = useActiveMap();
-  const mapGrid = activeMap?.grid ?? null;
+  const { maps, status: mapsStatus } = useMaps();
+  const activeMapName = maps?.find((map) => map.active)?.name ?? null;
+
+  /**
+   * The map the editor is authoring for. Null means "follow the loaded map",
+   * which is what nearly every job wants and what a fresh editor starts on;
+   * a name is the operator's own choice (or the map of a template they loaded)
+   * and survives until the editor is emptied. Kept as an override rather than
+   * copied from the catalogue so a robot that switches maps underneath an
+   * untouched editor follows it, while one the operator pointed elsewhere
+   * stays pointed there.
+   */
+  const [chosenMap, setChosenMap] = React.useState<string | null>(null);
+  const mapName = chosenMap ?? activeMapName;
+  const editorMap = React.useMemo(
+    () => maps?.find((map) => map.name === mapName) ?? null,
+    [maps, mapName],
+  );
+  // The editor map's geometry, for the floor plan a MOVE row can open. Read
+  // here rather than in each row so unfolding a row never refetches the
+  // catalogue.
+  const mapGrid = editorMap?.grid ?? null;
+  const list = useMapVertexList(mapName);
+  const vertices = list.vertices;
+  // The catalogue's own state first: until it answers there is no name, and
+  // "no-map" must mean there is nothing to author for, not that we have not
+  // asked yet.
+  const verticesStatus =
+    mapsStatus === "loading" ? "loading" : mapsStatus === "error" ? "error" : list.status;
 
   /**
    * Which template is loaded in the composer, so Save can offer to overwrite it.
@@ -140,20 +163,6 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
       : "Waiting for the robot to report in. A job can be built now and run once it does.");
 
   /**
-   * The library, scoped to what this robot can actually run: the loaded map's
-   * templates plus the map-independent ones. The rest are counted, not dropped —
-   * see TaskLibrary's footnote for why that line exists.
-   */
-  const visibleTemplates = React.useMemo(
-    () =>
-      library.templates.filter(
-        (template) => template.map_name === null || template.map_matches_active,
-      ),
-    [library.templates],
-  );
-  const hiddenCount = library.templates.length - visibleTemplates.length;
-
-  /**
    * Schedules that name no template, i.e. the ones registered from loose steps
    * through `POST /api/v1/schedules`. Nothing ties them to a library row, so
    * they are counted in the library's footnote instead — see TaskLibrary.
@@ -167,14 +176,60 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
   ).length;
 
   /** Any MOVE step means the template has to name the map it is in. */
-  const draftMapName = drafts.steps.some((step) => step.type === "MOVE")
-    ? mapName
-    : null;
+  const hasMoveStep = drafts.steps.some((step) => step.type === "MOVE");
+  const draftMapName = hasMoveStep ? mapName : null;
   const saveReason =
     stepReason ??
-    (draftMapName === null && drafts.steps.some((step) => step.type === "MOVE")
-      ? "The robot has no map loaded, so a job with Move steps cannot be saved yet."
+    (draftMapName === null && hasMoveStep
+      ? "Pick a map for this job\u2019s Move steps."
       : null);
+
+  /**
+   * The one thing a job for another map cannot do here is run. Its coordinates
+   * are in that map's frame and would point somewhere else entirely in the
+   * loaded one, so both the dispatch and the schedule pane are held — the
+   * template schedule endpoint refuses this server-side too, but the loose-step
+   * paths send raw coordinates with no map attached, and nothing on the robot
+   * would notice. Saving is unaffected: that is what authoring for another map
+   * is for.
+   */
+  const mapMismatch = draftMapName !== null && draftMapName !== activeMapName;
+  const mismatchReason = mapMismatch
+    ? `This job is for ${draftMapName}; the robot has ${activeMapName ?? "no map"} loaded, so it can be saved but not run from here.`
+    : null;
+
+  /**
+   * Point the editor at another map. A waypoint already picked belongs to the
+   * map it was picked on and means nothing on the new one, so those rows are
+   * emptied — behind a confirm, because there is no undo, the same stance as
+   * Stop editing.
+   */
+  const selectMap = (next: string) => {
+    if (next === mapName) return;
+    const picked = drafts.steps.filter(
+      (step) => step.type === "MOVE" && step.vertexId !== null,
+    );
+    if (
+      picked.length &&
+      !window.confirm(
+        `Switch to ${next}? The waypoint on ${picked.length} Move ${
+          picked.length === 1 ? "step" : "steps"
+        } will be cleared, since it belongs to ${mapName}.`,
+      )
+    ) {
+      return;
+    }
+    for (const step of picked) {
+      drafts.patch(step.key, {
+        x: "",
+        y: "",
+        theta: "0",
+        vertexId: null,
+        vertexMissing: false,
+      });
+    }
+    setChosenMap(next);
+  };
 
   /**
    * Let go of the template *and* empty the editor, then fold it away.
@@ -200,6 +255,7 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
     }
     drafts.clear();
     setEditing(null);
+    setChosenMap(null);
     // Remount SaveGroup so the name field comes back empty rather than still
     // holding the task that was just let go of.
     setSaveNonce((n) => n + 1);
@@ -211,6 +267,10 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
     // shows its *current* pose here — which is the whole point of storing the
     // reference.
     drafts.replace(fromTemplateSteps(template.steps));
+    // A template for another map opens on that map: its waypoints, floor plan
+    // and the saved map_name all follow. One with no MOVE step names none and
+    // leaves the choice alone.
+    if (template.map_name !== null) setChosenMap(template.map_name);
     setEditing({ id: template.id, name: template.name });
     setSaveNonce((n) => n + 1);
     // Loading a template *is* the start of editing it, so the composer unfolds
@@ -250,8 +310,8 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
           label="Saved jobs"
           action={
             <div className="flex items-center gap-1.5">
-              <Chip tone={visibleTemplates.length ? "neutral" : "caution"}>
-                {visibleTemplates.length}
+              <Chip tone={library.templates.length ? "neutral" : "caution"}>
+                {library.templates.length}
               </Chip>
               <button
                 type="button"
@@ -276,13 +336,12 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
             </p>
           )}
           <TaskLibrary
-            templates={visibleTemplates}
-            hiddenCount={hiddenCount}
+            templates={library.templates}
             schedules={schedules.schedules}
             unlinkedScheduleCount={unlinkedScheduleCount}
             status={library.status}
             busy={library.busy}
-            activeMapName={mapName}
+            activeMapName={activeMapName}
             dispatchDisabled={dispatch.running || robotId === null}
             dispatchedFromId={dispatchedFrom}
             taskStatus={dispatch.taskStatus}
@@ -419,7 +478,18 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
       {editorOpen && (
         <div className="mt-2 grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
           <div className="overflow-hidden rounded-md border border-hairline bg-panel">
-            <InstrumentGroup label="Steps">
+            <InstrumentGroup
+              label="Steps"
+              action={
+                <MapPicker
+                  maps={maps}
+                  value={mapName}
+                  disabled={dispatch.running}
+                  onPick={selectMap}
+                />
+              }
+              caption={mismatchReason ?? undefined}
+            >
               <StepList
                 steps={drafts.steps}
                 vertices={vertices}
@@ -510,8 +580,8 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
               >
                 <DispatchPanel
                   dispatch={dispatch}
-                  ready={stepsOk && robotId !== null}
-                  reason={dispatchReason}
+                  ready={stepsOk && robotId !== null && !mapMismatch}
+                  reason={dispatchReason ?? mismatchReason}
                   onDispatch={() => {
                     // Dispatching from the composer, so no library row owns this run.
                     setDispatchedFrom(null);
@@ -535,8 +605,8 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
                 <ScheduleForm
                   key={scheduleNonce}
                   existingIds={schedules.schedules.map((entry) => entry.id)}
-                  ready={stepsOk}
-                  reason={stepReason}
+                  ready={stepsOk && !mapMismatch}
+                  reason={stepReason ?? mismatchReason}
                   busy={schedules.busy || library.busy || scheduleTemplate.isPending}
                   // The template path's refusal first: it is the newer of the
                   // two whenever it is set, because each path resets the other
