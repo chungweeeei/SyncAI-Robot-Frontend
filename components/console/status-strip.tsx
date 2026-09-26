@@ -131,16 +131,19 @@ export function StatusStrip() {
             <DriveDisclosure />
             <CameraDisclosure />
             {link && <Chip tone={link.tone}>{link.label}</Chip>}
+            {/* Bars only, no dBm: the number is an engineer's reading, and
+              * the four-step glyph is the whole of what an operator does with
+              * it. The exact figure stays on the Settings screen's Wi-Fi
+              * panel, next to the network it belongs to. */}
             {network && (
-              <span className="hidden items-center gap-1.5 sm:flex">
+              <span
+                className="hidden items-center sm:flex"
+                title={`Wi-Fi: ${network.ssid}`}
+              >
                 <SignalBars
                   bars={rssiToBars(network.rssi)}
                   tone={status === "ok" ? "live" : "caution"}
                 />
-                <span className="readout text-[13px] text-muted-foreground">
-                  {network.rssi}
-                  <span className="ml-0.5 text-[11px]">dBm</span>
-                </span>
               </span>
             )}
           </div>
