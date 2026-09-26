@@ -144,7 +144,7 @@ export function WaypointPreview({
     <div
       ref={containerRef}
       className={cn(
-        "relative h-40 w-full overflow-hidden rounded-sm border border-hairline",
+        "relative h-52 w-full overflow-hidden rounded-sm border border-hairline",
         hoveredId && !disabled && "cursor-pointer",
       )}
     >

@@ -292,7 +292,7 @@ export function StepRow({
                 />
               </div>
               {showPreview && (
-                <div className="w-full shrink-0 sm:w-64">
+                <div className="w-full shrink-0 sm:w-80">
                   <WaypointPreview
                     mapName={mapName}
                     meta={mapGrid}
