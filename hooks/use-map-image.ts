@@ -26,14 +26,22 @@ export interface UseMapImage {
  * `grid_status`, so any rewrite the catalogue can see retires the entry, by
  * whoever made it. It used to be keyed by name alone, which was only safe for
  * writes this console made: a conversion started elsewhere left the old raster
- * on screen until a reload. The status is in the key as well as the time
- * because the catalogue's time is to the second, and a conversion that ends in
- * the same second as the last read would otherwise keep that read's bytes.
+ * on screen until a reload.
+ *
+ * The status only separates two readable states that share a time, such as an
+ * interrupted rebuild that left the old plan in place and a later one that
+ * finished. It does not protect the case that looks like its reason: a
+ * conversion that starts and ends within the second of the last read shows
+ * "ok" on both sides, so the key is unchanged and the old bytes are kept.
+ * What makes that safe in practice is that a conversion takes tens of
+ * seconds, not the key.
  *
  * Nothing is fetched while the map converts. The file is being rewritten, so
  * any bytes read then are either the old plan or a partial one, and caching
  * either is what this hook used to get wrong. The preview draws its waypoints
- * without a floor plan until the conversion ends.
+ * without a floor plan until the conversion ends. Nothing is fetched for a map
+ * with no floor plan either: there is no raster to read until one is built,
+ * so the request could only earn a refusal.
  *
  * Unlike `useMapGrid`, which keeps its read out of the cache because a session
  * is mutable and has to be disposed, an ImageBitmap is immutable and safe to

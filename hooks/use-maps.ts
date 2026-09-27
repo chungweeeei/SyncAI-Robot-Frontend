@@ -121,9 +121,11 @@ export function useMapEntry(name: string | null): MapSummary | null {
  * Inherits useMaps' refetch-on-mount policy, so a map swapped underneath a
  * long-open dashboard is not picked up until something calls `refresh()`. That
  * used to be free: a swap meant restarting the stack, which dropped the
- * telemetry socket next to this anyway. A live switch drops nothing, so
- * MapActivateControl invalidates this key itself — it is the only thing that
- * moves `active`, and nothing else would notice.
+ * telemetry socket next to this anyway. A live switch drops nothing, so two
+ * things call it now. MapActivateControl invalidates this key after a switch
+ * made here, since it is the only control that moves `active`. The status
+ * strip calls `refresh()` when the robot's own 1 Hz report of its map changes,
+ * which is how a switch made from another console is picked up.
  */
 export function useActiveMap(): { map: MapSummary | null; status: MapsStatus } {
   const { maps, status } = useMaps();
