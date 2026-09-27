@@ -1,0 +1,119 @@
+// The dual-thumbstick teleop maths: where a stick may go, how far it must go
+// before it commands anything, which keys deflect it, and how a deflection in
+// screen space becomes a velocity in the robot's body frame.
+//
+// Pure and React-free so vitest can hold it to its rules. This is the one
+// place in the console where an arithmetic slip turns into the robot moving
+// the wrong way, which is a poor thing to leave covered only by a hand on a
+// stick. useJoystick owns the refs, the frame loop and the listeners.
+
+import type { TeleopVector } from "@/lib/types/robot";
+
+/** A stick deflection in screen space: x grows right, y grows DOWN. */
+export interface StickValue {
+  x: number;
+  y: number;
+}
+
+export type StickId = "left" | "right";
+
+/**
+ * Radial deadzone as a fraction of full travel. Exported so the Thumbstick can
+ * draw the ring at the same radius the math uses — a ring that only decorates
+ * would drift from the truth the first time this constant moves.
+ */
+export const DEADZONE = 0.12;
+
+/**
+ * Physical key codes, not `event.key`: ZQSD on an AZERTY board should drive by
+ * position, the way every game does it. Left (translation) stick is W/S/Q/E,
+ * right (rotation) stick is A/D — screen-space signs, so "left" is negative x
+ * and "up" is negative y.
+ *
+ * A/D rotate and Q/E strafe, not the other way round: A/D under the resting
+ * fingers is the turn in every driving game, and strafing is the rarer command
+ * on a chassis that mostly drives where it is pointed. The earlier binding had
+ * them swapped, which read as sideways drift every time an operator tried to
+ * turn.
+ */
+export const KEY_AXES: Readonly<
+  Record<string, { stick: StickId; axis: "x" | "y"; sign: 1 | -1 }>
+> = {
+  KeyW: { stick: "left", axis: "y", sign: -1 },
+  KeyS: { stick: "left", axis: "y", sign: 1 },
+  KeyQ: { stick: "left", axis: "x", sign: -1 },
+  KeyE: { stick: "left", axis: "x", sign: 1 },
+  KeyA: { stick: "right", axis: "x", sign: -1 },
+  KeyD: { stick: "right", axis: "x", sign: 1 },
+};
+
+/** Whether a physical key drives a stick at all. */
+export function isStickKey(code: string): boolean {
+  return Object.hasOwn(KEY_AXES, code);
+}
+
+/**
+ * The left stick's reachable set is a disc, so the clamp is radial — clamping
+ * x and y separately would let a diagonal command √2 times the straight-line
+ * maximum. The right stick is one-dimensional by design (it commands wz only),
+ * so its y is discarded rather than clamped.
+ */
+export function clampStick(stick: StickId, raw: StickValue): StickValue {
+  if (stick === "right") {
+    return { x: Math.min(1, Math.max(-1, raw.x)), y: 0 };
+  }
+  const m = Math.hypot(raw.x, raw.y);
+  return m > 1 ? { x: raw.x / m, y: raw.y / m } : { x: raw.x, y: raw.y };
+}
+
+/**
+ * Radial deadzone with rescale, so the command is continuous from zero: a plain
+ * cutoff would make the smallest possible command DEADZONE-sized, which on a
+ * real robot is a visible lurch the moment the stick leaves the ring.
+ */
+export function applyDeadzone(value: StickValue): StickValue {
+  const m = Math.hypot(value.x, value.y);
+  if (m < DEADZONE) return { x: 0, y: 0 };
+  const scale = (m - DEADZONE) / (1 - DEADZONE) / m;
+  return { x: value.x * scale, y: value.y * scale };
+}
+
+/**
+ * One stick's clamped, pre-deadzone position and whether anything is holding
+ * it — what the knob draws.
+ *
+ * Per-stick, pointer wins: while a stick's pointer is captured, that whole
+ * stick is pointer-owned and its keys are ignored; otherwise the stick shows
+ * the keyboard deflection, where opposing keys sum to zero. Keyboard
+ * deflection is instant full-scale — a slew ramp was considered and left for
+ * the sender, which is where acceleration limits belong.
+ */
+export function resolveStick(
+  stick: StickId,
+  pointer: StickValue | null,
+  keys: ReadonlySet<string>,
+): { value: StickValue; active: boolean } {
+  if (pointer) return { value: clampStick(stick, pointer), active: true };
+  let x = 0;
+  let y = 0;
+  for (const [code, key] of Object.entries(KEY_AXES)) {
+    if (key.stick !== stick || !keys.has(code)) continue;
+    if (key.axis === "x") x += key.sign;
+    else y += key.sign;
+  }
+  return { value: clampStick(stick, { x, y }), active: x !== 0 || y !== 0 };
+}
+
+/** No command: what a released stick, a disarm and a blur all come back to. */
+export const AT_REST_VECTOR: TeleopVector = { vx: 0, vy: 0, wz: 0 };
+
+/**
+ * The commanded velocity for two knob positions: deadzone applied, then screen
+ * space turned into the body frame. Stick up (-y) is forward, stick left (-x)
+ * is +vy (REP-103 y points left) and, on the right stick, +wz (CCW).
+ */
+export function commandFrom(left: StickValue, right: StickValue): TeleopVector {
+  const dzLeft = applyDeadzone(left);
+  const dzRight = applyDeadzone(right);
+  return { vx: -dzLeft.y, vy: -dzLeft.x, wz: -dzRight.x };
+}
