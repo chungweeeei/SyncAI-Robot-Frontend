@@ -184,9 +184,11 @@ test.describe("the console on a phone", () => {
     expect(dispatches, "a pinch dispatched a goal").toEqual([]);
     // And the tool is still armed: the operator zoomed, they did not give up
     // on placing a goal, and only a commit disarms.
-    await expect(
-      page.getByRole("button", { name: "Aim and release to send" }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Set goal" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.getByRole("status").filter({ hasText: "Aim and release to send" })).toBeVisible();
 
     // The positive control, or the assertion above is vacuous: one finger,
     // pressed and lifted, is a goal.
