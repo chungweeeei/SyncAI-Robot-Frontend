@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { isTypingTarget } from "@/lib/keyboard";
 import {
   AT_REST_VECTOR,
   commandFrom,
@@ -159,17 +160,6 @@ export function useJoystick(enabled: boolean, linearScale = 1): JoystickState {
       return;
     }
 
-    // Copied from map-grid-editor: single-letter shortcuts are exactly what
-    // silently eats typing, and dialogs (VertexMoveDialog) open over this view.
-    const isTypingTarget = (target: EventTarget | null) => {
-      const element = target as HTMLElement | null;
-      return Boolean(
-        element &&
-          (element.isContentEditable ||
-            /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName ?? "")),
-      );
-    };
-
     const onKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target)) return;
       // Chords stay the browser's: Ctrl+W must close the tab, not drive
@@ -206,9 +196,15 @@ export function useJoystick(enabled: boolean, linearScale = 1): JoystickState {
     };
   }, [enabled, publish]);
 
+  // The ref is cleared with the frame it named. A cleanup is not always an
+  // unmount — StrictMode runs it and then mounts again — and a stale id left
+  // here reads to publish() as "a frame is already coming", so the readouts
+  // froze at rest for good while the sender, which reads vectorRef, kept
+  // driving.
   React.useEffect(
     () => () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     },
     [],
   );

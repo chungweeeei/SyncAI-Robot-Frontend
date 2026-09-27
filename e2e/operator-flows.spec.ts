@@ -832,6 +832,15 @@ test.describe("the manual drive panel", () => {
     await page.keyboard.up("w");
     await page.keyboard.up("d");
     await expect.poll(last).toEqual({ vx: 0, vy: 0, wz: 0 });
+
+    // A key pressed while the slider still has focus drives too. The slider's
+    // thumb is an <input>, and a guard that took every input for a text field
+    // left the keys dead until the operator clicked somewhere else.
+    await expect(speed).toBeFocused();
+    await page.keyboard.down("w");
+    await expect.poll(last).toEqual({ vx: 0.5, vy: 0, wz: 0 });
+    await page.keyboard.up("w");
+    await expect.poll(last).toEqual({ vx: 0, vy: 0, wz: 0 });
     expect(errors, "the page logged errors").toEqual([]);
   });
 });
