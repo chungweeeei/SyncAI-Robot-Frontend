@@ -5,7 +5,13 @@ import { useTheme } from "next-themes";
 
 import { useMapImage } from "@/hooks/use-map-image";
 import { PALETTES } from "@/lib/map/draw";
-import { drawWaypointPreview, previewView, waypointAt } from "@/lib/map/preview";
+import {
+  WAYPOINT_HIT_PX,
+  WAYPOINT_HIT_TOUCH_PX,
+  drawWaypointPreview,
+  previewView,
+  waypointAt,
+} from "@/lib/map/preview";
 import type { MapVertex } from "@/lib/types/map";
 import type { MapMetadata } from "@/lib/types/robot";
 import { cn } from "@/lib/utils";
@@ -121,6 +127,10 @@ export function WaypointPreview({
     };
   }, [requestDraw]);
 
+  // What the last press was made with, so the click that follows a tap (a
+  // MouseEvent, which does not say) can be given a finger's hit disc.
+  const pointerTypeRef = React.useRef("mouse");
+
   const stopAt = (event: React.PointerEvent | React.MouseEvent) => {
     const container = containerRef.current;
     if (!container) return null;
@@ -133,6 +143,7 @@ export function WaypointPreview({
       vertices,
       event.clientX - bounds.left,
       event.clientY - bounds.top,
+      pointerTypeRef.current === "touch" ? WAYPOINT_HIT_TOUCH_PX : WAYPOINT_HIT_PX,
     );
   };
 
@@ -154,8 +165,12 @@ export function WaypointPreview({
         role="img"
         aria-label={description}
         className="block size-full"
+        onPointerDown={(event) => {
+          pointerTypeRef.current = event.pointerType;
+        }}
         onPointerMove={(event) => {
           if (disabled) return;
+          pointerTypeRef.current = event.pointerType;
           setHoveredId(stopAt(event)?.id ?? null);
         }}
         onPointerLeave={() => setHoveredId(null)}

@@ -28,6 +28,13 @@ import type { MapMetadata } from "@/lib/types/robot";
  * 18 px arrow, so two stops a body length apart stay separately clickable.
  */
 export const WAYPOINT_HIT_PX = 10;
+/**
+ * The same disc under a finger. A fingertip covers ~7 mm, which is 20–25 px
+ * on a phone, and a ring the pointer has to land inside was a hunt again.
+ * Still narrower than the gap two stops a body length apart leave at the
+ * preview's smallest scale.
+ */
+export const WAYPOINT_HIT_TOUCH_PX = 22;
 
 /** Which markers the preview lights up, by vertex id. */
 export interface PreviewMarks {
@@ -214,9 +221,10 @@ export function waypointAt(
   vertices: readonly MapVertex[],
   cx: number,
   cy: number,
+  hitPx: number = WAYPOINT_HIT_PX,
 ): MapVertex | null {
   let best: MapVertex | null = null;
-  let bestDistance = WAYPOINT_HIT_PX;
+  let bestDistance = hitPx;
   for (const vertex of vertices) {
     const at = vertexScreen(view, meta, vertex.x, vertex.y);
     const distance = Math.hypot(at.cx - cx, at.cy - cy);

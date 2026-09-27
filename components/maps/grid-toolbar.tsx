@@ -76,7 +76,7 @@ const VERTEX_TOOLS: readonly ToolOption<VertexTool>[] = [
   {
     value: "select",
     label: "Select",
-    hint: "drag a box over waypoints; Shift adds",
+    hint: "drag a box over waypoints; Shift-click or tap one to add it",
     icon: SquareDashedMousePointerIcon,
   },
 ];

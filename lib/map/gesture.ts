@@ -58,6 +58,8 @@ export interface PressInput {
   button: number;
   /** Space is held, which turns any press into a pan. */
   spacePan: boolean;
+  /** The press is a finger, which has no Shift. */
+  touch: boolean;
   shiftKey: boolean;
   mode: EditMode;
   tool: EditTool;
@@ -76,13 +78,15 @@ export interface PressInput {
  * which keeps the mode toggle from carrying an armed tool across.
  *
  * With Select armed, Shift on a marker toggles it and arms nothing, and a
- * press on bare map starts a rubber band. A plain press on a marker re-aims
- * it under either waypoint tool, so fixing a heading does not depend on
- * which tool is held. With Place armed, bare map places a new waypoint; the
- * caller still has to check the press landed on the grid.
+ * press on bare map starts a rubber band. A finger has no Shift, so under
+ * Select a plain tap on a marker toggles it too — re-aiming is still there
+ * under Pan and Place, which is where a finger does it. A plain mouse press
+ * on a marker re-aims it under either waypoint tool, so fixing a heading
+ * does not depend on which tool is held. With Place armed, bare map places
+ * a new waypoint; the caller still has to check the press landed on the grid.
  */
 export function classifyPress(input: PressInput): PressIntent {
-  const { button, spacePan, shiftKey, mode, tool, vertexTool, onVertex } = input;
+  const { button, spacePan, shiftKey, touch, mode, tool, vertexTool, onVertex } = input;
   const panning =
     button === 1 ||
     button === 2 ||
@@ -92,7 +96,7 @@ export function classifyPress(input: PressInput): PressIntent {
   if (panning) return "pan";
   if (mode === "grid") return "stroke";
   if (vertexTool === "select") {
-    if (onVertex && shiftKey) return "toggle";
+    if (onVertex && (shiftKey || touch)) return "toggle";
     if (!onVertex) return "marquee";
   }
   return "aim";

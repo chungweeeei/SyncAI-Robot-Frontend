@@ -59,6 +59,8 @@ import type { PlanarPose } from "@/lib/types/robot";
 
 /** Click slop around a marker centre. Comfortably larger than the dot itself. */
 const VERTEX_HIT_RADIUS = 11;
+/** The same slop under a finger, which covers ~22 px and cannot see the dot. */
+const VERTEX_HIT_RADIUS_TOUCH = 22;
 
 const ZOOM_PER_PX = 0.0015;
 const WHEEL_LINE_PX = 16;
@@ -438,12 +440,12 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
    * would be unclickable zoomed out and enormous zoomed in. Last-to-first
    * because that is paint order reversed: the marker drawn on top wins.
    */
-  const vertexAt = (view: View, cx: number, cy: number): MapVertex | null => {
+  const vertexAt = (view: View, cx: number, cy: number, radius: number): MapVertex | null => {
     const { vertices } = propsRef.current;
     for (let i = vertices.length - 1; i >= 0; i -= 1) {
       const vertex = vertices[i];
       const at = vertexScreen(view, session.meta, vertex.x, vertex.y);
-      if (Math.hypot(at.cx - cx, at.cy - cy) <= VERTEX_HIT_RADIUS) return vertex;
+      if (Math.hypot(at.cx - cx, at.cy - cy) <= radius) return vertex;
     }
     return null;
   };
@@ -480,11 +482,16 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     // classifyPress in lib/map/gesture.ts: right and middle always pan, the
     // mode's own tool claims the left button, and Select splits a press into
     // toggle, band or re-aim. What is left here is doing it to this canvas.
-    const hit = mode === "vertex" ? vertexAt(view, cx, cy) : null;
+    const touch = event.pointerType === "touch";
+    const hit =
+      mode === "vertex"
+        ? vertexAt(view, cx, cy, touch ? VERTEX_HIT_RADIUS_TOUCH : VERTEX_HIT_RADIUS)
+        : null;
     const intent = classifyPress({
       button: event.button,
       spacePan,
       shiftKey: event.shiftKey,
+      touch,
       mode,
       tool,
       vertexTool,
