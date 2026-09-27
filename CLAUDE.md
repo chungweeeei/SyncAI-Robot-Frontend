@@ -164,8 +164,9 @@ lib/
   robot/        G23 joint table (URDF link names ↔ GLB node names), how the
                 dashboard names a motor (the leg grid and its joint codes), and
                 the readout thresholds (levels.ts: Wi-Fi bars, battery, joint heat)
-  teleop/       thumbstick maths: clamp, deadzone, key bindings and the
-                screen-to-body-frame turn the drive panel commands through
+  teleop/       thumbstick maths: clamp, deadzone, key bindings, the linear
+                speed limit and the screen-to-body-frame turn the drive panel
+                commands through
   video/        WHIP/WHEP signalling, and the camera window's clip capture
                 (container pick, filename rule, the recorder wrapper)
   types/        shared wire types (map, robot, pointcloud, stream), and the
