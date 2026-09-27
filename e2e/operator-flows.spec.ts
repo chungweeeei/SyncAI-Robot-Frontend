@@ -232,6 +232,48 @@ test.describe("the dashboard's map scan layer", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
+  test("reads the scan again once the catalogue says the file changed", async ({
+    page,
+  }) => {
+    // Another console's mapping save rewrites the scan without this tab's
+    // write hooks ever running, so the catalogue is the only thing that can
+    // say the cached copy is old.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const entry = mapSummary();
+    await mockBackend(page, { maps: [entry] });
+    const scanReads: string[] = [];
+    page.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (pathname.endsWith("/pointcloud")) scanReads.push(pathname);
+    });
+    const visitMapsAndReturn = async () => {
+      await page.getByRole("link", { name: "Maps" }).click();
+      await expect(page.getByRole("heading", { name: "Maps", level: 1 })).toBeVisible();
+      await page.getByRole("link", { name: "Dashboard" }).click();
+      await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+    };
+
+    await page.goto("/");
+    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+    await expect(page.getByText("robot01").first()).toBeVisible();
+    await toggle(page).click();
+    await expect.poll(() => scanReads).toEqual([scanPath]);
+
+    // Same file: the cache answers.
+    await visitMapsAndReturn();
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
+    expect(scanReads).toEqual([scanPath]);
+
+    // Rewritten elsewhere: the catalogue's next answer retires the copy.
+    entry.modified_at = "2026-09-28T08:00:00Z";
+    await visitMapsAndReturn();
+    await toggle(page).click();
+    await expect.poll(() => scanReads).toEqual([scanPath, scanPath]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
   // No console-error guard here: the browser logs the 404 itself, which is
   // exactly the response under test.
   test("says why the scan did not arrive, in the backend's words", async ({
@@ -759,6 +801,41 @@ test.describe("the step editor", () => {
     await page.getByRole("button", { name: /^Speak/, expanded: true }).click();
     await expect(say).toHaveCount(0);
     await expect(page.getByText("“Hello”")).toBeVisible();
+  });
+
+  test("waits out a conversion before drawing the floor plan it produced", async ({
+    page,
+  }) => {
+    // A raster read mid-conversion is the old plan or half of the new one, and
+    // this cache never goes stale on its own, so it must not be read at all
+    // until the catalogue says the conversion is over. A conversion another
+    // console started looks exactly like this one.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const entry = mapSummary({ grid_status: "converting", grid_converting: true });
+    await mockBackend(page, { maps: [entry] });
+    const imageReads: string[] = [];
+    page.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (pathname.endsWith("/image")) imageReads.push(pathname);
+    });
+    await page.goto("/tasks");
+    await page.getByRole("button", { name: /Task editor/ }).click();
+    await page.getByTitle("Drive to a pose in the map frame.").click();
+    await page.getByRole("button", { name: "Floor plan" }).click();
+    await expect(page.getByRole("img", { name: /^Floor plan of dp2f/ })).toBeVisible();
+
+    // Two catalogue polls' worth, while it still says converting.
+    await page.waitForTimeout(4500);
+    expect(imageReads).toEqual([]);
+
+    entry.grid_status = "ok";
+    entry.grid_converting = false;
+    entry.modified_at = "2026-09-28T08:00:00Z";
+    await expect
+      .poll(() => imageReads, { timeout: 10_000 })
+      .toEqual([`/api/v1/maps/${MAP_NAME}/image`]);
+    expect(errors, "the page logged errors").toEqual([]);
   });
 
   test("picks a waypoint by clicking it on the floor plan", async ({ page }) => {
