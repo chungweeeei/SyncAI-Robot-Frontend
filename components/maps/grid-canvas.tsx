@@ -467,6 +467,12 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     const view = viewRef.current;
     if (!view) return;
     if (event.button !== 0 && event.button !== 1 && event.button !== 2) return;
+    // One gesture at a time. A second finger used to replace the gesture in
+    // the ref, and with Brush armed the next move stampLine'd from the first
+    // finger to the second — a stroke the operator never drew, already in the
+    // undo stack. Until the editor has a pinch of its own, the extra finger
+    // does nothing.
+    if (gestureRef.current) return;
 
     const { mode, tool, vertexTool, value, brush, spacePan } = propsRef.current;
     const { cx, cy } = localPoint(event);
@@ -611,6 +617,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     const rect = rectRef.current;
     const { cx, cy } = localPoint(event);
     const gesture = gestureRef.current;
+    // Before the hover probe, or the brush ring would follow the wrong finger.
+    if (gesture && gesture.pointerId !== event.pointerId) return;
 
     hoverRef.current = probeAt(cellAt(view, session.grid, cx, cy));
 
@@ -680,7 +688,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
   const endGesture = (event: React.PointerEvent<HTMLDivElement>) => {
     const gesture = gestureRef.current;
     const view = viewRef.current;
-    if (!gesture) return;
+    // The second finger's lift is not the end of the first finger's stroke.
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
     gestureRef.current = null;
     if (event.currentTarget.hasPointerCapture(gesture.pointerId)) {
       event.currentTarget.releasePointerCapture(gesture.pointerId);
