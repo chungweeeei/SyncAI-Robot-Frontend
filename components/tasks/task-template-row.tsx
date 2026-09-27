@@ -235,14 +235,20 @@ function TemplateStepLine({
               ? "readout shrink-0 text-signal-caution line-through"
               : "readout shrink-0 text-muted-foreground"
           }
-          title={
-            step.vertex_status === "MISSING"
-              ? "This waypoint has been deleted. The robot will use the position it had when the job was saved."
-              : undefined
-          }
         >
           {step.vertex_name}
         </span>
+      )}
+      {/* A chip, not a hover title on the struck-through name: the strike
+        * says something is wrong and a finger cannot ask what. The longer
+        * consequence stays on hover for those who have one. */}
+      {step.vertex_status === "MISSING" && (
+        <Chip
+          tone="caution"
+          title="This waypoint has been deleted. The robot will use the position it had when the job was saved."
+        >
+          deleted
+        </Chip>
       )}
       {/* resolved_params, not params: this is what a dispatch would actually
         * send, so showing the snapshot would be showing a number the robot will
@@ -253,8 +259,10 @@ function TemplateStepLine({
           {step.resolved_params.theta.toFixed(1)}°
         </span>
       )}
+      {/* Wrapped, not truncated: this is the expanded detail, where the room
+        * is vertical, and a hover title was the only way to read the rest. */}
       {step.type === "SPEAK" && step.resolved_params && (
-        <span className="min-w-0 truncate italic" title={step.resolved_params.text}>
+        <span className="min-w-0 wrap-anywhere italic">
           “{step.resolved_params.text}”
         </span>
       )}

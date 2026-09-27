@@ -154,12 +154,12 @@ export function StatusStrip() {
             {/* Bars only, no dBm: the number is an engineer's reading, and
               * the four-step glyph is the whole of what an operator does with
               * it. The exact figure stays on the Settings screen's Wi-Fi
-              * panel, next to the network it belongs to. */}
+              * panel, next to the network it belongs to — as does the name,
+              * which is why the bars show on a phone too: the hover that
+              * carries it here is not a thing a finger has, and without the
+              * bars a phone had no link reading at all. */}
             {network && (
-              <span
-                className="hidden items-center sm:flex"
-                title={`Wi-Fi: ${network.ssid}`}
-              >
+              <span className="flex items-center" title={`Wi-Fi: ${network.ssid}`}>
                 <SignalBars
                   bars={rssiToBars(network.rssi)}
                   tone={status === "ok" ? "live" : "caution"}

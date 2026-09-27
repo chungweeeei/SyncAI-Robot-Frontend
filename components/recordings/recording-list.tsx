@@ -80,6 +80,19 @@ function InterruptedHint({ recording }: { recording: RecordingSummary }) {
   );
 }
 
+/**
+ * Why the delete control beside a live recording does nothing. The control
+ * carries the same reason as a hover title, which a finger never sees.
+ */
+function LiveHint({ recording }: { recording: RecordingSummary }) {
+  if (recording.status !== "recording") return null;
+  return (
+    <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+      Still recording — it can be deleted once it has been stopped.
+    </p>
+  );
+}
+
 /** One measured value in the row's right-hand cluster. */
 function Cell({ label, value }: { label: string; value: string }) {
   return (
@@ -131,6 +144,7 @@ function RecordingRow({ recording }: { recording: RecordingSummary }) {
 
         <EmptyWarning recording={recording} />
         <InterruptedHint recording={recording} />
+        <LiveHint recording={recording} />
       </div>
 
       {/* Duration and messages come from the bag's own metadata, so a live or
