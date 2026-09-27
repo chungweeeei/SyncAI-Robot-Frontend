@@ -196,9 +196,15 @@ export function useJoystick(enabled: boolean, linearScale = 1): JoystickState {
     };
   }, [enabled, publish]);
 
+  // The ref is cleared with the frame it named. A cleanup is not always an
+  // unmount — StrictMode runs it and then mounts again — and a stale id left
+  // here reads to publish() as "a frame is already coming", so the readouts
+  // froze at rest for good while the sender, which reads vectorRef, kept
+  // driving.
   React.useEffect(
     () => () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     },
     [],
   );
