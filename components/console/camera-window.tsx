@@ -10,8 +10,10 @@ import {
 } from "lucide-react";
 
 import { overlayPanel, RecordDot } from "@/components/console/instrument";
+import { panelFloor } from "@/components/console/strip-disclosure";
 import { useCameraClip } from "@/hooks/use-camera-clip";
 import { useCameraStream } from "@/hooks/use-camera-stream";
+import { isDrag } from "@/lib/map/gesture";
 import { formatDuration, formatSize } from "@/lib/recording/format";
 import type { ClipOutcome } from "@/lib/video/clip";
 import { cn } from "@/lib/utils";
@@ -178,6 +180,8 @@ export function CameraWindow({ className }: { className?: string }) {
   const dragRef = React.useRef<{
     pointerId: number;
     kind: "move" | "resize";
+    /** A move that began on the grip, so a release that never dragged is a tap on it. */
+    onGrip: boolean;
     originX: number;
     originY: number;
     baseX: number;
@@ -203,6 +207,9 @@ export function CameraWindow({ className }: { className?: string }) {
     dragRef.current = {
       pointerId: event.pointerId,
       kind,
+      onGrip:
+        kind === "move" &&
+        (event.target as HTMLElement).closest("[data-move-handle]") !== null,
       originX: event.clientX,
       originY: event.clientY,
       baseX: kind === "move" ? offset.x : size.width,
@@ -219,8 +226,8 @@ export function CameraWindow({ className }: { className?: string }) {
       minY: kind === "move" ? offset.y - rect.top : MIN_HEIGHT,
       maxY:
         kind === "move"
-          ? offset.y + (window.innerHeight - rect.bottom)
-          : size.height + (window.innerHeight - rect.bottom),
+          ? offset.y + (panelFloor() - rect.bottom)
+          : size.height + (panelFloor() - rect.bottom),
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -254,8 +261,21 @@ export function CameraWindow({ className }: { className?: string }) {
   // Up, cancel and lost-capture all end the gesture; idempotent via the ref
   // check because pointerup is followed by an implicit lostpointercapture.
   const onRelease = (event: React.PointerEvent<HTMLElement>) => {
-    if (dragRef.current?.pointerId !== event.pointerId) return;
+    const drag = dragRef.current;
+    if (drag?.pointerId !== event.pointerId) return;
     dragRef.current = null;
+    // A tap on the grip puts the window back where and how it opened — the
+    // finger's path to what Home and the double-click do, since a double-tap
+    // is not a gesture a phone reports reliably. Only a real release: a
+    // cancel or a lost capture is not a tap.
+    if (
+      event.type === "pointerup" &&
+      drag.onGrip &&
+      !isDrag(drag.originX, drag.originY, event.clientX, event.clientY)
+    ) {
+      setOffset({ x: 0, y: 0 });
+      setSize(openingSize());
+    }
   };
 
   // The move handle's keyboard path, for the same reason the resize handle has
@@ -279,7 +299,7 @@ export function CameraWindow({ className }: { className?: string }) {
     if (!rect) return;
     setOffset((current) => ({
       x: clamp(current.x + dx, current.x - rect.left, current.x + (window.innerWidth - rect.right)),
-      y: clamp(current.y + dy, current.y - rect.top, current.y + (window.innerHeight - rect.bottom)),
+      y: clamp(current.y + dy, current.y - rect.top, current.y + (panelFloor() - rect.bottom)),
     }));
   };
 
@@ -308,7 +328,7 @@ export function CameraWindow({ className }: { className?: string }) {
         ? clamp(
             current.height + step,
             MIN_HEIGHT,
-            rect ? current.height + (window.innerHeight - rect.bottom) : current.height,
+            rect ? current.height + (panelFloor() - rect.bottom) : current.height,
           )
         : current.height,
     }));
@@ -339,7 +359,7 @@ export function CameraWindow({ className }: { className?: string }) {
           setOffset({ x: 0, y: 0 });
           setSize(openingSize());
         }}
-        title="Drag to move · double-click to reset"
+        title="Drag to move · tap the grip to reset"
         className="mb-2 flex h-4 cursor-grab touch-none items-center justify-between gap-2 select-none active:cursor-grabbing pointer-coarse:h-10"
       >
         <h2 className="instrument-label flex items-center gap-1.5 text-muted-foreground">
@@ -350,7 +370,7 @@ export function CameraWindow({ className }: { className?: string }) {
             type="button"
             data-move-handle
             aria-label="Move the camera window"
-            title="Drag to move · arrow keys to nudge · Home to reset"
+            title="Drag to move · tap to reset · arrow keys to nudge · Home to reset"
             onKeyDown={onMoveKeyDown}
             className="-m-0.5 flex cursor-grab items-center rounded-sm p-0.5 pointer-coarse:p-2.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:cursor-grabbing"
           >

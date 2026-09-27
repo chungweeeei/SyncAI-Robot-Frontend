@@ -101,3 +101,15 @@ export function StripDisclosure({
  */
 export const droppedPanel =
   "fixed top-16 right-3 z-30 sm:absolute sm:top-full sm:right-0 sm:mt-6";
+
+/**
+ * The lowest a dropped panel may be dragged or grown to: the top of the nav
+ * when it is a bar under the page (below lg), the bottom of the window when
+ * it is a rail beside it. The panels are chrome, so knowing that <main> is
+ * the region between the strip and the nav is theirs to know — the window's
+ * height was the previous answer, and it let a panel be parked over the tabs.
+ */
+export function panelFloor(): number {
+  const main = document.querySelector("main");
+  return main ? main.getBoundingClientRect().bottom : window.innerHeight;
+}
