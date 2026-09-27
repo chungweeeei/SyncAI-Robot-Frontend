@@ -89,6 +89,12 @@ export function StepRow({
   // and in warn tone, so it is still the row the eye lands on.
   const problem = rowError ?? state?.error_msg ?? null;
   const bodyId = React.useId();
+  const [removeArmed, setRemoveArmed] = React.useState(false);
+  React.useEffect(() => {
+    if (!removeArmed) return;
+    const timer = setTimeout(() => setRemoveArmed(false), 3_000);
+    return () => clearTimeout(timer);
+  }, [removeArmed]);
   const typeLabel = STEP_TYPES.find((spec) => spec.value === step.type)?.label;
   const waypointName =
     step.vertexId === null
@@ -248,11 +254,30 @@ export function StepRow({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          {/* A finger has to tap twice; a mouse or a keyboard removes at
+           * once. The remove button sits 2 px from the ⋯ menu and a missed
+           * tap deleted a step with no way back, while a pointer that can
+           * aim never had that problem and would only be slowed down. The
+           * armed state is drawn on the button itself, since a title is not
+           * something a finger sees, and it lets go after a moment so a
+           * change of mind costs nothing. */}
           <IconButton
-            label="Remove step"
+            label={removeArmed ? "Tap again to remove this step" : "Remove step"}
             disabled={disabled}
-            onClick={onRemove}
-            className="text-signal-warn hover:bg-signal-warn/12"
+            onClick={(event) => {
+              const touch =
+                "pointerType" in event.nativeEvent &&
+                (event.nativeEvent as PointerEvent).pointerType === "touch";
+              if (touch && !removeArmed) {
+                setRemoveArmed(true);
+                return;
+              }
+              onRemove();
+            }}
+            className={cn(
+              "text-signal-warn hover:bg-signal-warn/12",
+              removeArmed && "border border-signal-warn/50 bg-signal-warn/12",
+            )}
           >
             <Trash2Icon className="size-3.5" aria-hidden />
           </IconButton>
