@@ -20,7 +20,10 @@ export default function HistoryPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-4xl px-4 py-4 sm:py-8">
+      {/* /tasks' width rather than /recordings': a row carries id, outcome,
+        * source and its times on one line, and a job opened from here is the
+        * same job /tasks shows, so the two screens read at one width. */}
+      <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:py-8">
         <header className="mb-6">
           <p className="instrument-label text-muted-foreground">Robot</p>
           <h1 className="mt-1.5 text-xl font-semibold tracking-tight">History</h1>
