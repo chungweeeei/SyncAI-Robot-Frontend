@@ -221,7 +221,15 @@ export async function fetchMapPointCloud(
   const res = await requestRaw(apiUrl(`/api/v1/maps/${encoded}/pointcloud`), {
     signal,
   });
-  return decodePointCloud(await res.arrayBuffer());
+  const frame = decodePointCloud(await res.arrayBuffer());
+  // A 2xx whose body is shorter than it says is a download cut off in
+  // transit, not a refusal, so there is no backend sentence to show. This one
+  // is written for the operator: the view renders it beside the layer toggle,
+  // and turning the layer off and on is the retry.
+  if (!frame) {
+    throw new Error("The map scan arrived incomplete. Turn Map scan off and on to try again.");
+  }
+  return frame;
 }
 
 /** `SaveGridmapResponse`. Every field is already the app's type. */
