@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { DEADZONE, type StickValue } from "@/hooks/use-joystick";
+import { DEADZONE, type StickValue } from "@/lib/teleop/stick";
 import { cn } from "@/lib/utils";
 
 /** Well diameter (size-24) and knob diameter (size-7), in px. The travel

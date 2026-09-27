@@ -2,22 +2,15 @@
 
 import * as React from "react";
 
+import {
+  AT_REST_VECTOR,
+  commandFrom,
+  isStickKey,
+  resolveStick,
+  type StickId,
+  type StickValue,
+} from "@/lib/teleop/stick";
 import type { TeleopVector } from "@/lib/types/robot";
-
-/** A stick deflection in screen space: x grows right, y grows DOWN. */
-export interface StickValue {
-  x: number;
-  y: number;
-}
-
-export type StickId = "left" | "right";
-
-/**
- * Radial deadzone as a fraction of full travel. Exported so the Thumbstick can
- * draw the ring at the same radius the math uses — a ring that only decorates
- * would drift from the truth the first time this constant moves.
- */
-export const DEADZONE = 0.12;
 
 export interface JoystickState {
   /**
@@ -60,55 +53,8 @@ const AT_REST: Snapshot = {
   right: { x: 0, y: 0 },
   leftActive: false,
   rightActive: false,
-  vector: { vx: 0, vy: 0, wz: 0 },
+  vector: AT_REST_VECTOR,
 };
-
-/**
- * Physical key codes, not `event.key`: ZQSD on an AZERTY board should drive by
- * position, the way every game does it. Left (translation) stick is W/S/Q/E,
- * right (rotation) stick is A/D — screen-space signs, so "left" is negative x
- * and "up" is negative y.
- *
- * A/D rotate and Q/E strafe, not the other way round: A/D under the resting
- * fingers is the turn in every driving game, and strafing is the rarer command
- * on a chassis that mostly drives where it is pointed. The earlier binding had
- * them swapped, which read as sideways drift every time an operator tried to
- * turn.
- */
-const KEY_AXES: Record<string, { stick: StickId; axis: "x" | "y"; sign: 1 | -1 }> = {
-  KeyW: { stick: "left", axis: "y", sign: -1 },
-  KeyS: { stick: "left", axis: "y", sign: 1 },
-  KeyQ: { stick: "left", axis: "x", sign: -1 },
-  KeyE: { stick: "left", axis: "x", sign: 1 },
-  KeyA: { stick: "right", axis: "x", sign: -1 },
-  KeyD: { stick: "right", axis: "x", sign: 1 },
-};
-
-/**
- * The left stick's reachable set is a disc, so the clamp is radial — clamping
- * x and y separately would let a diagonal command √2 times the straight-line
- * maximum. The right stick is one-dimensional by design (it commands wz only),
- * so its y is discarded rather than clamped.
- */
-function clampStick(stick: StickId, raw: StickValue): StickValue {
-  if (stick === "right") {
-    return { x: Math.min(1, Math.max(-1, raw.x)), y: 0 };
-  }
-  const m = Math.hypot(raw.x, raw.y);
-  return m > 1 ? { x: raw.x / m, y: raw.y / m } : { x: raw.x, y: raw.y };
-}
-
-/**
- * Radial deadzone with rescale, so the command is continuous from zero: a plain
- * cutoff would make the smallest possible command DEADZONE-sized, which on a
- * real robot is a visible lurch the moment the stick leaves the ring.
- */
-function applyDeadzone(value: StickValue): StickValue {
-  const m = Math.hypot(value.x, value.y);
-  if (m < DEADZONE) return { x: 0, y: 0 };
-  const scale = (m - DEADZONE) / (1 - DEADZONE) / m;
-  return { x: value.x * scale, y: value.y * scale };
-}
 
 /**
  * Dual-thumbstick teleop state: left stick = planar translation, right stick =
@@ -121,11 +67,9 @@ function applyDeadzone(value: StickValue): StickValue {
  * visual half — the sender (use-teleop-sender.ts) reads `vectorRef` and never
  * touches anything else here.
  *
- * Input merging is per-stick, pointer wins: while a stick's pointer is
- * captured, that whole stick is pointer-owned and its keys are ignored;
- * otherwise the stick shows the keyboard deflection (opposing keys sum to
- * zero). Keyboard deflection is instant full-scale — a slew ramp was considered
- * and left for the sender, which is where acceleration limits belong.
+ * The maths — clamp, deadzone, key bindings, pointer-over-keys merging and the
+ * screen-to-body-frame turn — is lib/teleop/stick.ts, where it is tested. What
+ * is left here is when it runs and who hears about it.
  *
  * Rendering follows grid-canvas's rule: raw inputs live in refs, and one
  * rAF-coalesced publish turns them into at most one setState per frame. The
@@ -153,31 +97,14 @@ export function useJoystick(enabled: boolean): JoystickState {
   const [snapshot, setSnapshot] = React.useState<Snapshot>(AT_REST);
 
   const publish = React.useCallback(() => {
-    const compute = (stick: StickId): { value: StickValue; active: boolean } => {
-      const pointer = pointerRef.current[stick];
-      if (pointer) return { value: clampStick(stick, pointer), active: true };
-      let x = 0;
-      let y = 0;
-      for (const [code, key] of Object.entries(KEY_AXES)) {
-        if (key.stick !== stick || !keysRef.current.has(code)) continue;
-        if (key.axis === "x") x += key.sign;
-        else y += key.sign;
-      }
-      return { value: clampStick(stick, { x, y }), active: x !== 0 || y !== 0 };
-    };
-
-    const left = compute("left");
-    const right = compute("right");
-    const dzLeft = applyDeadzone(left.value);
-    const dzRight = applyDeadzone(right.value);
+    const left = resolveStick("left", pointerRef.current.left, keysRef.current);
+    const right = resolveStick("right", pointerRef.current.right, keysRef.current);
     snapRef.current = {
       left: left.value,
       right: right.value,
       leftActive: left.active,
       rightActive: right.active,
-      // Screen space → body frame: stick up (-y) is forward, stick left (-x)
-      // is +vy (REP-103 y points left) and, on the right stick, +wz (CCW).
-      vector: { vx: -dzLeft.y, vy: -dzLeft.x, wz: -dzRight.x },
+      vector: commandFrom(left.value, right.value),
     };
     // Synchronous, ahead of the rAF: see the vectorRef doc above.
     vectorRef.current = snapRef.current.vector;
@@ -237,7 +164,7 @@ export function useJoystick(enabled: boolean): JoystickState {
       // forward. Only keydown checks this — a keyup must always release its
       // key, or W-down / Ctrl-down / W-up would leave the robot commanded.
       if (event.ctrlKey || event.metaKey || event.altKey) return;
-      if (!(event.code in KEY_AXES) || event.repeat) return;
+      if (!isStickKey(event.code) || event.repeat) return;
       keysRef.current.add(event.code);
       publish();
     };

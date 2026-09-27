@@ -160,6 +160,8 @@ lib/
                 that touches browser storage)
   recording/    bag size/duration formatting and the bag name rule
   robot/        G23 joint table (URDF link names ↔ GLB node names)
+  teleop/       thumbstick maths: clamp, deadzone, key bindings and the
+                screen-to-body-frame turn the drive panel commands through
   video/        WHIP/WHEP signalling, and the camera window's clip capture
                 (container pick, filename rule, the recorder wrapper)
   types/        shared wire types (map, robot, pointcloud, stream)
