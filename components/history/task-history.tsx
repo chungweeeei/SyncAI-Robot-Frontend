@@ -115,6 +115,38 @@ function HistoryList({
 
   return (
     <div className="space-y-3">
+      {/* Above the list, not under it: a row opens into its steps in place, so
+        * a pager at the bottom moves every time one is opened, and on a full
+        * page it sits below the fold. No pager at all for a history that fits
+        * on one page. */}
+      {(history.hasPrev || history.hasNext) && (
+        <nav aria-label="History pages" className="flex items-center justify-end gap-3">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!history.hasPrev || history.switching}
+            onClick={history.prev}
+          >
+            <ChevronLeftIcon aria-hidden />
+            Previous
+          </Button>
+          <span className="readout text-[12px] text-muted-foreground" aria-live="polite">
+            Page {history.page}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!history.hasNext || history.switching}
+            onClick={history.next}
+          >
+            Next
+            <ChevronRightIcon aria-hidden />
+          </Button>
+        </nav>
+      )}
+
       {/* A last page can come back empty when the one before it ended exactly
         * on a page boundary; the backend only knows there is nothing left once
         * it has looked. */}
@@ -145,35 +177,6 @@ function HistoryList({
         <p role="alert" className="text-[11px] leading-snug text-signal-warn">
           {history.error}
         </p>
-      )}
-
-      {/* No pager at all for a history that fits on one page. */}
-      {(history.hasPrev || history.hasNext) && (
-        <nav aria-label="History pages" className="flex items-center justify-center gap-3">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={!history.hasPrev || history.switching}
-            onClick={history.prev}
-          >
-            <ChevronLeftIcon aria-hidden />
-            Previous
-          </Button>
-          <span className="readout text-[12px] text-muted-foreground" aria-live="polite">
-            Page {history.page}
-          </span>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={!history.hasNext || history.switching}
-            onClick={history.next}
-          >
-            Next
-            <ChevronRightIcon aria-hidden />
-          </Button>
-        </nav>
       )}
     </div>
   );
