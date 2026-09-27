@@ -787,6 +787,55 @@ test.describe("the task console", () => {
   });
 });
 
+test.describe("the manual drive panel", () => {
+  test("limits translation to the Max speed it shows, and never rotation", async ({
+    page,
+  }) => {
+    // Both halves: the slider and the readouts say one number, and the teleop
+    // frames the robot receives carry the same one. Keyboard deflection is
+    // always full, so without the limit there is no slow drive from the keys.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page);
+    const frames: { vx: number; vy: number; wz: number }[] = [];
+    await page.routeWebSocket(/\/api\/v1\/robot\/teleop$/, (ws) => {
+      ws.onMessage((message) => {
+        if (typeof message === "string") frames.push(JSON.parse(message));
+      });
+    });
+    const last = () => frames.at(-1);
+
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Manual drive panel" }).click();
+    const speed = page.getByRole("slider", { name: "Max speed" });
+    // Full on every page load, before anything is armed: the panel drives as
+    // it did before the limit existed.
+    await expect(speed).toHaveAttribute("aria-valuetext", "100 percent of full speed");
+    await expect(page.getByText("100%", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "Arm manual drive input" }).click();
+    await expect(page.getByText("Streaming to robot · 10 Hz")).toBeVisible();
+
+    // Forward and turn together, at full.
+    await page.keyboard.down("w");
+    await page.keyboard.down("d");
+    await expect.poll(last).toEqual({ vx: 1, vy: 0, wz: -1 });
+
+    // Lowered to half with the keys still held: the new limit reaches the
+    // frames at once, and rotation does not move with it.
+    await speed.focus();
+    for (let step = 0; step < 5; step += 1) await page.keyboard.press("ArrowLeft");
+    await expect(speed).toHaveAttribute("aria-valuetext", "50 percent of full speed");
+    await expect.poll(last).toEqual({ vx: 0.5, vy: 0, wz: -1 });
+    await expect(page.getByText("+0.50", { exact: true })).toBeVisible();
+
+    await page.keyboard.up("w");
+    await page.keyboard.up("d");
+    await expect.poll(last).toEqual({ vx: 0, vy: 0, wz: 0 });
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+});
+
 test.describe("the floor plan editor", () => {
   test("aims a new waypoint by the direction it was dragged", async ({ page }) => {
     // The heading rule is shared with the dashboard now, so this holds the

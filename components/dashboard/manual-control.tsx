@@ -5,8 +5,16 @@ import { GripHorizontalIcon, JoystickIcon } from "lucide-react";
 
 import { overlayPanel } from "@/components/console/instrument";
 import { Thumbstick } from "@/components/dashboard/thumbstick";
+import { Slider } from "@/components/ui/slider";
 import { useJoystick } from "@/hooks/use-joystick";
 import { useTeleopSender } from "@/hooks/use-teleop-sender";
+import {
+  LINEAR_SCALE_DEFAULT,
+  LINEAR_SCALE_MAX,
+  LINEAR_SCALE_MIN,
+  LINEAR_SCALE_STEP,
+  clampLinearScale,
+} from "@/lib/teleop/stick";
 import type { TeleopVector } from "@/lib/types/robot";
 import { cn } from "@/lib/utils";
 
@@ -61,10 +69,23 @@ function clamp(value: number, min: number, max: number): number {
  * arm button), and a panel that slides when a thumb misses a well would turn
  * a bad grab into both a motion command and a moved panel. Dragging never
  * disarms or interrupts the stream — moving the panel mid-drive is the point.
+ *
+ * The Max speed slider limits translation, vx and vy together, as a fraction
+ * of full stick; rotation is not limited. It is the only way to drive slowly
+ * from the keyboard, whose deflection is always full. The limit is applied
+ * where the command is computed (lib/teleop/stick.ts), so the VX / VY
+ * readouts below show the scaled number, which is the number sent. It starts
+ * at full on every page load, so the panel drives as it always has until an
+ * operator asks for slower. It is not remembered, so a lowered limit does not
+ * outlive the session that chose it, and it can be set before arming.
  */
 export function ManualControl({ className }: { className?: string }) {
   const [armed, setArmed] = React.useState(false);
-  const stick = useJoystick(armed);
+  const [linearScale, setLinearScale] = React.useState(LINEAR_SCALE_DEFAULT);
+  const stick = useJoystick(armed, linearScale);
+  // Whole percent on the slider, so a step of 10 never accumulates float
+  // error; the fraction the command uses is derived from it.
+  const speedPercent = Math.round(linearScale * 100);
   // A WS event, not an effect body — the allowed place for setState.
   const handleDrop = React.useCallback(() => setArmed(false), []);
 
@@ -208,6 +229,38 @@ export function ManualControl({ className }: { className?: string }) {
             onPointer={(value) => stick.setPointer("right", value)}
           />
         </LabeledStick>
+      </div>
+      {/* No visible label, by the user's choice: the bar and its percentage
+        * are the whole row. The name is still there for a screen reader and
+        * on hover, because an unnamed slider reads as "slider, 100". */}
+      <div className="mt-3 flex items-center gap-2.5" title="Max speed">
+        <Slider
+          className="min-w-0 flex-1"
+          min={Math.round(LINEAR_SCALE_MIN * 100)}
+          max={Math.round(LINEAR_SCALE_MAX * 100)}
+          step={Math.round(LINEAR_SCALE_STEP * 100)}
+          value={speedPercent}
+          onValueChange={(next) => {
+            // One thumb, but the wrapper's type admits a range slider's array.
+            const percent = typeof next === "number" ? next : next[0];
+            setLinearScale(clampLinearScale(percent / 100));
+          }}
+          thumbProps={{
+            "aria-label": "Max speed",
+            getAriaValueText: (_formatted, percent) =>
+              `${percent} percent of full speed`,
+          }}
+        />
+        {/* The readout's own rule: the cmd hue only while armed, because a
+          * limit on a panel that is not listening is not yet a command. */}
+        <span
+          className={cn(
+            "readout w-9 shrink-0 text-right text-[13px] font-medium",
+            armed ? "text-signal-cmd" : "text-muted-foreground",
+          )}
+        >
+          {speedPercent}%
+        </span>
       </div>
       {/* Three columns rather than stacked Readout rows: Readout is a
         * label-left/value-right line built for the rail's tall stack, and three

@@ -108,12 +108,45 @@ export function resolveStick(
 export const AT_REST_VECTOR: TeleopVector = { vx: 0, vy: 0, wz: 0 };
 
 /**
+ * The linear speed limit, as a fraction of full stick. Full stick is 1.0 on
+ * the wire, which the backend publishes as-is, so this is the one place an
+ * operator can ask for slow translation. That matters most from the keyboard,
+ * whose deflection is always full.
+ *
+ * The floor is 10%, not 0%: a limit of zero would leave the translation stick
+ * silently dead while the panel still looked armed. The default is full
+ * speed, so the panel drives as it always has until an operator asks for
+ * slower.
+ */
+export const LINEAR_SCALE_MIN = 0.1;
+export const LINEAR_SCALE_MAX = 1;
+export const LINEAR_SCALE_STEP = 0.1;
+export const LINEAR_SCALE_DEFAULT = 1;
+
+/** A linear scale held inside its range. A non-finite one is the default. */
+export function clampLinearScale(value: number): number {
+  if (!Number.isFinite(value)) return LINEAR_SCALE_DEFAULT;
+  return Math.min(LINEAR_SCALE_MAX, Math.max(LINEAR_SCALE_MIN, value));
+}
+
+/**
  * The commanded velocity for two knob positions: deadzone applied, then screen
  * space turned into the body frame. Stick up (-y) is forward, stick left (-x)
  * is +vy (REP-103 y points left) and, on the right stick, +wz (CCW).
+ *
+ * `linearScale` limits translation only, vx and vy together, so a diagonal
+ * keeps its direction as it slows. Rotation is not scaled. It is applied here
+ * rather than in the sender, so the panel's readouts, `vectorRef` and the
+ * wire frame all carry the same number: what the panel shows is what is sent.
+ * It defaults to 1, which is exactly the unscaled command.
  */
-export function commandFrom(left: StickValue, right: StickValue): TeleopVector {
+export function commandFrom(
+  left: StickValue,
+  right: StickValue,
+  linearScale = 1,
+): TeleopVector {
   const dzLeft = applyDeadzone(left);
   const dzRight = applyDeadzone(right);
-  return { vx: -dzLeft.y, vy: -dzLeft.x, wz: -dzRight.x };
+  const scale = clampLinearScale(linearScale);
+  return { vx: -dzLeft.y * scale, vy: -dzLeft.x * scale, wz: -dzRight.x };
 }

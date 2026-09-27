@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEADZONE,
+  LINEAR_SCALE_DEFAULT,
+  LINEAR_SCALE_MAX,
+  LINEAR_SCALE_MIN,
   applyDeadzone,
+  clampLinearScale,
   clampStick,
   commandFrom,
   isStickKey,
@@ -164,5 +168,56 @@ describe("pointer and keyboard on one stick", () => {
       value: { x: 0, y: 0 },
       active: false,
     });
+  });
+});
+
+describe("the linear speed limit", () => {
+  const FORWARD = { x: 0, y: -1 };
+  const LEFT = { x: -1, y: 0 };
+  const REST = { x: 0, y: 0 };
+
+  it("scales full forward to the limit", () => {
+    expect(commandFrom(FORWARD, REST, 0.5).vx).toBeCloseTo(0.5, 10);
+    expect(commandFrom(FORWARD, REST, 1).vx).toBe(1);
+  });
+
+  it("scales strafe as well as forward, so a diagonal keeps its direction", () => {
+    const diagonal = clampStick("left", { x: -1, y: -1 });
+    const full = commandFrom(diagonal, REST, 1);
+    const half = commandFrom(diagonal, REST, 0.5);
+    expect(half.vx / half.vy).toBeCloseTo(full.vx / full.vy, 10);
+    expect(Math.hypot(half.vx, half.vy)).toBeCloseTo(0.5, 10);
+    expect(commandFrom(LEFT, REST, 0.3).vy).toBeCloseTo(0.3, 10);
+  });
+
+  it("never scales rotation", () => {
+    for (const scale of [LINEAR_SCALE_MIN, 0.5, LINEAR_SCALE_MAX]) {
+      expect(commandFrom(REST, { x: -1, y: 0 }, scale).wz).toBe(1);
+      expect(commandFrom(FORWARD, { x: 1, y: 0 }, scale).wz).toBe(-1);
+    }
+  });
+
+  it("keeps the limit inside its range, so the translation stick is never dead", () => {
+    expect(clampLinearScale(0)).toBe(LINEAR_SCALE_MIN);
+    expect(clampLinearScale(-1)).toBe(LINEAR_SCALE_MIN);
+    expect(clampLinearScale(2)).toBe(LINEAR_SCALE_MAX);
+    expect(commandFrom(FORWARD, REST, 0).vx).toBeCloseTo(LINEAR_SCALE_MIN, 10);
+  });
+
+  it("falls back to the default for a limit that is not a number", () => {
+    expect(clampLinearScale(Number.NaN)).toBe(LINEAR_SCALE_DEFAULT);
+    expect(clampLinearScale(Number.POSITIVE_INFINITY)).toBe(LINEAR_SCALE_DEFAULT);
+  });
+
+  it("starts at full speed, inside its own range", () => {
+    // The panel drives as it did before the limit existed until an operator
+    // lowers it.
+    expect(LINEAR_SCALE_DEFAULT).toBe(1);
+    expect(clampLinearScale(LINEAR_SCALE_DEFAULT)).toBe(LINEAR_SCALE_DEFAULT);
+  });
+
+  it("leaves the command exactly as it was when no limit is given", () => {
+    const stick = { x: 0.4, y: -0.7 };
+    expect(commandFrom(stick, { x: 0.3, y: 0 })).toEqual(commandFrom(stick, { x: 0.3, y: 0 }, 1));
   });
 });
