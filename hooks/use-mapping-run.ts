@@ -24,6 +24,10 @@ export function useSaveMap() {
       // not outlive the file. Dropped, not invalidated, for the same reason as
       // the convert hook: the new bytes are not there yet.
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(name) });
+      // The same save writes that map's scan. Dropped rather than invalidated:
+      // nothing on the mapping screen shows it, so there is no reader to
+      // refetch into, and the dashboard's next toggle reads the new file.
+      queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(name) });
     },
   });
 }

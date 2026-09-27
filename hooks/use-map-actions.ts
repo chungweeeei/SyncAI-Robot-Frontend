@@ -40,11 +40,12 @@ export function useRenameMap() {
   return useMutation({
     mutationFn: ({ from, to }: { from: string; to: string }) => renameMap(from, to),
     onSuccess: (_result, { from }) => {
-      // The per-map vertex and raster caches are keyed by the old name and
+      // The per-map vertex, raster and scan caches are keyed by the old name and
       // nothing will read them again; drop them rather than let them sit
       // until eviction.
       queryClient.removeQueries({ queryKey: queryKeys.mapVertices(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(from) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(from) });
       // The catalogue now lists the map under its new name; the refetch is
       // what replaces its card with one keyed on that name.
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
@@ -63,6 +64,7 @@ export function useDeleteMap() {
     onSuccess: (_result, name) => {
       queryClient.removeQueries({ queryKey: queryKeys.mapVertices(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(name) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(name) });
       // The catalogue no longer lists the map; the refetch is what unmounts
       // its card. Templates need nothing: the backend refuses the delete while
       // any template is still bound (409 `template_bound`).

@@ -219,6 +219,7 @@ Known cross-key edges in this codebase:
 | map activate | `taskTemplates`, `mapVertices` (both maps) | `map_matches_active` flips on every template |
 | vertex CRUD | `maps`, `taskTemplates` | vertex counts, template resolution |
 | grid save / convert, mapping save, map rename / delete | `mapImage` | the floor plan raster the task editor draws was decoded from the file that changed or went away |
+| mapping save, map rename / delete | `mapPointCloud` | the dashboard's map scan was read from the `map.pcd` that was rewritten or went away; a grid save or convert does not touch it |
 | recording start/stop | `recordings` **and** `activeRecording` | one event changes both faces |
 
 Three rules for this block:

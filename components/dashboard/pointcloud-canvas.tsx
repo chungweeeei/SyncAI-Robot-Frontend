@@ -47,10 +47,7 @@ import type {
 } from "@/lib/types/robot";
 import type { PointCloudFrame } from "@/lib/types/pointcloud";
 import type { StreamStatus } from "@/lib/types/stream";
-import {
-  createPointCloudStream,
-  fetchMapPointCloud,
-} from "@/lib/ros/pointcloud-stream";
+import { createPointCloudStream } from "@/lib/ros/pointcloud-stream";
 
 
 
@@ -96,11 +93,6 @@ interface PointCloudCanvasProps {
    */
   mapImageUrl?: string;
   /**
-   * Name of the map to load the static cloud for; required for showMapCloud to
-   * do anything, since that cloud is now read per map from its saved map.pcd.
-   */
-  mapName?: string;
-  /**
    * Where the robot is and how its legs are arranged, drained once per drawn
    * frame rather than arriving as props.
    *
@@ -112,8 +104,13 @@ interface PointCloudCanvasProps {
    * Omitted leaves the robot hidden, which is what a cloud-only view wants.
    */
   telemetry?: TelemetryFeed;
-  /** When true, also fetch and render the static localizer map cloud. */
-  showMapCloud?: boolean;
+  /**
+   * A stored map's scan to draw under the live one, already downloaded; null or
+   * omitted draws none. Handed in rather than fetched here, so the read goes
+   * through a hook and its refusal reaches a screen instead of the console (see
+   * useMapPointCloud).
+   */
+  mapCloud?: PointCloudFrame | null;
   /**
    * The planner's remaining route, from the telemetry stream. Drawn as a band on
    * the floor between the robot and its goal, so an operator can read *how* the
@@ -220,9 +217,8 @@ interface PointCloudCanvasProps {
 export function PointCloudCanvas({
   meta,
   mapImageUrl,
-  mapName,
   telemetry,
-  showMapCloud,
+  mapCloud = null,
   path,
   showPath = true,
   vertices,
@@ -1066,61 +1062,45 @@ export function PointCloudCanvas({
   // Without them a grid appearing for the map already on screen disposed these
   // points with the old scene and left the toggle lit over nothing. The path
   // ribbon above carries the same two for the same reason.
+  //
+  // Synchronous now that the download happens in useMapPointCloud: the frame
+  // is already here, so there is no in-flight request to abort and no landing
+  // after a rebuild to guard against.
   React.useEffect(() => {
     const ctx = sceneRef.current;
-    if (!ctx || !showMapCloud || !mapName) return;
+    if (!ctx || !mapCloud) return;
 
     const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
-    const abort = new AbortController();
-    // Held so the cleanup can undo exactly what this run added. The removal
-    // used to live at the top of the *next* run, which meant a run that never
-    // came — the toggle going off while a rebuild was in flight — left the
-    // points in the scene with nothing tracking them.
-    let added: THREE.Points | null = null;
-
-    fetchMapPointCloud(mapName, { signal: abort.signal })
-      .then((frame) => {
-        // `sceneRef.current !== ctx` is the download landing after a rebuild:
-        // adding to the discarded scene would draw nothing and leak both
-        // buffers.
-        if (abort.signal.aborted || sceneRef.current !== ctx) return;
-        const geom = new THREE.BufferGeometry();
-        geom.setAttribute(
-          "position",
-          new THREE.BufferAttribute(frame.positions, 3),
-        );
-        // Solid map-cloud colour (white on dark, dark-grey on light) keeps it
-        // visually distinct from the height-coloured live body cloud.
-        const points = new THREE.Points(
-          geom,
-          new THREE.PointsMaterial({
-            size: MAP_POINT_SIZE,
-            color: theme.mapCloud,
-            opacity: 0.6,
-            transparent: true,
-          }),
-        );
-        points.frustumCulled = false;
-        added = points;
-        ctx.mapPoints = points;
-        ctx.scene.add(points);
-      })
-      .catch((err) => {
-        if (!abort.signal.aborted) console.error(err);
-      });
+    const geom = new THREE.BufferGeometry();
+    // The attribute references the cached frame's array rather than copying
+    // it, which is what lets a re-added layer cost no download and no copy.
+    geom.setAttribute("position", new THREE.BufferAttribute(mapCloud.positions, 3));
+    // Solid map-cloud colour (white on dark, dark-grey on light) keeps it
+    // visually distinct from the height-coloured live body cloud.
+    const points = new THREE.Points(
+      geom,
+      new THREE.PointsMaterial({
+        size: MAP_POINT_SIZE,
+        color: theme.mapCloud,
+        opacity: 0.6,
+        transparent: true,
+      }),
+    );
+    points.frustumCulled = false;
+    ctx.mapPoints = points;
+    ctx.scene.add(points);
 
     return () => {
-      abort.abort();
-      if (!added) return;
       // `ctx.scene` may already be the discarded scene here, since the setup
       // effect's cleanup runs first; the remove is harmless either way and the
-      // dispose is what matters, same as the path ribbon.
-      ctx.scene.remove(added);
-      added.geometry.dispose();
-      (added.material as THREE.Material).dispose();
-      if (ctx.mapPoints === added) ctx.mapPoints = null;
+      // dispose is what matters, same as the path ribbon. Disposing frees the
+      // GPU copy only; the array stays with the query cache.
+      ctx.scene.remove(points);
+      geom.dispose();
+      points.material.dispose();
+      if (ctx.mapPoints === points) ctx.mapPoints = null;
     };
-  }, [showMapCloud, mapName, meta, mapImageUrl, resolvedTheme]);
+  }, [mapCloud, meta, mapImageUrl, resolvedTheme]);
 
   // ---- Pose picking -----------------------------------------------------
   // The anchor is the ground point the press landed on, kept alongside the raw
