@@ -42,7 +42,7 @@ const VERTEX_Z_M = 0.02;
  * street map, without adding anything at floor level.
  *
  * The badge carries the type glyph and nothing else. The name lives in the
- * dialog a double-click opens: a caption per stop is the one thing that turns
+ * dialog a tap opens: a caption per stop is the one thing that turns
  * this layer back into clutter, and the operator only needs a name at the moment
  * they are about to act on one.
  */

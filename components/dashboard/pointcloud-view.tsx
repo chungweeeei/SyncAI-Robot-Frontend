@@ -46,7 +46,7 @@ const CAMERA_OPTIONS = [
  * (rather than a boolean inside each flow's hook) is what makes arming one
  * disarm the other by construction; two booleans would eventually both be true.
  *
- * Double-clicking a stored vertex is the third way a goal is set, and the only
+ * Tapping a stored vertex is the third way a goal is set, and the only
  * one that needs no mode: the pose already exists and was named by whoever
  * placed it, so there is nothing to drag and nothing to disarm. It goes through
  * the same GoalTask as the other two — one running task, one read-back, one
@@ -119,7 +119,7 @@ export function PointCloudView({
     | { mode: "vertex"; vertex: MapVertex }
     | null
   >(null);
-  /** The stop a double-click is asking about; null when the dialog is closed. */
+  /** The stop a tap is asking about; null when the dialog is closed. */
   const [askedVertex, setAskedVertex] = React.useState<MapVertex | null>(null);
   /**
    * A stop whose new pose is being written. It keeps the marker off the map for

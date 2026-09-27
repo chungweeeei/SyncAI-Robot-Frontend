@@ -33,7 +33,7 @@ export interface GoalTask {
   send: () => Promise<void>;
   /**
    * Stage a pose and dispatch it as a one-step MOVE task. The only door in: both
-   * a finished drag and a confirmed double-click on a stored vertex arrive here,
+   * a finished drag and a confirmed tap on a stored vertex arrive here,
    * so however the pose was chosen there is one running task, one read-back and
    * one Cancel.
    */

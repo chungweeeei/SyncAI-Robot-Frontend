@@ -76,8 +76,9 @@ export function ScheduleSteps({ scheduleId, source }: ScheduleStepsProps) {
                 {step.params.theta.toFixed(1)}°
               </span>
             )}
+            {/* Wrapped, not truncated — the task library's rule for the same line. */}
             {step.type === "SPEAK" && (
-              <span className="min-w-0 truncate italic" title={step.params.text}>
+              <span className="min-w-0 wrap-anywhere italic">
                 “{step.params.text}”
               </span>
             )}

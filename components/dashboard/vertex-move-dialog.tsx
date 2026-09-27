@@ -17,7 +17,7 @@ import { VERTEX_TYPES, vertexGlyph } from "@/lib/map/vertex";
 import type { MapVertex } from "@/lib/types/map";
 
 /**
- * "Move to this stop?" — the confirm behind a double-click on a vertex in the
+ * "Move to this stop?" — the confirm behind a tap on a vertex in the
  * viewport.
  *
  * The dialog is where the vertex's *name* lives. On the map a stop is a mark and
@@ -33,7 +33,7 @@ import type { MapVertex } from "@/lib/types/map";
  *
  * The second action, Reposition, edits the stop instead of driving to it. The
  * two live in one dialog because they answer the same thought — the operator
- * double-clicked a stop because they are looking at where it sits — and because
+ * tapped a stop because they are looking at where it sits — and because
  * the alternative is a second gesture on the map for a rare action. It is styled
  * as the secondary of the two: sending the robot is what this dialog is for, and
  * moving the mark is what you do when the stop turns out to be in a wall.

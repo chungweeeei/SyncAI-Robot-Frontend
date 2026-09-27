@@ -47,7 +47,7 @@ export interface Theme {
   vertex: number;
   /**
    * The vertex under the pointer. The commanded hue, because that stop is one
-   * double-click away from becoming the commanded pose — and because the gridmap
+   * tap away from becoming the commanded pose — and because the gridmap
    * editor already lights its selected vertex in `palette.cmd`.
    */
   vertexHover: number;

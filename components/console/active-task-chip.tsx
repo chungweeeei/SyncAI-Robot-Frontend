@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { Chip } from "@/components/console/instrument";
 import { useConsoleActiveTasks } from "@/hooks/use-console-active-tasks";
 import { STATUS_TONE } from "@/components/console/task-chip";
@@ -50,7 +52,9 @@ export function ActiveTaskChip() {
   }
 
   // One line per run, so a hover answers "which one, since when, and did a
-  // schedule start it" without leaving the screen the operator is on.
+  // schedule start it" without leaving the screen the operator is on. A
+  // finger has no hover, so the chip is also a link to /tasks, whose banner
+  // lists the same runs with a Cancel beside each.
   const title = tasks
     .map((task) => {
       const started = task.started_at.slice(11, 19);
@@ -60,8 +64,14 @@ export function ActiveTaskChip() {
     .join("\n");
 
   return (
-    <Chip tone={STATUS_TONE.IN_PROGRESS} title={title}>
-      {tasks.length > 1 ? `RUNNING ×${tasks.length}` : "RUNNING"}
-    </Chip>
+    <Link
+      href="/tasks"
+      aria-label={`${tasks.length > 1 ? `${tasks.length} jobs are` : "A job is"} running — open the job list`}
+      className="rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+    >
+      <Chip tone={STATUS_TONE.IN_PROGRESS} title={title}>
+        {tasks.length > 1 ? `RUNNING ×${tasks.length}` : "RUNNING"}
+      </Chip>
+    </Link>
   );
 }

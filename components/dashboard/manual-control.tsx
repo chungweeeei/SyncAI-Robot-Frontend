@@ -4,6 +4,7 @@ import * as React from "react";
 import { GripHorizontalIcon, JoystickIcon } from "lucide-react";
 
 import { overlayPanel } from "@/components/console/instrument";
+import { panelFloor } from "@/components/console/strip-disclosure";
 import { Thumbstick } from "@/components/dashboard/thumbstick";
 import { Slider } from "@/components/ui/slider";
 import { useJoystick } from "@/hooks/use-joystick";
@@ -15,6 +16,7 @@ import {
   LINEAR_SCALE_STEP,
   clampLinearScale,
 } from "@/lib/teleop/stick";
+import { isDrag } from "@/lib/map/gesture";
 import type { TeleopVector } from "@/lib/types/robot";
 import { cn } from "@/lib/utils";
 
@@ -105,10 +107,12 @@ export function ManualControl({ className }: { className?: string }) {
    * precisely because the cloud is where it is in the way, so the whole
    * screen is legal parking. pointermove never forces layout. A window
    * resize mid-offset can strand the panel past the edge until the next grab
-   * re-measures and pulls it back in — double-click resets it for free.
+   * re-measures and pulls it back in — a tap on the grip resets it for free.
    */
   const dragRef = React.useRef<{
     pointerId: number;
+    /** Pressed on the grip, so a release that never dragged is a tap on it. */
+    onGrip: boolean;
     originX: number;
     originY: number;
     baseX: number;
@@ -121,12 +125,16 @@ export function ManualControl({ className }: { className?: string }) {
 
   const onGrab = (event: React.PointerEvent<HTMLElement>) => {
     // The arm button lives inside the header; a press on it is a press on it.
-    if (dragRef.current || (event.target as HTMLElement).closest("button")) return;
+    // The grip is a button too, but it is the header's own, so a press on it
+    // is a drag (camera-window's rule).
+    const button = (event.target as HTMLElement).closest("button");
+    if (dragRef.current || (button && !button.hasAttribute("data-move-handle"))) return;
     const panel = panelRef.current;
     if (!panel) return;
     const rect = panel.getBoundingClientRect();
     dragRef.current = {
       pointerId: event.pointerId,
+      onGrip: button !== null,
       originX: event.clientX,
       originY: event.clientY,
       baseX: offset.x,
@@ -136,7 +144,7 @@ export function ManualControl({ className }: { className?: string }) {
       minX: offset.x - rect.left,
       maxX: offset.x + (window.innerWidth - rect.right),
       minY: offset.y - rect.top,
-      maxY: offset.y + (window.innerHeight - rect.bottom),
+      maxY: offset.y + (panelFloor() - rect.bottom),
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -153,8 +161,21 @@ export function ManualControl({ className }: { className?: string }) {
   // Up, cancel and lost-capture all end the grab; idempotent via the ref
   // check because pointerup is followed by an implicit lostpointercapture.
   const onRelease = (event: React.PointerEvent<HTMLElement>) => {
-    if (dragRef.current?.pointerId !== event.pointerId) return;
+    const drag = dragRef.current;
+    if (drag?.pointerId !== event.pointerId) return;
     dragRef.current = null;
+    // A tap on the grip — released inside the drag deadzone of where it was
+    // pressed — puts the panel back. It is the finger's path to what the
+    // double-click does: a double-tap is not a gesture a phone reports
+    // reliably, and a panel parked somewhere bad had no other way home. Only
+    // a real release: a cancel or a lost capture is not a tap.
+    if (
+      event.type === "pointerup" &&
+      drag.onGrip &&
+      !isDrag(drag.originX, drag.originY, event.clientX, event.clientY)
+    ) {
+      setOffset({ x: 0, y: 0 });
+    }
   };
 
   return (
@@ -176,13 +197,25 @@ export function ManualControl({ className }: { className?: string }) {
         onPointerCancel={onRelease}
         onLostPointerCapture={onRelease}
         onDoubleClick={() => setOffset({ x: 0, y: 0 })}
-        title="Drag to move · double-click to reset"
+        title="Drag to move · tap the grip to reset"
         className="mb-3 flex h-4 cursor-grab touch-none items-center justify-between gap-2 select-none active:cursor-grabbing pointer-coarse:h-10"
       >
         <h2 className="instrument-label flex items-center gap-1.5 text-muted-foreground">
           {/* The grip is the affordance — a bare label row does not announce
-            * that it can be grabbed. */}
-          <GripHorizontalIcon aria-hidden className="size-3" />
+            * that it can be grabbed. A button, so a keyboard has the reset
+            * too: a pointer's click never reaches it (the header captures
+            * the pointer, so the click lands there), which is why the tap is
+            * read in onRelease instead. */}
+          <button
+            type="button"
+            data-move-handle
+            aria-label="Put the drive panel back where it opened"
+            title="Drag to move · tap to reset"
+            onClick={() => setOffset({ x: 0, y: 0 })}
+            className="-m-0.5 flex cursor-grab items-center rounded-sm p-0.5 pointer-coarse:p-2.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:cursor-grabbing"
+          >
+            <GripHorizontalIcon aria-hidden className="size-3" />
+          </button>
           Manual drive
         </h2>
         {/* Pressed = listening, in the cmd hue like every other operator

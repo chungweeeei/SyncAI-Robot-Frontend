@@ -190,6 +190,22 @@ export function TopicPicker({
         ))}
       </div>
 
+      {/* Each chip's plain-language half is its hover title, which a finger
+        * never sees. One disclosure rather than a legend left open: eight
+        * lines under a row of eight chips would be the page. */}
+      <details className="text-[11px] leading-snug text-muted-foreground">
+        <summary className="cursor-pointer select-none">
+          What these channels are
+        </summary>
+        <ul className="mt-1 space-y-0.5">
+          {PRESETS.map((preset) => (
+            <li key={preset.topic}>
+              <span className="readout">{preset.topic}</span> — {preset.hint}
+            </li>
+          ))}
+        </ul>
+      </details>
+
       <div className="flex items-center gap-2">
         <Input
           value={draft}

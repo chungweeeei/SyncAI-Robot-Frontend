@@ -134,7 +134,7 @@ export function NetworkSettings() {
                 disabled={wifi.busy || (scan.scanning && options.length === 0)}
                 onValueChange={(next) => setPicked(next as string)}
               >
-                <SelectTrigger id="wifi-ssid" className="w-full flex-1">
+                <SelectTrigger id="wifi-ssid" className="w-full min-w-0 flex-1">
                   <SelectValue placeholder={placeholder} />
                 </SelectTrigger>
                 <SelectContent>

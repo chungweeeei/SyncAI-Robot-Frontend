@@ -103,7 +103,7 @@ export function VertexPicker({
       <SelectContent>
         {vertices.map((vertex) => (
           <SelectItem key={vertex.id} value={vertex.id}>
-            {vertex.name}
+            <span className="truncate">{vertex.name}</span>
           </SelectItem>
         ))}
       </SelectContent>
