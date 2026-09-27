@@ -85,7 +85,7 @@ const AT_REST: Snapshot = {
  * zeroes whatever input was live at that moment: an armed command must not
  * survive the operator saying stop listening.
  */
-export function useJoystick(enabled: boolean): JoystickState {
+export function useJoystick(enabled: boolean, linearScale = 1): JoystickState {
   const pointerRef = React.useRef<Record<StickId, StickValue | null>>({
     left: null,
     right: null,
@@ -94,6 +94,9 @@ export function useJoystick(enabled: boolean): JoystickState {
   const rafRef = React.useRef<number | null>(null);
   const snapRef = React.useRef<Snapshot>(AT_REST);
   const vectorRef = React.useRef<TeleopVector>(AT_REST.vector);
+  // Read by publish(), which runs from input events and the effect below; a
+  // ref so a new limit does not rebuild publish and every listener with it.
+  const linearScaleRef = React.useRef(linearScale);
   const [snapshot, setSnapshot] = React.useState<Snapshot>(AT_REST);
 
   const publish = React.useCallback(() => {
@@ -104,7 +107,7 @@ export function useJoystick(enabled: boolean): JoystickState {
       right: right.value,
       leftActive: left.active,
       rightActive: right.active,
-      vector: commandFrom(left.value, right.value),
+      vector: commandFrom(left.value, right.value, linearScaleRef.current),
     };
     // Synchronous, ahead of the rAF: see the vectorRef doc above.
     vectorRef.current = snapRef.current.vector;
@@ -115,6 +118,15 @@ export function useJoystick(enabled: boolean): JoystickState {
       setSnapshot(snapRef.current);
     });
   }, []);
+
+  // A new limit applies to whatever is already held, at once. Without the
+  // publish, a key held down across the change would keep its old speed until
+  // the next input event, and the 10 Hz sender would go on sending it:
+  // vectorRef only changes when publish runs.
+  React.useEffect(() => {
+    linearScaleRef.current = linearScale;
+    publish();
+  }, [linearScale, publish]);
 
   const setPointer = React.useCallback(
     (stick: StickId, value: StickValue | null) => {
