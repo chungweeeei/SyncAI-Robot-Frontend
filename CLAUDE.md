@@ -85,6 +85,20 @@ in `e2e/`. The split is by what they can actually prove, not by size:
 - The e2e suite fails on any console error the page logs, which is what catches
   a hydration mismatch or a thrown render. WebSocket noise is filtered, since
   there is no robot to connect to.
+- **The suite has two projects.** `chromium` is the desktop run; `mobile` is a
+  Chromium at 375×667 with `isMobile` and `hasTouch`, and runs only
+  `e2e/mobile.spec.ts`: whether the chrome fits, whether a panel opens on
+  screen, and what a second finger does to a canvas. It is Chromium rather
+  than an iPhone descriptor because those default to WebKit, which CI does
+  not install; what it cannot stand in for is iOS zoom-on-focus, which stays
+  a check on a real phone. Touch gestures are dispatched over CDP
+  (`Input.dispatchTouchEvent`) — `page.touchscreen` knows only a tap, and the
+  bugs were all about the second finger. Every gesture test carries a
+  positive control (one finger *does* paint, *does* send a goal), because
+  "nothing happened" is also what a canvas that never received the touch
+  reports. And the fake's 1 px floor plan is one cell the size of the canvas:
+  any zoom shrinks it out from under the fingers, so an editor test that
+  strokes or zooms hands `mockBackend` a real grid via `floorPlanPng`.
 - What neither can prove is that the backend really answers in these shapes.
   The fixtures are written from the same interfaces the zod schemas mirror, so
   a drifted fixture fails at the schema boundary rather than passing quietly.
@@ -476,7 +490,27 @@ it is run in, so it does not belong to any one of them.
   `useIsMobile` hook and there should not be one, because a class-only rule
   cannot disagree with the server render the way a `matchMedia` read in an
   effect does. The two floating panels are the exception that proves it:
-  they measure `window` for a drag clamp, in a handler, never in render.
+  they measure the viewport for a drag clamp (`panelFloor()` in
+  `strip-disclosure.tsx`, which stops at the top of the nav bar), in a
+  handler, never in render. The other JS-side reading is `pointerType` on
+  the event itself, which is how a hit disc widens to 22 px under a finger
+  and how Remove step asks a finger twice but a mouse once.
+- **A touch gesture belongs to one pointer.** Both canvases and both panels
+  gate move and release on the pointer id the press recorded; a second
+  finger is never a second press. What it is instead is each surface's
+  decision: on the floor plan editor it starts a pinch if the first finger
+  is panning or idle and is ignored over a stroke, a band or an aim (those
+  have already acted); on the 3D viewport it abandons a planted pose, and so
+  does `pointercancel`, because only a deliberate lift may send the robot
+  anywhere. A tap — press and release inside `DRAG_DEADZONE_PX`, from
+  `lib/map/gesture.ts` — is the touch form of every double-click the console
+  used to have: it opens a stop's dialog on the viewport and puts a floating
+  panel back when it lands on the grip. Double-click and Home still work;
+  they are just no longer the only way. OrbitControls writes
+  `touch-action: none` on its canvas and the viewport clears it, so the
+  container's class decides: `touch-pan-y` below `lg` (a vertical swipe
+  scrolls the page the viewport sits in), `touch-none` from `lg` and while a
+  pick is armed.
 - Backend addressing: never hardcode a host. Every REST and WebSocket path goes
   through `apiUrl()` / `wsUrl()` in `lib/api/config.ts`, which default to the
   page's own hostname on port 3000 and are overridable via
