@@ -159,14 +159,17 @@ lib/
   task/         step, schedule and history domain helpers, template name limit,
                 and the editor's unsaved draft (draft-store.ts — the one place
                 that touches browser storage)
-  recording/    bag size/duration formatting and the bag name rule
-  robot/        G23 joint table (URDF link names ↔ GLB node names), and how the
-                dashboard names a motor (the leg grid and its joint codes)
+  recording/    bag size/duration formatting, the bag name rule and the channel
+                field's rule
+  robot/        G23 joint table (URDF link names ↔ GLB node names), how the
+                dashboard names a motor (the leg grid and its joint codes), and
+                the readout thresholds (levels.ts: Wi-Fi bars, battery, joint heat)
   teleop/       thumbstick maths: clamp, deadzone, key bindings and the
                 screen-to-body-frame turn the drive panel commands through
   video/        WHIP/WHEP signalling, and the camera window's clip capture
                 (container pick, filename rule, the recorder wrapper)
-  types/        shared wire types (map, robot, pointcloud, stream)
+  types/        shared wire types (map, robot, pointcloud, stream), and the
+                readout tone a lib/ rule answers in
   angle.ts      normalizeTheta — the degree fold every heading goes through
   download.ts   downloadBlob — hands a file to the operator's own machine
 ```

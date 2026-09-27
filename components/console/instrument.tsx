@@ -1,6 +1,13 @@
 import * as React from "react";
 
+import { SIGNAL_BARS } from "@/lib/robot/levels";
+import type { Tone } from "@/lib/types/tone";
 import { cn } from "@/lib/utils";
+
+// Re-exported so every surface keeps importing its tone and its bars from
+// here, beside the parts that draw them.
+export type { Tone } from "@/lib/types/tone";
+export { rssiToBars } from "@/lib/robot/levels";
 
 /**
  * The console's instrument vocabulary — the parts every telemetry surface is
@@ -12,7 +19,6 @@ import { cn } from "@/lib/utils";
  * pick it by what the value *is* (measured / commanded / degraded / faulted),
  * and the same hue will mean the same thing on the map canvas.
  */
-export type Tone = "neutral" | "live" | "cmd" | "active" | "caution" | "warn";
 
 /** Text colour per tone. Exported for surfaces that colour a value themselves
  *  (the motor grid) instead of going through Readout. */
@@ -169,20 +175,6 @@ export function Chip({
   );
 }
 
-/**
- * dBm → bars for SignalBars. Lives beside the meter rather than in lib/ because
- * the thresholds only mean anything against *four* bars: −50 and above is a
- * full meter, −70 and below is one bar, and a five-bar meter would need
- * different cut-offs. Every RSSI surface (status strip, telemetry rail, the
- * WiFi picker) goes through this one so they never disagree about a network.
- */
-export function rssiToBars(rssi: number): number {
-  if (rssi >= -50) return 4;
-  if (rssi >= -60) return 3;
-  if (rssi >= -70) return 2;
-  return 1;
-}
-
 /** Four-bar RSSI meter. Bars, not a number, is how signal strength is read. */
 export function SignalBars({
   bars,
@@ -196,9 +188,11 @@ export function SignalBars({
   return (
     <span
       className={cn("flex items-end gap-[2px]", className)}
-      aria-label={`Signal ${bars} of 4`}
+      aria-label={`Signal ${bars} of ${SIGNAL_BARS}`}
     >
-      {[1, 2, 3, 4].map((level) => (
+      {/* The count is lib/robot/levels.ts's, because rssiToBars' cut-offs are
+        * only right against that many bars. */}
+      {Array.from({ length: SIGNAL_BARS }, (_, index) => index + 1).map((level) => (
         <span
           key={level}
           className={cn(
