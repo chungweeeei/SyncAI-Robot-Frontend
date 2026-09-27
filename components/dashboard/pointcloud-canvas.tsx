@@ -1107,6 +1107,7 @@ export function PointCloudCanvas({
   // a metric deadzone would be enormous at the far end of a perspective view
   // and vanishingly small up close.
   const anchorRef = React.useRef<{
+    pointerId: number;
     wx: number;
     wy: number;
     cx: number;
@@ -1223,9 +1224,23 @@ export function PointCloudCanvas({
     // follows cannot move the canvas, since the pointer is captured.
     canvasRectRef.current?.(true);
     if (!pickMode || event.button !== 0) return;
+    // A second finger while a press is planted is a pinch or a two-finger
+    // orbit, not a second placement, and one that lands with nothing planted
+    // is the tail of the same gesture. Neither may plant, and the first
+    // finger's eventual lift must not commit whatever it was aiming when the
+    // operator gave up on it.
+    if (anchorRef.current || !event.isPrimary) {
+      abandonPick();
+      return;
+    }
     const hit = pickGround(event);
     if (!hit || !insideMap(hit.wx, hit.wy)) return;
-    anchorRef.current = { ...hit, cx: event.clientX, cy: event.clientY };
+    anchorRef.current = {
+      ...hit,
+      pointerId: event.pointerId,
+      cx: event.clientX,
+      cy: event.clientY,
+    };
     // Capture on the canvas, not on this container: OrbitControls captures the
     // same pointer on the canvas itself, and capturing further up the tree
     // would steal it and strand OrbitControls' pointerup handler.
@@ -1251,6 +1266,9 @@ export function PointCloudCanvas({
     // marker lit under a crosshair would offer a second meaning for a gesture
     // that already has one.
     hoverVertex(null);
+    // Only the primary pointer carries or aims; the press handler has already
+    // abandoned the pick if a second one is down.
+    if (!event.isPrimary) return;
 
     const anchor = anchorRef.current;
 
@@ -1290,7 +1308,8 @@ export function PointCloudCanvas({
   };
 
   const handlePointerUp = (event: React.PointerEvent) => {
-    if (!anchorRef.current) return;
+    const anchor = anchorRef.current;
+    if (!anchor || anchor.pointerId !== event.pointerId) return;
     anchorRef.current = null;
     const canvas = sceneRef.current?.renderer.domElement;
     if (canvas?.hasPointerCapture(event.pointerId)) {
@@ -1299,6 +1318,29 @@ export function PointCloudCanvas({
     if (draft && pickMode) onPickCommit?.(draft);
     setDraft(null);
     setCarrying(false);
+  };
+
+  /**
+   * Abandon a planted press without committing it. lib/scene/camera.ts keeps
+   * the two-finger camera live during a pick on purpose, so a second finger
+   * is the operator zooming, and a pointercancel is the browser taking the
+   * pointer for itself: in neither case was anything released deliberately,
+   * and a commit here would send the robot to wherever the first finger
+   * happened to be. handlePointerUp is the only path that commits.
+   */
+  const abandonPick = () => {
+    const anchor = anchorRef.current;
+    anchorRef.current = null;
+    const canvas = sceneRef.current?.renderer.domElement;
+    if (anchor && canvas?.hasPointerCapture(anchor.pointerId)) {
+      canvas.releasePointerCapture(anchor.pointerId);
+    }
+    setDraft(null);
+    setCarrying(false);
+  };
+
+  const handlePointerCancel = (event: React.PointerEvent) => {
+    if (anchorRef.current?.pointerId === event.pointerId) abandonPick();
   };
 
   // The pointer leaving the viewport takes the carried robot with it, rather
@@ -1343,7 +1385,7 @@ export function PointCloudCanvas({
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
       onPointerLeave={handlePointerLeave}
       onDoubleClick={handleDoubleClick}
     />
