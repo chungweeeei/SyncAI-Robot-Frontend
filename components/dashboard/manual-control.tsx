@@ -83,7 +83,6 @@ export function ManualControl({ className }: { className?: string }) {
   const [armed, setArmed] = React.useState(false);
   const [linearScale, setLinearScale] = React.useState(LINEAR_SCALE_DEFAULT);
   const stick = useJoystick(armed, linearScale);
-  const speedLabelId = React.useId();
   // Whole percent on the slider, so a step of 10 never accumulates float
   // error; the fraction the command uses is derived from it.
   const speedPercent = Math.round(linearScale * 100);
@@ -231,13 +230,10 @@ export function ManualControl({ className }: { className?: string }) {
           />
         </LabeledStick>
       </div>
-      <div className="mt-3 flex items-center gap-2.5">
-        <span
-          id={speedLabelId}
-          className="instrument-label shrink-0 text-muted-foreground"
-        >
-          Max speed
-        </span>
+      {/* No visible label, by the user's choice: the bar and its percentage
+        * are the whole row. The name is still there for a screen reader and
+        * on hover, because an unnamed slider reads as "slider, 100". */}
+      <div className="mt-3 flex items-center gap-2.5" title="Max speed">
         <Slider
           className="min-w-0 flex-1"
           min={Math.round(LINEAR_SCALE_MIN * 100)}
@@ -250,7 +246,7 @@ export function ManualControl({ className }: { className?: string }) {
             setLinearScale(clampLinearScale(percent / 100));
           }}
           thumbProps={{
-            "aria-labelledby": speedLabelId,
+            "aria-label": "Max speed",
             getAriaValueText: (_formatted, percent) =>
               `${percent} percent of full speed`,
           }}
