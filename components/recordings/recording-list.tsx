@@ -96,7 +96,9 @@ function RecordingRow({ recording }: { recording: RecordingSummary }) {
   const live = recording.status === "recording";
 
   return (
-    <li className="flex items-start gap-3 px-4 py-3">
+    // Stacked below sm: Length, Messages and Size beside the name left it
+    // ~60 px at 375, which is an ellipsis.
+    <li className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:gap-3">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="readout truncate text-sm font-medium">
@@ -113,7 +115,8 @@ function RecordingRow({ recording }: { recording: RecordingSummary }) {
           )}
         </div>
 
-        <p className="mt-1 text-[11px] leading-tight text-muted-foreground">
+        {/* wrap-anywhere: channel paths have no spaces to break on. */}
+        <p className="mt-1 text-[11px] leading-tight wrap-anywhere text-muted-foreground">
           {formatTimestamp(recording.modified_at)}
           {/* Live bags have no topic list yet: rosbag2 writes it into
             * metadata.yaml on shutdown, so until then the recorder panel above
@@ -133,7 +136,7 @@ function RecordingRow({ recording }: { recording: RecordingSummary }) {
       {/* Duration and messages come from the bag's own metadata, so a live or
         * interrupted bag has neither — an em dash rather than a zero, which
         * would be a claim. */}
-      <div className="flex shrink-0 items-start gap-4">
+      <div className="flex shrink-0 items-start justify-between gap-4 sm:justify-start">
         <Cell
           label="Length"
           value={

@@ -154,12 +154,17 @@ export function HistoryRow({ entry }: { entry: TaskHistoryEntry }) {
 
         {/* A missing close time is an em dash, not a zero — a zero would be a
           * claim about the job. */}
-        <span className="flex shrink-0 items-start gap-4">
+        <span className="flex shrink-0 items-start gap-3 sm:gap-4">
           <Cell label="Finished" value={finished.value} unit={finished.unit} />
-          <Cell
-            label="Took"
-            value={seconds === null ? "—" : formatDuration(seconds)}
-          />
+          {/* Took is hidden below sm: at 375 px the id is what an operator
+            * picks a row out by, and it was the one thing that truncated. The
+            * duration is still in the expanded detail. */}
+          <span className="hidden sm:flex">
+            <Cell
+              label="Took"
+              value={seconds === null ? "—" : formatDuration(seconds)}
+            />
+          </span>
         </span>
 
         <ChevronDownIcon
