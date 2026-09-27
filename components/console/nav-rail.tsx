@@ -84,8 +84,11 @@ export function NavRail() {
       aria-label="Console sections"
       className={cn(
         "flex shrink-0 items-center border-hairline bg-panel",
-        // Mobile: a bottom bar, below the viewport it must not cover.
-        "order-last h-14 flex-row justify-center gap-1 border-t px-2",
+        // Mobile: a bottom bar, below the viewport it must not cover. The
+        // height carries the home-indicator inset and the padding pays it
+        // back, so the 56 px content box — and the tick measured from it —
+        // is the same on a notched phone and a bare one.
+        "order-last h-[calc(3.5rem+env(safe-area-inset-bottom))] flex-row gap-1 border-t px-2 pb-[env(safe-area-inset-bottom)]",
         // Desktop: the rail.
         "lg:order-first lg:h-auto lg:w-14 lg:flex-col lg:justify-start lg:gap-1 lg:border-t-0 lg:border-r lg:px-0 lg:py-3",
       )}
@@ -119,15 +122,22 @@ export function NavRail() {
                     aria-label={item.title}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "relative flex h-9 items-center justify-center gap-2 rounded-sm px-3 transition-colors lg:w-9 lg:px-0",
+                      // flex-1 and no padding below lg: seven equal tabs are
+                      // what fit 375 px at a 40 px target, and padding only
+                      // ever pushed the last tabs past the edge of a body
+                      // that cannot scroll to them.
+                      "relative flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-sm transition-colors lg:h-9 lg:w-9 lg:flex-none",
                       active
                         ? "bg-elevated text-foreground"
                         : "text-muted-foreground hover:bg-elevated/60 hover:text-foreground",
                     )}
                   >
                     <item.icon className="size-[18px] shrink-0" />
-                    {/* Touch targets get a label instead of a hover tooltip. */}
-                    <span className="instrument-label lg:hidden">
+                    {/* Touch targets get a label instead of a hover tooltip —
+                      * from md, where a seventh of the width holds one.
+                      * Below that the icon alone is the tab, and aria-label
+                      * above still names it. */}
+                    <span className="instrument-label hidden truncate md:inline lg:hidden">
                       {item.title}
                     </span>
                     {/* Location marker: a commanded-hue tick on the panel edge
@@ -135,7 +145,7 @@ export function NavRail() {
                     {active && (
                       <span
                         aria-hidden
-                        className="absolute -bottom-[9px] left-1/2 h-[2px] w-5 -translate-x-1/2 rounded-full bg-signal-cmd lg:-left-[9px] lg:bottom-auto lg:h-5 lg:w-[2px] lg:translate-x-0"
+                        className="absolute -bottom-[7px] left-1/2 h-[2px] w-5 -translate-x-1/2 rounded-full bg-signal-cmd lg:-left-[9px] lg:bottom-auto lg:h-5 lg:w-[2px] lg:translate-x-0"
                       />
                     )}
                   </Link>
@@ -149,7 +159,7 @@ export function NavRail() {
         })}
       </TooltipProvider>
 
-      <div className="ml-auto lg:mt-auto lg:ml-0">
+      <div className="shrink-0 lg:mt-auto">
         <ModeToggle />
       </div>
     </nav>
