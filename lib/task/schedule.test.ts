@@ -13,9 +13,12 @@ import {
   fromCron,
   nextScheduleRefetchMs,
   nextTimedRun,
+  scheduleDrift,
   toCron,
   upcomingRun,
 } from "@/lib/task/schedule";
+import type { TaskStepRequest } from "@/lib/api/task";
+import type { TemplateStep } from "@/lib/api/task-template";
 
 /**
  * The boundary these guard: the operator sees a time and some weekdays, the
@@ -267,5 +270,86 @@ describe("nextScheduleRefetchMs", () => {
     ];
     expect(nextScheduleRefetchMs(rows, now)).toBe(60_000 + RUN_REFETCH_SLACK_MS);
     expect(nextScheduleRefetchMs([rows[0]], now)).toBe(false);
+  });
+});
+
+describe("scheduleDrift", () => {
+  // A schedule dispatches the steps it froze at registration. Drift is the
+  // template having moved on since, which the row's "stale" badge counts.
+  const ref = { vertex_id: null, vertex_name: null, vertex_status: "NONE" as const };
+  const moveT = (id: string, x: number, y: number, theta: number): TemplateStep => ({
+    id,
+    type: "MOVE",
+    params: { x, y, theta },
+    resolved_params: { x, y, theta },
+    ...ref,
+  });
+  const speakT = (id: string, text: string): TemplateStep => ({
+    id,
+    type: "SPEAK",
+    params: { text },
+    resolved_params: { text },
+    ...ref,
+  });
+  const standT = (id: string): TemplateStep => ({
+    id,
+    type: "STANDUP",
+    params: null,
+    resolved_params: null,
+    ...ref,
+  });
+  const move = (id: string, x: number, y: number, theta: number): TaskStepRequest => ({
+    id,
+    type: "MOVE",
+    params: { x, y, theta },
+  });
+  const speak = (id: string, text: string): TaskStepRequest => ({
+    id,
+    type: "SPEAK",
+    params: { text },
+  });
+
+  it("is zero when the template still dispatches what was frozen", () => {
+    const frozen = [{ id: "1", type: "STANDUP" as const }, move("2", 1, 2, 90), speak("3", "Hi")];
+    const template = [standT("1"), moveT("2", 1, 2, 90), speakT("3", "Hi")];
+    expect(scheduleDrift(frozen, template)).toBe(0);
+  });
+
+  it("counts a waypoint that moved", () => {
+    expect(scheduleDrift([move("1", 1, 2, 90)], [moveT("1", 1.5, 2, 90)])).toBe(1);
+  });
+
+  it("ignores a difference the console cannot display or dispatch", () => {
+    // Float noise below the third decimal, and below the heading's first.
+    expect(scheduleDrift([move("1", 1, 2, 90)], [moveT("1", 1.0000001, 2, 90.04)])).toBe(0);
+  });
+
+  it("counts a heading that changed at the precision shown", () => {
+    expect(scheduleDrift([move("1", 1, 2, 90)], [moveT("1", 1, 2, 90.06)])).toBe(1);
+  });
+
+  it("counts an edited line, since the schedule still says the old one", () => {
+    expect(scheduleDrift([speak("1", "Hello")], [speakT("1", "Hello there")])).toBe(1);
+  });
+
+  it("counts a step whose type changed", () => {
+    expect(scheduleDrift([speak("1", "Hi")], [moveT("1", 0, 0, 0)])).toBe(1);
+  });
+
+  it("counts each drifted step once", () => {
+    const frozen = [move("1", 0, 0, 0), speak("2", "a"), move("3", 5, 5, 0)];
+    const template = [moveT("1", 1, 0, 0), speakT("2", "b"), moveT("3", 5, 5, 0)];
+    expect(scheduleDrift(frozen, template)).toBe(2);
+  });
+
+  it("is not comparable when the step count changed", () => {
+    // A per-step diff after steps were added or removed would be a number
+    // that means nothing.
+    expect(scheduleDrift([move("1", 0, 0, 0)], [moveT("1", 0, 0, 0), standT("2")])).toBeNull();
+  });
+
+  it("is not comparable when a template step has nothing to dispatch", () => {
+    const unresolved: TemplateStep = { ...moveT("1", 0, 0, 0), resolved_params: null };
+    expect(scheduleDrift([move("1", 0, 0, 0)], [unresolved])).toBeNull();
   });
 });
