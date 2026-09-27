@@ -808,25 +808,26 @@ test.describe("the manual drive panel", () => {
     await page.goto("/settings");
     await page.getByRole("button", { name: "Manual drive panel" }).click();
     const speed = page.getByRole("slider", { name: "Max speed" });
-    // Half on every page load, before anything is armed.
-    await expect(speed).toHaveAttribute("aria-valuetext", "50 percent of full speed");
-    await expect(page.getByText("50%", { exact: true })).toBeVisible();
+    // Full on every page load, before anything is armed: the panel drives as
+    // it did before the limit existed.
+    await expect(speed).toHaveAttribute("aria-valuetext", "100 percent of full speed");
+    await expect(page.getByText("100%", { exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: "Arm manual drive input" }).click();
     await expect(page.getByText("Streaming to robot · 10 Hz")).toBeVisible();
 
-    // Forward and turn together, at half.
+    // Forward and turn together, at full.
     await page.keyboard.down("w");
     await page.keyboard.down("d");
-    await expect.poll(last).toEqual({ vx: 0.5, vy: 0, wz: -1 });
-    await expect(page.getByText("+0.50", { exact: true })).toBeVisible();
+    await expect.poll(last).toEqual({ vx: 1, vy: 0, wz: -1 });
 
-    // Raised to full with the keys still held: the new limit reaches the
+    // Lowered to half with the keys still held: the new limit reaches the
     // frames at once, and rotation does not move with it.
     await speed.focus();
-    await page.keyboard.press("End");
-    await expect(speed).toHaveAttribute("aria-valuetext", "100 percent of full speed");
-    await expect.poll(last).toEqual({ vx: 1, vy: 0, wz: -1 });
+    for (let step = 0; step < 5; step += 1) await page.keyboard.press("ArrowLeft");
+    await expect(speed).toHaveAttribute("aria-valuetext", "50 percent of full speed");
+    await expect.poll(last).toEqual({ vx: 0.5, vy: 0, wz: -1 });
+    await expect(page.getByText("+0.50", { exact: true })).toBeVisible();
 
     await page.keyboard.up("w");
     await page.keyboard.up("d");

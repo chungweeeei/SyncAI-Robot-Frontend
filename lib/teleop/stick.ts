@@ -114,13 +114,14 @@ export const AT_REST_VECTOR: TeleopVector = { vx: 0, vy: 0, wz: 0 };
  * whose deflection is always full.
  *
  * The floor is 10%, not 0%: a limit of zero would leave the translation stick
- * silently dead while the panel still looked armed. The default is half speed,
- * so every page load starts slow and going faster is an operator's decision.
+ * silently dead while the panel still looked armed. The default is full
+ * speed, so the panel drives as it always has until an operator asks for
+ * slower.
  */
 export const LINEAR_SCALE_MIN = 0.1;
 export const LINEAR_SCALE_MAX = 1;
 export const LINEAR_SCALE_STEP = 0.1;
-export const LINEAR_SCALE_DEFAULT = 0.5;
+export const LINEAR_SCALE_DEFAULT = 1;
 
 /** A linear scale held inside its range. A non-finite one is the default. */
 export function clampLinearScale(value: number): number {

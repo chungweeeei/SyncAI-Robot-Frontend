@@ -209,8 +209,10 @@ describe("the linear speed limit", () => {
     expect(clampLinearScale(Number.POSITIVE_INFINITY)).toBe(LINEAR_SCALE_DEFAULT);
   });
 
-  it("starts at half speed, inside its own range", () => {
-    expect(LINEAR_SCALE_DEFAULT).toBe(0.5);
+  it("starts at full speed, inside its own range", () => {
+    // The panel drives as it did before the limit existed until an operator
+    // lowers it.
+    expect(LINEAR_SCALE_DEFAULT).toBe(1);
     expect(clampLinearScale(LINEAR_SCALE_DEFAULT)).toBe(LINEAR_SCALE_DEFAULT);
   });
 

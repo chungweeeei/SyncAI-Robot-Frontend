@@ -75,8 +75,9 @@ function clamp(value: number, min: number, max: number): number {
  * from the keyboard, whose deflection is always full. The limit is applied
  * where the command is computed (lib/teleop/stick.ts), so the VX / VY
  * readouts below show the scaled number, which is the number sent. It starts
- * at half on every page load and is not remembered, so nobody inherits
- * someone else's high setting, and it can be set before arming.
+ * at full on every page load, so the panel drives as it always has until an
+ * operator asks for slower. It is not remembered, so a lowered limit does not
+ * outlive the session that chose it, and it can be set before arming.
  */
 export function ManualControl({ className }: { className?: string }) {
   const [armed, setArmed] = React.useState(false);
