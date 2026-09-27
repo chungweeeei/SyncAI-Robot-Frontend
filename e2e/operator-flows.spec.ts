@@ -233,20 +233,20 @@ test.describe("the dashboard's map scan layer", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("reads the scan again once the catalogue says the file changed", async ({
-    page,
-  }) => {
-    // Another console's mapping save rewrites the scan without this tab's
-    // write hooks ever running, so the catalogue is the only thing that can
-    // say the cached copy is old.
+  test("keeps the scan it has through a floor plan rebuild", async ({ page }) => {
+    // A rebuild rewrites the floor plan, which moves the catalogue's
+    // modified_at, and leaves map.pcd alone. The scan is hundreds of thousands
+    // of points, so a new directory time must not cost a second download.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const entry = mapSummary();
     await mockBackend(page, { maps: [entry] });
     const scanReads: string[] = [];
+    const catalogueReads: string[] = [];
     page.on("request", (request) => {
       const { pathname } = new URL(request.url());
       if (pathname.endsWith("/pointcloud")) scanReads.push(pathname);
+      if (pathname === "/api/v1/maps") catalogueReads.push(pathname);
     });
     const visitMapsAndReturn = async () => {
       await page.getByRole("link", { name: "Maps" }).click();
@@ -261,17 +261,18 @@ test.describe("the dashboard's map scan layer", () => {
     await toggle(page).click();
     await expect.poll(() => scanReads).toEqual([scanPath]);
 
-    // Same file: the cache answers.
+    // Rebuilt elsewhere. The catalogue is read again and reports the new time,
+    // so a scan keyed by that time would be fetched again here.
+    entry.modified_at = "2026-09-28T08:00:00Z";
+    const readsBefore = catalogueReads.length;
     await visitMapsAndReturn();
+    await expect.poll(() => catalogueReads.length).toBeGreaterThan(readsBefore);
     await toggle(page).click();
     await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
+    // A cached scan draws with no download in flight; give a refetch time to
+    // show up before saying there was none.
+    await page.waitForTimeout(1500);
     expect(scanReads).toEqual([scanPath]);
-
-    // Rewritten elsewhere: the catalogue's next answer retires the copy.
-    entry.modified_at = "2026-09-28T08:00:00Z";
-    await visitMapsAndReturn();
-    await toggle(page).click();
-    await expect.poll(() => scanReads).toEqual([scanPath, scanPath]);
     expect(errors, "the page logged errors").toEqual([]);
   });
 

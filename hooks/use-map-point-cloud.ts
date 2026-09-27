@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { useMapEntry } from "@/hooks/use-maps";
 import { fetchMapPointCloud } from "@/lib/api/map";
 import { queryKeys } from "@/lib/api/query-keys";
 import type { PointCloudFrame } from "@/lib/types/pointcloud";
@@ -25,13 +24,11 @@ export interface UseMapPointCloud {
  * operator saw the toggle lit over an empty floor with nothing saying why.
  * Here the refusal is `error`, and the view can put it beside the toggle.
  *
- * `staleTime: Infinity` because the key carries the catalogue's `modified_at`,
- * so a scan rewritten by anyone, including another console's mapping save, is
- * a new key rather than a stale entry (see `queryKeys.mapPointCloud`). It
- * waits for the catalogue to name the map before fetching, which the view
- * already does to decide whether to offer the layer at all. An error is not
- * cached as an answer: with no data the query is stale, so turning the layer
- * off and on again is the retry.
+ * `staleTime: Infinity` because a name's scan does not change in place, and
+ * the writes that retire it drop the entry (see `queryKeys.mapPointCloud`,
+ * which also says why this key is not versioned like the floor plan's). An
+ * error is not cached as an answer: with no data the query is stale, so
+ * turning the layer off and on again is the retry.
  *
  * The frame's Float32Array is handed straight to three.js as a buffer
  * attribute, which references it rather than copying. That is safe to share
@@ -39,11 +36,10 @@ export interface UseMapPointCloud {
  * `useMapImage` leaves its bitmap: no one reader knows it was the last.
  */
 export function useMapPointCloud(name: string | null): UseMapPointCloud {
-  const entry = useMapEntry(name);
   const { data, isPending, error } = useQuery({
-    queryKey: queryKeys.mapPointCloud(name ?? "", entry?.modified_at ?? ""),
+    queryKey: queryKeys.mapPointCloud(name ?? ""),
     queryFn: ({ signal }) => fetchMapPointCloud(name ?? "", signal),
-    enabled: name !== null && entry !== null,
+    enabled: name !== null,
     staleTime: Infinity,
   });
 

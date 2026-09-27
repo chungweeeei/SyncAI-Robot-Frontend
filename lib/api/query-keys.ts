@@ -60,15 +60,18 @@ export const queryKeys = {
    * layer. Cached so turning the layer off and on again does not repeat a
    * 100k+ point download for a file that has not changed.
    *
-   * Versioned like `mapImage`, for the same reason: a mapping save from
-   * another console rewrites the file without this tab's write hooks ever
-   * running. Left out, the key is a prefix; a mapping save, rename or delete
-   * here drops every version. A convert or a grid save leaves the scan alone.
+   * Keyed by name alone, unlike `mapImage`. The catalogue's only version is
+   * `modified_at`, the newest file in the whole map directory, and a floor
+   * plan convert or grid save moves it without touching `map.pcd`. Keying the
+   * scan by it re-downloaded the scan after every floor plan rebuild. A name's
+   * scan does not change in place: a save under a taken name is refused (see
+   * `saveMap`), so the file under a name only changes by a delete and a new
+   * save. This console's mapping save, rename and delete drop the entry. A
+   * delete and re-save of the same name from another console, while this tab
+   * still holds the old scan, is not seen until the entry is collected. Only a
+   * scan version from the backend would close that.
    */
-  mapPointCloud: (name: string, version?: string) =>
-    version === undefined
-      ? (["map-point-cloud", name] as const)
-      : (["map-point-cloud", name, version] as const),
+  mapPointCloud: (name: string) => ["map-point-cloud", name] as const,
   /** GET /api/v1/task_templates — the operator's template library. */
   taskTemplates: ["task-templates"] as const,
   /** GET /api/v1/schedules — Temporal's schedule list. */
