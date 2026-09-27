@@ -60,6 +60,7 @@ export function ModeControl({
           Mode · commanded
         </p>
         <Segmented
+          label="Mode"
           stretch
           value={lit}
           options={MODES}

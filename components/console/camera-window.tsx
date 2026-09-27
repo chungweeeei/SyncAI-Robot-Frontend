@@ -22,7 +22,7 @@ const MIN_HEIGHT = 108;
 const DEFAULT_WIDTH = 320;
 /** 16:9, the shape the robot's encoder sends; the video letterboxes if resized off it. */
 const DEFAULT_HEIGHT = 180;
-/** One keyboard press of the resize handle. Coarse enough to be worth pressing. */
+/** One keyboard press of the move or resize handle. Coarse enough to be worth pressing. */
 const KEY_STEP = 16;
 /**
  * How long the "saved" line sits on the picture.
@@ -35,6 +35,16 @@ const RECEIPT_MS = 6_000;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * Whether a press on the header landed on one of its controls rather than on
+ * the header itself. The move handle is a button too, but it is the header's
+ * own grip, so a drag that starts on it is a drag.
+ */
+function pressedAControl(target: EventTarget): boolean {
+  const button = (target as HTMLElement).closest("button");
+  return button !== null && !button.hasAttribute("data-move-handle");
 }
 
 /**
@@ -172,8 +182,9 @@ export function CameraWindow({ className }: { className?: string }) {
   // reads a ref is one the compiler cannot prove happens in a handler.
   const onGrab = (kind: "move" | "resize", event: React.PointerEvent<HTMLElement>) => {
     if (dragRef.current) return;
-    // The header carries the speaker button; a press on it is a press on it.
-    if (kind === "move" && (event.target as HTMLElement).closest("button")) return;
+    // The header carries the clip and speaker buttons; a press on one is a
+    // press on it. The move handle is the one button that is the header's own.
+    if (kind === "move" && pressedAControl(event.target)) return;
     const panel = panelRef.current;
     if (!panel) return;
     const rect = panel.getBoundingClientRect();
@@ -236,6 +247,31 @@ export function CameraWindow({ className }: { className?: string }) {
     dragRef.current = null;
   };
 
+  // The move handle's keyboard path, for the same reason the resize handle has
+  // one: a window a keyboard user can make bigger but not move out of the way
+  // is one they can only make worse. Each key moves one step, held inside the
+  // viewport exactly as a drag is, and Home puts the window back where and how
+  // it opened, as a double-click on the header does.
+  const onMoveKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Home") {
+      event.preventDefault();
+      setOffset({ x: 0, y: 0 });
+      setSize({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
+      return;
+    }
+    const dx = event.key === "ArrowLeft" ? -KEY_STEP : event.key === "ArrowRight" ? KEY_STEP : 0;
+    const dy = event.key === "ArrowUp" ? -KEY_STEP : event.key === "ArrowDown" ? KEY_STEP : 0;
+    if (dx === 0 && dy === 0) return;
+    event.preventDefault();
+
+    const rect = panelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setOffset((current) => ({
+      x: clamp(current.x + dx, current.x - rect.left, current.x + (window.innerWidth - rect.right)),
+      y: clamp(current.y + dy, current.y - rect.top, current.y + (window.innerHeight - rect.bottom)),
+    }));
+  };
+
   // The handle is a button, so it is focusable, and arrow keys are the only
   // way to resize without a pointer. Each key moves the handle the way the
   // pointer would move it: left is wider because the handle is on the left.
@@ -288,7 +324,7 @@ export function CameraWindow({ className }: { className?: string }) {
           // A double-click on a control is aimed at the control. Without this
           // a quick start-then-stop on the clip button would also snap the
           // window back to its default size and place.
-          if ((event.target as HTMLElement).closest("button")) return;
+          if (pressedAControl(event.target)) return;
           setOffset({ x: 0, y: 0 });
           setSize({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
         }}
@@ -296,7 +332,19 @@ export function CameraWindow({ className }: { className?: string }) {
         className="mb-2 flex h-4 cursor-grab touch-none items-center justify-between gap-2 select-none active:cursor-grabbing"
       >
         <h2 className="instrument-label flex items-center gap-1.5 text-muted-foreground">
-          <GripHorizontalIcon aria-hidden className="size-3" />
+          {/* The drag still works from anywhere on the header. This button is
+            * where the keyboard gets the same gesture, so it is the grip the
+            * header already drew, made focusable. */}
+          <button
+            type="button"
+            data-move-handle
+            aria-label="Move the camera window"
+            title="Drag to move · arrow keys to nudge · Home to reset"
+            onKeyDown={onMoveKeyDown}
+            className="-m-0.5 flex cursor-grab items-center rounded-sm p-0.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:cursor-grabbing"
+          >
+            <GripHorizontalIcon aria-hidden className="size-3" />
+          </button>
           Camera
         </h2>
         <div className="flex items-center gap-1">

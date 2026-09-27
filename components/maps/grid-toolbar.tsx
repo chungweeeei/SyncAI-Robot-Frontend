@@ -263,7 +263,7 @@ export function GridToolbar({
     // OBSTACLE" needs: eight condensed caps plus padding, three times over.
     <div className={cn(overlayPanel, "flex w-56 flex-col gap-2 p-2.5", className)}>
       <Row label="Mode">
-        <Segmented stretch value={mode} options={MODES} onChange={onModeChange} />
+        <Segmented label="Mode" stretch value={mode} options={MODES} onChange={onModeChange} />
       </Row>
 
       {/* Vertex mode's counterpart to the Tool row below: which of the three
@@ -287,6 +287,7 @@ export function GridToolbar({
 
           <Row label="Paint">
             <Segmented
+              label="Paint"
               stretch
               value={`${value}` as `${GridValue}`}
               options={VALUES}
@@ -300,6 +301,7 @@ export function GridToolbar({
            * exactly 7 cells is worth more here than continuous control. */}
           <Row label={`Size · ${brush} cell${brush === 1 ? "" : "s"}`}>
             <Segmented
+              label="Size"
               stretch
               value={`${brush}` as (typeof SIZES)[number]["value"]}
               options={SIZES}

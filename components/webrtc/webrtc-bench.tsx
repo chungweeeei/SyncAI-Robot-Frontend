@@ -442,6 +442,7 @@ export function WebRtcBench() {
           }
         >
           <Segmented
+            label="Session layout"
             value={mode}
             options={MODE_OPTIONS}
             stretch

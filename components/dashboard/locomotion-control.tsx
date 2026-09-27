@@ -67,6 +67,7 @@ export function LocomotionControl({
     >
       <Row label="Controller · commanded">
         <Segmented
+          label="Controller"
           stretch
           value={controller}
           options={CONTROLLERS}
@@ -85,6 +86,7 @@ export function LocomotionControl({
         }
       >
         <Segmented
+          label="Policy"
           stretch
           value={policy}
           options={POLICIES}

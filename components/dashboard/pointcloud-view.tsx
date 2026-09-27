@@ -290,6 +290,7 @@ export function PointCloudView({
         * goal readback and of the robot, which the camera keeps centred. */}
       <div className="absolute bottom-3 left-3 flex items-center gap-2">
         <Segmented
+          label="Camera"
           value={cameraMode}
           options={CAMERA_OPTIONS}
           onChange={setCameraMode}

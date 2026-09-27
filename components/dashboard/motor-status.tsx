@@ -6,6 +6,7 @@ import {
   TONE_TEXT,
   type Tone,
 } from "@/components/console/instrument";
+import { JOINTS, LEG_ROWS, jointName, strayMotorLabels } from "@/lib/robot/motor-label";
 import { cn } from "@/lib/utils";
 import type { RobotMotorStatus } from "@/lib/types/robot";
 
@@ -17,25 +18,10 @@ import type { RobotMotorStatus } from "@/lib/types/robot";
 const TEMP_CAUTION_C = 60;
 const TEMP_WARN_C = 80;
 
-// Plan view of the chassis: left column is the robot's left side, top row its
-// front. The legs are laid out this way rather than listed because that is
-// how the fault reads — "the hind-left leg is hot", not "HL_Knee_joint is 78"
-// — and it matches the robot the operator sees in the viewport beside this.
-const LEG_ROWS: ReadonlyArray<ReadonlyArray<string>> = [
-  ["FL", "FR"],
-  ["HL", "HR"],
-];
-
-// Proximal to distal, the order the leg is actually built in. Abbreviated
-// because the full URDF names (FL_HipX_joint) are four times the width of the
-// number they label and identical down every leg.
-const JOINTS: ReadonlyArray<{ suffix: string; label: string }> = [
-  { suffix: "HipX", label: "HX" },
-  { suffix: "HipY", label: "HY" },
-  { suffix: "Knee", label: "KN" },
-];
-
-const jointName = (leg: string, suffix: string) => `${leg}_${suffix}_joint`;
+// Plan view of the chassis, laid out rather than listed because that is how
+// the fault reads — "the hind-left leg is hot", not "HL_Knee_joint is 78" —
+// and it matches the robot the operator sees in the viewport beside this. The
+// legs, the joint codes and the naming rule live in lib/robot/motor-label.ts.
 
 function tempTone(celsius: number): Tone {
   if (celsius >= TEMP_WARN_C) return "warn";
@@ -124,6 +110,7 @@ export function MotorStatus({ motors }: { motors: RobotMotorStatus[] }) {
     ),
   );
   const strays = motors.filter((m) => !placed.has(m.name));
+  const strayLabels = strayMotorLabels(strays.map((m) => m.name));
 
   return (
     <InstrumentGroup
@@ -157,8 +144,12 @@ export function MotorStatus({ motors }: { motors: RobotMotorStatus[] }) {
 
           {strays.length > 0 && (
             <div className="mt-3 space-y-1 border-t border-hairline pt-2.5">
-              {strays.map((motor) => (
-                <JointRow key={motor.name} label={motor.name} motor={motor} />
+              {strays.map((motor, index) => (
+                <JointRow
+                  key={motor.name}
+                  label={strayLabels[index]}
+                  motor={motor}
+                />
               ))}
             </div>
           )}
