@@ -310,9 +310,11 @@ touch one, prefer moving it toward the rule.
   templates (`map_name`, `map_matches_active`); vertex CRUD changes map
   vertex counts and template resolution; a grid save or convert, a mapping
   save, and a map rename or delete change the floor plan raster the task
-  editor draws (`mapImage`). Those are wired in the write hooks now — when
-  adding a write, list every key its response affects in its `onSuccess`,
-  not only the key it was fetched under.
+  editor draws (`mapImage`); a mapping save and a map rename or delete also
+  change the scan the dashboard's "Map scan" layer draws (`mapPointCloud`),
+  which a grid save or convert leaves alone. Those are wired in the write
+  hooks now — when adding a write, list every key its response affects in
+  its `onSuccess`, not only the key it was fetched under.
 - **Wire types** are split between `lib/types/` and the fetcher modules with no
   rule yet. Prefer `lib/types/` for anything more than one router shares.
 

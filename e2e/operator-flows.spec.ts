@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import {
   MAP_NAME,
@@ -180,6 +180,80 @@ test.describe("the map library", () => {
     await expect(
       page.getByText("intensity/normal gate selected no ground points"),
     ).toBeVisible();
+  });
+});
+
+test.describe("the dashboard's map scan layer", () => {
+  const scanPath = `/api/v1/maps/${MAP_NAME}/pointcloud`;
+  // The name carries " · loading" while the download is in flight.
+  const toggle = (page: Page) =>
+    page.getByRole("button", { name: /^Map scan/ });
+
+  test("downloads the running map's scan once, and only when asked", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page);
+    const scanReads: string[] = [];
+    page.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (pathname.endsWith("/pointcloud")) scanReads.push(pathname);
+    });
+    await page.goto("/");
+    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+
+    // Hundreds of thousands of points: a weak client pays for them only when
+    // someone asks to see them.
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "false");
+    expect(scanReads).toEqual([]);
+
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => scanReads).toEqual([scanPath]);
+
+    // Off and on again is the same file, so it comes from the cache.
+    await toggle(page).click();
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
+    expect(scanReads).toEqual([scanPath]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("is not offered for a map with no scan on disk", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, { maps: [mapSummary({ has_pointcloud: false })] });
+    await page.goto("/");
+    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+
+    await expect(page.getByRole("button", { name: "Top down" })).toBeVisible();
+    await expect(toggle(page)).toHaveCount(0);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  // No console-error guard here: the browser logs the 404 itself, which is
+  // exactly the response under test.
+  test("says why the scan did not arrive, in the backend's words", async ({
+    page,
+  }) => {
+    await mockBackend(page);
+    await page.route(/\/api\/v1\/maps\/[^/]+\/pointcloud$/, (route) =>
+      route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: `Map '${MAP_NAME}' has no saved scan` }),
+      }),
+    );
+    await page.goto("/");
+
+    await toggle(page).click();
+    const alert = page.getByRole("alert").filter({ hasText: "has no saved scan" });
+    await expect(alert).toHaveText(`Map '${MAP_NAME}' has no saved scan`);
+
+    // Turning the layer off is what dismisses it.
+    await toggle(page).click();
+    await expect(alert).toHaveCount(0);
   });
 });
 

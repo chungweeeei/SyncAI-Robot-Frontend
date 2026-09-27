@@ -1,5 +1,3 @@
-import { apiUrl } from "@/lib/api/config";
-import { requestRaw } from "@/lib/api/http";
 import {
   createReconnectingSocket,
   type ReconnectingSocket,
@@ -44,29 +42,4 @@ export function createPointCloudStream(
       }
     },
   });
-}
-
-/**
- * Fetch one stored map's cloud once.
- *
- * Read from that map's saved `map.pcd` and voxel-downsampled server-side with
- * the same numbers the live body_cloud path uses, so the two overlay. It used
- * to come from the localizer/map_cloud topic and therefore needed no name —
- * which also meant it could only ever answer for the loaded map. Callers pass
- * the active map's name now (see useActiveMap).
- *
- * Only called when the user enables the "map cloud" layer, so weak clients
- * never pay for the 100k+ point download.
- */
-export async function fetchMapPointCloud(
-  name: string,
-  opts: { signal?: AbortSignal } = {},
-): Promise<PointCloudFrame> {
-  const path = `/api/v1/maps/${encodeURIComponent(name)}/pointcloud`;
-  // Through requestRaw like the gridmap image, rather than a bare fetch with
-  // its own error string: the body is binary but a *refusal* is the same
-  // `{detail}` sentence every other endpoint answers with, and "map pointcloud
-  // fetch failed: 404" threw that sentence away.
-  const res = await requestRaw(apiUrl(path), { signal: opts.signal });
-  return decodePointCloud(await res.arrayBuffer());
 }

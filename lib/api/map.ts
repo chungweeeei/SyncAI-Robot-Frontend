@@ -20,8 +20,10 @@ import { z } from "zod";
 
 import { requestJson, requestRaw } from "@/lib/api/http";
 import type { MapGrid } from "@/lib/map/grid";
+import { decodePointCloud } from "@/lib/ros/pointcloud-stream";
 import { GridStatusSchema } from "@/lib/types/map";
 import type { GridRecipe, GridStatus, MapSummary } from "@/lib/types/map";
+import type { PointCloudFrame } from "@/lib/types/pointcloud";
 
 /** `GridInfoResponse` — note `origin` is {x, y, yaw}, not a tuple. */
 interface WireGrid {
@@ -197,6 +199,29 @@ export async function fetchMapImage(
     signal,
   });
   return createImageBitmap(await image.blob());
+}
+
+/**
+ * One stored map's scan, fetched once: its saved `map.pcd`, voxel-downsampled
+ * server-side with the same numbers the live stream uses, so the two overlay.
+ *
+ * Here rather than beside the live stream in `lib/ros/`, where it used to sit:
+ * it is a REST read, and living outside `lib/api/` is what let the viewport
+ * call it straight from an effect without eslint noticing. The decoder stays
+ * with the stream because the socket and this endpoint share one wire format.
+ *
+ * Through `requestRaw` so a refusal (no scan on disk, a map deleted under the
+ * operator) is the backend's `{detail}` sentence rather than a status code.
+ */
+export async function fetchMapPointCloud(
+  name: string,
+  signal?: AbortSignal,
+): Promise<PointCloudFrame> {
+  const encoded = encodeURIComponent(name);
+  const res = await requestRaw(apiUrl(`/api/v1/maps/${encoded}/pointcloud`), {
+    signal,
+  });
+  return decodePointCloud(await res.arrayBuffer());
 }
 
 /** `SaveGridmapResponse`. Every field is already the app's type. */

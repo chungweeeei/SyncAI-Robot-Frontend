@@ -12,6 +12,7 @@ import { VertexPlaceControl } from "@/components/dashboard/vertex-place-control"
 import { useActiveMapVertices } from "@/hooks/use-active-map-vertices";
 import { useGoalTask } from "@/hooks/use-goal-task";
 import { useInitialPose } from "@/hooks/use-initial-pose";
+import { useMapPointCloud } from "@/hooks/use-map-point-cloud";
 import { useActiveMap } from "@/hooks/use-maps";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import { apiUrl } from "@/lib/api/config";
@@ -93,6 +94,13 @@ export function PointCloudView({
   // that say what the map is *for*, while the cloud is hundreds of thousands of
   // points shown only when someone is checking the localizer.
   const [showVertices, setShowVertices] = React.useState(true);
+  // Asked for only while the layer is on and the map has a scan to give, so
+  // turning the layer on is what starts the download. The catalogue's own
+  // flag gates it: a map with nothing on disk would only earn a refusal.
+  const hasScan = activeMap?.has_pointcloud === true;
+  const scan = useMapPointCloud(
+    showMapCloud && hasScan && activeMap ? activeMap.name : null,
+  );
   const [cameraMode, setCameraMode] = React.useState<"move" | "focus">("move");
   /**
    * Bumped to swing the camera overhead; the canvas owns the camera and reacts
@@ -198,9 +206,8 @@ export function PointCloudView({
       <PointCloudCanvas
         meta={activeMap?.grid ?? undefined}
         mapImageUrl={mapImageUrl}
-        mapName={activeMap?.name}
         telemetry={feed}
-        showMapCloud={showMapCloud}
+        mapCloud={scan.cloud}
         path={path}
         showPath={showPath}
         vertices={vertices}
@@ -305,13 +312,17 @@ export function PointCloudView({
           <Grid2x2Icon aria-hidden className="size-3.5" />
           Top down
         </button>
-        <LayerToggle
-          label="Map scan"
-          on={showMapCloud}
-          onToggle={() => setShowMapCloud((v) => !v)}
-        />
         {/* Only offered when there is something to hide. A control that toggles
-          * an empty layer is indistinguishable from one that is broken. */}
+          * an empty layer is indistinguishable from one that is broken — which
+          * is exactly how this one used to read on a map with no scan. */}
+        {hasScan && (
+          <LayerToggle
+            label="Map scan"
+            on={showMapCloud}
+            busy={scan.status === "loading"}
+            onToggle={() => setShowMapCloud((v) => !v)}
+          />
+        )}
         {vertices.length > 0 && (
           <LayerToggle
             label="Waypoints"
@@ -330,6 +341,21 @@ export function PointCloudView({
         )}
       </div>
 
+      {/* A refused scan is said above the toggle that asked for it, in the
+        * backend's own words. It lasts as long as the layer is on: turning the
+        * layer off dismisses it, and turning it on again is the retry. */}
+      {scan.error && (
+        <p
+          role="alert"
+          className={cn(
+            overlayPanel,
+            "absolute bottom-11 left-3 max-w-sm px-2 py-1.5 text-[11px] leading-snug break-words text-signal-warn",
+          )}
+        >
+          {scan.error}
+        </p>
+      )}
+
       {/* The drive panel used to live in this corner. It moved to the masthead
         * (DriveDisclosure) so it is the same control on every screen; nothing
         * takes its place here, because bottom-right being free is what lets the
@@ -347,16 +373,20 @@ export function PointCloudView({
 function LayerToggle({
   label,
   on,
+  busy = false,
   onToggle,
 }: {
   label: string;
   on: boolean;
+  /** The layer is on but still downloading; the viewport shows nothing yet. */
+  busy?: boolean;
   onToggle: () => void;
 }) {
   return (
     <button
       type="button"
       aria-pressed={on}
+      aria-busy={busy || undefined}
       onClick={onToggle}
       className={cn(
         overlayPanel,
@@ -367,6 +397,7 @@ function LayerToggle({
       )}
     >
       {label}
+      {busy && <span className="text-muted-foreground"> · loading</span>}
     </button>
   );
 }

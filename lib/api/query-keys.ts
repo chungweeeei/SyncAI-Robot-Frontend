@@ -48,6 +48,14 @@ export const queryKeys = {
    * those hooks drops or invalidates it.
    */
   mapImage: (name: string) => ["map-image", name] as const,
+  /**
+   * GET /api/v1/maps/<name>/pointcloud, decoded — the dashboard's "Map scan"
+   * layer. Cached so turning the layer off and on again does not repeat a
+   * 100k+ point download for a file that has not changed. Only a mapping save
+   * rewrites the scan, and a rename or delete retires its name, so those three
+   * hooks drop it. A convert or a grid save leaves the scan alone.
+   */
+  mapPointCloud: (name: string) => ["map-point-cloud", name] as const,
   /** GET /api/v1/task_templates — the operator's template library. */
   taskTemplates: ["task-templates"] as const,
   /** GET /api/v1/schedules — Temporal's schedule list. */
