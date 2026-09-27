@@ -103,9 +103,12 @@ function RecordingRow({ recording }: { recording: RecordingSummary }) {
             {recording.name}
           </span>
           <StatusChip recording={recording} />
+          {/* The format itself is an internal name (zstd on this robot), so
+            * the chip says only what it means for the operator: the files are
+            * smaller than the raw data and play back the same. */}
           {recording.compression && (
-            <Chip tone="neutral" title="Compressed splits">
-              {recording.compression}
+            <Chip tone="neutral" title="Stored compressed. Plays back the same.">
+              Compressed
             </Chip>
           )}
         </div>
