@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { isTypingTarget } from "@/lib/keyboard";
 import {
   AT_REST_VECTOR,
   commandFrom,
@@ -158,17 +159,6 @@ export function useJoystick(enabled: boolean, linearScale = 1): JoystickState {
       }
       return;
     }
-
-    // Copied from map-grid-editor: single-letter shortcuts are exactly what
-    // silently eats typing, and dialogs (VertexMoveDialog) open over this view.
-    const isTypingTarget = (target: EventTarget | null) => {
-      const element = target as HTMLElement | null;
-      return Boolean(
-        element &&
-          (element.isContentEditable ||
-            /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName ?? "")),
-      );
-    };
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target)) return;

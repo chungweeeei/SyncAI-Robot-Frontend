@@ -20,6 +20,7 @@ import { useMapGrid } from "@/hooks/use-map-grid";
 import { useMapVertices, type UseMapVertices } from "@/hooks/use-map-vertices";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import type { VertexChanges } from "@/lib/api/vertex";
+import { isTypingTarget } from "@/lib/keyboard";
 import { FREE, countValues, type GridValue, type ValueCounts } from "@/lib/map/grid";
 import {
   applyCountsDelta,
@@ -506,15 +507,6 @@ function EditorSurface({
   }, [saveGrid, session]);
 
   React.useEffect(() => {
-    const isTypingTarget = (target: EventTarget | null) => {
-      const element = target as HTMLElement | null;
-      return Boolean(
-        element &&
-          (element.isContentEditable ||
-            /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName ?? "")),
-      );
-    };
-
     const onKeyDown = (event: KeyboardEvent) => {
       /*
        * Escape is deliberately above the typing guard, unlike every other
