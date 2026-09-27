@@ -141,9 +141,9 @@ components/
   ui/           shadcn primitives (lint-ignored)
 hooks/          one hook per backend interaction; the only place components get data.
                 A few talk to no backend at all (use-joystick, use-step-drafts,
-                use-task-draft, use-camera-clip, use-browser-time-zone,
-                use-mobile): React glue over a lib/ module or a browser API,
-                never a second home for the logic itself
+                use-task-draft, use-camera-clip, use-browser-time-zone): React
+                glue over a lib/ module or a browser API, never a second home
+                for the logic itself
 lib/
   api/          typed fetchers per backend router, config.ts, http.ts, query-keys.ts
                 (requests only — mirrored validation rules live with their domain)
@@ -470,6 +470,13 @@ it is run in, so it does not belong to any one of them.
   setState in an effect is what the compiler lint rejects. Put the next
   browser-side value that has to outlive a screen beside it, not in a new
   `localStorage` call.
+- **Phone layouts are CSS, not JS.** Anything that changes with the screen
+  uses Tailwind's width breakpoints and its `pointer-coarse:` variant (a
+  40 px target under a finger, a 24 px one under a mouse); there is no
+  `useIsMobile` hook and there should not be one, because a class-only rule
+  cannot disagree with the server render the way a `matchMedia` read in an
+  effect does. The two floating panels are the exception that proves it:
+  they measure `window` for a drag clamp, in a handler, never in render.
 - Backend addressing: never hardcode a host. Every REST and WebSocket path goes
   through `apiUrl()` / `wsUrl()` in `lib/api/config.ts`, which default to the
   page's own hostname on port 3000 and are overridable via
