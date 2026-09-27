@@ -41,19 +41,35 @@ export const queryKeys = {
   mapVertices: (name: string) => ["map-vertices", name] as const,
   /**
    * GET /api/v1/maps/<name>/image, decoded for drawing — the floor plan under
-   * the task editor's waypoint preview. One entry per map, shared by every
-   * expanded MOVE row, so ten open rows cost one request and one decode. Never
-   * stale on its own: the raster only changes through writes this console
-   * makes (grid save / convert, rename, delete, a mapping save), and each of
-   * those hooks drops or invalidates it.
+   * the task editor's waypoint preview. One entry per map version, shared by
+   * every expanded MOVE row, so ten open rows cost one request and one decode.
+   *
+   * `version` is what the catalogue says about the files (see useMapImage),
+   * which is what retires a raster rewritten by another console, the MCP
+   * server or a conversion this tab never saw. It used to be keyed by name
+   * alone and never go stale, which was only true of writes this console
+   * made. Left out, the key is a prefix matching every version: the write
+   * hooks drop a map's entries that way.
    */
-  mapImage: (name: string) => ["map-image", name] as const,
+  mapImage: (name: string, version?: string) =>
+    version === undefined
+      ? (["map-image", name] as const)
+      : (["map-image", name, version] as const),
   /**
    * GET /api/v1/maps/<name>/pointcloud, decoded — the dashboard's "Map scan"
    * layer. Cached so turning the layer off and on again does not repeat a
-   * 100k+ point download for a file that has not changed. Only a mapping save
-   * rewrites the scan, and a rename or delete retires its name, so those three
-   * hooks drop it. A convert or a grid save leaves the scan alone.
+   * 100k+ point download for a file that has not changed.
+   *
+   * Keyed by name alone, unlike `mapImage`. The catalogue's only version is
+   * `modified_at`, the newest file in the whole map directory, and a floor
+   * plan convert or grid save moves it without touching `map.pcd`. Keying the
+   * scan by it re-downloaded the scan after every floor plan rebuild. A name's
+   * scan does not change in place: a save under a taken name is refused (see
+   * `saveMap`), so the file under a name only changes by a delete and a new
+   * save. This console's mapping save, rename and delete drop the entry. A
+   * delete and re-save of the same name from another console, while this tab
+   * still holds the old scan, is not seen until the entry is collected. Only a
+   * scan version from the backend would close that.
    */
   mapPointCloud: (name: string) => ["map-point-cloud", name] as const,
   /** GET /api/v1/task_templates — the operator's template library. */

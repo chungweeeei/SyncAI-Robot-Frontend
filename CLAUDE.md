@@ -322,6 +322,17 @@ touch one, prefer moving it toward the rule.
   which a grid save or convert leaves alone. Those are wired in the write
   hooks now — when adding a write, list every key its response affects in
   its `onSuccess`, not only the key it was fetched under.
+- **A file cache is versioned by the catalogue, not by this console's
+  writes, where the catalogue can say which file changed.** `mapImage` never
+  goes stale on its own, so its key carries the map's `modified_at` and
+  `grid_status`, read through `useMapEntry`. An invalidation only fires for a
+  write this tab made, and a conversion another console started would
+  otherwise leave the old floor plan on screen until a reload. The write
+  hooks still drop the entries early, by the name-only prefix key.
+  `mapPointCloud` is the exception and is keyed by name alone:
+  `modified_at` covers the whole map directory, so a floor plan rebuild
+  would re-download a scan that did not change. `queryKeys.mapPointCloud`
+  records the one case that leaves open.
 - **Wire types** are split between `lib/types/` and the fetcher modules with no
   rule yet. Prefer `lib/types/` for anything more than one router shares.
 

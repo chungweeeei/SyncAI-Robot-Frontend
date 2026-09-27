@@ -93,6 +93,23 @@ export function useMaps(): UseMaps {
 }
 
 /**
+ * One map's catalogue entry, or null before the catalogue answers, with no
+ * name, or for a name it does not list.
+ *
+ * What the per-map file caches read their version from. Another observer of
+ * the same query, so it costs no request of its own and inherits the
+ * converting poll: a conversion another console started is seen here the next
+ * time the catalogue is read, and so is its end.
+ */
+export function useMapEntry(name: string | null): MapSummary | null {
+  const { maps } = useMaps();
+  return React.useMemo(
+    () => (name === null ? null : (maps?.find((map) => map.name === name) ?? null)),
+    [maps, name],
+  );
+}
+
+/**
  * The map the running stack loaded, or null until the catalogue answers.
  *
  * The `active` flag is the only way to ask this question: the backend resolves

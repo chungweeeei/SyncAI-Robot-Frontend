@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { useMapEntry } from "@/hooks/use-maps";
 import { fetchMapImage } from "@/lib/api/map";
 import { queryKeys } from "@/lib/api/query-keys";
 
@@ -17,10 +18,22 @@ export interface UseMapImage {
  * A query rather than an `Image()` in the component: the same bytes are wanted
  * by every expanded MOVE row at once, and the cache is what makes that one
  * request and one decode instead of one per row. `staleTime: Infinity` because
- * the raster changes only through writes this console makes, and those hooks
- * invalidate or drop the entry themselves (see `queryKeys.mapImage`) — a
- * refetch on every mount would re-decode a multi-megapixel PNG each time a row
- * is unfolded, for an answer that cannot have changed.
+ * a refetch on every mount would re-decode a multi-megapixel PNG each time a
+ * row is unfolded.
+ *
+ * What keeps that from caching a stale floor plan is the key. It carries the
+ * catalogue's `modified_at` (the newest file in the map's directory) and its
+ * `grid_status`, so any rewrite the catalogue can see retires the entry, by
+ * whoever made it. It used to be keyed by name alone, which was only safe for
+ * writes this console made: a conversion started elsewhere left the old raster
+ * on screen until a reload. The status is in the key as well as the time
+ * because the catalogue's time is to the second, and a conversion that ends in
+ * the same second as the last read would otherwise keep that read's bytes.
+ *
+ * Nothing is fetched while the map converts. The file is being rewritten, so
+ * any bytes read then are either the old plan or a partial one, and caching
+ * either is what this hook used to get wrong. The preview draws its waypoints
+ * without a floor plan until the conversion ends.
  *
  * Unlike `useMapGrid`, which keeps its read out of the cache because a session
  * is mutable and has to be disposed, an ImageBitmap is immutable and safe to
@@ -28,14 +41,18 @@ export interface UseMapImage {
  * the same reason: no one owner could know it was the last reader.
  */
 export function useMapImage(name: string | null): UseMapImage {
+  const entry = useMapEntry(name);
+  const readable = entry !== null && entry.grid !== null && entry.grid_status !== "converting";
+  const version = entry ? `${entry.modified_at}/${entry.grid_status}` : "";
+
   const { data, isPending, isError } = useQuery({
-    queryKey: queryKeys.mapImage(name ?? ""),
+    queryKey: queryKeys.mapImage(name ?? "", version),
     queryFn: ({ signal }) => fetchMapImage(name ?? "", signal),
-    enabled: name !== null,
+    enabled: name !== null && readable,
     staleTime: Infinity,
   });
 
-  if (name === null) return { image: null, status: "loading" };
+  if (name === null || !readable) return { image: null, status: "loading" };
   return {
     image: data ?? null,
     status: isPending ? "loading" : isError ? "error" : "ok",

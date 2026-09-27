@@ -24,10 +24,11 @@ export interface UseMapPointCloud {
  * operator saw the toggle lit over an empty floor with nothing saying why.
  * Here the refusal is `error`, and the view can put it beside the toggle.
  *
- * `staleTime: Infinity` because the file only changes through writes this
- * console makes, and those hooks drop the entry (see `queryKeys.mapPointCloud`).
- * An error is not cached as an answer, though: with no data the query is stale,
- * so turning the layer off and on again is the retry.
+ * `staleTime: Infinity` because a name's scan does not change in place, and
+ * the writes that retire it drop the entry (see `queryKeys.mapPointCloud`,
+ * which also says why this key is not versioned like the floor plan's). An
+ * error is not cached as an answer: with no data the query is stale, so
+ * turning the layer off and on again is the retry.
  *
  * The frame's Float32Array is handed straight to three.js as a buffer
  * attribute, which references it rather than copying. That is safe to share
