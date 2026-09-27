@@ -5,14 +5,29 @@ import {
 import type { PointCloudFrame } from "@/lib/types/pointcloud";
 import type { StreamStatus } from "@/lib/types/stream";
 
+/** Bytes of the little-endian uint32 point count that leads every frame. */
+const HEADER_BYTES = 4;
+/** Bytes per point: three float32s. */
+const POINT_BYTES = 12;
+
 /**
  * Decode a binary point-cloud frame: little-endian uint32 count + count*3
  * float32 xyz. The 4-byte header keeps the float payload 4-byte aligned so it
  * can be viewed without copying.
+ *
+ * Null for a buffer too short to hold its header, or shorter than the count
+ * says. Both used to throw a RangeError from the typed-array constructor. On
+ * the live stream that surfaced as an uncaught error inside the socket's
+ * onmessage, breaking the socket module's promise to skip a malformed frame.
+ * Returned rather than thrown so each caller decides what a short frame
+ * means: the live stream drops it and waits for the next one, and a stored
+ * map's download reports it. Trailing bytes past the last point are ignored.
  */
-export function decodePointCloud(buffer: ArrayBuffer): PointCloudFrame {
+export function decodePointCloud(buffer: ArrayBuffer): PointCloudFrame | null {
+  if (buffer.byteLength < HEADER_BYTES) return null;
   const count = new DataView(buffer).getUint32(0, true);
-  const positions = new Float32Array(buffer, 4, count * 3);
+  if (buffer.byteLength < HEADER_BYTES + count * POINT_BYTES) return null;
+  const positions = new Float32Array(buffer, HEADER_BYTES, count * 3);
   return { count, positions };
 }
 
@@ -35,11 +50,12 @@ export function createPointCloudStream(
     binaryType: "arraybuffer",
     onStatus: handlers.onStatus,
     onMessage: (data) => {
-      // Anything that is not a binary frame is not one of ours; skip it rather
-      // than throwing inside the socket's onmessage.
-      if (data instanceof ArrayBuffer) {
-        handlers.onFrame(decodePointCloud(data));
-      }
+      // Anything that is not a binary frame is not one of ours, and a binary
+      // one that is cut short cannot be drawn; skip both rather than throwing
+      // inside the socket's onmessage. The next frame is ~100 ms away.
+      if (!(data instanceof ArrayBuffer)) return;
+      const frame = decodePointCloud(data);
+      if (frame) handlers.onFrame(frame);
     },
   });
 }
