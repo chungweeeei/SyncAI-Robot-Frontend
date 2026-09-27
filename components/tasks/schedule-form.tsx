@@ -207,7 +207,7 @@ export function ScheduleForm({
           disabled={busy}
           onChange={(event) => setId(event.target.value)}
           placeholder="robot01-daily-patrol"
-          className="readout mt-0.5 h-7 rounded-sm text-[13px]"
+          className="readout mt-0.5 h-7 rounded-sm md:text-[13px]"
         />
       </label>
 
@@ -245,7 +245,7 @@ export function ScheduleForm({
               value={amountText}
               disabled={busy}
               onChange={(event) => setAmountText(event.target.value)}
-              className="readout h-7 w-16 rounded-sm text-[13px]"
+              className="readout h-7 w-16 rounded-sm md:text-[13px]"
             />
           </label>
           <Segmented
@@ -265,7 +265,7 @@ export function ScheduleForm({
             value={time}
             disabled={busy}
             onChange={(event) => setTime(event.target.value)}
-            className="readout h-7 w-32 rounded-sm text-[13px]"
+            className="readout h-7 w-32 rounded-sm md:text-[13px]"
           />
         </label>
       )}

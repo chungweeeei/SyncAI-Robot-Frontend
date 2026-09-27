@@ -206,7 +206,7 @@ export function TopicPicker({
           placeholder="another channel"
           aria-label="Add a channel"
           disabled={disabled}
-          className="readout h-7 flex-1 text-[11px]"
+          className="readout h-7 flex-1 md:text-[11px]"
         />
         <button
           type="button"

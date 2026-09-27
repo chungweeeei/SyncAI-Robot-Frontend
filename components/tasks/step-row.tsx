@@ -352,7 +352,11 @@ export function StepRow({
                   // over the limit the text is.
                   onChange={(event) => onPatch({ text: event.target.value })}
                   placeholder="Delivery arrived — please take your items."
-                  className="mt-0.5 h-7 rounded-sm text-[13px]"
+                  // No size below md, here and on every Input override: iOS
+                  // Safari zooms the page into any field under 16 px on
+                  // focus, and this console is a fixed frame that cannot
+                  // zoom back out.
+                  className="mt-0.5 h-7 rounded-sm md:text-[13px]"
                 />
                 {/* The counter appears only near the limit — a line short enough
                  * to obviously fit does not need bookkeeping over it. */}

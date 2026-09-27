@@ -93,7 +93,7 @@ export function SaveGroup({
           maxLength={TASK_TEMPLATE_NAME_MAX}
           onChange={(event) => onNameChange(event.target.value)}
           placeholder="Morning patrol"
-          className="readout mt-0.5 h-7 rounded-sm text-[13px]"
+          className="readout mt-0.5 h-7 rounded-sm md:text-[13px]"
         />
       </label>
 

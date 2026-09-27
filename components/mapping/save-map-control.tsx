@@ -148,7 +148,7 @@ export function SaveMapControl({
           placeholder="map name"
           aria-label="Map name"
           disabled={!enabled || busy}
-          className="h-8 flex-1 text-sm"
+          className="h-8 flex-1"
         />
         <Button
           type="submit"
