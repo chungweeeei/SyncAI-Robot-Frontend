@@ -18,6 +18,9 @@
 // opaque one.
 
 import type { ScheduleState, ScheduleTrigger } from "@/lib/api/schedule";
+import type { TaskStepRequest } from "@/lib/api/task";
+import type { TemplateStep } from "@/lib/api/task-template";
+import { toDispatchSteps } from "@/lib/task/step";
 
 /**
  * The seven days in the order an operator expects them, each with its cron
@@ -342,4 +345,51 @@ export function schedulesByTemplate(
     else byTemplate.set(id, [schedule]);
   }
   return byTemplate;
+}
+
+/**
+ * How many steps a schedule froze that its template would now dispatch
+ * differently, or null when the two are not comparable.
+ *
+ * A schedule keeps the steps it was registered with, so a template edited
+ * afterwards drives the robot one way from the editor and another way on the
+ * schedule. This is what the schedule row's "stale" badge counts.
+ *
+ * - A changed step *count* makes a per-step diff meaningless — the template
+ *   was restructured after registration — so that is null rather than a
+ *   misleading number. So is a template step with no coordinates to compare.
+ * - A MOVE is compared at the precision the console displays and dispatches
+ *   at (3 decimals for x and y, 1 for the heading), so a float-representation
+ *   difference is not reported as drift.
+ * - A SPEAK drifts when its line was edited: the frozen copy keeps saying the
+ *   old sentence, the same mechanism as a moved waypoint.
+ * - A step whose type changed drifts. Two posture steps of one type never do.
+ *
+ * Moved here from schedule-steps.tsx, where it had no test.
+ */
+export function scheduleDrift(
+  frozen: readonly TaskStepRequest[],
+  template: readonly TemplateStep[],
+): number | null {
+  let current: TaskStepRequest[];
+  try {
+    current = toDispatchSteps(template);
+  } catch {
+    return null;
+  }
+  if (current.length !== frozen.length) return null;
+
+  return frozen.reduce((count, step, index) => {
+    const now = current[index];
+    if (!now || now.type !== step.type) return count + 1;
+    if (step.type === "SPEAK" && now.type === "SPEAK") {
+      return step.params.text === now.params.text ? count : count + 1;
+    }
+    if (step.type !== "MOVE" || now.type !== "MOVE") return count;
+    const same =
+      step.params.x.toFixed(3) === now.params.x.toFixed(3) &&
+      step.params.y.toFixed(3) === now.params.y.toFixed(3) &&
+      step.params.theta.toFixed(1) === now.params.theta.toFixed(1);
+    return same ? count : count + 1;
+  }, 0);
 }
