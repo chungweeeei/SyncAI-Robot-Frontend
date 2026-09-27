@@ -5,8 +5,9 @@ import * as React from "react";
 import { DEADZONE, type StickValue } from "@/lib/teleop/stick";
 import { cn } from "@/lib/utils";
 
-/** Well diameter (size-24) and knob diameter (size-7), in px. The travel
- *  radius keeps the knob's edge inside the well at full deflection. */
+/** Well and knob diameter in px, applied as inline size below so the maths
+ *  and the drawing cannot disagree. The travel radius keeps the knob's edge
+ *  inside the well at full deflection. */
 const WELL = 96;
 const KNOB = 28;
 const TRAVEL = (WELL - KNOB) / 2;
@@ -152,8 +153,9 @@ export function Thumbstick({
       // open the context menu either — on a robot console that pause reads as
       // the stick dying.
       onContextMenu={(event) => event.preventDefault()}
+      style={{ width: WELL, height: WELL }}
       className={cn(
-        "relative shrink-0 touch-none rounded-full border border-hairline bg-elevated/50 select-none size-24",
+        "relative shrink-0 touch-none rounded-full border border-hairline bg-elevated/50 select-none",
         // Recessed, not flat: the well is the one thing on the console the
         // operator's finger goes *into*, and the inset is what says so.
         "inset-shadow-sm",
@@ -206,10 +208,12 @@ export function Thumbstick({
       <span
         aria-hidden
         style={{
+          width: KNOB,
+          height: KNOB,
           transform: `translate(calc(-50% + ${value.x * TRAVEL}px), calc(-50% + ${value.y * TRAVEL}px))`,
         }}
         className={cn(
-          "absolute top-1/2 left-1/2 flex items-center justify-center rounded-full border bg-panel shadow-sm size-7",
+          "absolute top-1/2 left-1/2 flex items-center justify-center rounded-full border bg-panel shadow-sm",
           active
             ? "border-signal-cmd bg-signal-cmd/20 shadow-[0_0_10px_0] shadow-signal-cmd/40"
             : "border-hairline",
@@ -243,7 +247,7 @@ function Hint({
     <span
       aria-hidden
       className={cn(
-        "instrument-label pointer-events-none absolute text-[9px] text-muted-foreground",
+        "instrument-label pointer-events-none absolute text-[10px] text-muted-foreground",
         className,
       )}
     >

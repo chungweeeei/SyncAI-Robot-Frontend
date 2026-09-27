@@ -52,7 +52,7 @@ export function AppearanceSettings() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div className="space-y-0.5">
             <Label htmlFor="theme-select">Theme</Label>
             <p className="text-sm text-muted-foreground">
@@ -83,7 +83,7 @@ export function AppearanceSettings() {
 
         <Separator />
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div className="space-y-0.5">
             <Label htmlFor="waypoint-labels">Waypoint labels</Label>
             <p className="text-sm text-muted-foreground">
@@ -99,7 +99,7 @@ export function AppearanceSettings() {
 
         <Separator />
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4">
           <div className="space-y-0.5">
             <Label htmlFor="language-select">Language</Label>
             <p className="text-sm text-muted-foreground">

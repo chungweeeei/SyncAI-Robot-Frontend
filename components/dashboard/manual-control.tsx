@@ -371,7 +371,7 @@ function LabeledStick({
   return (
     <div className="flex flex-col items-center gap-1.5">
       {children}
-      <span className="instrument-label text-[9px] text-muted-foreground">
+      <span className="instrument-label text-muted-foreground">
         {caption}
       </span>
     </div>
