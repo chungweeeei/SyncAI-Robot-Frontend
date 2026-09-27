@@ -110,6 +110,42 @@ test.describe("the console shell", () => {
     await expect(page.getByRole("group", { name: "Outcome" })).toBeVisible();
   });
 
+  test("names every viewport icon, and says what an armed tool wants next", async ({
+    page,
+  }) => {
+    // The toolbar is icons, so a name has to come from somewhere other than
+    // the glyph: the accessible name, and a tooltip on hover.
+    await page.goto("/");
+    const toolbar = page.getByRole("toolbar", { name: "Viewport" });
+    for (const name of ["Set goal", "Set initial pose", "Move", "Focus", "Top down"]) {
+      await expect(toolbar.getByRole("button", { name })).toBeVisible();
+    }
+    const goal = toolbar.getByRole("button", { name: "Set goal" });
+    await goal.hover();
+    await expect(page.getByText("— drag on the map to aim, release to send")).toBeVisible();
+
+    // Once the pointer has gone to the map the tooltip is gone, so the next
+    // step is spelled out under the toolbar while the tool is armed.
+    const hint = page.getByRole("status").filter({ hasText: "Aim and release to send" });
+    await goal.click();
+    await expect(goal).toHaveAttribute("aria-pressed", "true");
+    await expect(hint).toBeVisible();
+
+    // One pick mode: arming the other pose tool disarms this one.
+    const pose = toolbar.getByRole("button", { name: "Set initial pose" });
+    await pose.click();
+    await expect(pose).toHaveAttribute("aria-pressed", "true");
+    await expect(goal).toHaveAttribute("aria-pressed", "false");
+    await expect(hint).toHaveCount(0);
+    await expect(
+      page.getByRole("status").filter({ hasText: "Press the map, then drag to aim" }),
+    ).toBeVisible();
+
+    await pose.click();
+    await expect(pose).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByRole("status").filter({ hasText: "drag to aim" })).toHaveCount(0);
+  });
+
   test("reaches every operator screen from the rail", async ({ page }) => {
     await page.goto("/");
     // Wait for the dashboard to be up before the first click. A click that

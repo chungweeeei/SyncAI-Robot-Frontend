@@ -1,14 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { Grid2x2Icon } from "lucide-react";
 
-import { Segmented, overlayPanel } from "@/components/console/instrument";
+import { overlayPanel } from "@/components/console/instrument";
 import { GoalControl } from "@/components/dashboard/goal-control";
 import { InitialPoseControl } from "@/components/dashboard/initial-pose-control";
 import { PointCloudCanvas } from "@/components/dashboard/pointcloud-canvas";
 import { VertexMoveDialog } from "@/components/dashboard/vertex-move-dialog";
 import { VertexPlaceControl } from "@/components/dashboard/vertex-place-control";
+import {
+  ViewportToolbar,
+  type LayerOption,
+} from "@/components/dashboard/viewport-toolbar";
 import { useActiveMapVertices } from "@/hooks/use-active-map-vertices";
 import { useGoalTask } from "@/hooks/use-goal-task";
 import { useInitialPose } from "@/hooks/use-initial-pose";
@@ -27,11 +30,6 @@ const STATUS_LABEL: Record<StreamStatus, string> = {
   closed: "Scan lost",
   error: "Scan error",
 };
-
-const CAMERA_OPTIONS = [
-  { value: "move" as const, label: "Move" },
-  { value: "focus" as const, label: "Focus" },
-];
 
 /**
  * Data-wiring wrapper for the 3D point-cloud viewer — the console's only
@@ -201,6 +199,37 @@ export function PointCloudView({
     [sendGoal],
   );
 
+  // Only the layers with something to hide. A toggle over an empty layer is
+  // indistinguishable from a broken one — which is exactly how Map scan used to
+  // read on a map with no scan — and Path comes and goes with the run, since
+  // there is no route to hide between tasks.
+  const layers: LayerOption[] = [];
+  if (hasScan) {
+    layers.push({
+      kind: "scan",
+      label: "Map scan",
+      on: showMapCloud,
+      busy: scan.status === "loading",
+      onToggle: () => setShowMapCloud((v) => !v),
+    });
+  }
+  if (vertices.length > 0) {
+    layers.push({
+      kind: "waypoints",
+      label: "Waypoints",
+      on: showVertices,
+      onToggle: () => setShowVertices((v) => !v),
+    });
+  }
+  if (path !== undefined && path.points.length > 0) {
+    layers.push({
+      kind: "path",
+      label: "Path",
+      on: showPath,
+      onToggle: () => setShowPath((v) => !v),
+    });
+  }
+
   return (
     <div className={cn("relative h-full w-full", className)}>
       <PointCloudCanvas
@@ -234,134 +263,94 @@ export function PointCloudView({
         onClose={() => setAskedVertex(null)}
       />
 
-      {/* Stream health for the cloud itself. The status strip's sweep covers the
-        * 1 Hz state poll; this WebSocket is a separate link that can fail on its
-        * own, so it gets its own indicator — in the same three tones. */}
-      <div
-        className={cn(
-          overlayPanel,
-          "absolute top-3 right-3 flex items-center gap-2 px-2 py-1.5",
-        )}
-      >
-        <span
-          className={cn(
-            "inline-block size-2 rounded-full",
-            status === "open"
-              ? "bg-signal-live"
-              : status === "connecting"
-                ? "bg-signal-caution"
-                : "bg-signal-warn",
-          )}
-        />
-        <span className="instrument-label text-muted-foreground">
-          {STATUS_LABEL[status]}
-        </span>
-      </div>
-
-      {/* Both pose tools in one column, goal first: it is the one used on every
-        * run, while an initial pose is a recovery action. Capped and scrolling
-        * because a phone held sideways leaves the viewport ~200 px tall, and
-        * with a goal read-back open the column ran into the controls along
-        * the bottom edge. */}
-      <div className="absolute top-3 left-3 flex max-h-[calc(100%-4rem)] w-56 flex-col gap-2 overflow-y-auto">
-        <GoalControl
-          task={task}
-          armed={pick?.mode === "goal"}
-          onArm={() => armPick("goal")}
-        />
-        <InitialPoseControl
-          estimate={estimate}
-          armed={pick?.mode === "initial-pose"}
-          onArm={() => armPick("initial-pose")}
-        />
-        {/* Third in the column and only while it is live: a re-place is entered
-          * from the map, not from here, so a resting control would be a button
-          * that does nothing until something else has already happened. It also
-          * outlives the gesture when the write fails — that sentence has to land
-          * somewhere, and the panel that armed it is where the operator is
-          * looking. */}
-        <VertexPlaceControl
-          vertex={pick?.mode === "vertex" ? pick.vertex : null}
-          busy={stops.busy}
-          error={stops.writeError}
-          onCancel={() => setPick(null)}
-          onDismissError={stops.clearWriteError}
-        />
-      </div>
-
-      {/* Viewport controls sit along the bottom edge, out of the way of the
-        * goal readback and of the robot, which the camera keeps centred.
-        * right-3 and flex-wrap: Camera, Top down and up to three layer
-        * toggles are ~380 px in a row, which is a whole phone; anchored at
-        * the bottom the row grows upward when it wraps. */}
-      <div className="absolute right-3 bottom-3 left-3 flex flex-wrap items-center gap-2">
-        <Segmented
-          label="Camera"
-          value={cameraMode}
-          options={CAMERA_OPTIONS}
-          onChange={setCameraMode}
-          className={overlayPanel}
-        />
-        {/* Beside the camera modes, not among them: Move and Focus say what a
-          * drag does and stay true until changed, while this is a one-shot
-          * placement that the very next drag can orbit out of. Rendering it as
-          * a third segment would leave a segment highlighted for a view the
-          * operator is no longer in. */}
-        <button
-          type="button"
-          onClick={() => setTopDownNonce((n) => n + 1)}
-          title="Look straight down at the map"
-          className={cn(
-            overlayPanel,
-            "instrument-label flex h-6 items-center gap-1.5 px-2 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:min-h-10",
-          )}
-        >
-          <Grid2x2Icon aria-hidden className="size-3.5" />
-          Top down
-        </button>
-        {/* Only offered when there is something to hide. A control that toggles
-          * an empty layer is indistinguishable from one that is broken — which
-          * is exactly how this one used to read on a map with no scan. */}
-        {hasScan && (
-          <LayerToggle
-            label="Map scan"
-            on={showMapCloud}
-            busy={scan.status === "loading"}
-            onToggle={() => setShowMapCloud((v) => !v)}
+      {/* One strip across the top: the toolbar at the left, stream health at
+        * the right, wrapping onto two lines on a phone rather than overlapping.
+        * The read-backs hang under it. The whole overlay is pointer-transparent
+        * so the scene behind its empty stretches still takes a drag — only the
+        * panels themselves catch the pointer. */}
+      <div className="pointer-events-none absolute inset-x-3 top-3 flex max-h-[calc(100%-1.5rem)] flex-col gap-2">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <ViewportToolbar
+            className="pointer-events-auto"
+            pick={pick?.mode === "vertex" ? null : (pick?.mode ?? null)}
+            goalLocked={task.running || task.busy}
+            onArmGoal={() => armPick("goal")}
+            onArmInitialPose={() => armPick("initial-pose")}
+            cameraMode={cameraMode}
+            onCameraMode={setCameraMode}
+            onTopDown={() => setTopDownNonce((n) => n + 1)}
+            layers={layers}
           />
-        )}
-        {vertices.length > 0 && (
-          <LayerToggle
-            label="Waypoints"
-            on={showVertices}
-            onToggle={() => setShowVertices((v) => !v)}
-          />
-        )}
-        {/* Same rule, and here it means the control comes and goes with the run:
-          * there is no route to hide between tasks. */}
-        {path !== undefined && path.points.length > 0 && (
-          <LayerToggle
-            label="Path"
-            on={showPath}
-            onToggle={() => setShowPath((v) => !v)}
-          />
-        )}
-      </div>
 
-      {/* A refused scan is said above the toggle that asked for it, in the
-        * backend's own words. It lasts as long as the layer is on: turning the
-        * layer off dismisses it, and turning it on again is the retry. */}
-      {scan.error && (
-        <p
-          role="alert"
-          className={cn(
-            overlayPanel,
-            "absolute bottom-11 left-3 max-w-sm px-2 py-1.5 text-[11px] leading-snug break-words text-signal-warn",
+          {/* Stream health for the cloud itself. The status strip's sweep covers
+            * the 1 Hz state poll; this WebSocket is a separate link that can fail
+            * on its own, so it gets its own indicator — in the same three tones. */}
+          <div
+            className={cn(
+              overlayPanel,
+              "pointer-events-auto flex items-center gap-2 px-2 py-1.5",
+            )}
+          >
+            <span
+              className={cn(
+                "inline-block size-2 rounded-full",
+                status === "open"
+                  ? "bg-signal-live"
+                  : status === "connecting"
+                    ? "bg-signal-caution"
+                    : "bg-signal-warn",
+              )}
+            />
+            <span className="instrument-label text-muted-foreground">
+              {STATUS_LABEL[status]}
+            </span>
+          </div>
+        </div>
+
+        {/* Goal first: it is the one used on every run, while an initial pose
+          * is a recovery action. Scrolling because a phone held sideways leaves
+          * the viewport ~200 px tall, and a goal read-back is taller than
+          * that. */}
+        <div className="pointer-events-auto flex min-h-0 w-56 flex-col gap-2 overflow-y-auto empty:hidden">
+          {/* What to do with the tool just armed. The icon said which tool it
+            * is, but the next step happens on the map, where the pointer is
+            * no longer over the tooltip — so the instruction is spelled out
+            * here, in the tool's own hue, for as long as it is armed. */}
+          {pick?.mode === "goal" && (
+            <ArmedHint tone="cmd">Aim and release to send</ArmedHint>
           )}
-        >
-          {scan.error}
-        </p>
-      )}
+          {pick?.mode === "initial-pose" && (
+            <ArmedHint tone="caution">Press the map, then drag to aim</ArmedHint>
+          )}
+          <GoalControl task={task} />
+          <InitialPoseControl estimate={estimate} />
+          {/* Only while it is live: a re-place is entered from the map, not
+            * from here. It also outlives the gesture when the write fails —
+            * that sentence has to land somewhere, and the panel that armed it
+            * is where the operator is looking. */}
+          <VertexPlaceControl
+            vertex={pick?.mode === "vertex" ? pick.vertex : null}
+            busy={stops.busy}
+            error={stops.writeError}
+            onCancel={() => setPick(null)}
+            onDismissError={stops.clearWriteError}
+          />
+          {/* A refused scan, in the backend's own words. It lasts as long as
+            * the layer is on: turning the layer off dismisses it, and turning
+            * it on again is the retry. */}
+          {scan.error && (
+            <p
+              role="alert"
+              className={cn(
+                overlayPanel,
+                "px-2 py-1.5 text-[11px] leading-snug break-words text-signal-warn",
+              )}
+            >
+              {scan.error}
+            </p>
+          )}
+        </div>
+      </div>
 
       {/* The drive panel used to live in this corner. It moved to the masthead
         * (DriveDisclosure) so it is the same control on every screen; nothing
@@ -373,38 +362,29 @@ export function PointCloudView({
 }
 
 /**
- * One optional scene layer, on or off. Pressed state uses the commanded hue,
- * like the pick-mode buttons above it: what is drawn in the viewport is a choice
- * the operator made, and it has to be readable as one at a glance.
+ * The armed pose tool's next step, as a line of its own. `role="status"` so a
+ * screen reader hears the instruction when the tool arms, which is when the
+ * worded button it replaces used to change its name.
  */
-function LayerToggle({
-  label,
-  on,
-  busy = false,
-  onToggle,
+function ArmedHint({
+  tone,
+  children,
 }: {
-  label: string;
-  on: boolean;
-  /** The layer is on but still downloading; the viewport shows nothing yet. */
-  busy?: boolean;
-  onToggle: () => void;
+  tone: "cmd" | "caution";
+  children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      aria-pressed={on}
-      aria-busy={busy || undefined}
-      onClick={onToggle}
+    <p
+      role="status"
       className={cn(
         overlayPanel,
-        "instrument-label h-6 px-2 transition-colors pointer-coarse:min-h-10",
-        on
-          ? "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd"
-          : "text-muted-foreground hover:bg-elevated hover:text-foreground",
+        "instrument-label px-2 py-1.5",
+        tone === "cmd"
+          ? "border-signal-cmd/50 text-signal-cmd"
+          : "border-signal-caution/50 text-signal-caution",
       )}
     >
-      {label}
-      {busy && <span className="text-muted-foreground"> · loading</span>}
-    </button>
+      {children}
+    </p>
   );
 }
