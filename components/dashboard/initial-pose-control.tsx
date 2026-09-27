@@ -55,7 +55,7 @@ export function InitialPoseControl({
         onClick={onArm}
         className={cn(
           overlayPanel,
-          "instrument-label flex h-7 items-center gap-1.5 px-2 transition-colors",
+          "instrument-label flex h-7 items-center gap-1.5 px-2 transition-colors pointer-coarse:min-h-10",
           armed
             ? "border-signal-caution/50 bg-signal-caution/12 text-signal-caution"
             : "hover:bg-elevated",

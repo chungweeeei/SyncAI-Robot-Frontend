@@ -64,7 +64,7 @@ export function StripDisclosure({
         title={open ? hideTitle : showTitle}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex size-6 items-center justify-center rounded-sm border transition-colors",
+          "flex size-6 items-center justify-center rounded-sm border transition-colors pointer-coarse:size-10",
           // Open is the cmd hue, like every other operator choice in the
           // console. It is the only state these buttons show: what the panel
           // is doing once open is the panel's own business.

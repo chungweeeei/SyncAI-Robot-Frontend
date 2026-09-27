@@ -113,7 +113,7 @@ export function TaskTemplateRow({
           aria-label={open ? "Hide steps" : "Show steps"}
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
-          className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground"
+          className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:size-10"
         >
           {open ? (
             <ChevronDownIcon className="size-3.5" aria-hidden />

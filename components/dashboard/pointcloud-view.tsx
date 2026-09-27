@@ -307,7 +307,7 @@ export function PointCloudView({
           title="Look straight down at the map"
           className={cn(
             overlayPanel,
-            "instrument-label flex h-6 items-center gap-1.5 px-2 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground",
+            "instrument-label flex h-6 items-center gap-1.5 px-2 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:min-h-10",
           )}
         >
           <Grid2x2Icon aria-hidden className="size-3.5" />
@@ -391,7 +391,7 @@ function LayerToggle({
       onClick={onToggle}
       className={cn(
         overlayPanel,
-        "instrument-label h-6 px-2 transition-colors",
+        "instrument-label h-6 px-2 transition-colors pointer-coarse:min-h-10",
         on
           ? "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd"
           : "text-muted-foreground hover:bg-elevated hover:text-foreground",

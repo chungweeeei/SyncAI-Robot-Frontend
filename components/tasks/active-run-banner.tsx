@@ -78,7 +78,7 @@ function ActiveRunRow({ task, asOf }: { task: ActiveTask; asOf: string | null })
           type="button"
           disabled={busy}
           onClick={() => cancel.mutate(task.id)}
-          className="instrument-label flex h-6 shrink-0 items-center gap-1 rounded-sm border border-signal-warn/50 bg-signal-warn/12 px-2 text-signal-warn transition-colors hover:bg-signal-warn/20 disabled:opacity-50"
+          className="instrument-label flex h-6 shrink-0 items-center gap-1 rounded-sm border border-signal-warn/50 pointer-coarse:min-h-10 bg-signal-warn/12 px-2 text-signal-warn transition-colors hover:bg-signal-warn/20 disabled:opacity-50"
         >
           <XIcon className="size-3" aria-hidden />
           Cancel

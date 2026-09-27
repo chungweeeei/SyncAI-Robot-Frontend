@@ -340,7 +340,7 @@ export function Segmented<T extends string>({
             disabled={disabled}
             onClick={() => onChange(option.value)}
             className={cn(
-              "instrument-label h-6 px-2 transition-colors",
+              "instrument-label h-6 px-2 transition-colors pointer-coarse:min-h-10",
               "border-l border-hairline first:border-l-0",
               // The dimming lives on the container, so a disabled segment only
               // has to stop reacting — two stacked opacities would be muddy.

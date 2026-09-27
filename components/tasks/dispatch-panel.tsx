@@ -57,7 +57,7 @@ export function DispatchPanel({
             type="button"
             disabled={busy || !cancelable}
             onClick={dispatch.cancel}
-            className="instrument-label flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border border-signal-warn/50 bg-signal-warn/12 text-signal-warn transition-colors hover:bg-signal-warn/20 disabled:opacity-50"
+            className="instrument-label flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border border-signal-warn/50 pointer-coarse:min-h-10 bg-signal-warn/12 text-signal-warn transition-colors hover:bg-signal-warn/20 disabled:opacity-50"
           >
             <XIcon className="size-3.5" aria-hidden />
             Cancel
@@ -68,7 +68,7 @@ export function DispatchPanel({
               type="button"
               disabled={busy || !ready}
               onClick={onDispatch}
-              className="instrument-label flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="instrument-label flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm bg-primary pointer-coarse:min-h-10 text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               <SendIcon className="size-3.5" aria-hidden />
               Dispatch
@@ -78,7 +78,7 @@ export function DispatchPanel({
                 type="button"
                 disabled={busy}
                 onClick={dispatch.clear}
-                className="instrument-label h-7 rounded-sm border border-hairline px-2 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-50"
+                className="instrument-label h-7 rounded-sm border border-hairline px-2 pointer-coarse:min-h-10 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-50"
               >
                 Clear
               </button>

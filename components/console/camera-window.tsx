@@ -340,7 +340,7 @@ export function CameraWindow({ className }: { className?: string }) {
           setSize(openingSize());
         }}
         title="Drag to move · double-click to reset"
-        className="mb-2 flex h-4 cursor-grab touch-none items-center justify-between gap-2 select-none active:cursor-grabbing"
+        className="mb-2 flex h-4 cursor-grab touch-none items-center justify-between gap-2 select-none active:cursor-grabbing pointer-coarse:h-10"
       >
         <h2 className="instrument-label flex items-center gap-1.5 text-muted-foreground">
           {/* The drag still works from anywhere on the header. This button is
@@ -352,7 +352,7 @@ export function CameraWindow({ className }: { className?: string }) {
             aria-label="Move the camera window"
             title="Drag to move · arrow keys to nudge · Home to reset"
             onKeyDown={onMoveKeyDown}
-            className="-m-0.5 flex cursor-grab items-center rounded-sm p-0.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:cursor-grabbing"
+            className="-m-0.5 flex cursor-grab items-center rounded-sm p-0.5 pointer-coarse:p-2.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:cursor-grabbing"
           >
             <GripHorizontalIcon aria-hidden className="size-3" />
           </button>
@@ -372,7 +372,7 @@ export function CameraWindow({ className }: { className?: string }) {
             onClick={() => (clip.capturing ? clip.stop() : clip.start())}
             title={clipTitle}
             className={cn(
-              "flex size-5 items-center justify-center rounded-sm border transition-colors",
+              "flex size-5 items-center justify-center rounded-sm border transition-colors pointer-coarse:size-10",
               clip.capturing
                 ? "border-signal-warn/50 bg-signal-warn/12 text-signal-warn"
                 : "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground",
@@ -398,7 +398,7 @@ export function CameraWindow({ className }: { className?: string }) {
             onClick={() => setMuted((v) => !v)}
             title={muted ? "Turn on the robot's audio" : "Mute the robot's audio"}
             className={cn(
-              "flex size-5 items-center justify-center rounded-sm border transition-colors",
+              "flex size-5 items-center justify-center rounded-sm border transition-colors pointer-coarse:size-10",
               muted
                 ? "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground"
                 : "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd",
@@ -494,7 +494,7 @@ export function CameraWindow({ className }: { className?: string }) {
           onPointerCancel={onRelease}
           onLostPointerCapture={onRelease}
           onKeyDown={onHandleKeyDown}
-          className="group absolute bottom-0 left-0 size-5 cursor-nesw-resize touch-none"
+          className="group absolute bottom-0 left-0 size-5 cursor-nesw-resize touch-none pointer-coarse:size-10"
         >
           {/* Two diagonal strokes, the platform's own resize-grip shape, drawn
             * rather than iconed so they sit flush in the corner. Both rotate

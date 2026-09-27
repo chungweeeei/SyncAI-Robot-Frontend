@@ -286,7 +286,7 @@ export function ScheduleForm({
       <button
         type="submit"
         disabled={!submittable}
-        className="instrument-label flex h-7 w-full items-center justify-center gap-1.5 rounded-sm bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+        className="instrument-label flex h-7 w-full items-center justify-center gap-1.5 rounded-sm bg-primary pointer-coarse:min-h-10 text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
       >
         <CalendarPlusIcon className="size-3.5" aria-hidden />
         Create schedule
@@ -341,7 +341,7 @@ function DayToggles({
             disabled={disabled}
             onClick={() => onToggle(day.value)}
             className={cn(
-              "instrument-label h-6 min-w-0 flex-1 truncate px-1 transition-colors",
+              "instrument-label h-6 min-w-0 flex-1 truncate px-1 transition-colors pointer-coarse:min-h-10",
               "border-l border-hairline first:border-l-0",
               disabled && "hover:bg-transparent hover:text-muted-foreground",
               active
