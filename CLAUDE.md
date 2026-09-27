@@ -159,7 +159,8 @@ lib/
                 and the editor's unsaved draft (draft-store.ts — the one place
                 that touches browser storage)
   recording/    bag size/duration formatting and the bag name rule
-  robot/        G23 joint table (URDF link names ↔ GLB node names)
+  robot/        G23 joint table (URDF link names ↔ GLB node names), and how the
+                dashboard names a motor (the leg grid and its joint codes)
   teleop/       thumbstick maths: clamp, deadzone, key bindings and the
                 screen-to-body-frame turn the drive panel commands through
   video/        WHIP/WHEP signalling, and the camera window's clip capture

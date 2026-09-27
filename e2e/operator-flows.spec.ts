@@ -352,6 +352,26 @@ test.describe("words and names on the operator's screens", () => {
     await expect(header.getByText("wh1", { exact: true })).toBeVisible();
   });
 
+  test("names a motor the leg grid does not place by where it is", async ({ page }) => {
+    // The driver's joint list can gain or rename a joint. Its reading is still
+    // shown, but by a place on the robot, never by the driver's identifier.
+    await mockBackend(page, {
+      state: robotState({
+        motor_status: [
+          { name: "FL_Knee_joint", temperature: 41, error: 0 },
+          { name: "FL_Ankle_joint", temperature: 44, error: 0 },
+          { name: "waist_motor", temperature: 39, error: 0 },
+        ],
+      }),
+    });
+    await page.goto("/");
+
+    const telemetry = page.getByRole("complementary", { name: "Telemetry" });
+    await expect(telemetry.getByText("FL Ankle", { exact: true })).toBeVisible();
+    await expect(telemetry.getByText("Other motor 1", { exact: true })).toBeVisible();
+    await expect(telemetry.getByText(/_joint|waist_motor/)).toHaveCount(0);
+  });
+
   test("names the settings pickers by the labels beside them", async ({ page }) => {
     await mockBackend(page);
     await page.goto("/settings");
