@@ -37,7 +37,7 @@ export default function TasksPage() {
        * come out *narrower* than they were before the split, which is the
        * opposite of the point. Below lg the grid collapses and this is just a
        * wide-ish single column. */}
-      <div className="mx-auto w-full max-w-6xl px-4 py-8">
+      <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:py-8">
         <header className="mb-6">
           <p className="instrument-label text-muted-foreground">Robot</p>
           <h1 className="mt-1.5 text-xl font-semibold tracking-tight">Tasks</h1>

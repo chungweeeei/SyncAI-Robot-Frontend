@@ -1,3 +1,5 @@
+import { deflateSync } from "node:zlib";
+
 import type { Page, Route } from "@playwright/test";
 
 /**
@@ -20,6 +22,51 @@ const PNG_1PX = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
   "base64",
 );
+
+/**
+ * A floor plan the editor can actually paint on: an 8-bit greyscale PNG of
+ * `width` x `height` cells, every one `byte` (254 is free, 0 an obstacle, 205
+ * unknown — see classify in lib/map/grid.ts).
+ *
+ * The 1x1 default is enough for a card's thumbnail and the viewport's ground
+ * texture, but the editor reads the image *as the grid*: one pixel is one
+ * cell, fitted to the whole canvas, and any zoom then shrinks it to 32 px —
+ * so a test that strokes or pinches after zooming was touching nothing.
+ * Hand this to `gridImage` for those.
+ */
+export function floorPlanPng(width: number, height: number, byte: number): Buffer {
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, crc]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8; // bit depth
+  header[9] = 0; // greyscale
+  // Each scanline is a filter byte (0: none) followed by the row.
+  const raw = Buffer.alloc((width + 1) * height, byte);
+  for (let y = 0; y < height; y += 1) raw[y * (width + 1)] = 0;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", header),
+    chunk("IDAT", deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+function crc32(data: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of data) {
+    crc ^= byte;
+    for (let i = 0; i < 8; i += 1) crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
 
 export function robotState(over: Record<string, unknown> = {}) {
   return {
@@ -153,6 +200,8 @@ export interface BackendOverrides {
   taskHistoryPageSize?: number;
   /** GET /tasks/<id> bodies by id; an id with none answers 404. */
   taskStates?: Record<string, Record<string, unknown>>;
+  /** The floor plan every map's /image answers with; see floorPlanPng. */
+  gridImage?: Buffer;
 }
 
 /**
@@ -198,6 +247,7 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   const taskHistory = over.taskHistory ?? [];
   const taskHistoryPageSize = over.taskHistoryPageSize ?? 20;
   const taskStates = over.taskStates ?? {};
+  const gridImage = over.gridImage ?? PNG_1PX;
 
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
@@ -299,7 +349,7 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   // as a console error, and a suite that has to ignore those would also ignore
   // the ones that mean something.
   await page.route(/\/api\/v1\/maps\/[^/]+\/(image|thumbnail)$/, (route) =>
-    route.fulfill({ status: 200, contentType: "image/png", body: PNG_1PX }),
+    route.fulfill({ status: 200, contentType: "image/png", body: gridImage }),
   );
   await page.route(/\/api\/v1\/maps\/[^/]+\/pointcloud$/, (route) =>
     // The wire format is [u32 count][f32 xyz…]; zero points is four zero bytes.

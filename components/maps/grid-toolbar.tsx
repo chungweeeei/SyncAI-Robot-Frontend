@@ -1,7 +1,10 @@
 "use client";
 
+import * as React from "react";
 import {
   BrushIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   HandIcon,
   MapPinPlusIcon,
   MaximizeIcon,
@@ -10,6 +13,8 @@ import {
   SquareDashedMousePointerIcon,
   SquareIcon,
   Undo2Icon,
+  ZoomInIcon,
+  ZoomOutIcon,
 } from "lucide-react";
 
 import {
@@ -76,7 +81,7 @@ const VERTEX_TOOLS: readonly ToolOption<VertexTool>[] = [
   {
     value: "select",
     label: "Select",
-    hint: "drag a box over waypoints; Shift adds",
+    hint: "drag a box over waypoints; Shift-click or tap one to add it",
     icon: SquareDashedMousePointerIcon,
   },
 ];
@@ -157,6 +162,8 @@ export interface GridToolbarProps {
   onUndo: () => void;
   onRedo: () => void;
   onFit: () => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
   dirty: boolean;
   save: SaveState;
   onSave: () => void;
@@ -220,13 +227,19 @@ function ToolRow<T extends string>({
             aria-label={label}
             onClick={() => onChange(option)}
             className={cn(
-              "flex h-6 min-w-0 flex-1 items-center justify-center border-l border-hairline transition-colors first:border-l-0 pointer-coarse:min-h-10",
+              "flex h-6 min-w-0 flex-1 items-center justify-center border-l border-hairline transition-colors first:border-l-0 pointer-coarse:min-h-10 pointer-coarse:flex-col pointer-coarse:gap-0.5",
               active
                 ? "bg-signal-cmd/12 text-signal-cmd"
                 : "text-muted-foreground hover:bg-elevated hover:text-foreground",
             )}
           >
             <Icon className="size-3.5" aria-hidden />
+            {/* The name is the tooltip's first half, which a finger never
+              * reads; under a coarse pointer the segment is 40 px tall and
+              * has the room to say it. */}
+            <span className="instrument-label hidden text-[9px] leading-none pointer-coarse:block">
+              {label}
+            </span>
           </button>
         );
       })}
@@ -250,6 +263,8 @@ export function GridToolbar({
   onUndo,
   onRedo,
   onFit,
+  onZoomIn,
+  onZoomOut,
   dirty,
   save,
   onSave,
@@ -257,6 +272,10 @@ export function GridToolbar({
 }: GridToolbarProps) {
   const shapeTool = tool === "brush" || tool === "line";
   const note = saveNote(save);
+  // Paint and Size fold away below sm, because on a phone the toolbar spans
+  // the top of a ~540 px canvas and those two rows are the ones changed
+  // least. Mode and Tool stay: without them the canvas cannot be used at all.
+  const [showPaint, setShowPaint] = React.useState(false);
 
   return (
     // w-56 matches the dashboard's overlay controls, and is what "FREE / UNKNOWN /
@@ -285,7 +304,7 @@ export function GridToolbar({
             <ToolRow value={tool} options={TOOLS} onChange={onToolChange} />
           </Row>
 
-          <Row label="Paint">
+          <Row label="Paint" className={cn(!showPaint && "max-sm:hidden")}>
             <Segmented
               label="Paint"
               stretch
@@ -299,7 +318,10 @@ export function GridToolbar({
            * what you are actually deciding about. Discrete sizes rather than a
            * slider: no slider exists in components/ui, and knowing you are painting
            * exactly 7 cells is worth more here than continuous control. */}
-          <Row label={`Size · ${brush} cell${brush === 1 ? "" : "s"}`}>
+          <Row
+            label={`Size · ${brush} cell${brush === 1 ? "" : "s"}`}
+            className={cn(!showPaint && "max-sm:hidden")}
+          >
             <Segmented
               label="Size"
               stretch
@@ -316,6 +338,25 @@ export function GridToolbar({
         <IconButton label="Undo" icon={Undo2Icon} disabled={!canUndo} onClick={onUndo} />
         <IconButton label="Redo" icon={Redo2Icon} disabled={!canRedo} onClick={onRedo} />
         <IconButton label="Fit to view" icon={MaximizeIcon} onClick={onFit} />
+        {/* Zoom is otherwise the wheel and, on a phone, the pinch; one press
+          * is a step the operator can count. */}
+        <IconButton label="Zoom out" icon={ZoomOutIcon} onClick={onZoomOut} />
+        <IconButton label="Zoom in" icon={ZoomInIcon} onClick={onZoomIn} />
+        {mode === "grid" && (
+          <button
+            type="button"
+            aria-expanded={showPaint}
+            onClick={() => setShowPaint((v) => !v)}
+            className="instrument-label flex h-6 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground transition-colors hover:bg-elevated sm:hidden pointer-coarse:min-h-10"
+          >
+            Paint
+            {showPaint ? (
+              <ChevronUpIcon className="size-3.5" aria-hidden />
+            ) : (
+              <ChevronDownIcon className="size-3.5" aria-hidden />
+            )}
+          </button>
+        )}
         {dirty && (
           <Chip tone="caution" className="ml-auto">
             Unsaved
@@ -372,9 +413,17 @@ function labelOf<T extends string>(options: readonly ToolOption<T>[], value: T):
   return options.find((option) => option.value === value)?.label ?? "";
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div>
+    <div className={className}>
       <p className="instrument-label mb-1 text-muted-foreground">{label}</p>
       {children}
     </div>

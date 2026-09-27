@@ -35,6 +35,13 @@ import { DEFAULT_VERTEX_TYPE } from "@/lib/map/vertex";
 import type { VertexType } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
+
+/**
+ * One press of the toolbar's ± buttons. Two presses are a doubling, which
+ * matches roughly a hand's width of wheel — enough to matter, few enough to
+ * count back from.
+ */
+const ZOOM_STEP_FACTOR = Math.SQRT2;
 const DEFAULT_BRUSH = 7;
 
 /**
@@ -455,6 +462,9 @@ function EditorSurface({
   const undo = React.useCallback(() => step("undo"), [step]);
   const redo = React.useCallback(() => step("redo"), [step]);
   const fit = React.useCallback(() => setFitNonce((n) => n + 1), []);
+  const [zoomStep, setZoomStep] = React.useState<{ factor: number } | null>(null);
+  const zoomIn = React.useCallback(() => setZoomStep({ factor: ZOOM_STEP_FACTOR }), []);
+  const zoomOut = React.useCallback(() => setZoomStep({ factor: 1 / ZOOM_STEP_FACTOR }), []);
 
   // `mutate` alone, not the whole result: it is bound once per observer, so
   // `onSave` keeps its identity across the mutation's state changes.
@@ -601,6 +611,7 @@ function EditorSurface({
         brush={brush}
         spacePan={spacePan}
         fitNonce={fitNonce}
+        zoomStep={zoomStep}
         focus={focus}
         onStrokeCommit={commitPatch}
         onHover={setHover}
@@ -615,8 +626,13 @@ function EditorSurface({
         onVertexGesture={handleVertexGesture}
       />
 
+      {/* Top-left from sm, the full width on a phone: at 375 px a 224 px
+        * toolbar and a 240 px waypoint panel could not both hang from a
+        * corner without one covering the other. Capped to the canvas at
+        * every width, because a phone held sideways leaves ~210 px and the
+        * Save button was what got clipped. */}
       <GridToolbar
-        className="absolute top-3 left-3"
+        className="absolute top-3 right-3 left-3 max-h-[calc(100%-1.5rem)] w-auto overflow-y-auto sm:right-auto sm:w-56"
         mode={mode}
         // changeMode, never setMode: going back to grid with a draft still staged
         // leaves a dashed marker on the canvas and no panel to commit or dismiss
@@ -635,11 +651,16 @@ function EditorSurface({
         onUndo={undo}
         onRedo={redo}
         onFit={fit}
+        onZoomIn={zoomIn}
+        onZoomOut={zoomOut}
         dirty={dirty}
         save={save}
         onSave={onSave}
       />
-      {/* Top-right: the toolbar owns top-left and GridStatus bottom-left.
+      {/* Top-right from sm; along the bottom on a phone, where the toolbar
+        * has the top (see above). Capped and scrolling for the same reason.
+        *
+        * The toolbar owns top-left and GridStatus bottom-left.
         *
         * Mounted only in vertex mode, because unmounting discards nothing that the
         * mode switch was not already discarding — changeMode("grid") clears draft
@@ -650,7 +671,7 @@ function EditorSurface({
         * mode where nothing in it is actionable. */}
       {mode === "vertex" && (
         <VertexPanel
-          className="absolute top-3 right-3"
+          className="absolute right-3 bottom-3 left-3 max-h-[45%] w-auto overflow-y-auto sm:top-3 sm:bottom-auto sm:left-auto sm:max-h-[calc(100%-1.5rem)] sm:w-60"
           vertices={vertexList}
           status={vertexStatus}
           error={vertexError}
@@ -683,8 +704,11 @@ function EditorSurface({
         * keyboard until it is armed, and its WASD/QE/AD set does not overlap
         * Space / 0 / Ctrl+Z in any case. */}
 
+      {/* Not on a phone, nor on any screen too short to hold it beside the
+        * toolbar: its cell readout follows a hover, which a finger does not
+        * have, and the bottom of a phone is the waypoint panel's. */}
       <GridStatus
-        className="absolute bottom-3 left-3"
+        className="absolute bottom-3 left-3 hidden sm:block [@media(max-height:480px)]:hidden"
         meta={session.meta}
         hover={hover}
         scale={scale}

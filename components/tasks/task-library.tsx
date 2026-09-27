@@ -100,7 +100,10 @@ export function TaskLibrary({
           No saved jobs yet. Build a list below, name it, and press Save as new.
         </p>
       ) : (
-        <ul className="max-h-56 space-y-1.5 overflow-y-auto">
+        // The cap and the inner scroll are for a desktop composer, where the
+        // library shares a column with the step list. On a phone the page is
+        // the scroll surface, and a 224 px list of its own caught swipes.
+        <ul className="space-y-1.5 sm:max-h-56 sm:overflow-y-auto">
           {templates.map((template) => (
             <TaskTemplateRow
               key={template.id}

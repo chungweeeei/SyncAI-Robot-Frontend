@@ -59,6 +59,8 @@ import type { PlanarPose } from "@/lib/types/robot";
 
 /** Click slop around a marker centre. Comfortably larger than the dot itself. */
 const VERTEX_HIT_RADIUS = 11;
+/** The same slop under a finger, which covers ~22 px and cannot see the dot. */
+const VERTEX_HIT_RADIUS_TOUCH = 22;
 
 const ZOOM_PER_PX = 0.0015;
 const WHEEL_LINE_PX = 16;
@@ -81,6 +83,13 @@ export interface GridCanvasProps {
    * second way to reach it.
    */
   fitNonce: number;
+  /**
+   * One step of zoom about the viewport's centre, for the toolbar's ± buttons.
+   * Identity is the trigger, as with `focus`: a fresh object means "now". They
+   * exist because a phone has no wheel, and the pinch below is the only other
+   * way in — which is one way too few for something as basic as zoom.
+   */
+  zoomStep: { factor: number } | null;
   /**
    * A map-frame point to bring to the centre of the viewport, holding the zoom.
    *
@@ -167,6 +176,25 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
    */
   const rectRef = React.useRef<{ width: number; height: number } | null>(null);
   const gestureRef = React.useRef<Gesture | null>(null);
+  /**
+   * Every finger currently on the canvas, by pointer id, in container-local
+   * px. Gestures are one-pointer things (see Gesture), so this is the only
+   * record of where a second finger is — which is what a pinch needs.
+   */
+  const touchesRef = React.useRef(new Map<number, { cx: number; cy: number }>());
+  /**
+   * The two-finger zoom-and-pan in flight, or null. Kept apart from gestureRef
+   * on purpose: a pinch is not a tool's gesture, it is the view being moved
+   * under whatever tool is armed, and it must never stamp, band or aim.
+   */
+  const pinchRef = React.useRef<{
+    a: number;
+    b: number;
+    /** Distance between the fingers and their midpoint, at the last move. */
+    dist: number;
+    cx: number;
+    cy: number;
+  } | null>(null);
   const hoverRef = React.useRef<CellProbe | null>(null);
   const rafRef = React.useRef(0);
   const drawRef = React.useRef<(() => void) | null>(null);
@@ -320,6 +348,24 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     requestDraw();
   }, [props.fitNonce, requestDraw]);
 
+  const zoomStep = props.zoomStep;
+  React.useEffect(() => {
+    if (!zoomStep) return;
+    const view = viewRef.current;
+    const rect = rectRef.current;
+    // Before the first paint there is no view to zoom; draw() builds the fit.
+    if (!view || !rect) return;
+    viewRef.current = zoomAt(
+      view,
+      rect.width / 2,
+      rect.height / 2,
+      zoomStep.factor,
+      rect,
+      session.grid,
+    );
+    requestDraw();
+  }, [zoomStep, session, requestDraw]);
+
   /**
    * Centre on a point the shell asked for, if there is a view to move.
    *
@@ -438,12 +484,12 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
    * would be unclickable zoomed out and enormous zoomed in. Last-to-first
    * because that is paint order reversed: the marker drawn on top wins.
    */
-  const vertexAt = (view: View, cx: number, cy: number): MapVertex | null => {
+  const vertexAt = (view: View, cx: number, cy: number, radius: number): MapVertex | null => {
     const { vertices } = propsRef.current;
     for (let i = vertices.length - 1; i >= 0; i -= 1) {
       const vertex = vertices[i];
       const at = vertexScreen(view, session.meta, vertex.x, vertex.y);
-      if (Math.hypot(at.cx - cx, at.cy - cy) <= VERTEX_HIT_RADIUS) return vertex;
+      if (Math.hypot(at.cx - cx, at.cy - cy) <= radius) return vertex;
     }
     return null;
   };
@@ -467,24 +513,58 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     const view = viewRef.current;
     if (!view) return;
     if (event.button !== 0 && event.button !== 1 && event.button !== 2) return;
-    // One gesture at a time. A second finger used to replace the gesture in
-    // the ref, and with Brush armed the next move stampLine'd from the first
-    // finger to the second — a stroke the operator never drew, already in the
-    // undo stack. Until the editor has a pinch of its own, the extra finger
-    // does nothing.
-    if (gestureRef.current) return;
 
     const { mode, tool, vertexTool, value, brush, spacePan } = propsRef.current;
     const { cx, cy } = localPoint(event);
+
+    if (event.pointerType === "touch") {
+      touchesRef.current.set(event.pointerId, { cx, cy });
+      // A second finger is a pinch — if the first one is panning or doing
+      // nothing. Over a stroke, a band or an aim it stays ignored: a stroke
+      // has already stamped, and the two-finger zoom would move the map out
+      // from under the cells still being painted. (Before the pinch existed
+      // a second finger replaced the gesture, and with Brush armed the next
+      // move painted a line from one finger to the other.)
+      const gesture = gestureRef.current;
+      if (touchesRef.current.size === 2 && !pinchRef.current && (!gesture || gesture.kind === "pan")) {
+        if (gesture) {
+          // Ended without the click-pick: two fingers are never a click.
+          gestureRef.current = null;
+          setPanCursor(false);
+        }
+        const [a, b] = [...touchesRef.current.entries()];
+        pinchRef.current = {
+          a: a[0],
+          b: b[0],
+          dist: Math.hypot(b[1].cx - a[1].cx, b[1].cy - a[1].cy),
+          cx: (a[1].cx + b[1].cx) / 2,
+          cy: (a[1].cy + b[1].cy) / 2,
+        };
+        event.preventDefault();
+        // Both fingers, so neither lift is lost to an element the finger
+        // slid onto; the first may already be captured from its pan.
+        event.currentTarget.setPointerCapture(a[0]);
+        event.currentTarget.setPointerCapture(b[0]);
+        return;
+      }
+    }
+    // One gesture at a time; a pinch in flight owns both fingers.
+    if (gestureRef.current || pinchRef.current) return;
+
     // Which gesture this press starts is a rule, and the rule is
     // classifyPress in lib/map/gesture.ts: right and middle always pan, the
     // mode's own tool claims the left button, and Select splits a press into
     // toggle, band or re-aim. What is left here is doing it to this canvas.
-    const hit = mode === "vertex" ? vertexAt(view, cx, cy) : null;
+    const touch = event.pointerType === "touch";
+    const hit =
+      mode === "vertex"
+        ? vertexAt(view, cx, cy, touch ? VERTEX_HIT_RADIUS_TOUCH : VERTEX_HIT_RADIUS)
+        : null;
     const intent = classifyPress({
       button: event.button,
       spacePan,
       shiftKey: event.shiftKey,
+      touch,
       mode,
       tool,
       vertexTool,
@@ -617,6 +697,33 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     const rect = rectRef.current;
     const { cx, cy } = localPoint(event);
     const gesture = gestureRef.current;
+
+    if (event.pointerType === "touch" && touchesRef.current.has(event.pointerId)) {
+      touchesRef.current.set(event.pointerId, { cx, cy });
+    }
+    const pinch = pinchRef.current;
+    if (pinch) {
+      if (event.pointerId !== pinch.a && event.pointerId !== pinch.b) return;
+      const a = touchesRef.current.get(pinch.a);
+      const b = touchesRef.current.get(pinch.b);
+      if (!a || !b || !rect) return;
+      const dist = Math.hypot(b.cx - a.cx, b.cy - a.cy);
+      const mx = (a.cx + b.cx) / 2;
+      const my = (a.cy + b.cy) / 2;
+      // Zoom about the old midpoint, then carry it to the new one: the map
+      // stays pinned under the fingers, which is what makes a pinch feel
+      // like holding the paper rather than turning a dial.
+      let next = view;
+      if (pinch.dist > 0 && dist > 0) {
+        next = zoomAt(next, pinch.cx, pinch.cy, dist / pinch.dist, rect, session.grid);
+      }
+      viewRef.current = panBy(next, mx - pinch.cx, my - pinch.cy, rect, session.grid);
+      pinch.dist = dist;
+      pinch.cx = mx;
+      pinch.cy = my;
+      requestDraw();
+      return;
+    }
     // Before the hover probe, or the brush ring would follow the wrong finger.
     if (gesture && gesture.pointerId !== event.pointerId) return;
 
@@ -686,6 +793,18 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
   };
 
   const endGesture = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "touch") touchesRef.current.delete(event.pointerId);
+    const pinch = pinchRef.current;
+    if (pinch && (event.pointerId === pinch.a || event.pointerId === pinch.b)) {
+      // Either finger lifting ends the pinch. The one still down owns no
+      // gesture and starts none — a pan that began from wherever it happened
+      // to be would jump the map — so it simply rests until it lifts too.
+      pinchRef.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      return;
+    }
     const gesture = gestureRef.current;
     const view = viewRef.current;
     // The second finger's lift is not the end of the first finger's stroke.

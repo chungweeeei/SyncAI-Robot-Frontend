@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { failOnConsoleErrors, mockBackend } from "./backend";
+import { MAP_NAME, failOnConsoleErrors, floorPlanPng, mockBackend } from "./backend";
 
 /**
  * The console on a phone: 375 px wide, driven by a finger.
@@ -195,5 +195,85 @@ test.describe("the console on a phone", () => {
     await expect.poll(() => dispatches.length).toBe(1);
     const body = dispatches[0] as { steps: { type: string }[] };
     expect(body.steps[0].type).toBe("MOVE");
+  });
+
+  test("lays the floor plan editor's panels out without one covering the other", async ({
+    page,
+  }) => {
+    // At 375 px the 224 px toolbar and the 240 px waypoint panel used to hang
+    // from the top corners and overlap by ~110 px, with the panel on top of
+    // the toolbar's Save.
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+    await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
+    await expect(page.getByText("Floor plan editor")).toBeVisible();
+
+    const save = await page.getByRole("button", { name: "Save" }).boundingBox();
+    // .last(): the Mode row's "Waypoints" segment comes first in the DOM.
+    const waypoints = await page.getByText("Waypoints", { exact: true }).last().boundingBox();
+    await expectOnScreen(page, "Save", save);
+    await expectOnScreen(page, "the waypoint panel's heading", waypoints);
+    expect(
+      waypoints!.y,
+      "the waypoint panel starts above the toolbar's Save",
+    ).toBeGreaterThan(save!.y + save!.height);
+
+    // And the tool icons say their names under a finger.
+    await expect(page.getByRole("button", { name: "Place" })).toContainText("Place");
+  });
+
+  test("zooms the floor plan with two fingers instead of painting between them", async ({
+    page,
+  }) => {
+    // With Brush armed a second finger used to replace the stroke and the
+    // next move painted a line from one finger to the other. Now two
+    // fingers are a pinch, and the only mark on the map is the first
+    // finger's own press.
+    // A real grid, matching the catalogue's 400 x 300: the 1 px default is
+    // one cell the size of the canvas, and a pinch shrinks it out from under
+    // the fingers, which would make both halves of this test touch nothing.
+    // Unknown cells, so the brush's default (Free) is a change worth saving.
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    await expect(page.getByText("Floor plan editor")).toBeVisible();
+    await page.locator("canvas").waitFor();
+
+    const box = (await page.locator("canvas").boundingBox())!;
+    const cx = box.x + box.width / 2;
+    // Low in the canvas: on a phone the toolbar spans the top ~240 px, and a
+    // finger on it would reach neither the map nor this test's point.
+    const cy = box.y + box.height * 0.7;
+    const cdp = await page.context().newCDPSession(page);
+    const finger = (x: number, y: number, id: number) => ({ x, y, id });
+    const touch = (
+      type: "touchStart" | "touchMove" | "touchEnd",
+      touchPoints: { x: number; y: number; id: number }[],
+    ) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
+
+    // A pan-armed press, then the pinch: Pan is what the editor opens in, so
+    // this is the gesture a phone makes to look around before painting.
+    // exact: "Manual drive panel" in the strip contains the word.
+    await page.getByRole("button", { name: "Pan", exact: true }).click();
+    await touch("touchStart", [finger(cx - 30, cy, 1)]);
+    await touch("touchStart", [finger(cx - 30, cy, 1), finger(cx + 30, cy, 2)]);
+    await touch("touchMove", [finger(cx - 80, cy, 1), finger(cx + 80, cy, 2)]);
+    await touch("touchEnd", [finger(cx - 80, cy, 1)]);
+    await touch("touchEnd", []);
+    // Nothing was painted, so there is nothing to save — and the map did
+    // zoom, or "nothing painted" would be true of a canvas that ignored the
+    // second finger, which is what it did before it had a pinch. The zoom
+    // readout is display:none on a phone (it follows a hover), but it is
+    // still in the DOM to be read.
+    await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+    await expect(page.getByText("Unsaved")).toHaveCount(0);
+    const zoom = page.getByText("Zoom", { exact: true }).locator("xpath=..");
+    await expect.poll(() => zoom.textContent()).not.toMatch(/Zoom94%/);
+    expect(Number((await zoom.textContent())?.match(/Zoom(\d+)%/)?.[1])).toBeGreaterThan(94);
+
+    // The positive control: one finger with Brush armed does paint.
+    await page.getByRole("button", { name: "Brush" }).click();
+    await touch("touchStart", [finger(cx, cy, 1)]);
+    await touch("touchMove", [finger(cx + 20, cy + 20, 1)]);
+    await touch("touchEnd", []);
+    await expect(page.getByText("Unsaved")).toBeVisible();
   });
 });

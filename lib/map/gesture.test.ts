@@ -22,6 +22,7 @@ const press = (over: Partial<PressInput> = {}): PressInput => ({
   button: 0,
   spacePan: false,
   shiftKey: false,
+  touch: false,
   mode: "grid",
   tool: "brush",
   vertexTool: "place",
@@ -64,6 +65,16 @@ describe("classifyPress", () => {
     expect(
       classifyPress(press({ mode: "vertex", vertexTool: "select", onVertex: true, shiftKey: true })),
     ).toBe("toggle");
+  });
+
+  it("toggles a marker on a bare tap with Select armed, since a finger has no Shift", () => {
+    expect(
+      classifyPress(press({ mode: "vertex", vertexTool: "select", onVertex: true, touch: true })),
+    ).toBe("toggle");
+    // A finger still re-aims under Pan and Place: only Select reads the tap as a toggle.
+    expect(
+      classifyPress(press({ mode: "vertex", vertexTool: "place", onVertex: true, touch: true })),
+    ).toBe("aim");
   });
 
   it("starts a band on bare map with Select armed, with or without Shift", () => {

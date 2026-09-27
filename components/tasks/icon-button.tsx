@@ -26,7 +26,8 @@ export function IconButton({
 }: {
   label: string;
   disabled: boolean;
-  onClick: () => void;
+  /** Handed the event so a caller can tell a finger's press from a mouse's. */
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
   className?: string;
   children: React.ReactNode;
 }) {

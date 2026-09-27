@@ -89,6 +89,12 @@ export function StepRow({
   // and in warn tone, so it is still the row the eye lands on.
   const problem = rowError ?? state?.error_msg ?? null;
   const bodyId = React.useId();
+  const [removeArmed, setRemoveArmed] = React.useState(false);
+  React.useEffect(() => {
+    if (!removeArmed) return;
+    const timer = setTimeout(() => setRemoveArmed(false), 3_000);
+    return () => clearTimeout(timer);
+  }, [removeArmed]);
   const typeLabel = STEP_TYPES.find((spec) => spec.value === step.type)?.label;
   const waypointName =
     step.vertexId === null
@@ -211,15 +217,11 @@ export function StepRow({
           )}
         </button>
 
-        {/* Loaded from a template whose vertex has since been deleted, so these
-         * coordinates are the snapshot rather than a live pose. Not an error — the
-         * row dispatches fine — but the operator should know the map no longer
-         * agrees, and re-picking a vertex clears it. */}
-        {step.vertexMissing && step.vertexId !== null && (
-          <Chip tone="caution">waypoint deleted</Chip>
-        )}
-
-        {state && <TaskStatusChip status={state.status} />}
+        {/* From sm the chips sit in the line. On a phone they do not fit
+         * beside a 40 px handle, two 40 px actions and the summary — "IN
+         * PROGRESS" is a third of the width — so they get a line of their own
+         * below (see StepChips), and hide here. */}
+        <StepChips step={step} state={state} className="hidden sm:contents" />
 
         <div className="flex shrink-0 items-center gap-0.5">
           {/* The one-click jumps a drag makes fiddly: to either end of a long
@@ -252,19 +254,42 @@ export function StepRow({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          {/* A finger has to tap twice; a mouse or a keyboard removes at
+           * once. The remove button sits 2 px from the ⋯ menu and a missed
+           * tap deleted a step with no way back, while a pointer that can
+           * aim never had that problem and would only be slowed down. The
+           * armed state is drawn on the button itself, since a title is not
+           * something a finger sees, and it lets go after a moment so a
+           * change of mind costs nothing. */}
           <IconButton
-            label="Remove step"
+            label={removeArmed ? "Tap again to remove this step" : "Remove step"}
             disabled={disabled}
-            onClick={onRemove}
-            className="text-signal-warn hover:bg-signal-warn/12"
+            onClick={(event) => {
+              const touch =
+                "pointerType" in event.nativeEvent &&
+                (event.nativeEvent as PointerEvent).pointerType === "touch";
+              if (touch && !removeArmed) {
+                setRemoveArmed(true);
+                return;
+              }
+              onRemove();
+            }}
+            className={cn(
+              "text-signal-warn hover:bg-signal-warn/12",
+              removeArmed && "border border-signal-warn/50 bg-signal-warn/12",
+            )}
           >
             <Trash2Icon className="size-3.5" aria-hidden />
           </IconButton>
         </div>
       </div>
 
+      <StepChips step={step} state={state} className="mt-1.5 flex flex-wrap gap-1 sm:hidden" />
+
+      {/* Indented under the summary from sm; on a phone the 46 px would be a
+       * seventh of the row, and the body's own controls are how it reads. */}
       {open && (
-        <div id={bodyId} className="mt-2 space-y-2 pl-[46px]">
+        <div id={bodyId} className="mt-2 space-y-2 sm:pl-[46px]">
           <Segmented
             label={`Type of step ${ordinal}`}
             value={step.type}
@@ -382,7 +407,7 @@ export function StepRow({
       {open && rowError && (
         <p
           role="alert"
-          className="mt-1.5 pl-[46px] text-[11px] leading-snug break-words text-signal-warn"
+          className="mt-1.5 text-[11px] leading-snug break-words text-signal-warn sm:pl-[46px]"
         >
           {rowError}
         </p>
@@ -391,11 +416,40 @@ export function StepRow({
       {open && state?.error_msg && (
         <p
           role="alert"
-          className="mt-1.5 pl-[46px] text-[11px] leading-snug break-words text-signal-warn"
+          className="mt-1.5 text-[11px] leading-snug break-words text-signal-warn sm:pl-[46px]"
         >
           {state.error_msg}
         </p>
       )}
     </li>
+  );
+}
+
+/**
+ * The row's two status chips: the loaded template's waypoint has been deleted,
+ * and what the running job made of this step. Rendered twice with different
+ * visibility so the phone gets them on a line of their own — the alternative
+ * was a header that overflowed the moment a run started.
+ */
+function StepChips({
+  step,
+  state,
+  className,
+}: {
+  step: StepDraft;
+  state: TaskStepState | null;
+  className: string;
+}) {
+  const missing = step.vertexMissing && step.vertexId !== null;
+  if (!missing && !state) return null;
+  return (
+    <div className={className}>
+      {/* Loaded from a template whose vertex has since been deleted, so these
+       * coordinates are the snapshot rather than a live pose. Not an error — the
+       * row dispatches fine — but the operator should know the map no longer
+       * agrees, and re-picking a vertex clears it. */}
+      {missing && <Chip tone="caution">waypoint deleted</Chip>}
+      {state && <TaskStatusChip status={state.status} />}
+    </div>
   );
 }

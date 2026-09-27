@@ -259,8 +259,11 @@ export function PointCloudView({
       </div>
 
       {/* Both pose tools in one column, goal first: it is the one used on every
-        * run, while an initial pose is a recovery action. */}
-      <div className="absolute top-3 left-3 flex w-56 flex-col gap-2">
+        * run, while an initial pose is a recovery action. Capped and scrolling
+        * because a phone held sideways leaves the viewport ~200 px tall, and
+        * with a goal read-back open the column ran into the controls along
+        * the bottom edge. */}
+      <div className="absolute top-3 left-3 flex max-h-[calc(100%-4rem)] w-56 flex-col gap-2 overflow-y-auto">
         <GoalControl
           task={task}
           armed={pick?.mode === "goal"}

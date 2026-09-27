@@ -128,7 +128,7 @@ export function TaskTemplateRow({
 
         {/* The step shape at a glance — M M S reads as a route without expanding. */}
         <span
-          className="readout shrink-0 text-[11px] tracking-wider text-muted-foreground"
+          className="readout min-w-0 max-w-full truncate text-[11px] tracking-wider text-muted-foreground"
           aria-label={`${template.steps.length} steps`}
         >
           {template.steps.map((step) => stepGlyph(step.type)).join(" ")}

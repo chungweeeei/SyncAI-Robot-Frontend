@@ -502,6 +502,13 @@ export function PointCloudCanvas({
     renderer.domElement.style.display = "block";
 
     const controls = new OrbitControls(camera, renderer.domElement);
+    // OrbitControls writes touch-action: none inline on the canvas, which
+    // below lg made the top 55 svh of a scrolling page a place a swipe could
+    // not scroll from. Cleared so the container's class decides: pan-y on a
+    // phone (a vertical swipe scrolls, a horizontal one still orbits or pans,
+    // and a pinch still zooms), none from lg where nothing scrolls anyway,
+    // and none while picking, since touch-action intersects up the tree.
+    renderer.domElement.style.touchAction = "";
     controls.target.set(centerX, centerY, 0);
     controls.enableDamping = true;
     // Left-button behaviour tracks the camera mode; the dedicated mode effect
@@ -1398,7 +1405,7 @@ export function PointCloudCanvas({
     <div
       ref={containerRef}
       className={cn(
-        "relative h-full w-full overflow-hidden",
+        "relative h-full w-full touch-pan-y overflow-hidden lg:touch-none",
         pickMode && "cursor-crosshair touch-none",
         // Nothing else on this canvas is clickable, so the cursor is the only
         // thing that says a marker is.
