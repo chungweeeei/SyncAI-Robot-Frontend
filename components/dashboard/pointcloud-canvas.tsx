@@ -132,10 +132,12 @@ interface PointCloudCanvasProps {
   /** Hide the vertex layer without unmounting the canvas. Defaults to true. */
   showVertices?: boolean;
   /**
-   * Fired when a stored vertex is double-clicked. Double, not single: a single
-   * click on the viewport is already how the camera is driven, and a stop is a
-   * place the robot will drive to — the gesture that proposes that has to be one
-   * the operator cannot make by brushing the map.
+   * Fired when a stored vertex is tapped: one pointer, pressed and released
+   * inside the drag deadzone, with no pick mode armed. It used to take a
+   * double-click, so that brushing the map while driving the camera could not
+   * propose a stop — but a double-tap is not a gesture a phone reports
+   * reliably, and the deadzone already tells a tap from an orbit. What guards
+   * the robot is the dialog this opens, not the gesture.
    *
    * What it means is "the operator asked about this stop", not "go there": the
    * canvas never dispatches a task, it hands the row up and the view asks.
@@ -1113,6 +1115,10 @@ export function PointCloudCanvas({
     cx: number;
     cy: number;
   } | null>(null);
+  /** A press outside pick mode that may still turn out to be a tap on a stop. */
+  const tapRef = React.useRef<{ pointerId: number; cx: number; cy: number } | null>(
+    null,
+  );
   // Lazily constructed: a useRef initialiser argument is evaluated (then thrown
   // away) on every render, and a Raycaster is not free to build.
   const raycasterRef = React.useRef<THREE.Raycaster | null>(null);
@@ -1223,7 +1229,19 @@ export function PointCloudCanvas({
     // every pick and rare enough to pay a layout read for; the drag that
     // follows cannot move the canvas, since the pointer is captured.
     canvasRectRef.current?.(true);
-    if (!pickMode || event.button !== 0) return;
+    if (!pickMode) {
+      // A press that may become a tap on a stored vertex, resolved on release
+      // (see handlePointerUp) and never here: a drag that starts on a marker
+      // still orbits the camera instead of opening a dialog over the view it
+      // was about to move. Only the primary pointer: a second finger is a
+      // pinch, and it also cancels a tap the first one had started.
+      tapRef.current =
+        event.button === 0 && event.isPrimary && onVertexActivate
+          ? { pointerId: event.pointerId, cx: event.clientX, cy: event.clientY }
+          : null;
+      return;
+    }
+    if (event.button !== 0) return;
     // A second finger while a press is planted is a pinch or a two-finger
     // orbit, not a second placement, and one that lands with nothing planted
     // is the tail of the same gesture. Neither may plant, and the first
@@ -1308,6 +1326,21 @@ export function PointCloudCanvas({
   };
 
   const handlePointerUp = (event: React.PointerEvent) => {
+    const tap = tapRef.current;
+    if (tap) {
+      tapRef.current = null;
+      // Ignored if a pick mode was armed between press and release: the
+      // disarm button is off-canvas, so a pointer cannot do this, but a
+      // dialog over a pose being placed would be asking about the wrong thing.
+      if (
+        !pickMode &&
+        tap.pointerId === event.pointerId &&
+        !isDrag(tap.cx, tap.cy, event.clientX, event.clientY)
+      ) {
+        const vertex = pickVertex(event);
+        if (vertex) onVertexActivate?.(vertex);
+      }
+    }
     const anchor = anchorRef.current;
     if (!anchor || anchor.pointerId !== event.pointerId) return;
     anchorRef.current = null;
@@ -1340,6 +1373,7 @@ export function PointCloudCanvas({
   };
 
   const handlePointerCancel = (event: React.PointerEvent) => {
+    if (tapRef.current?.pointerId === event.pointerId) tapRef.current = null;
     if (anchorRef.current?.pointerId === event.pointerId) abandonPick();
   };
 
@@ -1354,21 +1388,10 @@ export function PointCloudCanvas({
   // pickMode anyway, so a draft left in state is never drawn.
   const handlePointerLeave = () => {
     hoverVertex(null);
+    tapRef.current = null;
     if (anchorRef.current) return;
     setDraft(null);
     setCarrying(false);
-  };
-
-  /**
-   * Double-click a stored vertex to ask about it. Ignored while a pick mode is
-   * armed — the two presses of the double-click have already staged and
-   * committed a pose by the time this fires, and a dialog on top of that would
-   * be asking about the wrong thing.
-   */
-  const handleDoubleClick = (event: React.MouseEvent) => {
-    if (pickMode || !onVertexActivate) return;
-    const vertex = pickVertex(event);
-    if (vertex) onVertexActivate(vertex);
   };
 
   return (
@@ -1387,7 +1410,6 @@ export function PointCloudCanvas({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       onPointerLeave={handlePointerLeave}
-      onDoubleClick={handleDoubleClick}
     />
   );
 }
