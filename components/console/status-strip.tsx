@@ -1,9 +1,12 @@
 "use client";
 
+import * as React from "react";
+
 import { ActiveTaskChip } from "@/components/console/active-task-chip";
 import { CameraDisclosure } from "@/components/console/camera-disclosure";
 import { DriveDisclosure } from "@/components/console/drive-disclosure";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
+import { useActiveMap, useMaps } from "@/hooks/use-maps";
 import {
   Chip,
   SegmentMeter,
@@ -63,6 +66,25 @@ function clockOf(epochSeconds: number): string {
  */
 export function StatusStrip() {
   const { state, status, updatedAt } = useConsoleRobotState();
+  const { map: activeMap } = useActiveMap();
+  const { refresh: refreshMaps } = useMaps();
+
+  // The strip names the map from the catalogue's `active` flag, not from
+  // `state.map`: that is the raw config value, a path on the robot's disk
+  // (`map/dp2f/gridmap.yaml`), and a file path is not something an operator
+  // should read. The catalogue is not polled, though, so the robot's own 1 Hz
+  // report is what says when to read it again: a map switched from another
+  // console changes `state.map` first, and the catalogue follows on the next
+  // read. The first report only primes the ref, because the catalogue is
+  // already being read on mount.
+  const reportedMap = state?.map;
+  const lastReportedMap = React.useRef(reportedMap);
+  React.useEffect(() => {
+    if (reportedMap === undefined || reportedMap === lastReportedMap.current) return;
+    const first = lastReportedMap.current === undefined;
+    lastReportedMap.current = reportedMap;
+    if (!first) refreshMaps();
+  }, [reportedMap, refreshMaps]);
 
   /**
    * Null while the link is healthy: a chip that says "Link" every second of
@@ -99,7 +121,7 @@ export function StatusStrip() {
         <div className="hidden min-w-0 items-baseline gap-2 sm:flex">
           <span className="instrument-label text-muted-foreground">Map</span>
           <span className="readout truncate text-[13px]">
-            {state?.map ?? "—"}
+            {activeMap?.name ?? "—"}
           </span>
         </div>
 

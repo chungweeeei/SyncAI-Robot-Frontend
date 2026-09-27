@@ -171,7 +171,7 @@ export async function fetchMapGrid(
   );
   if (!summary.grid) {
     throw new Error(
-      `"${name}" has no gridmap. Rebuild it from the map's card on the Maps screen first.`,
+      `"${name}" has no floor plan yet. Build one from the map's card on the Maps screen first.`,
     );
   }
 

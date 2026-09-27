@@ -83,7 +83,7 @@ export function VertexPanel(props: VertexPanelProps) {
   return (
     <div className={cn(overlayPanel, "flex w-60 flex-col gap-2 p-2.5", className)}>
       <div className="flex h-4 items-center justify-between gap-2">
-        <span className="instrument-label text-muted-foreground">Vertices</span>
+        <span className="instrument-label text-muted-foreground">Waypoints</span>
         {status === "loading" ? (
           <Chip>Loading</Chip>
         ) : (
@@ -368,6 +368,7 @@ function VertexForm({
 }) {
   const [name, setName] = React.useState(initialName);
   const [type, setType] = React.useState<VertexType>(initialType);
+  const nameId = React.useId();
 
   const trimmed = name.trim();
   // The backend's `min_length=1` would reject a blank name, but as a 422 whose
@@ -385,8 +386,14 @@ function VertexForm({
       }}
     >
       <div>
-        <p className="instrument-label mb-1 text-muted-foreground">Name</p>
+        <label
+          htmlFor={nameId}
+          className="instrument-label mb-1 block text-muted-foreground"
+        >
+          Name
+        </label>
         <Input
+          id={nameId}
           autoFocus
           value={name}
           onChange={(event) => setName(event.target.value)}

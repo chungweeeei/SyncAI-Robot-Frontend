@@ -54,7 +54,7 @@ export function AppearanceSettings() {
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
-            <Label>Theme</Label>
+            <Label htmlFor="theme-select">Theme</Label>
             <p className="text-sm text-muted-foreground">
               Select the console color scheme.
             </p>
@@ -65,7 +65,7 @@ export function AppearanceSettings() {
               value={theme ?? "system"}
               onValueChange={(value) => setTheme(value as string)}
             >
-              <SelectTrigger className="w-32">
+              <SelectTrigger id="theme-select" className="w-32">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -101,13 +101,13 @@ export function AppearanceSettings() {
 
         <div className="flex items-center justify-between">
           <div className="space-y-0.5">
-            <Label>Language</Label>
+            <Label htmlFor="language-select">Language</Label>
             <p className="text-sm text-muted-foreground">
               Console display language.
             </p>
           </div>
           <Select items={[{ value: "en", label: "English" }]} value="en" disabled>
-            <SelectTrigger className="w-32">
+            <SelectTrigger id="language-select" className="w-32">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

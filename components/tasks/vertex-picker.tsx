@@ -23,6 +23,13 @@ export interface VertexPickerProps {
   value: string | null;
   disabled: boolean;
   onPick: (vertex: MapVertex) => void;
+  /**
+   * The picker's accessible name. It has no visible label beside it, and a
+   * placeholder is not a name: once a waypoint is picked, the placeholder is
+   * gone. The row passes its step number, because a job with several MOVE
+   * steps would otherwise read as several identical "Waypoint" controls.
+   */
+  label?: string;
 }
 
 /**
@@ -41,6 +48,7 @@ export function VertexPicker({
   value,
   disabled,
   onPick,
+  label = "Waypoint",
 }: VertexPickerProps) {
   if (status === "loading") {
     return <Hint>Loading this map&apos;s waypoints…</Hint>;
@@ -89,7 +97,7 @@ export function VertexPicker({
         if (vertex) onPick(vertex);
       }}
     >
-      <SelectTrigger size="sm" className="w-full rounded-sm text-[13px]">
+      <SelectTrigger size="sm" aria-label={label} className="w-full rounded-sm text-[13px]">
         <SelectValue placeholder="Pick a waypoint" />
       </SelectTrigger>
       <SelectContent>
