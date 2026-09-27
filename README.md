@@ -40,6 +40,14 @@ proxy.
 | `/history` | Job history: finished runs from `GET /api/v1/task_history`, newest close first, filterable by outcome. Previous / Next paging: the endpoint only pages forward and has no total count, so the console keeps the cursors it was handed to step back, and shows "Page N" without an "of M". Ten jobs per page. Each row is titled by the job id, with who started it (a schedule or directly) under it; the per-step results, read from `GET /api/v1/tasks/{id}`, appear only when the row is opened. There is no poll; the list is refreshed when a run drops out of the console's active-task poll. It reaches back only as far as Temporal's retention, a day by default, which is also why there is no time-range filter. |
 | `/webrtc-test` | The WHIP/WHEP bench — unlisted (no nav rail entry, opened by hand) but built into every image, because the robot only ever runs a production build and that is the one machine where the video path can be tested. The only consumer that exercises WHIP. |
 
+On a phone (below `lg`) the nav rail is a bottom bar of seven equal icon-only
+tabs, the masthead's drive panel and camera window anchor to the viewport
+rather than to their buttons, every control is 40 px under a coarse pointer,
+and the two canvases take a finger as one pointer: a second finger pinches the
+floor plan or abandons a pose being placed, never a second press. A tap does
+what a double-click did — opens a stop's dialog on the dashboard, puts a
+floating panel back when it lands on the grip. `CLAUDE.md` has the rules.
+
 ## The masthead
 
 Two controls hang off the status strip in `app/layout.tsx`, so they are on
@@ -208,7 +216,9 @@ npm run test:e2e   # end-to-end (playwright; builds and starts the app itself)
 `main` and `dev`; `CLAUDE.md` describes the split.
 
 The e2e suite fakes the backend per test (`e2e/backend.ts`), so it needs no
-robot and no `syncai_backend` running.
+robot and no `syncai_backend` running. It runs twice: once as a desktop
+Chromium and once as a phone-sized one (`e2e/mobile.spec.ts`, 375×667 with
+touch), which is what keeps the layout and the two-finger rules above honest.
 
 On the robot this repo is checked out inside the `SyncAI-Robot-Workspace`
 tree, where `NodeManager` starts `npm run dev` in the `frontend` window of both
