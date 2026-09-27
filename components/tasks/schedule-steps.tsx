@@ -6,7 +6,8 @@ import { Chip } from "@/components/console/instrument";
 import { useSchedule } from "@/hooks/use-schedules";
 import type { TaskTemplate } from "@/lib/api/task-template";
 import type { TaskStepRequest } from "@/lib/api/task";
-import { stepGlyph, toDispatchSteps } from "@/lib/task/step";
+import { scheduleDrift } from "@/lib/task/schedule";
+import { stepGlyph } from "@/lib/task/step";
 
 export interface ScheduleStepsProps {
   scheduleId: string;
@@ -46,7 +47,7 @@ export function ScheduleSteps({ scheduleId, source }: ScheduleStepsProps) {
     return <Line>This schedule does not report its steps.</Line>;
   }
 
-  const drift = source ? findDrift(steps, source) : null;
+  const drift = source ? scheduleDrift(steps, source.steps) : null;
 
   return (
     <div className="mt-1.5 space-y-1">
@@ -85,44 +86,6 @@ export function ScheduleSteps({ scheduleId, source }: ScheduleStepsProps) {
       </ol>
     </div>
   );
-}
-
-/**
- * How many steps the schedule froze that the template would now dispatch
- * differently, or null when the two are not comparable.
- *
- * A changed step *count* makes a per-step diff meaningless — the template was
- * edited after the schedule was registered — so that reports as "not comparable"
- * rather than as a misleading number.
- */
-function findDrift(frozen: readonly TaskStepRequest[], source: TaskTemplate): number | null {
-  let current: TaskStepRequest[];
-  try {
-    current = toDispatchSteps(source.steps);
-  } catch {
-    // A stored step with no resolvable coordinates at all; nothing to compare to.
-    return null;
-  }
-  if (current.length !== frozen.length) return null;
-
-  return frozen.reduce((count, step, index) => {
-    const now = current[index];
-    if (!now || now.type !== step.type) return count + 1;
-    // A SPEAK drifts when the template's line was edited after registration —
-    // the frozen copy keeps saying the old sentence, same mechanism as a moved
-    // vertex.
-    if (step.type === "SPEAK" && now.type === "SPEAK") {
-      return step.params.text === now.params.text ? count : count + 1;
-    }
-    if (step.type !== "MOVE" || now.type !== "MOVE") return count;
-    // Compared at the precision the console displays and dispatches at, so a
-    // float-representation difference is not reported as drift.
-    const same =
-      step.params.x.toFixed(3) === now.params.x.toFixed(3) &&
-      step.params.y.toFixed(3) === now.params.y.toFixed(3) &&
-      step.params.theta.toFixed(1) === now.params.theta.toFixed(1);
-    return same ? count : count + 1;
-  }, 0);
 }
 
 function Line({ children }: { children: React.ReactNode }) {

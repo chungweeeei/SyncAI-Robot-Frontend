@@ -160,7 +160,7 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
 
   return (
     <div className="min-w-0">
-      <p className="instrument-label text-muted-foreground">Gridmap editor</p>
+      <p className="instrument-label text-muted-foreground">Floor plan editor</p>
       {/* Focusable, and Enter or F2 opens it: a double-click is a mouse-only
         * gesture, and refusing to add a button is not a reason to make the one
         * rename path unreachable from the keyboard. F2 because that is what

@@ -295,6 +295,7 @@ export function StepRow({
                     value={step.vertexId}
                     disabled={disabled}
                     onPick={pickWaypoint}
+                    label={`Waypoint for step ${ordinal}`}
                   />
                 </div>
                 {canPreview && (

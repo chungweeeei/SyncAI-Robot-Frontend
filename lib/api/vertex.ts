@@ -74,7 +74,11 @@ export async function createVertex(
   // having changed shape, and failing here beats returning `undefined` typed as
   // a MapVertex and crashing wherever it is first dereferenced.
   const vertex = created[0];
-  if (!vertex) throw new Error("The backend accepted the vertex but returned none.");
+  if (!vertex) {
+    throw new Error(
+      "The robot saved the waypoint but did not send it back. Reload the page to see it.",
+    );
+  }
   return vertex;
 }
 
