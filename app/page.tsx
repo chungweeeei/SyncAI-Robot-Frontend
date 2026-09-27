@@ -30,8 +30,10 @@ export default function DashboardPage() {
         aria-label="Map viewport"
         // A definite height at every breakpoint: the canvas sizes itself from
         // the container, and a flex item sized only by min-height leaves its
-        // h-full children resolving against nothing.
-        className="relative h-[55vh] shrink-0 lg:h-full lg:flex-1"
+        // h-full children resolving against nothing. svh, not vh: the shell
+        // is h-dvh, and 55vh of the *largest* viewport put the rail under the
+        // browser chrome until the URL bar hid.
+        className="relative h-[55svh] shrink-0 lg:h-full lg:flex-1"
       >
         {/* The pose the viewport draws does not come from here: the canvas has
           * its own ~20 Hz telemetry WebSocket. This page's 1 Hz state is what

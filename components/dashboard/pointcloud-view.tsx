@@ -287,8 +287,11 @@ export function PointCloudView({
       </div>
 
       {/* Viewport controls sit along the bottom edge, out of the way of the
-        * goal readback and of the robot, which the camera keeps centred. */}
-      <div className="absolute bottom-3 left-3 flex items-center gap-2">
+        * goal readback and of the robot, which the camera keeps centred.
+        * right-3 and flex-wrap: Camera, Top down and up to three layer
+        * toggles are ~380 px in a row, which is a whole phone; anchored at
+        * the bottom the row grows upward when it wraps. */}
+      <div className="absolute right-3 bottom-3 left-3 flex flex-wrap items-center gap-2">
         <Segmented
           label="Camera"
           value={cameraMode}
