@@ -87,6 +87,17 @@ interface TaskAckResponse {
 }
 
 /**
+ * The ack's `id` becomes the tracker's query key and poll target, so a renamed
+ * field is not a blank readout here: it is a 1 Hz poll of `/tasks/undefined`
+ * that no terminal status will ever stop.
+ */
+const TaskAckResponseSchema: z.ZodType<TaskAckResponse> = z.object({
+  id: z.string(),
+  status: TaskStatusSchema,
+  message: z.string(),
+});
+
+/**
  * The two posture commands the backend exposes as step types. Each is a single
  * gait-controller motion key with nothing to parameterise, so the step carries
  * no params at all — sending one would be rejected at the request boundary.
@@ -205,6 +216,7 @@ async function postTask(
   const ack = await requestJson<TaskAckResponse>(apiUrl("/api/v1/tasks"), {
     method: "POST",
     body: JSON.stringify({ id, timestamp, steps }),
+    schema: TaskAckResponseSchema,
   });
   return ack.id;
 }

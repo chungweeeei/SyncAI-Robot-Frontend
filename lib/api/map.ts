@@ -212,6 +212,14 @@ export interface SaveGridResult {
   message: string;
 }
 
+const SaveGridResultSchema: z.ZodType<SaveGridResult> = z.object({
+  name: z.string(),
+  etag: z.string(),
+  active: z.boolean(),
+  reloaded: z.boolean(),
+  message: z.string(),
+});
+
 /**
  * Persist an edited grid.
  *
@@ -249,6 +257,7 @@ export function saveMapGrid(
       // type to match or FastAPI parses the bytes as JSON.
       headers: { "Content-Type": "application/octet-stream" },
       body: grid.data,
+      schema: SaveGridResultSchema,
     },
   );
 }
@@ -283,6 +292,13 @@ export interface ConvertGridResult {
   message: string;
 }
 
+const ConvertGridResultSchema: z.ZodType<ConvertGridResult> = z.object({
+  name: z.string(),
+  started: z.boolean(),
+  recipe: z.enum(["z-band", "traversability"]),
+  message: z.string(),
+});
+
 /**
  * (Re)build a map's 2D gridmap from its map.pcd.
  *
@@ -311,6 +327,7 @@ export function convertMapGrid(
         overwrite_edits: opts.overwriteEdits ?? false,
         ...(opts.reason ? { reason: opts.reason } : {}),
       }),
+      schema: ConvertGridResultSchema,
       mapError: ({ detail, code }, res) =>
         res.status === 409 &&
         (code === "conversion_running" || code === "gridmap_hand_edited")
@@ -330,6 +347,14 @@ export interface RenameMapResult {
   message: string;
 }
 
+const RenameMapResultSchema: z.ZodType<RenameMapResult> = z.object({
+  old_name: z.string(),
+  name: z.string(),
+  vertices_moved: z.number(),
+  templates_moved: z.number(),
+  message: z.string(),
+});
+
 /**
  * Rename a map: `map/<name>/` becomes `map/<newName>/` on the robot, and the
  * vertices and task templates bound to the old name follow it.
@@ -348,7 +373,11 @@ export function renameMap(
 ): Promise<RenameMapResult> {
   return requestJson<RenameMapResult>(
     apiUrl(`/api/v1/maps/${encodeURIComponent(name)}`),
-    { method: "PATCH", body: JSON.stringify({ name: newName }) },
+    {
+      method: "PATCH",
+      body: JSON.stringify({ name: newName }),
+      schema: RenameMapResultSchema,
+    },
   );
 }
 
@@ -359,6 +388,12 @@ export interface DeleteMapResult {
   /** Operator-facing sentence; render it verbatim. */
   message: string;
 }
+
+const DeleteMapResultSchema: z.ZodType<DeleteMapResult> = z.object({
+  name: z.string(),
+  vertices_deleted: z.number(),
+  message: z.string(),
+});
 
 /**
  * Delete a map: `map/<name>/` and the vertices bound to it go, together.
@@ -379,7 +414,7 @@ export interface DeleteMapResult {
 export function deleteMap(name: string): Promise<DeleteMapResult> {
   return requestJson<DeleteMapResult>(
     apiUrl(`/api/v1/maps/${encodeURIComponent(name)}`),
-    { method: "DELETE" },
+    { method: "DELETE", schema: DeleteMapResultSchema },
   );
 }
 
@@ -443,6 +478,14 @@ export interface ActivateMapResult {
   message: string;
 }
 
+const ActivateMapResultSchema: z.ZodType<ActivateMapResult> = z.object({
+  name: z.string(),
+  previous: z.string().nullable(),
+  switched: z.boolean(),
+  localized: z.boolean().nullable(),
+  message: z.string(),
+});
+
 /**
  * Switch the robot onto another map, live.
  *
@@ -461,6 +504,7 @@ export function activateMap(name: string): Promise<ActivateMapResult> {
     apiUrl(`/api/v1/maps/${encodeURIComponent(name)}/activate`),
     {
       method: "POST",
+      schema: ActivateMapResultSchema,
       mapError: ({ detail, code }, res) =>
         res.status === 409 && code && ACTIVATE_CONFLICT_CODES.includes(code)
           ? new ActivateConflictError(detail, code as ActivateConflictCode)

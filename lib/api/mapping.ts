@@ -3,6 +3,8 @@
 // (backend: POST /api/v1/robot/mode in routers/robot.py,
 //  POST /api/v1/maps in routers/map.py)
 
+import { z } from "zod";
+
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
 
@@ -24,6 +26,12 @@ export interface SwitchModeResult {
   message: string;
 }
 
+const SwitchModeResultSchema: z.ZodType<SwitchModeResult> = z.object({
+  mode: z.enum(["MANUAL", "AUTO"]),
+  switching: z.boolean(),
+  message: z.string(),
+});
+
 /**
  * Ask sys_manager to switch the operating mode (which byobu session is up).
  *
@@ -39,6 +47,7 @@ export function switchRobotMode(mode: SwitchableMode): Promise<SwitchModeResult>
   return requestJson<SwitchModeResult>(apiUrl("/api/v1/robot/mode"), {
     method: "POST",
     body: JSON.stringify({ mode }),
+    schema: SwitchModeResultSchema,
   });
 }
 
@@ -57,6 +66,13 @@ export interface SaveMapResult {
   message: string;
 }
 
+const SaveMapResultSchema: z.ZodType<SaveMapResult> = z.object({
+  name: z.string(),
+  has_pointcloud: z.boolean(),
+  grid_pending: z.boolean(),
+  message: z.string(),
+});
+
 /**
  * Save the current mapping run as `map/<name>/` on the robot.
  *
@@ -70,6 +86,7 @@ export function saveMap(name: string): Promise<SaveMapResult> {
   return requestJson<SaveMapResult>(apiUrl("/api/v1/maps"), {
     method: "POST",
     body: JSON.stringify({ name }),
+    schema: SaveMapResultSchema,
   });
 }
 
@@ -79,6 +96,11 @@ export interface ResetMappingResult {
   /** Operator-facing sentence; render it verbatim. */
   message: string;
 }
+
+const ResetMappingResultSchema: z.ZodType<ResetMappingResult> = z.object({
+  reset: z.boolean(),
+  message: z.string(),
+});
 
 /**
  * Discard the run in the robot's memory and start a new map.
@@ -102,5 +124,6 @@ export interface ResetMappingResult {
 export function resetMappingRun(): Promise<ResetMappingResult> {
   return requestJson<ResetMappingResult>(apiUrl("/api/v1/mapping/reset"), {
     method: "POST",
+    schema: ResetMappingResultSchema,
   });
 }

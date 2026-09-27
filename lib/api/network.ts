@@ -51,6 +51,10 @@ export interface ConnectWifiResult {
   message: string;
 }
 
+const ConnectWifiResultSchema: z.ZodType<ConnectWifiResult> = z.object({
+  message: z.string(),
+});
+
 /**
  * Ask sys_manager to `nmcli device wifi connect` the given network.
  *
@@ -73,5 +77,6 @@ export function connectWifi(
   return requestJson<ConnectWifiResult>(apiUrl("/api/v1/network/wifi/connect"), {
     method: "POST",
     body: JSON.stringify({ ssid, password }),
+    schema: ConnectWifiResultSchema,
   });
 }

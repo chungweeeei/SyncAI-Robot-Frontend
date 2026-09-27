@@ -1,6 +1,8 @@
 // Client for the backend robot API
 // (src/syncai_backend/syncai_backend/interfaces/rest/routers/robot.py).
 
+import { z } from "zod";
+
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
 import { normalizeTheta } from "@/lib/angle";
@@ -69,10 +71,20 @@ export interface SetMotionKeyResult {
   message: string;
 }
 
+const SetMotionKeyResultSchema: z.ZodType<SetMotionKeyResult> = z.object({
+  key: z.enum(["0", "1", "2", "3", "4", "5"]),
+  sent: z.boolean(),
+  message: z.string(),
+});
+
 export function setMotionKey(key: MotionKey): Promise<SetMotionKeyResult> {
   return requestJson<SetMotionKeyResult>(
     apiUrl("/api/v1/robot/set_motion_key"),
-    { method: "POST", body: JSON.stringify({ key }) },
+    {
+      method: "POST",
+      body: JSON.stringify({ key }),
+      schema: SetMotionKeyResultSchema,
+    },
   );
 }
 
@@ -95,6 +107,11 @@ export interface SetPolicyModeResult {
   message: string;
 }
 
+const SetPolicyModeResultSchema: z.ZodType<SetPolicyModeResult> = z.object({
+  mode: z.union([z.literal(0), z.literal(1)]),
+  message: z.string(),
+});
+
 /**
  * Switch the learned locomotion policy. Only meaningful under the RL controller.
  *
@@ -107,6 +124,10 @@ export interface SetPolicyModeResult {
 export function setPolicyMode(mode: PolicyMode): Promise<SetPolicyModeResult> {
   return requestJson<SetPolicyModeResult>(
     apiUrl("/api/v1/robot/set_policy_mode"),
-    { method: "POST", body: JSON.stringify({ mode }) },
+    {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+      schema: SetPolicyModeResultSchema,
+    },
   );
 }

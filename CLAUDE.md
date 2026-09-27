@@ -280,9 +280,14 @@ touch one, prefer moving it toward the rule.
   Schemas live beside the interface they mirror and are annotated
   `z.ZodType<T>`, so a field added to the interface and forgotten in the schema
   does not compile. Unknown keys are stripped, so the backend adding a field is
-  not a breaking change. Write bodies are not validated — their shape is closed
-  by the request types — but a write's *echo* is, wherever it is spliced into
-  the cache.
+  not a breaking change. Write *bodies* are not validated — their shape is
+  closed by the request types — but every write *response* that is parsed is,
+  not only one spliced into the cache: the dispatch ack's `id` is a poll
+  target, `activateMap`'s `previous` picks a key to invalidate, and a renamed
+  field in either passed every gate. A write that nothing reads the answer of
+  says `parse: false` instead. A write's parse failure also says the robot
+  already accepted the request, since a 2xx means it acted and a Retry beside
+  the error would do it twice.
 - **Query keys** all live in `lib/api/query-keys.ts`, one object, documented per
   key. Cache *sharing* is deliberate and visible there: `mapVertices(name)` is
   read by both the gridmap editor and the dashboard so a vertex moved on one is
