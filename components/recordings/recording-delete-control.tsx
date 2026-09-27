@@ -101,7 +101,11 @@ export function RecordingDeleteControl({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete {recording.name}?</AlertDialogTitle>
+            {/* wrap-anywhere: a name is up to 64 characters with no space to break
+              * on, and the popup is the width of a phone. */}
+            <AlertDialogTitle className="wrap-anywhere">
+              Delete {recording.name}?
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {formatSize(recording.size_bytes)} of sensor data. The only way
               back is to drive the same route again.
