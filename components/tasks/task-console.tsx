@@ -632,6 +632,7 @@ export function TaskConsole({ robotId }: { robotId: string | null }) {
                * robot that is currently moving. Mirroring Cancel into both panes was
                * the alternative and it is worse — two places that can stop a task. */}
               <Segmented
+                label="When to run"
                 stretch
                 value={mode}
                 options={MODE_OPTIONS}

@@ -279,8 +279,14 @@ export function RecordDot() {
 /**
  * Segmented selector for view state (2D / 3D, camera mode, motion). Commanded
  * hue on the active segment: it is a value the operator set, not one measured.
+ *
+ * A labelled group, because each segment is an `aria-pressed` button and a
+ * screen reader otherwise hears "Move, button, pressed" with nothing saying
+ * what Move is a choice of. `label` is required for the same reason
+ * IconButton's is: a name that is optional is a name that gets left off.
  */
 export function Segmented<T extends string>({
+  label,
   value,
   options,
   onChange,
@@ -288,6 +294,12 @@ export function Segmented<T extends string>({
   disabled = false,
   className,
 }: {
+  /**
+   * What the segments choose between, as the group's accessible name. Use the
+   * words of the visible label beside it where there is one, so what is heard
+   * matches what is read.
+   */
+  label: string;
   /**
    * `null` lights no segment.
    *
@@ -315,6 +327,8 @@ export function Segmented<T extends string>({
 }) {
   return (
     <div
+      role="group"
+      aria-label={label}
       className={cn(
         "overflow-hidden rounded-sm border border-hairline",
         stretch ? "flex w-full" : "inline-flex",

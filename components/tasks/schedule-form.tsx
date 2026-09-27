@@ -214,6 +214,7 @@ export function ScheduleForm({
       <div>
         <span className="instrument-label text-muted-foreground">Repeat</span>
         <Segmented
+          label="Repeat"
           stretch
           className="mt-0.5"
           value={repeat}
@@ -248,6 +249,7 @@ export function ScheduleForm({
             />
           </label>
           <Segmented
+            label="Interval unit"
             value={unit}
             options={UNIT_OPTIONS}
             disabled={busy}

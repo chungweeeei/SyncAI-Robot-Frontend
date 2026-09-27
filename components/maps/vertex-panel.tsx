@@ -161,6 +161,7 @@ export function VertexPanel(props: VertexPanelProps) {
           <div>
             <p className="instrument-label mb-1 text-muted-foreground">Place as</p>
             <Segmented
+              label="Place as"
               stretch
               value={props.type}
               options={TYPE_OPTIONS}
@@ -407,6 +408,7 @@ function VertexForm({
       <div>
         <p className="instrument-label mb-1 text-muted-foreground">Type</p>
         <Segmented
+          label="Type"
           stretch
           value={type}
           options={TYPE_OPTIONS}

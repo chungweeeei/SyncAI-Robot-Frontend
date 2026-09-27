@@ -65,9 +65,12 @@ export function TaskHistory() {
 
   return (
     <div className="space-y-3">
-      <div role="group" aria-label="Outcome">
-        <Segmented value={status} options={STATUS_OPTIONS} onChange={setStatus} />
-      </div>
+      <Segmented
+        label="Outcome"
+        value={status}
+        options={STATUS_OPTIONS}
+        onChange={setStatus}
+      />
 
       <HistoryList history={history} filtered={status !== "ALL"} />
     </div>

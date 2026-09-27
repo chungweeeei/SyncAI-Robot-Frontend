@@ -65,6 +65,51 @@ test.describe("the console shell", () => {
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 
+  test("moves the camera window from the keyboard and puts it back", async ({
+    page,
+  }) => {
+    // Resizing already had a keyboard path. Moving did not, so a keyboard user
+    // who made the window bigger could not put it out of the way.
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Camera window" }).click();
+    const handle = page.getByRole("button", { name: "Move the camera window" });
+    const panel = page.locator("div", { has: handle }).last();
+    const start = (await panel.boundingBox())!;
+
+    await handle.focus();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowDown");
+    await expect
+      .poll(async () => {
+        const box = (await panel.boundingBox())!;
+        return [Math.round(box.x - start.x), Math.round(box.y - start.y)];
+      })
+      .toEqual([-16, 16]);
+
+    // Home is the keyboard's double-click on the header: back where it opened.
+    await page.keyboard.press("Home");
+    await expect
+      .poll(async () => {
+        const box = (await panel.boundingBox())!;
+        return [Math.round(box.x - start.x), Math.round(box.y - start.y)];
+      })
+      .toEqual([0, 0]);
+  });
+
+  test("names every row of choices for a screen reader", async ({ page }) => {
+    // A segment is an aria-pressed button, so without a named group around it
+    // a reader hears "Move, button, pressed" and nothing about what Move is.
+    await page.goto("/");
+    const camera = page.getByRole("group", { name: "Camera" });
+    await expect(camera.getByRole("button", { name: "Move" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await page.getByRole("link", { name: "History" }).click();
+    await expect(page.getByRole("group", { name: "Outcome" })).toBeVisible();
+  });
+
   test("reaches every operator screen from the rail", async ({ page }) => {
     await page.goto("/");
     // Wait for the dashboard to be up before the first click. A click that

@@ -266,6 +266,7 @@ export function StepRow({
       {open && (
         <div id={bodyId} className="mt-2 space-y-2 pl-[46px]">
           <Segmented
+            label={`Type of step ${ordinal}`}
             value={step.type}
             options={TYPE_OPTIONS}
             disabled={disabled}
