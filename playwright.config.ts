@@ -29,7 +29,27 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+      testIgnore: /mobile\.spec\.ts$/,
+    },
+    {
+      name: "mobile",
+      // A phone-sized Chromium rather than devices["iPhone 13"]: every iPhone
+      // descriptor defaults to WebKit, which CI does not install (see
+      // ci.yml), and what this project checks — layout at 375 px and touch
+      // pointer events — Chromium can stand in for. What it cannot stand in
+      // for is iOS zoom-on-focus, which stays a manual check on a real phone.
+      use: {
+        browserName: "chromium",
+        viewport: { width: 375, height: 667 },
+        deviceScaleFactor: 2,
+        isMobile: true,
+        hasTouch: true,
+      },
+      testMatch: /mobile\.spec\.ts$/,
+    },
   ],
   webServer: {
     command: "npm run build && npm start",
