@@ -1,6 +1,7 @@
-// The job history screen's arithmetic. React-free so the rule can be tested
-// without a page, and kept apart from lib/api/task.ts because it is not a
-// request.
+// A run's duration arithmetic. The job history screen reads it, and so does
+// the active run banner on /tasks, so a run reads the same while it is going
+// and after it has finished. React-free so the rule can be tested without a
+// page, and kept apart from lib/api/task.ts because it is not a request.
 
 /**
  * Seconds between a run's start and its close, both server timestamps, or null

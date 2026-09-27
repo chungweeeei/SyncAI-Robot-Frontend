@@ -853,9 +853,12 @@ test.describe("the step editor", () => {
     // Even then, about one ArrowUp in thirty under load is dropped outright:
     // the row stays over position 3 for as long as anyone waits, with no late
     // move to follow. The cause was not found. So the key is pressed again, as
-    // an operator would, rather than the test failing. The 1.5 s window is
-    // what makes the retry safe: a key that does land lands in milliseconds,
-    // so a second press cannot follow one that was merely slow.
+    // an operator would, rather than the test failing. The 1.5 s window rests
+    // on what was observed, not on anything the code enforces: every key that
+    // landed did so in milliseconds, and every dropped one never landed at all.
+    // A key that landed later than 1.5 s would be pressed twice, move the row
+    // two slots, and fail the order assertion below. That is a failed run,
+    // never a wrong pass.
     await expect(async () => {
       await page.keyboard.press("ArrowUp");
       await expect(page.getByText("is over position 2 of 3")).toBeAttached({
