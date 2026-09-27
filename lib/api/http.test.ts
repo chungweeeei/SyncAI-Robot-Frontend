@@ -214,6 +214,21 @@ describe("requestJson schema validation", () => {
     await expect(requestJson(URL_, { schema })).rejects.toThrow(/count/);
   });
 
+  it("tells the operator a write already happened when its answer is unreadable", async () => {
+    // A 2xx means the robot acted. Without this sentence the error reads as
+    // "nothing happened", and the Retry beside it would do the thing twice.
+    fetchMock.mockResolvedValue(jsonResponse({ name: "dp2f" }));
+    await expect(
+      requestJson(URL_, { method: "POST", body: "{}", schema }),
+    ).rejects.toThrow(/accepted the request/);
+  });
+
+  it("does not say a read was accepted", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ name: "dp2f" }));
+    const caught = await requestJson(URL_, { schema }).catch((e: unknown) => e);
+    expect((caught as Error).message).not.toMatch(/accepted/);
+  });
+
   it("leaves an unvalidated read alone", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ anything: 1 }));
     await expect(requestJson(URL_)).resolves.toEqual({ anything: 1 });
