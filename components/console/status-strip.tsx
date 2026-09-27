@@ -7,6 +7,7 @@ import { CameraDisclosure } from "@/components/console/camera-disclosure";
 import { DriveDisclosure } from "@/components/console/drive-disclosure";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { useActiveMap, useMaps } from "@/hooks/use-maps";
+import { batteryTone } from "@/lib/robot/levels";
 import {
   Chip,
   SegmentMeter,
@@ -30,12 +31,6 @@ const MODE_TONE: Record<RobotMode, Tone> = {
   MANUAL: "caution",
   MAINTENANCE: "warn",
 };
-
-function batteryTone(pct: number): Tone {
-  if (pct < 20) return "warn";
-  if (pct < 40) return "caution";
-  return "live";
-}
 
 /** 24-hour clock with leading zeros — a readout, not prose. */
 function clockOf(epochSeconds: number): string {

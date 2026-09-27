@@ -4,32 +4,16 @@ import {
   Chip,
   InstrumentGroup,
   TONE_TEXT,
-  type Tone,
 } from "@/components/console/instrument";
 import { JOINTS, LEG_ROWS, jointName, strayMotorLabels } from "@/lib/robot/motor-label";
 import { cn } from "@/lib/utils";
 import type { RobotMotorStatus } from "@/lib/types/robot";
-
-// Display thresholds, in Celsius. Nothing in the stack defines a joint
-// temperature limit — the driver forwards the number and neither it nor
-// syncai_robot_state acts on it — so these exist to colour the readout, not
-// to mean anything the robot agrees with. Set to flag a leg working hard well
-// before anything is actually at risk; change them freely.
-const TEMP_CAUTION_C = 60;
-const TEMP_WARN_C = 80;
+import { motorTempTone } from "@/lib/robot/levels";
 
 // Plan view of the chassis, laid out rather than listed because that is how
 // the fault reads — "the hind-left leg is hot", not "HL_Knee_joint is 78" —
 // and it matches the robot the operator sees in the viewport beside this. The
 // legs, the joint codes and the naming rule live in lib/robot/motor-label.ts.
-
-function tempTone(celsius: number): Tone {
-  if (celsius >= TEMP_WARN_C) return "warn";
-  if (celsius >= TEMP_CAUTION_C) return "caution";
-  // Deliberately not `live`: twelve green numbers is a wall of colour that says
-  // nothing, and the point of this group is that a hot joint jumps out of it.
-  return "neutral";
-}
 
 /** The worst thing in the set, as one chip. Faults outrank heat. */
 function summaryChip(motors: RobotMotorStatus[]) {
@@ -40,7 +24,7 @@ function summaryChip(motors: RobotMotorStatus[]) {
 
   const peak = Math.max(...motors.map((m) => m.temperature));
   return (
-    <Chip tone={tempTone(peak)}>
+    <Chip tone={motorTempTone(peak)}>
       MAX {peak}
       <span className="ml-0.5">°</span>
     </Chip>
@@ -71,7 +55,7 @@ function JointRow({
             className={cn(
               "readout text-[13px] font-medium",
               TONE_TEXT[
-                motor.error !== 0 ? "warn" : tempTone(motor.temperature)
+                motor.error !== 0 ? "warn" : motorTempTone(motor.temperature)
               ],
             )}
           >

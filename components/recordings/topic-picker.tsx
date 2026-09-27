@@ -4,6 +4,7 @@ import * as React from "react";
 import { PlusIcon, XIcon } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
+import { isUsableChannel } from "@/lib/recording/channel";
 import { cn } from "@/lib/utils";
 
 /**
@@ -37,16 +38,6 @@ const PRESETS: readonly { topic: string; hint: string }[] = [
 export const DEFAULT_TOPICS = ["livox/lidar", "livox/imu"];
 
 const PRESET_TOPICS = new Set(PRESETS.map((preset) => preset.topic));
-
-/**
- * A topic name the recorder can be given without the request being obviously
- * wasted. Deliberately permissive — ROS name rules are stricter than this and
- * the backend does not check them either, because a topic that does not exist
- * *yet* is a legitimate thing to arm a recorder against.
- */
-function usable(topic: string): boolean {
-  return topic.length > 0 && !/\s/.test(topic);
-}
 
 /**
  * One selectable topic. The `Segmented` idiom widened to multi-select: chosen
@@ -156,7 +147,7 @@ export function TopicPicker({
 
   const add = React.useCallback(() => {
     const topic = draft.trim();
-    if (!usable(topic)) return;
+    if (!isUsableChannel(topic)) return;
     setDraft("");
     // An existing name is selected rather than duplicated — typing a preset's
     // name is a reasonable way to reach for it.
@@ -220,7 +211,7 @@ export function TopicPicker({
         <button
           type="button"
           onClick={add}
-          disabled={disabled || !usable(draft.trim())}
+          disabled={disabled || !isUsableChannel(draft.trim())}
           className={cn(
             "instrument-label flex h-7 shrink-0 items-center gap-1 rounded-sm border border-hairline px-2 text-muted-foreground transition-colors",
             "hover:bg-elevated hover:text-foreground",
