@@ -287,8 +287,11 @@ export function PointCloudView({
       </div>
 
       {/* Viewport controls sit along the bottom edge, out of the way of the
-        * goal readback and of the robot, which the camera keeps centred. */}
-      <div className="absolute bottom-3 left-3 flex items-center gap-2">
+        * goal readback and of the robot, which the camera keeps centred.
+        * right-3 and flex-wrap: Camera, Top down and up to three layer
+        * toggles are ~380 px in a row, which is a whole phone; anchored at
+        * the bottom the row grows upward when it wraps. */}
+      <div className="absolute right-3 bottom-3 left-3 flex flex-wrap items-center gap-2">
         <Segmented
           label="Camera"
           value={cameraMode}
@@ -307,7 +310,7 @@ export function PointCloudView({
           title="Look straight down at the map"
           className={cn(
             overlayPanel,
-            "instrument-label flex h-6 items-center gap-1.5 px-2 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground",
+            "instrument-label flex h-6 items-center gap-1.5 px-2 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:min-h-10",
           )}
         >
           <Grid2x2Icon aria-hidden className="size-3.5" />
@@ -391,7 +394,7 @@ function LayerToggle({
       onClick={onToggle}
       className={cn(
         overlayPanel,
-        "instrument-label h-6 px-2 transition-colors",
+        "instrument-label h-6 px-2 transition-colors pointer-coarse:min-h-10",
         on
           ? "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd"
           : "text-muted-foreground hover:bg-elevated hover:text-foreground",

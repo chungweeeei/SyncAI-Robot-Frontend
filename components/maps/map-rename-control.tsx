@@ -111,7 +111,7 @@ export function MapRenameControl({
             aria-label="New map name"
             aria-invalid={trimmed.length > 0 && !valid ? true : undefined}
             disabled={busy}
-            className="readout h-7 min-w-0 flex-1 rounded-sm px-1.5 text-[15px] font-medium md:text-[15px]"
+            className="readout h-7 min-w-0 flex-1 rounded-sm px-1.5 font-medium md:text-[15px]"
           />
           <Button
             type="submit"

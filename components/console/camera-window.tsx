@@ -22,6 +22,8 @@ const MIN_HEIGHT = 108;
 const DEFAULT_WIDTH = 320;
 /** 16:9, the shape the robot's encoder sends; the video letterboxes if resized off it. */
 const DEFAULT_HEIGHT = 180;
+/** Viewport margin the window keeps when it opens: the strip's right-3, both sides. */
+const OPEN_MARGIN = 24;
 /** One keyboard press of the move or resize handle. Coarse enough to be worth pressing. */
 const KEY_STEP = 16;
 /**
@@ -35,6 +37,18 @@ const RECEIPT_MS = 6_000;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * The size the window opens at and resets to: the default, or as wide as a
+ * phone leaves room for, at the encoder's 16:9. Read once per open rather than
+ * tracked — the window only mounts on a click, so there is no server render
+ * for the measurement to disagree with, and a rotation after that is the drag
+ * clamps' problem, not this one's.
+ */
+function openingSize(): { width: number; height: number } {
+  const width = clamp(window.innerWidth - OPEN_MARGIN, MIN_WIDTH, DEFAULT_WIDTH);
+  return { width, height: Math.round((width * DEFAULT_HEIGHT) / DEFAULT_WIDTH) };
 }
 
 /**
@@ -121,10 +135,7 @@ export function CameraWindow({ className }: { className?: string }) {
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const panelRef = React.useRef<HTMLDivElement>(null);
   const [muted, setMuted] = React.useState(true);
-  const [size, setSize] = React.useState({
-    width: DEFAULT_WIDTH,
-    height: DEFAULT_HEIGHT,
-  });
+  const [size, setSize] = React.useState(openingSize);
   /**
    * Displacement from the anchor the caller positioned us at, applied as a
    * translate — the same arrangement as the drive panel, so where the window
@@ -256,7 +267,7 @@ export function CameraWindow({ className }: { className?: string }) {
     if (event.key === "Home") {
       event.preventDefault();
       setOffset({ x: 0, y: 0 });
-      setSize({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
+      setSize(openingSize());
       return;
     }
     const dx = event.key === "ArrowLeft" ? -KEY_STEP : event.key === "ArrowRight" ? KEY_STEP : 0;
@@ -326,10 +337,10 @@ export function CameraWindow({ className }: { className?: string }) {
           // window back to its default size and place.
           if (pressedAControl(event.target)) return;
           setOffset({ x: 0, y: 0 });
-          setSize({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
+          setSize(openingSize());
         }}
         title="Drag to move · double-click to reset"
-        className="mb-2 flex h-4 cursor-grab touch-none items-center justify-between gap-2 select-none active:cursor-grabbing"
+        className="mb-2 flex h-4 cursor-grab touch-none items-center justify-between gap-2 select-none active:cursor-grabbing pointer-coarse:h-10"
       >
         <h2 className="instrument-label flex items-center gap-1.5 text-muted-foreground">
           {/* The drag still works from anywhere on the header. This button is
@@ -341,7 +352,7 @@ export function CameraWindow({ className }: { className?: string }) {
             aria-label="Move the camera window"
             title="Drag to move · arrow keys to nudge · Home to reset"
             onKeyDown={onMoveKeyDown}
-            className="-m-0.5 flex cursor-grab items-center rounded-sm p-0.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:cursor-grabbing"
+            className="-m-0.5 flex cursor-grab items-center rounded-sm p-0.5 pointer-coarse:p-2.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:cursor-grabbing"
           >
             <GripHorizontalIcon aria-hidden className="size-3" />
           </button>
@@ -361,7 +372,7 @@ export function CameraWindow({ className }: { className?: string }) {
             onClick={() => (clip.capturing ? clip.stop() : clip.start())}
             title={clipTitle}
             className={cn(
-              "flex size-5 items-center justify-center rounded-sm border transition-colors",
+              "flex size-5 items-center justify-center rounded-sm border transition-colors pointer-coarse:size-10",
               clip.capturing
                 ? "border-signal-warn/50 bg-signal-warn/12 text-signal-warn"
                 : "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground",
@@ -387,7 +398,7 @@ export function CameraWindow({ className }: { className?: string }) {
             onClick={() => setMuted((v) => !v)}
             title={muted ? "Turn on the robot's audio" : "Mute the robot's audio"}
             className={cn(
-              "flex size-5 items-center justify-center rounded-sm border transition-colors",
+              "flex size-5 items-center justify-center rounded-sm border transition-colors pointer-coarse:size-10",
               muted
                 ? "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground"
                 : "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd",
@@ -483,7 +494,7 @@ export function CameraWindow({ className }: { className?: string }) {
           onPointerCancel={onRelease}
           onLostPointerCapture={onRelease}
           onKeyDown={onHandleKeyDown}
-          className="group absolute bottom-0 left-0 size-5 cursor-nesw-resize touch-none"
+          className="group absolute bottom-0 left-0 size-5 cursor-nesw-resize touch-none pointer-coarse:size-10"
         >
           {/* Two diagonal strokes, the platform's own resize-grip shape, drawn
             * rather than iconed so they sit flush in the corner. Both rotate

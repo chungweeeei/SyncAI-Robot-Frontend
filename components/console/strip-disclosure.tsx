@@ -64,7 +64,7 @@ export function StripDisclosure({
         title={open ? hideTitle : showTitle}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex size-6 items-center justify-center rounded-sm border transition-colors",
+          "flex size-6 items-center justify-center rounded-sm border transition-colors pointer-coarse:size-10",
           // Open is the cmd hue, like every other operator choice in the
           // console. It is the only state these buttons show: what the panel
           // is doing once open is the panel's own business.
@@ -89,5 +89,15 @@ export function StripDisclosure({
  * edge sits 16px above the heartbeat hairline and the remaining 8px is the gap.
  * z-30 because <main> is a later sibling of the header and would otherwise
  * paint over anything that leaves the strip's box.
+ *
+ * Below sm the panel is anchored to the viewport instead of the button: the
+ * button sits 100–240 px from the right edge of a phone, and a 256–320 px
+ * panel hung off it opened past the left edge of a body that cannot scroll.
+ * `fixed` inside the `relative` wrapper is sound here because nothing between
+ * the panel and <body> has a transform or filter — overlayPanel's backdrop
+ * blur is on the panel itself — and both panels' drag clamps measure their
+ * rect against `window`, which is what a fixed box is positioned in. top-16
+ * is the 56 px strip, its hairline and the same 8 px gap.
  */
-export const droppedPanel = "absolute top-full right-0 z-30 mt-6";
+export const droppedPanel =
+  "fixed top-16 right-3 z-30 sm:absolute sm:top-full sm:right-0 sm:mt-6";

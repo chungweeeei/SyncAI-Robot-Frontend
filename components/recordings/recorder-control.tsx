@@ -192,7 +192,7 @@ export function RecorderControl() {
               placeholder="recording name (optional)"
               aria-label="Recording name"
               disabled={busy}
-              className="h-8 flex-1 text-sm"
+              className="h-8 flex-1"
             />
             <Button type="submit" size="sm" disabled={busy || !nameValid || topics.length === 0}>
               <CircleIcon data-icon="inline-start" />

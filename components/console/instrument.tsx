@@ -165,7 +165,9 @@ export function Chip({
     <span
       title={title}
       className={cn(
-        "instrument-label inline-flex h-5 items-center rounded-sm border px-1.5",
+        // nowrap and shrink-0: a chip is one fact, and wrapped to two lines in a
+        // squeezed strip it reads as two.
+        "instrument-label inline-flex h-5 shrink-0 items-center rounded-sm border px-1.5 whitespace-nowrap",
         TONE_CHIP[tone],
         className,
       )}
@@ -340,7 +342,7 @@ export function Segmented<T extends string>({
             disabled={disabled}
             onClick={() => onChange(option.value)}
             className={cn(
-              "instrument-label h-6 px-2 transition-colors",
+              "instrument-label h-6 px-2 transition-colors pointer-coarse:min-h-10",
               "border-l border-hairline first:border-l-0",
               // The dimming lives on the container, so a disabled segment only
               // has to stop reacting — two stacked opacities would be muddy.

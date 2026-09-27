@@ -67,8 +67,9 @@ jobs:
 
       - run: npm ci
 
-      # Chromium only — playwright.config.ts defines the one project, and the
-      # browser download is the slowest step in this job.
+      # Chromium only — both projects in playwright.config.ts run on it (the
+      # phone one is a Chromium with a phone viewport, not WebKit, for this
+      # reason), and the browser download is the slowest step in this job.
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 

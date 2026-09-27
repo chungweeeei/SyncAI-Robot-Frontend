@@ -93,7 +93,7 @@ export function SaveGroup({
           maxLength={TASK_TEMPLATE_NAME_MAX}
           onChange={(event) => onNameChange(event.target.value)}
           placeholder="Morning patrol"
-          className="readout mt-0.5 h-7 rounded-sm text-[13px]"
+          className="readout mt-0.5 h-7 rounded-sm md:text-[13px]"
         />
       </label>
 
@@ -118,7 +118,7 @@ export function SaveGroup({
           <button
             type="submit"
             disabled={!canSave}
-            className="instrument-label flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="instrument-label flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm bg-primary pointer-coarse:min-h-10 text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             <SaveIcon className="size-3.5" aria-hidden />
             <span className="min-w-0 truncate">Update “{editing.name}”</span>
@@ -130,8 +130,8 @@ export function SaveGroup({
           onClick={editing ? () => onCreate(trimmed) : undefined}
           className={
             editing
-              ? "instrument-label h-7 shrink-0 rounded-sm border border-hairline px-2 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-40"
-              : "instrument-label flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+              ? "instrument-label h-7 shrink-0 rounded-sm border border-hairline px-2 pointer-coarse:min-h-10 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-40"
+              : "instrument-label flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm bg-primary pointer-coarse:min-h-10 text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
           }
         >
           {editing ? "Save as new" : (

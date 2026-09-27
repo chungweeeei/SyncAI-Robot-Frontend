@@ -31,7 +31,9 @@ export function ModeToggle() {
     <button
       type="button"
       onClick={() => setTheme(dark ? "light" : "dark")}
-      className="flex size-9 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated/60 hover:text-foreground"
+      // 40 px in the phone bar, the rail's 36 px on desktop — the same rule as
+      // the tabs beside it.
+      className="flex size-10 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated/60 hover:text-foreground lg:size-9"
       aria-label={
         mounted
           ? dark

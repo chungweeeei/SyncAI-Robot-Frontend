@@ -207,7 +207,7 @@ export function ScheduleForm({
           disabled={busy}
           onChange={(event) => setId(event.target.value)}
           placeholder="robot01-daily-patrol"
-          className="readout mt-0.5 h-7 rounded-sm text-[13px]"
+          className="readout mt-0.5 h-7 rounded-sm md:text-[13px]"
         />
       </label>
 
@@ -245,7 +245,7 @@ export function ScheduleForm({
               value={amountText}
               disabled={busy}
               onChange={(event) => setAmountText(event.target.value)}
-              className="readout h-7 w-16 rounded-sm text-[13px]"
+              className="readout h-7 w-16 rounded-sm md:text-[13px]"
             />
           </label>
           <Segmented
@@ -265,7 +265,7 @@ export function ScheduleForm({
             value={time}
             disabled={busy}
             onChange={(event) => setTime(event.target.value)}
-            className="readout h-7 w-32 rounded-sm text-[13px]"
+            className="readout h-7 w-32 rounded-sm md:text-[13px]"
           />
         </label>
       )}
@@ -286,7 +286,7 @@ export function ScheduleForm({
       <button
         type="submit"
         disabled={!submittable}
-        className="instrument-label flex h-7 w-full items-center justify-center gap-1.5 rounded-sm bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+        className="instrument-label flex h-7 w-full items-center justify-center gap-1.5 rounded-sm bg-primary pointer-coarse:min-h-10 text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
       >
         <CalendarPlusIcon className="size-3.5" aria-hidden />
         Create schedule
@@ -341,7 +341,7 @@ function DayToggles({
             disabled={disabled}
             onClick={() => onToggle(day.value)}
             className={cn(
-              "instrument-label h-6 min-w-0 flex-1 truncate px-1 transition-colors",
+              "instrument-label h-6 min-w-0 flex-1 truncate px-1 transition-colors pointer-coarse:min-h-10",
               "border-l border-hairline first:border-l-0",
               disabled && "hover:bg-transparent hover:text-muted-foreground",
               active

@@ -401,7 +401,7 @@ function VertexForm({
           placeholder="dock-a"
           // Squared off and shortened to match the overlay's chrome; the shared
           // Input is sized for the settings forms, which have room.
-          className="h-7 rounded-sm text-[13px]"
+          className="h-7 rounded-sm md:text-[13px]"
         />
       </div>
 

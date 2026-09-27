@@ -282,7 +282,7 @@ export function MappingView() {
     <div className="flex h-full flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
       <section
         aria-label="Mapping viewport"
-        className="relative h-[55vh] shrink-0 lg:h-full lg:flex-1"
+        className="relative h-[55svh] shrink-0 lg:h-full lg:flex-1"
       >
         <PointCloudCanvas
           telemetry={feed}

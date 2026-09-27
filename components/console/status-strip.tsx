@@ -104,7 +104,10 @@ export function StatusStrip() {
   return (
     <header className="relative shrink-0 bg-panel">
       <div className="flex h-14 items-center gap-2.5 px-3 sm:gap-3.5 sm:px-4">
-        <div className="flex min-w-0 items-center gap-2.5 sm:gap-3.5">
+        {/* The one cluster that may shrink, and inside it the robot id is the
+          * one thing that truncates: at 375 px the health cluster on the right
+          * is fixed-width, and it is the part an operator cannot do without. */}
+        <div className="flex min-w-0 shrink items-center gap-2.5 sm:gap-3.5">
           <span className="readout truncate text-[15px] font-medium">
             {state?.robot_id ?? "—"}
           </span>
@@ -138,7 +141,7 @@ export function StatusStrip() {
           <ActiveTaskChip />
         </div>
 
-        <div className="ml-auto flex items-center gap-2.5 sm:gap-3.5">
+        <div className="ml-auto flex shrink-0 items-center gap-2.5 sm:gap-3.5">
           <div className="flex items-center gap-2">
             {/* First in the health cluster, where the link chip used to stand:
               * icon-only controls need the room to be seen at all, and these

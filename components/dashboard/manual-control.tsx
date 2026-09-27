@@ -164,7 +164,11 @@ export function ManualControl({ className }: { className?: string }) {
       className={cn(overlayPanel, "w-64 p-3", className)}
     >
       {/* touch-none, or a touch drag scrolls the page and the browser answers
-        * with pointercancel mid-gesture (thumbstick's rule). */}
+        * with pointercancel mid-gesture (thumbstick's rule). 40 px under a
+        * finger: the same strip is the drag handle and the arm button, and a
+        * 16 px strip with a 20 px button in it was two targets in one thumb.
+        * onGrab refuses a press on the button, so at 40 px the two no longer
+        * share pixels. */}
       <header
         onPointerDown={onGrab}
         onPointerMove={onDrag}
@@ -173,7 +177,7 @@ export function ManualControl({ className }: { className?: string }) {
         onLostPointerCapture={onRelease}
         onDoubleClick={() => setOffset({ x: 0, y: 0 })}
         title="Drag to move · double-click to reset"
-        className="mb-3 flex h-4 cursor-grab touch-none items-center justify-between gap-2 select-none active:cursor-grabbing"
+        className="mb-3 flex h-4 cursor-grab touch-none items-center justify-between gap-2 select-none active:cursor-grabbing pointer-coarse:h-10"
       >
         <h2 className="instrument-label flex items-center gap-1.5 text-muted-foreground">
           {/* The grip is the affordance — a bare label row does not announce
@@ -198,7 +202,7 @@ export function ManualControl({ className }: { className?: string }) {
               : "Capture pointer and keyboard (WS / QE / AD) input"
           }
           className={cn(
-            "flex size-5 items-center justify-center rounded-sm border transition-colors",
+            "flex size-5 items-center justify-center rounded-sm border transition-colors pointer-coarse:size-10",
             armed
               ? "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd"
               : "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground",

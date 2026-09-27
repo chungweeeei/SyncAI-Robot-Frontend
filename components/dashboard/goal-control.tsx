@@ -56,7 +56,7 @@ export function GoalControl({
         onClick={onArm}
         className={cn(
           overlayPanel,
-          "instrument-label flex h-7 items-center gap-1.5 px-2 transition-colors disabled:opacity-50",
+          "instrument-label flex h-7 items-center gap-1.5 px-2 transition-colors disabled:opacity-50 pointer-coarse:min-h-10",
           armed
             ? "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd"
             : "hover:bg-elevated",

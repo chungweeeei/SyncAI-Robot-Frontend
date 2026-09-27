@@ -37,8 +37,12 @@ export function IconButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
+      // 40 px under a finger as a real box, not an invisible hit area like the
+      // Switch's ::after: these sit four to a row with gap-0.5, where a later
+      // sibling's ::after would paint over the right edge of the one before
+      // it — and Dispatch sits three buttons from Delete.
       className={cn(
-        "flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent",
+        "flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent pointer-coarse:size-10",
         className,
       )}
     >

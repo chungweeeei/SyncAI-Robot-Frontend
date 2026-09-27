@@ -168,7 +168,7 @@ export function StepRow({
           title="Drag to reorder"
           disabled={disabled}
           className={cn(
-            "-ml-1 flex h-6 w-4 shrink-0 touch-none items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-30 disabled:hover:bg-transparent",
+            "-ml-1 flex h-6 w-4 shrink-0 touch-none items-center justify-center rounded-sm pointer-coarse:h-10 pointer-coarse:w-8 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-30 disabled:hover:bg-transparent",
             disabled ? "cursor-default" : isDragging ? "cursor-grabbing" : "cursor-grab",
           )}
         >
@@ -229,7 +229,7 @@ export function StepRow({
               aria-label={`More actions for step ${ordinal}`}
               title="More actions"
               disabled={disabled}
-              className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+              className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-10"
             >
               <EllipsisIcon className="size-3.5" aria-hidden />
             </DropdownMenuTrigger>
@@ -352,7 +352,11 @@ export function StepRow({
                   // over the limit the text is.
                   onChange={(event) => onPatch({ text: event.target.value })}
                   placeholder="Delivery arrived — please take your items."
-                  className="mt-0.5 h-7 rounded-sm text-[13px]"
+                  // No size below md, here and on every Input override: iOS
+                  // Safari zooms the page into any field under 16 px on
+                  // focus, and this console is a fixed frame that cannot
+                  // zoom back out.
+                  className="mt-0.5 h-7 rounded-sm md:text-[13px]"
                 />
                 {/* The counter appears only near the limit — a line short enough
                  * to obviously fit does not need bookkeeping over it. */}

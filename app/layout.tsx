@@ -31,7 +31,10 @@ export const metadata: Metadata = {
 
 // The console is a fixed-frame instrument panel: no page zoom-scroll, and the
 // viewport is sized in dvh so mobile browser chrome does not clip the rail.
+// `cover` is what makes env(safe-area-inset-bottom) non-zero, so the rail can
+// pad itself above the home indicator instead of being sat on by it.
 export const viewport: Viewport = {
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#e9eef2" },
     { media: "(prefers-color-scheme: dark)", color: "#0b1014" },

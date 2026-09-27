@@ -74,7 +74,7 @@ function MapEditScreen() {
           onClick={goBack}
           aria-label={returnTo === "/tasks" ? "Back to tasks" : "Back to maps"}
           title={returnTo === "/tasks" ? "Back to the task editor" : "Back to maps"}
-          className="flex size-7 shrink-0 items-center justify-center rounded-sm border border-hairline text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground"
+          className="flex size-7 shrink-0 items-center justify-center rounded-sm border border-hairline text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:size-10"
         >
           <ArrowLeftIcon className="size-3.5" aria-hidden />
         </button>

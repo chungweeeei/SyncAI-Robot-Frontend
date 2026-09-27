@@ -143,7 +143,7 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
             aria-label="New map name"
             aria-invalid={trimmed.length > 0 && !valid ? true : undefined}
             disabled={busy}
-            className="readout h-7 w-56 rounded-sm px-1.5 text-[15px] font-medium md:text-[15px]"
+            className="readout h-7 w-56 rounded-sm px-1.5 font-medium md:text-[15px]"
           />
         </form>
 

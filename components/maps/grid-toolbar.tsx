@@ -181,7 +181,7 @@ function IconButton({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="instrument-label flex h-6 items-center gap-1 rounded-sm border border-hairline px-1.5 transition-colors hover:bg-elevated disabled:opacity-40 disabled:hover:bg-transparent"
+      className="instrument-label flex h-6 items-center gap-1 rounded-sm border border-hairline px-1.5 transition-colors hover:bg-elevated disabled:opacity-40 disabled:hover:bg-transparent pointer-coarse:min-h-10"
     >
       <Icon className="size-3.5" aria-hidden />
     </button>
@@ -220,7 +220,7 @@ function ToolRow<T extends string>({
             aria-label={label}
             onClick={() => onChange(option)}
             className={cn(
-              "flex h-6 min-w-0 flex-1 items-center justify-center border-l border-hairline transition-colors first:border-l-0",
+              "flex h-6 min-w-0 flex-1 items-center justify-center border-l border-hairline transition-colors first:border-l-0 pointer-coarse:min-h-10",
               active
                 ? "bg-signal-cmd/12 text-signal-cmd"
                 : "text-muted-foreground hover:bg-elevated hover:text-foreground",
@@ -327,7 +327,7 @@ export function GridToolbar({
         type="button"
         disabled={!dirty || save.kind === "saving"}
         onClick={onSave}
-        className="instrument-label h-7 rounded-sm border border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd transition-colors hover:bg-signal-cmd/20 disabled:border-hairline disabled:bg-transparent disabled:text-muted-foreground"
+        className="instrument-label h-7 rounded-sm border border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd transition-colors hover:bg-signal-cmd/20 pointer-coarse:min-h-10 disabled:border-hairline disabled:bg-transparent disabled:text-muted-foreground"
       >
         {save.kind === "saving" ? "Saving…" : "Save"}
       </button>

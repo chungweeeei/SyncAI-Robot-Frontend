@@ -281,7 +281,7 @@ export function MapCard({
             onClick={() => setOpen((prev) => !prev)}
             aria-expanded={open}
             aria-controls={detailsId}
-            className="instrument-label flex h-5 shrink-0 items-center gap-1 rounded-sm px-1 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground"
+            className="instrument-label flex h-5 shrink-0 items-center gap-1 rounded-sm px-1 text-muted-foreground pointer-coarse:min-h-10 transition-colors hover:bg-elevated hover:text-foreground"
           >
             {open ? "Hide" : "Details"}
             <ChevronDownIcon
@@ -310,13 +310,13 @@ export function MapCard({
           {grid && map.grid_status !== "converting" ? (
             <Link
               href={`/maps/${encodeURIComponent(map.name)}/edit`}
-              className="instrument-label ml-auto flex h-5 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground"
+              className="instrument-label ml-auto flex h-5 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground transition-colors pointer-coarse:min-h-10 hover:bg-elevated hover:text-foreground"
             >
               <PencilIcon className="size-3" aria-hidden />
               Edit
             </Link>
           ) : (
-            <span className="instrument-label ml-auto flex h-5 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground opacity-40">
+            <span className="instrument-label ml-auto flex h-5 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground opacity-40 pointer-coarse:min-h-10">
               <PencilIcon className="size-3" aria-hidden />
               Edit
             </span>
