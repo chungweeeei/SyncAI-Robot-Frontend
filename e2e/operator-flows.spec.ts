@@ -767,6 +767,47 @@ test.describe("the task console", () => {
   });
 });
 
+test.describe("the floor plan editor", () => {
+  test("aims a new waypoint by the direction it was dragged", async ({ page }) => {
+    // The heading rule is shared with the dashboard now, so this holds the
+    // editor's half of it end to end: a drag straight up the screen is +y on
+    // the map, which is 90°, and that is what has to reach the robot.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page);
+    const created: unknown[] = [];
+    await page.route(/\/api\/v1\/maps\/[^/]+\/vertices$/, (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const [draft] = route.request().postDataJSON() as Record<string, unknown>[];
+      created.push(draft);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([vertex({ ...draft, id: "55555555-5555-5555-5555-555555555555" })]),
+      });
+    });
+    await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
+    await page.getByRole("button", { name: "Place" }).click();
+
+    const box = (await page.locator("canvas").boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, y - 60, { steps: 6 });
+    await page.mouse.up();
+
+    await page.getByRole("textbox", { name: "Name" }).fill("north-door");
+    await page.getByRole("button", { name: "Create" }).click();
+
+    await expect.poll(() => created).toHaveLength(1);
+    const sent = created[0] as { name: string; theta: number };
+    expect(sent.name).toBe("north-door");
+    expect(sent.theta).toBeCloseTo(90, 5);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+});
+
 test.describe("the step editor", () => {
   test("reorders by menu, drag and keyboard, and saves in the order shown", async ({
     page,

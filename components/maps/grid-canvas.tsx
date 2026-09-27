@@ -29,6 +29,15 @@ import type {
   VertexGesture,
   VertexTool,
 } from "@/lib/map/editor";
+import {
+  bandBetween,
+  bandIsClick,
+  classifyPress,
+  headingDegrees,
+  idsInBand,
+  isDrag,
+  panPicks,
+} from "@/lib/map/gesture";
 import { blitGrid, blitGridRect } from "@/lib/map/render";
 import type { GridPatch } from "@/lib/map/patch";
 import type { GridSession } from "@/lib/map/session";
@@ -50,8 +59,6 @@ import type { PlanarPose } from "@/lib/types/robot";
 
 /** Click slop around a marker centre. Comfortably larger than the dot itself. */
 const VERTEX_HIT_RADIUS = 11;
-/** Below this drag distance the gesture is a click and the heading is kept. */
-const HEADING_DEADZONE_PX = 10;
 
 const ZOOM_PER_PX = 0.0015;
 const WHEEL_LINE_PX = 16;
@@ -463,64 +470,48 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
 
     const { mode, tool, vertexTool, value, brush, spacePan } = propsRef.current;
     const { cx, cy } = localPoint(event);
-    // Right and middle drag always pan, in every mode and whatever the tool.
-    //
-    // This is the dashboard's bargain, adapted: there, left-drag moves the view
-    // and an armed pick mode is what takes the button away. Same here — both
-    // modes open in Pan (see DEFAULT_TOOL / DEFAULT_VERTEX_TOOL) and arming a
-    // brush or the vertex Place tool is what claims the left button. Right and
-    // middle keep panning regardless, so the operator never has to disarm to
-    // reach another part of the map. Right is the one that is free: a 2D canvas
-    // has no orbit to compete for it, unlike the point-cloud viewport where
-    // right-drag is the orbit.
-    //
-    // Each mode reads its own tool and ignores the other's, which is what keeps
-    // the mode toggle from carrying an armed tool across with it.
-    const panning =
-      event.button === 1 ||
-      event.button === 2 ||
-      spacePan ||
-      (mode === "grid" && tool === "pan") ||
-      (mode === "vertex" && vertexTool === "pan");
+    // Which gesture this press starts is a rule, and the rule is
+    // classifyPress in lib/map/gesture.ts: right and middle always pan, the
+    // mode's own tool claims the left button, and Select splits a press into
+    // toggle, band or re-aim. What is left here is doing it to this canvas.
+    const hit = mode === "vertex" ? vertexAt(view, cx, cy) : null;
+    const intent = classifyPress({
+      button: event.button,
+      spacePan,
+      shiftKey: event.shiftKey,
+      mode,
+      tool,
+      vertexTool,
+      onVertex: hit !== null,
+    });
 
-    if (!panning && mode === "vertex") {
+    if (intent === "toggle" && hit) {
+      event.preventDefault();
+      propsRef.current.onVertexToggle(hit.id);
+      return;
+    }
+
+    if (intent === "marquee") {
+      // It starts anywhere, including the letterbox margin outside the grid:
+      // the band selects markers, not cells, so there is nothing for it to be
+      // outside of.
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      gestureRef.current = {
+        kind: "marquee",
+        pointerId: event.pointerId,
+        ox: cx,
+        oy: cy,
+        cx,
+        cy,
+        additive: event.shiftKey,
+      };
+      requestDraw();
+      return;
+    }
+
+    if (intent === "aim") {
       const { draft } = propsRef.current;
-      const hit = vertexAt(view, cx, cy);
-
-      if (vertexTool === "select") {
-        // Shift on a marker toggles it, and arms nothing: building a selection
-        // one awkward vertex at a time is the half of multi-select a rectangle
-        // cannot do, and a re-aim drag starting from a Shift-press would be an
-        // edit the operator was not asking for.
-        if (hit && event.shiftKey) {
-          event.preventDefault();
-          propsRef.current.onVertexToggle(hit.id);
-          return;
-        }
-
-        // Bare map with Select armed is a rubber band. It starts anywhere,
-        // including the letterbox margin outside the grid — the band selects
-        // markers, not cells, so there is nothing for it to be outside of.
-        if (!hit) {
-          event.preventDefault();
-          event.currentTarget.setPointerCapture(event.pointerId);
-          gestureRef.current = {
-            kind: "marquee",
-            pointerId: event.pointerId,
-            ox: cx,
-            oy: cy,
-            cx,
-            cy,
-            additive: event.shiftKey,
-          };
-          requestDraw();
-          return;
-        }
-        // A plain press on a marker falls through: selecting and re-aiming one
-        // vertex works the same under both vertex tools, so the operator does
-        // not have to remember which one they are holding to fix a heading.
-      }
-
       // An existing vertex anchors at its *stored* position, not at the press
       // point. The press has to land within VERTEX_HIT_RADIUS of the marker, so
       // using it would silently move the vertex by up to 11 px worth of metres
@@ -529,10 +520,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       if (hit) {
         anchor = { wx: hit.x, wy: hit.y };
       } else {
-        // Reaching here means the Place tool: a bare-map press with Select armed
-        // became the marquee above. Only a press on the grid places a vertex; the
-        // map is letterboxed and a press in the margin means nothing, exactly as
-        // it does for a stroke.
+        // Only a press on the grid places a vertex; the map is letterboxed and
+        // a press in the margin means nothing, exactly as it does for a stroke.
         const cell = cellAt(view, session.grid, cx, cy);
         if (!cell) return;
         // Cell centre, not corner: gridToWorld(col, row) is the corner, and at
@@ -562,7 +551,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       return;
     }
 
-    if (!panning) {
+    if (intent === "stroke") {
       // Only a press that lands on the grid starts a stroke; the map is letterboxed
       // in the viewport and a press in the margin means nothing.
       const cell = cellAt(view, session.grid, cx, cy);
@@ -596,10 +585,9 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       cy,
       ox: cx,
       oy: cy,
-      pick:
-        mode === "vertex" && vertexTool === "pan" && event.button === 0 && !spacePan
-          ? { id: vertexAt(view, cx, cy)?.id ?? null }
-          : null,
+      pick: panPicks({ button: event.button, spacePan, mode, vertexTool })
+        ? { id: hit?.id ?? null }
+        : null,
     };
     // An inline style rather than a class, because the className is React's and a
     // render lands mid-pan routinely: panning changes the hovered cell, draw()
@@ -654,14 +642,13 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     }
 
     if (gesture.kind === "vertex") {
-      const dragPx = Math.hypot(cx - gesture.cx, cy - gesture.cy);
-      if (dragPx >= HEADING_DEADZONE_PX) {
+      if (isDrag(gesture.cx, gesture.cy, cx, cy)) {
         // The y term is negated because canvas rows grow downward while ROS y
         // grows upward — the same flip worldToGrid applies. Screen-space is
         // enough here (unlike the 3D viewport, which has to raycast the floor
         // because the camera can look from any azimuth): this canvas is always
         // axis-aligned with the map and never rotated.
-        gesture.theta = (Math.atan2(-(cy - gesture.cy), cx - gesture.cx) * 180) / Math.PI;
+        gesture.theta = headingDegrees(cx - gesture.cx, -(cy - gesture.cy)) ?? gesture.theta;
       }
       requestDraw();
       return;
@@ -706,11 +693,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       // a click on bare map is how a selection is dropped. It reuses the heading
       // deadzone rather than introducing a second threshold, so "did this drag
       // mean anything" has one answer everywhere on this canvas.
-      if (
-        gesture.pick &&
-        Math.hypot(gesture.cx - gesture.ox, gesture.cy - gesture.oy) <
-          HEADING_DEADZONE_PX
-      ) {
+      if (gesture.pick && !isDrag(gesture.ox, gesture.oy, gesture.cx, gesture.cy)) {
         propsRef.current.onVertexPick(gesture.pick.id);
       }
       return;
@@ -718,32 +701,28 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
 
     if (gesture.kind === "marquee") {
       const { ox, oy, cx, cy, additive } = gesture;
-      const left = Math.min(ox, cx);
-      const right = Math.max(ox, cx);
-      const top = Math.min(oy, cy);
-      const bottom = Math.max(oy, cy);
+      const band = bandBetween(ox, oy, cx, cy);
 
       // A band that never opened is a click on bare map, and a click on bare map
       // clears — the same verdict the Pan tool reaches above, so the two tools
       // cannot disagree about what pressing nothing means.
-      if (right - left < HEADING_DEADZONE_PX && bottom - top < HEADING_DEADZONE_PX) {
+      if (bandIsClick(band)) {
         if (!additive) propsRef.current.onVertexPick(null);
         requestDraw();
         return;
       }
 
-      // Marker centres, not their hit radii: a vertex is a pose and has no
-      // extent, so "inside the band" is the only test that matches what the
-      // operator drew a rectangle around.
-      const ids: string[] = [];
-      if (view) {
-        for (const vertex of propsRef.current.vertices) {
-          const at = vertexScreen(view, session.meta, vertex.x, vertex.y);
-          if (at.cx >= left && at.cx <= right && at.cy >= top && at.cy <= bottom) {
-            ids.push(vertex.id);
-          }
-        }
-      }
+      // Marker centres, projected with the view the band was drawn in; which
+      // of them the band holds is idsInBand's rule.
+      const ids = view
+        ? idsInBand(
+            band,
+            propsRef.current.vertices.map((vertex) => ({
+              id: vertex.id,
+              ...vertexScreen(view, session.meta, vertex.x, vertex.y),
+            })),
+          )
+        : [];
       propsRef.current.onMarquee(ids, additive);
       requestDraw();
       return;

@@ -38,6 +38,7 @@ import {
   createVertexLayer,
   type VertexLayer,
 } from "@/lib/scene/vertex-layer";
+import { headingDegrees, isDrag } from "@/lib/map/gesture";
 import type { MapVertex } from "@/lib/types/map";
 import type {
   MapMetadata,
@@ -58,8 +59,6 @@ import { createPointCloudStream } from "@/lib/ros/pointcloud-stream";
 
 
 
-/** Drag distance (CSS px) below which the heading is not taken from the drag. */
-const HEADING_DEADZONE_PX = 8;
 
 // Height (metres) the robot model floats at while it is being carried on the
 // pointer, before a press plants it on the floor. Purely an affordance: held and
@@ -1276,22 +1275,16 @@ export function PointCloudCanvas({
 
     // Planted: the position is fixed at the anchor and the drag only aims.
     // Keep whatever heading the draft already has inside the deadzone.
+    // The deadzone is the floor plan editor's, from lib/map/gesture.ts, so a
+    // drag aims at the same distance on both map surfaces.
     let theta = seedTheta();
-    const dragPx = Math.hypot(
-      event.clientX - anchor.cx,
-      event.clientY - anchor.cy,
-    );
-    if (dragPx >= HEADING_DEADZONE_PX) {
+    if (isDrag(anchor.cx, anchor.cy, event.clientX, event.clientY)) {
       // World-space angle from the anchor to wherever the drag now points at
       // the floor. This cannot come from the screen delta: the camera may be
       // looking at the map from any azimuth (or from below), so screen-right is
       // not world +x.
       const hit = pickGround(event);
-      if (hit) {
-        const dx = hit.wx - anchor.wx;
-        const dy = hit.wy - anchor.wy;
-        if (dx !== 0 || dy !== 0) theta = (Math.atan2(dy, dx) * 180) / Math.PI;
-      }
+      if (hit) theta = headingDegrees(hit.wx - anchor.wx, hit.wy - anchor.wy) ?? theta;
     }
     setDraft({ x: anchor.wx, y: anchor.wy, theta });
   };

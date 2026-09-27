@@ -151,7 +151,8 @@ lib/
   map/          gridmap maths: view transforms, patches, session, vertex helpers,
                 name rule, the 2D drawing (draw.ts), the editor's vocabulary and
                 the task editor's floor plan preview (preview.ts: fit, markers,
-                hit test)
+                hit test), and the gesture rules both map surfaces share
+                (gesture.ts: press intent, drag deadzone, heading, band)
   scene/        three.js scene building for the 3D viewport: theme, markers,
                 vertex layer, path ribbon, camera policy, picking, robot mesh
   theme/        the signal hues both canvases draw with
@@ -220,11 +221,13 @@ touch one, prefer moving it toward the rule.
   owns a mutable `GridSession` holding a cell buffer and a canvas that must be
   disposed, which is not something a structurally-shared cache should hand
   around. Everything else that reads the backend is a query.
-- **The two canvases are still the biggest components** (~1380 and ~825
+- **The two canvases are still the biggest components** (~1350 and ~800
   lines), but what is left is React: refs, effects, the frame loop and the
-  pointer state machines. The scene builders and the 2D drawing moved to
-  `lib/scene/` and `lib/map/draw.ts`. The gesture reducers are the next thing
-  that could follow them.
+  pointer state machines. The scene builders, the 2D drawing and the gesture
+  rules moved to `lib/scene/`, `lib/map/draw.ts` and `lib/map/gesture.ts`.
+  The rules are which gesture a press starts, the drag deadzone, the heading
+  of a drag and what a rubber band selects. What stays in the handlers is
+  acting on them: pointer capture, the cell stamps and the blits.
 
 ## Data layer conventions
 
