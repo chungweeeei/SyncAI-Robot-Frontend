@@ -86,6 +86,12 @@ function endpointOf(url: string): string {
   }
 }
 
+/** Anything but a read changes something on the robot. */
+function isWrite(method: string): boolean {
+  const verb = method.toUpperCase();
+  return verb !== "GET" && verb !== "HEAD";
+}
+
 /**
  * Parse a response body, or throw one sentence naming the endpoint and the
  * field that did not match.
@@ -94,8 +100,18 @@ function endpointOf(url: string): string {
  * validation dump: by the time this fires the useful action is comparing the
  * two versions, not reading a stack. Everything in this console renders
  * `error.message` verbatim, so it has to stand on its own.
+ *
+ * A write adds one more sentence, because its failure means something a read's
+ * does not: the status was 2xx, so the robot already did what was asked and
+ * only the answer is unreadable. A Retry beside an error reads as "nothing
+ * happened", and pressing it on a dispatched MOVE would send the robot again.
  */
-function parseWire<T>(schema: z.ZodType<T>, body: unknown, url: string): T {
+function parseWire<T>(
+  schema: z.ZodType<T>,
+  body: unknown,
+  url: string,
+  method: string,
+): T {
   const result = schema.safeParse(body);
   if (result.success) return result.data;
 
@@ -103,10 +119,13 @@ function parseWire<T>(schema: z.ZodType<T>, body: unknown, url: string): T {
     .slice(0, 3)
     .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
     .join("; ");
+  const accepted = isWrite(method)
+    ? " The robot accepted the request, so check what it did before sending it again."
+    : "";
   throw new Error(
     `${endpointOf(url)} answered in a shape this console does not understand ` +
       `(${where}). The robot is probably running a backend from a different ` +
-      `build than this frontend.`,
+      `build than this frontend.${accepted}`,
   );
 }
 
@@ -148,7 +167,9 @@ export async function requestJson<T>(
 
   if (!parse) return undefined as T;
   const body: unknown = await res.json();
-  return schema ? parseWire(schema, body, url) : (body as T);
+  return schema
+    ? parseWire(schema, body, url, rest.method ?? "GET")
+    : (body as T);
 }
 
 /**

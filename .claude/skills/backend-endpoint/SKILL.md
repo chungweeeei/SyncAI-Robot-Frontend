@@ -95,10 +95,13 @@ export function fetchRecordings(signal?: AbortSignal): Promise<RecordingSummary[
 ```
 
 - **`apiUrl()` always.** Never a hardcoded host — see `lib/api/config.ts`.
-- **Reads pass `schema`. Writes do not**, because the request shape is already
-  closed by the request types. But a write's *echo* is validated wherever it is
-  spliced into the cache (`startRecording` passes one for exactly this reason).
-- `parse: false` for a 204 or an envelope nothing reads.
+- **Every parsed response passes `schema`, reads and writes alike.** The
+  request *body* needs none, because the request types close it. But a write's
+  answer is read too: the dispatch ack's `id` becomes a poll target and
+  `activateMap`'s `previous` picks a key to invalidate, and before they were
+  validated a renamed field in either passed every gate as `undefined`.
+- `parse: false` for a 204 or an envelope nothing reads — the only way a write
+  goes without a schema.
 - Take `signal` on anything a query calls, and pass it through.
 
 ### When the UI branches on a refusal
@@ -275,8 +278,8 @@ fixture fails at the schema boundary instead of passing quietly.
 ## Checklist
 
 - [ ] Schema annotated `z.ZodType<T>`, `.nullable()` vs `.optional()` correct
-- [ ] Fetcher goes through `requestJson`/`requestRaw` and `apiUrl()`; reads pass
-      `schema` and take `signal`
+- [ ] Fetcher goes through `requestJson`/`requestRaw` and `apiUrl()`; every
+      parsed response passes `schema`; reads take `signal`
 - [ ] Key in `query-keys.ts` with a comment; nothing inlined
 - [ ] Poll (if any) turns itself off via the status that started it
 - [ ] **Every** key the write affects is in `onSuccess`, each with its reason
