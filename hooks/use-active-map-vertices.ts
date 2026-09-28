@@ -6,7 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMapVertexList, type MapVertexListStatus } from "@/hooks/use-map-vertex-list";
 import { useActiveMap } from "@/hooks/use-maps";
 import { queryKeys } from "@/lib/api/query-keys";
-import { createVertex, updateVertex, type VertexDraft } from "@/lib/api/vertex";
+import { createVertex, deleteVertex, updateVertex, type VertexDraft } from "@/lib/api/vertex";
 import type { MapVertex } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
@@ -34,12 +34,15 @@ export interface UseActiveMapVertices {
    * request failed (see `writeError`) or there is no active map to put it on.
    */
   createVertex: (draft: VertexDraft) => Promise<MapVertex | null>;
+  /** Delete one vertex from the active map. True when the row is gone. */
+  removeVertex: (id: string) => Promise<boolean>;
   clearWriteError: () => void;
 }
 
 /**
  * The active map's vertices: the markers the dashboard draws on the floor, and
- * — through `moveVertex` and `createVertex` — the two things it may write.
+ * — through `moveVertex`, `createVertex` and `removeVertex` — what it may
+ * write.
  *
  * The list itself is useMapVertexList, keyed by the loaded map's name; this
  * hook adds where that name comes from and the writes. (The task editor used
@@ -51,9 +54,9 @@ export interface UseActiveMapVertices {
  * with the live cloud drawn over it and invisible on the editor's flat raster,
  * and the spot an operator wants a new stop at is the one they are looking at
  * on the same view. Requiring a trip to another screen for either would mean
- * placing from the one view that cannot see the problem. Rename, retype and
- * delete are not part of that argument and stay where the rest of the CRUD
- * lives.
+ * placing from the one view that cannot see the problem. Delete joined them
+ * by request, from the same dialog a tap on a stop opens: the stop that is in
+ * a wall is also the one you want gone. Rename and retype stay in the editor.
  *
  * `writeError` is separate from `status` rather than shared the way
  * useMapVertices shares its `error`: here the two really can be live at once —
@@ -104,8 +107,23 @@ export function useActiveMapVertices(): UseActiveMapVertices {
     },
   });
 
+  const remove = useMutation({
+    mutationFn: ({ map, id }: { map: string; id: string }) => deleteVertex(map, id),
+    onSuccess: (_result, { map, id }) => {
+      queryClient.setQueryData<MapVertex[]>(
+        queryKeys.mapVertices(map),
+        (current) => current?.filter((vertex) => vertex.id !== id),
+      );
+      // vertex_count on the catalogue, and every template with a MOVE step on
+      // this stop now has a missing vertex — the same two keys a create marks.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.taskTemplates });
+    },
+  });
+
   const { mutateAsync: moveAsync, reset: resetMove } = move;
   const { mutateAsync: createAsync, reset: resetCreate } = create;
+  const { mutateAsync: removeAsync, reset: resetRemove } = remove;
 
   const moveVertex = React.useCallback(
     (id: string, pose: PlanarPose) => {
@@ -126,10 +144,22 @@ export function useActiveMapVertices(): UseActiveMapVertices {
     [name, createAsync],
   );
 
+  const removeOnActiveMap = React.useCallback(
+    (id: string) => {
+      if (!name) return Promise.resolve(false);
+      return removeAsync({ map: name, id }).then(
+        () => true,
+        () => false,
+      );
+    },
+    [name, removeAsync],
+  );
+
   const clearWriteError = React.useCallback(() => {
     resetMove();
     resetCreate();
-  }, [resetMove, resetCreate]);
+    resetRemove();
+  }, [resetMove, resetCreate, resetRemove]);
 
   // The catalogue's own state first: until it answers there is no name, and
   // "no-map" must mean the robot has none loaded, not that we have not asked.
@@ -140,10 +170,12 @@ export function useActiveMapVertices(): UseActiveMapVertices {
     mapName: name,
     vertices: list.vertices,
     status,
-    busy: move.isPending || create.isPending,
-    writeError: move.error?.message ?? create.error?.message ?? null,
+    busy: move.isPending || create.isPending || remove.isPending,
+    writeError:
+      move.error?.message ?? create.error?.message ?? remove.error?.message ?? null,
     moveVertex,
     createVertex: createOnActiveMap,
+    removeVertex: removeOnActiveMap,
     clearWriteError,
   };
 }

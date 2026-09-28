@@ -81,7 +81,7 @@ export function PointCloudView({
   // leaving the task screens' hook contract alone; both fetches are once per
   // mount, not polled.
   const stops = useActiveMapVertices();
-  const { vertices, moveVertex, createVertex } = stops;
+  const { vertices, moveVertex, createVertex, removeVertex } = stops;
   // Robot pose + joints + planned route via the telemetry WebSocket — see
   // useTelemetry on the rates and on why this is a stream and not a poll.
   const { feed, path } = useTelemetry();
@@ -249,6 +249,23 @@ export function PointCloudView({
   }, [robotPose]);
 
   const { clearWriteError } = stops;
+
+  // Confirmed in the dialog. The list is patched from the delete's success,
+  // so the marker leaves the map in the same render that closes this; a
+  // refusal leaves the dialog up with the sentence in it.
+  const deleteAsked = React.useCallback(
+    (vertex: MapVertex) => {
+      void removeVertex(vertex.id).then((gone) => {
+        if (gone) setAskedVertex(null);
+      });
+    },
+    [removeVertex],
+  );
+  const closeAsked = React.useCallback(() => {
+    setAskedVertex(null);
+    clearWriteError();
+  }, [clearWriteError]);
+
   const closeCreate = React.useCallback(() => {
     setPlacement(null);
     // A refusal belongs to the attempt it answered; the next placement starts
@@ -334,9 +351,12 @@ export function PointCloudView({
         vertex={askedVertex}
         busy={task.busy}
         running={task.running}
+        deleting={stops.busy}
+        deleteError={stops.writeError}
         onConfirm={moveToVertex}
         onReplace={armReplace}
-        onClose={() => setAskedVertex(null)}
+        onDelete={deleteAsked}
+        onClose={closeAsked}
       />
 
       {/* One row across the top: the map strip at the left, the viewport strip
@@ -407,10 +427,10 @@ export function PointCloudView({
           <VertexPlaceControl
             className="pointer-events-auto"
             vertex={pick?.mode === "vertex" ? pick.vertex : null}
-            // The hook reports one busy flag and one sentence for both writes;
-            // while the naming dialog is up they are its, and it shows them.
-            busy={placement ? false : stops.busy}
-            error={placement ? null : stops.writeError}
+            // The hook reports one busy flag and one sentence for every
+            // write; while a dialog is up they are its, and it shows them.
+            busy={placement || askedVertex ? false : stops.busy}
+            error={placement || askedVertex ? null : stops.writeError}
             onCancel={() => setPick(null)}
             onDismissError={stops.clearWriteError}
           />

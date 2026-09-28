@@ -456,6 +456,75 @@ test.describe("adding a waypoint from the dashboard", () => {
   });
 });
 
+test.describe("tapping a stop on the dashboard", () => {
+  const stop = vertex();
+  const stopPath = `/api/v1/maps/${MAP_NAME}/vertices/${stop.id}`;
+
+  /**
+   * Open the stop's dialog by tapping its marker. Top down first, because
+   * from overhead the floor is a plain scale: the fake map is 20 x 15 m
+   * about (-2.3, -0.3) and overheadDistance frames its height with an 8 %
+   * margin at a 60° fov, so the stop at (2.5, 1.25) lands a known number of
+   * pixels from the region's centre.
+   */
+  const tapStop = async (page: Page) => {
+    const region = page.getByRole("region", { name: "Map viewport" });
+    await expect(region).toBeVisible();
+    await page.getByRole("button", { name: "Top down" }).click();
+    const box = (await region.boundingBox())!;
+    const tanHalfFov = Math.tan(Math.PI / 6);
+    const height =
+      Math.max(7.5 / tanHalfFov, 10 / (tanHalfFov * (box.width / box.height))) * 1.08;
+    const pxPerM = box.height / (2 * height * tanHalfFov);
+    const x = box.x + box.width / 2 + (stop.x - -2.3) * pxPerM;
+    const y = box.y + box.height / 2 - (stop.y - -0.3) * pxPerM;
+    // Polled: the camera eases into the overhead view over a few frames.
+    await expect(async () => {
+      await page.mouse.click(x, y);
+      await expect(page.getByRole("alertdialog", { name: `Move to ${stop.name}?` })).toBeVisible({
+        timeout: 500,
+      });
+    }).toPass();
+  };
+
+  test("deletes the stop once the operator confirms, and closes", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page);
+    await page.goto("/");
+
+    await tapStop(page);
+    page.once("dialog", (confirm) => {
+      expect(confirm.message()).toContain(`Delete "${stop.name}"?`);
+      void confirm.accept();
+    });
+    await page.getByRole("button", { name: "Delete" }).click();
+
+    await expect
+      .poll(() => writes.filter((w) => w.method === "DELETE").map((w) => w.path))
+      .toEqual([stopPath]);
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    // The layer toggle goes with the last stop: nothing left to hide.
+    await expect(page.getByRole("button", { name: "Waypoints" })).toHaveCount(0);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("writes nothing when the confirm is dismissed", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page);
+    await page.goto("/");
+
+    await tapStop(page);
+    page.once("dialog", (confirm) => void confirm.dismiss());
+    await page.getByRole("button", { name: "Delete" }).click();
+
+    await expect(page.getByRole("alertdialog", { name: `Move to ${stop.name}?` })).toBeVisible();
+    expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+});
+
 test.describe("words and names on the operator's screens", () => {
   // What reaches an operator names what they see, never the stack underneath
   // it, and every control has a name a screen reader can say. Both are easy to

@@ -293,20 +293,15 @@ export function ManualControl({ className }: { className?: string }) {
       </div>
       {/* Mounting TeleopFooter only while armed is what opens/closes the
         * channel AND what resets its per-session state — the mount boundary
-        * replaces any setState-in-effect reset (Next 16 lint). Disarmed gets
-        * a same-height line so arming never reflows the panel. The hairline
-        * above it used to belong to the axis readouts; it stays, so the
-        * state line reads as the panel's footer rather than the slider's
-        * caption. */}
-      <div className="mt-2.5 border-t border-hairline">
-        {armed ? (
+        * replaces any setState-in-effect reset (Next 16 lint). Disarmed shows
+        * no line at all, by request: the unlit arm button already says the
+        * panel is not listening, so arming grows the panel by one line rather
+        * than a placeholder holding the room. */}
+      {armed && (
+        <div className="mt-2.5 border-t border-hairline">
           <TeleopFooter vectorRef={stick.vectorRef} onDrop={handleDrop} />
-        ) : (
-          <p className="mt-2 text-[11px] leading-tight text-muted-foreground">
-            Not armed — no commands are sent.
-          </p>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -39,7 +39,10 @@ test.describe("the console shell", () => {
 
     await toggle.click();
     await expect(page.getByRole("heading", { name: "Manual drive" })).toBeVisible();
-    await expect(page.getByText("Not armed — no commands are sent.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Arm manual drive input" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
 
     await toggle.click();
     await expect(page.getByRole("heading", { name: "Manual drive" })).toHaveCount(0);
