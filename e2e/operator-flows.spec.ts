@@ -68,9 +68,15 @@ test.describe("the recorder", () => {
     await expect
       .poll(() => writes.filter((w) => w.path === "/api/v1/recordings"))
       .toHaveLength(1);
-    const body = writes[0].body as { name: string; topics: string[] };
+    const body = writes[0].body as {
+      name: string;
+      topics: string[];
+      compression: boolean;
+    };
     expect(body.name).toBe("field-run-3");
     expect(body.topics.length).toBeGreaterThan(0);
+    // Compressed unless the operator turns it off.
+    expect(body.compression).toBe(true);
   });
 
   test("refuses the reserved name before a request goes out", async ({ page }) => {

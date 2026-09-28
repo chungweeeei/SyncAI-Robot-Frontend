@@ -148,7 +148,8 @@ components/
   mapping/      mode switch, save-map and reset-run controls
   maps/         map library cards and the gridmap editor (grid-canvas)
   recordings/   bag recorder and list
-  tasks/        template library, step composer, dispatch, schedules
+  tasks/        the /tasks overview (template library, schedules, a row's run)
+                and the /tasks/editor page (step composer, dispatch, scheduling)
   history/      finished-job list: filters, cursor paging, per-run step detail
   settings/     appearance and Wi-Fi
   webrtc/       WHIP/WHEP bench (unlisted developer route — see deviations)
@@ -475,15 +476,17 @@ it is run in, so it does not belong to any one of them.
   a decision without its reason will be undone by the next reader.
 - **Browser storage is one module.** The task editor's unsaved draft lives in
   `sessionStorage` through `lib/task/draft-store.ts`, and nothing else reads
-  or writes storage. The store takes its `Storage` by injection (the server
-  has none, tests pass a Map), wraps every access in try/catch because a
-  private window or blocked site data must cost the cache and not the page,
-  and is consumed through `useSyncExternalStore` (`hooks/use-task-draft.ts`)
-  rather than restored in an effect: `/tasks` is server-rendered, so the
-  first client render has to match an empty server one, and a synchronous
-  setState in an effect is what the compiler lint rejects. Put the next
-  browser-side value that has to outlive a screen beside it, not in a new
-  `localStorage` call.
+  or writes storage. It is also how the two task pages hand work over: a row's
+  Load writes the template into the draft and navigates to `/tasks/editor`,
+  which carries no id in its URL. The store takes its `Storage` by injection
+  (the server has none, tests pass a Map), wraps every access in try/catch
+  because a private window or blocked site data must cost the cache and not
+  the page, and is consumed through `useSyncExternalStore`
+  (`hooks/use-task-draft.ts`) rather than restored in an effect: `/tasks` and
+  `/tasks/editor` are server-rendered, so the first client render has to match
+  an empty server one, and a synchronous setState in an effect is what the
+  compiler lint rejects. Put the next browser-side value that has to outlive a
+  screen beside it, not in a new `localStorage` call.
 - **Phone layouts are CSS, not JS.** Anything that changes with the screen
   uses Tailwind's width breakpoints and its `pointer-coarse:` variant (a
   40 px target under a finger, a 24 px one under a mouse); there is no

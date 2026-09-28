@@ -16,11 +16,14 @@ import { cn } from "@/lib/utils";
  * robot actually publishes — which is what the free-text row below is for, and
  * why a recording's message count is on every row of the catalogue.
  *
- * Relative names, with two deliberate exceptions. Everything the robot owns is
- * namespaced and the backend expands it (`livox/lidar` →
- * `/robot01/livox/lidar`), so nothing here spells a robot id; `/tf` and
- * `/tf_static` are genuinely fleet-wide and are written absolute, which is the
- * escape hatch the API documents.
+ * Relative names only. Everything the robot owns is namespaced and the backend
+ * expands it (`livox/lidar` → `/robot01/livox/lidar`), so nothing here spells a
+ * robot id. A fleet-wide channel such as `/tf` is still one typed name away:
+ * a leading slash is the escape hatch the API documents.
+ *
+ * Kept to what is worth one tap. The drive commands, the live scan and the
+ * two transform channels were offered too, and were trimmed by request; none
+ * of them is needed to rebuild a map, which is what a recording is for.
  */
 const PRESETS: readonly { topic: string; hint: string }[] = [
   // The pair a lost mapping run is replayed from — the reason this page exists.
@@ -28,10 +31,6 @@ const PRESETS: readonly { topic: string; hint: string }[] = [
   { topic: "livox/imu", hint: "Motion sensor — needed with the scanner to rebuild a map" },
   { topic: "odom", hint: "Where the robot calculates it has travelled" },
   { topic: "robot_state", hint: "Overall status: battery, mode, motor health" },
-  { topic: "cmd_vel", hint: "The speed commands sent to the legs" },
-  { topic: "pointlio/body_cloud", hint: "The live 3D scan shown on the Dashboard" },
-  { topic: "/tf", hint: "How the robot's parts move relative to each other" },
-  { topic: "/tf_static", hint: "Fixed distances between the robot's parts" },
 ];
 
 /** The default selection: the LIO inputs, matching the backend's own default. */
@@ -48,7 +47,8 @@ const PRESET_TOPICS = new Set(PRESETS.map((preset) => preset.topic));
  * ("Lidar") would read better and be the wrong trade: these exact strings are
  * what ends up in the bag's metadata and what `ros2 bag play` will name, so the
  * chip has to be verifiable against them. The plain-language half is the
- * tooltip.
+ * tooltip, and only the tooltip: a "What these channels are" disclosure under
+ * the row used to repeat it for touch screens, and was removed by request.
  */
 function TopicChip({
   topic,
@@ -189,22 +189,6 @@ export function TopicPicker({
           />
         ))}
       </div>
-
-      {/* Each chip's plain-language half is its hover title, which a finger
-        * never sees. One disclosure rather than a legend left open: eight
-        * lines under a row of eight chips would be the page. */}
-      <details className="text-[11px] leading-snug text-muted-foreground">
-        <summary className="cursor-pointer select-none">
-          What these channels are
-        </summary>
-        <ul className="mt-1 space-y-0.5">
-          {PRESETS.map((preset) => (
-            <li key={preset.topic}>
-              <span className="readout">{preset.topic}</span> — {preset.hint}
-            </li>
-          ))}
-        </ul>
-      </details>
 
       <div className="flex items-center gap-2">
         <Input

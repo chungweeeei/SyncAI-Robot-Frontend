@@ -136,7 +136,10 @@ export function RecorderControl() {
 
   const [name, setName] = React.useState("");
   const [topics, setTopics] = React.useState<string[]>(DEFAULT_TOPICS);
-  const [compression, setCompression] = React.useState(false);
+  // On by default, by request: a recording is kept until someone deletes it,
+  // and the 2 GB free-space refusal is the one that stops a run. The CPU it
+  // costs the robot is the trade, and the switch is still there to decline it.
+  const [compression, setCompression] = React.useState(true);
 
   // One panel, two writes: whichever was pressed last owns the busy flag and
   // the error line, and starting a recording clears the last stop's receipt.
@@ -219,13 +222,7 @@ export function RecorderControl() {
           )}
 
           <div className="flex items-start justify-between gap-4 border-t border-hairline pt-3">
-            <div>
-              <Label htmlFor="bag-compression">Compress the recording</Label>
-              <p className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
-                Roughly halves the space a recording takes, at the cost of some
-                of the robot&apos;s processing power. Leave it off while mapping.
-              </p>
-            </div>
+            <Label htmlFor="bag-compression">Compress the recording</Label>
             <Switch
               id="bag-compression"
               checked={compression}
