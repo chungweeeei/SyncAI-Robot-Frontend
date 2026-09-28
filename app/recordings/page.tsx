@@ -25,8 +25,7 @@ export default function RecordingsPage() {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-4xl px-4 py-4 sm:py-8">
         <header className="mb-6">
-          <p className="instrument-label text-muted-foreground">Robot</p>
-          <h1 className="mt-1.5 text-xl font-semibold tracking-tight">
+          <h1 className="text-xl font-semibold tracking-tight">
             Recordings
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
