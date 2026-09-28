@@ -72,9 +72,14 @@ export function StripDisclosure({
           // Open is the cmd hue, like every other operator choice in the
           // console. It is the only state these buttons show: what the panel
           // is doing once open is the panel's own business.
+          //
+          // Closed, the frame shows only under a pointer or keyboard focus, by
+          // request: at rest the pair reads as two icons in the strip rather
+          // than two boxes, and the open state keeps its frame because it is
+          // the one thing the button reports.
           open
             ? "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd"
-            : "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground",
+            : "border-transparent text-muted-foreground hover:border-hairline hover:bg-elevated hover:text-foreground focus-visible:border-hairline",
         )}
       >
         <Icon aria-hidden className="size-5" />

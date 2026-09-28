@@ -129,7 +129,11 @@ export function StatusStrip() {
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-2.5 sm:gap-3.5">
-          <div className="flex items-center gap-2">
+          {/* A 2 px gap rather than the strip's usual spacing: with their
+            * frames hidden until hovered, the drive and camera buttons and
+            * the link chip read as one cluster, and the sliver is what keeps
+            * two lit frames from merging into one. */}
+          <div className="flex items-center gap-0.5">
             {/* First in the health cluster, where the link chip used to stand:
               * icon-only controls need the room to be seen at all, and these
               * are the only things in the strip an operator presses. Drive
@@ -137,7 +141,17 @@ export function StatusStrip() {
               * watches it. */}
             <DriveDisclosure />
             <CameraDisclosure />
-            {link && <Chip tone={link.tone}>{link.label}</Chip>}
+            {link && (
+              // Framed on hover only, like the two buttons beside it; the
+              // tint and the text keep the tone at rest. `current` is the
+              // tone's own text colour, so the frame is the one it had.
+              <Chip
+                tone={link.tone}
+                className="border-transparent hover:border-current/40"
+              >
+                {link.label}
+              </Chip>
+            )}
             {/* No Wi-Fi bars here any more, by request. The link chip above
               * still names a dead or stale link, and the SSID, the bars and
               * the dBm stay together on the dashboard's Link group and the
