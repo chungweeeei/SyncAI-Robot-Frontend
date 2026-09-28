@@ -122,7 +122,6 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
               </button>
             </div>
           }
-          caption="A saved Move step follows the waypoint it was taken from, so moving a waypoint on the map updates every job that uses it."
         >
           {library.error && (
             <p
