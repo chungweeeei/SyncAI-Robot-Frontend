@@ -7,7 +7,6 @@ import { Readout } from "@/components/console/instrument";
 import {
   AlertDialog,
   AlertDialogContent,
-  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
@@ -92,11 +91,8 @@ export function VertexMoveDialog({
           <>
             <AlertDialogHeader>
               <AlertDialogTitle>Move to {shown.name}</AlertDialogTitle>
-              {/* No type line, by request: the marker's badge already carries
-                * the glyph, and this dialog is about where the stop is. */}
-              <AlertDialogDescription>
-                The robot drives there on its own once the task is sent.
-              </AlertDialogDescription>
+              {/* No description, by request: the title names the stop and the
+                * Move button says what confirming does. */}
             </AlertDialogHeader>
 
             {/* Same three readouts, in the same order and the same commanded
