@@ -245,8 +245,12 @@ test.describe("the console on a phone", () => {
       "the waypoint panel starts above the toolbar's Save",
     ).toBeGreaterThan(save!.y + save!.height);
 
-    // And the tool icons say their names under a finger.
-    await expect(page.getByRole("button", { name: "Place" })).toContainText("Place");
+    // The tools are compact icons under a finger: still named, for a screen
+    // reader, but with no label printed under them (innerText skips what is
+    // not rendered, where toContainText would read it anyway).
+    const place = page.getByRole("button", { name: "Place" });
+    await expect(place).toBeVisible();
+    expect(await place.evaluate((el) => (el as HTMLElement).innerText.trim())).toBe("");
   });
 
   test("zooms the floor plan with two fingers instead of painting between them", async ({
