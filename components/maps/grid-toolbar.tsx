@@ -348,7 +348,23 @@ export function EditorToolBar({
             title="Brush size — how many cells across a stroke is"
             className="ml-0.5 rounded-sm text-[12px] pointer-coarse:min-h-8"
           >
-            <SelectValue />
+            {/* The bare number below sm, by request: "7 cells" was the one
+              * control that pushed the strip to a second row on a phone, and
+              * the trigger's name and the open list still say what it counts. */}
+            <SelectValue>
+              {(value: string | null) =>
+                value === null ? null : (
+                  <>
+                    {value}
+                    {/* A margin, not a leading space: SelectValue is a flex
+                      * row, and a flex item's leading space is dropped. */}
+                    <span className="ml-1 max-sm:hidden">
+                      {value === "1" ? "cell" : "cells"}
+                    </span>
+                  </>
+                )
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {SIZE_ITEMS.map((item) => (
