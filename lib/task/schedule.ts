@@ -267,6 +267,33 @@ export function describeTrigger(trigger: ScheduleTrigger): string {
 }
 
 /**
+ * What a saved job's clock chip says about the schedules frozen from it, or
+ * null when there are none.
+ *
+ * The count alone used to read green for three schedules with two of them
+ * paused, and a single paused one said only "paused", losing when it would
+ * have run — both only told apart by a hover title a finger never sees. So
+ * the paused count is part of the label, and a lone schedule keeps its
+ * trigger either way. The tone goes caution only when nothing will run: a row
+ * with one armed schedule still runs on its own.
+ */
+export function scheduleChipSummary(
+  schedules: readonly ScheduleState[],
+): { label: string; tone: "active" | "caution" } | null {
+  if (schedules.length === 0) return null;
+  const paused = schedules.filter((entry) => entry.paused).length;
+  const tone = paused === schedules.length ? "caution" : "active";
+  if (schedules.length === 1) {
+    const trigger = describeTrigger(schedules[0].trigger);
+    return { label: paused ? `${trigger} · paused` : trigger, tone };
+  }
+  const count = `${schedules.length} schedules`;
+  if (paused === 0) return { label: count, tone };
+  if (paused === schedules.length) return { label: `${count} · all paused`, tone };
+  return { label: `${count} · ${paused} paused`, tone };
+}
+
+/**
  * How long after a schedule's fire time the list is re-read. The row is only
  * wrong once the run has actually started, and Temporal recomputes
  * `next_run_times` from the spec the moment it fires, so a couple of seconds

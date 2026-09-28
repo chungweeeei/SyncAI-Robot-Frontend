@@ -697,6 +697,47 @@ test.describe("the task console", () => {
     expect(writes).toEqual([]);
   });
 
+  test("counts a job's paused schedules, and points at them in the list", async ({
+    page,
+  }) => {
+    // Three schedules, two paused: the chip used to read a green
+    // "3 schedules" and leave the pauses to a hover title a finger never sees.
+    const template = "22222222-2222-2222-2222-222222222222";
+    const linked = (id: string, paused: boolean) => ({
+      id,
+      trigger: { interval_seconds: 1800 },
+      paused,
+      next_run_times: paused ? [] : ["2027-01-01T01:00:00Z"],
+      task_template_id: template,
+      task_template_name: "Morning round",
+    });
+    const writes = await mockBackend(page, {
+      schedules: [
+        linked("half-hourly", false),
+        { id: "other", trigger: { interval_seconds: 3600 }, paused: false, next_run_times: [] },
+        linked("weekend", true),
+        linked("holiday", true),
+      ],
+    });
+    await page.goto("/tasks");
+
+    const chip = page.getByRole("button", { name: /^Show the schedules for "Morning round"/ });
+    await expect(chip).toHaveText("3 schedules · 2 paused");
+    await chip.click();
+
+    // Lands on the job's first schedule, not on the list's first row.
+    const first = page.locator(`li[data-template-id="${template}"]`).first();
+    await expect(first).toBeFocused();
+    await expect(first).toContainText("half-hourly");
+    // Exactly that job's three, and not the unrelated one.
+    const lit = page.locator("li[data-highlighted]");
+    await expect(lit).toHaveCount(3);
+    await expect(lit.filter({ hasText: "other" })).toHaveCount(0);
+    // A flash, not a selection.
+    await expect(lit).toHaveCount(0, { timeout: 5000 });
+    expect(writes).toEqual([]);
+  });
+
   test("lists another map's jobs, marked and not runnable", async ({ page }) => {
     // A job for a map the robot is not on is still the operator's work: it is
     // listed and can be opened, but its coordinates are in another frame, so
