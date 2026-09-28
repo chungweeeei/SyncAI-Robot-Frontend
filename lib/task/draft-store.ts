@@ -23,8 +23,6 @@ import { z } from "zod";
 import type { TaskTemplate } from "@/lib/api/task-template";
 import { fromTemplateSteps, reissueStepKeys, type StepDraft } from "@/lib/task/step";
 
-export type TaskEditorMode = "now" | "schedule";
-
 /** Everything the editor holds that is not yet on the robot. */
 export interface TaskDraft {
   steps: StepDraft[];
@@ -32,7 +30,6 @@ export interface TaskDraft {
   editing: { id: string; name: string } | null;
   /** The operator's map override; null follows the loaded map. */
   chosenMap: string | null;
-  mode: TaskEditorMode;
   /** The Save field, as typed — a half-named job is still the operator's work. */
   name: string;
 }
@@ -41,7 +38,6 @@ export const EMPTY_TASK_DRAFT: TaskDraft = {
   steps: [],
   editing: null,
   chosenMap: null,
-  mode: "now",
   name: "",
 };
 
@@ -51,8 +47,7 @@ export function isEmptyTaskDraft(draft: TaskDraft): boolean {
     draft.steps.length === 0 &&
     draft.editing === null &&
     draft.chosenMap === null &&
-    draft.name === "" &&
-    draft.mode === "now"
+    draft.name === ""
   );
 }
 
@@ -74,7 +69,6 @@ const TaskDraftSchema: z.ZodType<TaskDraft> = z.object({
   steps: z.array(StepDraftSchema),
   editing: z.object({ id: z.string(), name: z.string() }).nullable(),
   chosenMap: z.string().nullable(),
-  mode: z.enum(["now", "schedule"]),
   name: z.string(),
 });
 
@@ -86,16 +80,11 @@ const TaskDraftSchema: z.ZodType<TaskDraft> = z.object({
  * reconciled into an outgoing one. A template for another map opens on that
  * map; one with no Move step names none and leaves the current choice alone.
  */
-export function draftFromTemplate(
-  current: TaskDraft,
-  template: TaskTemplate,
-  mode: TaskEditorMode,
-): TaskDraft {
+export function draftFromTemplate(current: TaskDraft, template: TaskTemplate): TaskDraft {
   return {
     steps: fromTemplateSteps(template.steps),
     editing: { id: template.id, name: template.name },
     chosenMap: template.map_name ?? current.chosenMap,
-    mode,
     name: template.name,
   };
 }
