@@ -3,61 +3,58 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeftIcon, MapPinPlusIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, MapPinPlusIcon, SaveIcon, Trash2Icon } from "lucide-react";
 
-import { InstrumentGroup, Segmented } from "@/components/console/instrument";
+import { InstrumentGroup } from "@/components/console/instrument";
 import { ActiveRunBanner } from "@/components/tasks/active-run-banner";
-import { DispatchPanel } from "@/components/tasks/dispatch-panel";
 import { MapPicker } from "@/components/tasks/map-picker";
-import { SaveGroup } from "@/components/tasks/save-group";
 import { ScheduleForm } from "@/components/tasks/schedule-form";
 import { StepList } from "@/components/tasks/step-list";
+import { TaskNameField } from "@/components/tasks/task-name-field";
+import { Button } from "@/components/ui/button";
 import { useMapVertexList } from "@/hooks/use-map-vertex-list";
 import { useMaps } from "@/hooks/use-maps";
 import { useTaskTemplates } from "@/hooks/use-task-templates";
 import { useScheduleTaskTemplate, useSchedules } from "@/hooks/use-schedules";
 import { useStepDrafts } from "@/hooks/use-step-drafts";
-import { useTaskDispatch } from "@/hooks/use-task-dispatch";
 import { useTaskDraft } from "@/hooks/use-task-draft";
 import { waypointEditorHref } from "@/lib/map/links";
-import type { TaskDraft, TaskEditorMode } from "@/lib/task/draft-store";
+import type { TaskStepState } from "@/lib/api/task";
+import type { TaskDraft } from "@/lib/task/draft-store";
 import {
   stepDraftsSubmittable,
   toStepRequests,
   toTemplateSteps,
 } from "@/lib/task/step";
+import { taskTemplateNameOk } from "@/lib/task/template";
 
-type TaskMode = TaskEditorMode;
-
-const MODE_OPTIONS = [
-  { value: "now", label: "Run now" },
-  { value: "schedule", label: "On a schedule" },
-] as const satisfies readonly { value: TaskMode; label: string }[];
+/**
+ * The step list's per-row run readback, which this page no longer has: it
+ * dispatches nothing, so no row here is ever executing. One shared empty map
+ * rather than a fresh one per render.
+ */
+const NO_STEP_STATES: ReadonlyMap<string, TaskStepState> = new Map();
 
 /**
  * The task editor, on a page of its own (/tasks/editor): the steps being
- * authored, and everything done with them — name and save, then run now or
- * register on a schedule.
+ * authored, their name, and the schedule they can be registered on. Save and
+ * Go back sit in the header.
  *
- * **Its own route, off the overview.** It used to fold away under the library
- * on /tasks, and splitting it out was rejected once because the App Router
- * unmounts on navigation, losing the tracked id of a run this tab started.
- * What that costs now is only the per-step readback: ActiveRunBanner recovers
- * any run from GET /api/v1/active_tasks, with its Cancel, on either page. And
- * the draft already outlives a navigation (lib/task/draft-store.ts), so the
- * overview hands a template over by writing it into the draft and pushing
- * here — there is no id in the URL to keep in step with it.
+ * **It does not run anything.** Run now used to be a pane here beside On a
+ * schedule, with its own dispatch tracker; both it and the picker between
+ * them were removed by request. A job runs from its row on /tasks, after it is
+ * saved, which is also the one place its per-step readback is shown.
  *
- * **Two columns.** The step list takes the wide column; everything you *do*
- * with it rides in a narrower one that sticks to the top of the viewport while
- * the steps scroll, so the button that runs the thing is never a scroll below
- * the thing. Below `lg` the grid is one column again and the reading order
- * falls back to the sentence being composed: these steps → when → go.
+ * **Its own route, off the overview.** The draft outlives a navigation
+ * (lib/task/draft-store.ts), so the overview hands a template over by writing
+ * it into the draft and pushing here — there is no id in the URL to keep in
+ * step with it — and Go back leaves it there for next time.
  *
- * Switching modes never touches what was authored — the step list is outside
- * both panes.
+ * **Two columns.** The step list takes the wide column; the name and the
+ * schedule ride in a narrower one that sticks to the top of the viewport while
+ * the steps scroll. Below `lg` the grid is one column again.
  */
-export function TaskEditor({ robotId }: { robotId: string | null }) {
+export function TaskEditor() {
   const router = useRouter();
   /**
    * Everything authored and not yet saved — the steps, the loaded template,
@@ -67,11 +64,7 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
    * below keep the call sites reading like state.
    */
   const [draft, updateDraft, clearDraft] = useTaskDraft();
-  const { mode, editing, chosenMap, name: draftName } = draft;
-  const setMode = React.useCallback(
-    (mode: TaskMode) => updateDraft((current) => ({ ...current, mode })),
-    [updateDraft],
-  );
+  const { editing, chosenMap, name: draftName } = draft;
   const setChosenMap = React.useCallback(
     (chosenMap: string | null) => updateDraft((current) => ({ ...current, chosenMap })),
     [updateDraft],
@@ -86,7 +79,6 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
     [updateDraft],
   );
   const drafts = useStepDrafts(draft.steps, setSteps);
-  const dispatch = useTaskDispatch(robotId);
   const schedules = useSchedules();
   const scheduleTemplate = useScheduleTaskTemplate();
   const library = useTaskTemplates();
@@ -119,14 +111,12 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
   const verticesStatus =
     mapsStatus === "loading" ? "loading" : mapsStatus === "error" ? "error" : list.status;
 
-
   /**
-   * Reset-by-remount for the two forms, bumped after a successful write. The same
-   * trick the vertex panel uses to get a fresh field per draft, rather than
-   * clearing state in an effect.
+   * Reset-by-remount for the schedule form, bumped after a successful write.
+   * The same trick the vertex panel uses to get a fresh field per draft,
+   * rather than clearing state in an effect.
    */
   const [scheduleNonce, setScheduleNonce] = React.useState(0);
-  const [saveNonce, setSaveNonce] = React.useState(0);
 
   const stepsOk = stepDraftsSubmittable(drafts.steps);
   const stepReason = !drafts.steps.length
@@ -136,15 +126,6 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
         // row already says exactly what it is missing.
         "Some steps are incomplete — the marked rows say what is missing."
       : null;
-
-  // Only the dispatch path needs a robot id — it is the prefix of the task id.
-  // A schedule id is operator-authored, so the schedule path stays fully usable
-  // on a robot that has not localized yet and has no state frame to read one from.
-  const dispatchReason =
-    stepReason ??
-    (robotId
-      ? null
-      : "Waiting for the robot to report in. A job can be built now and run once it does.");
 
   /** Any MOVE step means the template has to name the map it is in. */
   const hasMoveStep = drafts.steps.some((step) => step.type === "MOVE");
@@ -158,7 +139,7 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
   /**
    * The one thing a job for another map cannot do here is run. Its coordinates
    * are in that map's frame and would point somewhere else entirely in the
-   * loaded one, so both the dispatch and the schedule pane are held — the
+   * loaded one, so the schedule pane is held — the
    * template schedule endpoint refuses this server-side too, but the loose-step
    * paths send raw coordinates with no map attached, and nothing on the robot
    * would notice. Saving is unaffected: that is what authoring for another map
@@ -166,14 +147,13 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
    */
   const mapMismatch = draftMapName !== null && draftMapName !== activeMapName;
   const mismatchReason = mapMismatch
-    ? `This job is for ${draftMapName}; the robot has ${activeMapName ?? "no map"} loaded, so it can be saved but not run from here.`
+    ? `This job is for ${draftMapName}; the robot has ${activeMapName ?? "no map"} loaded, so it can be saved but not scheduled from here.`
     : null;
 
   /**
    * Point the editor at another map. A waypoint already picked belongs to the
    * map it was picked on and means nothing on the new one, so those rows are
-   * emptied — behind a confirm, because there is no undo, the same stance as
-   * Stop editing.
+   * emptied — behind a confirm, because there is no undo.
    */
   const selectMap = (next: string) => {
     if (next === mapName) return;
@@ -203,45 +183,64 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
   };
 
   /**
-   * Let go of the template *and* empty the editor, then go back to the
-   * overview.
-   *
-   * It used to only detach the link and keep the steps, on the theory that
-   * "load A, tweak, save as B" wanted them. But the button reads as "I am done
-   * with this", and leaving a full step list behind meant the next thing the
-   * operator did — dispatch, or Save as new — acted on rows they thought they
-   * had put away. Emptying it is the reading the label already promises.
-   *
-   * Hence the confirm: there is no undo for a cleared list, and dirty tracking
-   * is not available to make it conditional (see SaveGroup on why two explicit
-   * buttons exist instead of a diff).
+   * One Save: an update when a template is loaded, a new one otherwise. The
+   * answer becomes the loaded template either way, so a second press updates
+   * what the first created instead of making another copy.
    */
-  const stopEditing = () => {
+  const canSave =
+    stepsOk && saveReason === null && taskTemplateNameOk(draftName) && !library.busy;
+  const save = () => {
+    if (!canSave) return;
+    const body = {
+      name: draftName.trim(),
+      map_name: draftMapName,
+      steps: toTemplateSteps(drafts.steps),
+    };
+    void (editing ? library.update(editing.id, body) : library.create(body)).then(
+      (saved) => {
+        if (!saved) return;
+        updateDraft((current) => ({
+          ...current,
+          editing: { id: saved.id, name: saved.name },
+          name: saved.name,
+        }));
+      },
+    );
+  };
+
+  /**
+   * Delete the loaded template, then leave: what is left in the editor would
+   * be a draft of a job that no longer exists, and Save would quietly
+   * re-create it under a new id. Behind a confirm, as on the library row —
+   * there is no undo. Its schedules are named because they survive it: each
+   * holds its own copy of the steps and keeps running until deleted itself.
+   */
+  const remove = () => {
+    if (!editing) return;
+    const linked = schedules.schedules.filter(
+      (entry) => entry.task_template_id === editing.id,
+    ).length;
+    const survivors = linked
+      ? ` ${linked === 1 ? "Its schedule keeps" : `Its ${linked} schedules keep`} running until deleted from Tasks.`
+      : "";
     if (
-      drafts.steps.length &&
       !window.confirm(
-        `Stop editing "${editing?.name}"? The steps in the editor will be cleared.`,
+        `Delete task template "${editing.name}"? This cannot be undone.${survivors}`,
       )
     ) {
       return;
     }
-    // The whole draft at once: steps, template, map and name.
-    clearDraft();
-    router.push("/tasks");
+    void library.remove(editing.id).then((gone) => {
+      if (!gone) return;
+      clearDraft();
+      router.push("/tasks");
+    });
   };
 
   return (
     <>
       <header className="mb-6 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <Link
-            href="/tasks"
-            aria-label="Back to Tasks"
-            className="instrument-label mb-2 inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground pointer-coarse:min-h-10"
-          >
-            <ArrowLeftIcon className="size-3.5" aria-hidden />
-            Tasks
-          </Link>
           <h1 className="truncate text-xl font-semibold tracking-tight">
             {editing ? `Editing ${editing.name}` : "New task"}
           </h1>
@@ -250,25 +249,45 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
             skipped.
           </p>
         </div>
-        {editing && (
-          <button
-            type="button"
-            // Frozen mid-run for the same reason the step list is: the tracked
-            // statuses are keyed by position, so emptying the list under a
-            // running task would leave them describing rows that are gone.
-            disabled={dispatch.running}
-            onClick={stopEditing}
-            title="Let go of this template, clear the editor and go back to Tasks"
-            className="instrument-label flex h-9 shrink-0 items-center gap-1 rounded-md border border-signal-cmd/40 bg-signal-cmd/8 px-2 text-signal-cmd transition-colors hover:bg-signal-cmd/16 disabled:opacity-40 pointer-coarse:h-10"
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Leaves the draft as it is: unsaved steps are still there next
+            * time, and Create task on /tasks is what asks before clearing
+            * them. It used to be Stop editing, which emptied the editor. */}
+          <Button
+            variant="outline"
+            onClick={() => router.push("/tasks")}
+            className="pointer-coarse:min-h-10"
           >
-            Stop editing
-            <XIcon className="size-3 shrink-0" aria-hidden />
-          </button>
-        )}
+            <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+            Go back
+          </Button>
+          <Button
+            onClick={save}
+            disabled={!canSave}
+            // The reason is also under the name field; this is for the
+            // operator whose eyes are on the button.
+            title={saveReason ?? (taskTemplateNameOk(draftName) ? undefined : "Name the job to save it.")}
+            className="pointer-coarse:min-h-10"
+          >
+            <SaveIcon data-icon="inline-start" aria-hidden />
+            Save
+          </Button>
+          {editing && (
+            <Button
+              variant="destructive"
+              onClick={remove}
+              disabled={library.busy}
+              className="pointer-coarse:min-h-10"
+            >
+              <Trash2Icon data-icon="inline-start" aria-hidden />
+              Delete
+            </Button>
+          )}
+        </div>
       </header>
 
       {/* A run this tab is not following, whichever page started it. */}
-      <ActiveRunBanner trackedTaskId={dispatch.taskId} />
+      <ActiveRunBanner trackedTaskId={null} />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
           <div className="overflow-hidden rounded-md border border-hairline bg-panel">
@@ -279,7 +298,7 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
                   <MapPicker
                     maps={maps}
                     value={mapName}
-                    disabled={dispatch.running}
+                    disabled={false}
                     onPick={selectMap}
                   />
                   {/* The stop that is missing gets placed on the map, not here:
@@ -314,8 +333,8 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
                 verticesStatus={verticesStatus}
                 mapName={mapName}
                 mapGrid={mapGrid}
-                disabled={dispatch.running}
-                stepStates={dispatch.stepStates}
+                disabled={false}
+                stepStates={NO_STEP_STATES}
                 onAdd={drafts.add}
                 onPatch={drafts.patch}
                 onRemove={drafts.remove}
@@ -324,97 +343,27 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
             </InstrumentGroup>
           </div>
 
-          {/* Everything you do *with* the steps, in its own column. Sticky from lg
-            * so a forty-step list scrolls past a Dispatch button that stays put —
-            * the whole reason the one-column stack was uncomfortable. `top-4`
+          {/* The name and the schedule, in their own column. Sticky from lg so
+            * a forty-step list scrolls past a Create schedule button that stays
+            * put. `top-4`
             * matches the page's own py-8 breathing room; the page scroller is the
             * containing block (see app/tasks/editor/page.tsx). */}
           <div className="overflow-hidden rounded-md border border-hairline bg-panel lg:sticky lg:top-4">
-            <InstrumentGroup label="Save">
-              <SaveGroup
-                key={saveNonce}
+            <InstrumentGroup label="Name">
+              <TaskNameField
                 editing={editing}
                 name={draftName}
                 onNameChange={setDraftName}
-                ready={stepsOk && saveReason === null}
                 reason={saveReason}
                 busy={library.busy}
-                error={null}
+                // The library's write error: a refused save or delete, in the
+                // backend's own words.
+                error={library.error}
                 existingNames={library.templates.map((template) => template.name)}
-                onCreate={(name) => {
-                  void library
-                    .create({
-                      name,
-                      map_name: draftMapName,
-                      steps: toTemplateSteps(drafts.steps),
-                    })
-                    .then((created) => {
-                      if (created) {
-                        updateDraft((current) => ({
-                          ...current,
-                          editing: { id: created.id, name: created.name },
-                          name: created.name,
-                        }));
-                        setSaveNonce((n) => n + 1);
-                      }
-                    });
-                }}
-                onUpdate={(id, name) => {
-                  void library
-                    .update(id, {
-                      name,
-                      map_name: draftMapName,
-                      steps: toTemplateSteps(drafts.steps),
-                    })
-                    .then((updated) => {
-                      if (updated) {
-                        updateDraft((current) => ({
-                          ...current,
-                          editing: { id: updated.id, name: updated.name },
-                          name: updated.name,
-                        }));
-                        setSaveNonce((n) => n + 1);
-                      }
-                    });
-                }}
+                onSubmit={save}
               />
             </InstrumentGroup>
 
-            <InstrumentGroup label="When">
-              {/* Locked while a task is in flight, and not for the reason the step
-               * list is: Cancel lives in the dispatch pane, so letting the operator
-               * switch to the schedule pane would hide the only stop button for a
-               * robot that is currently moving. Mirroring Cancel into both panes was
-               * the alternative and it is worse — two places that can stop a task. */}
-              <Segmented
-                label="When to run"
-                stretch
-                value={mode}
-                options={MODE_OPTIONS}
-                disabled={dispatch.running}
-                onChange={setMode}
-              />
-            </InstrumentGroup>
-
-            {mode === "now" ? (
-              <InstrumentGroup
-                label="Dispatch"
-                // Static rather than a mapping over the backend's two 502 sentences
-                // ("Start workflow failed" / "Failed to connect to Temporal server").
-                // Both are terse and neither is actionable on its own, but substituting
-                // friendlier prose would put backend copy in the frontend and go stale
-                // the day the gateway's wording changes — `detail` is rendered verbatim
-                // everywhere else in this console.
-                caption="Jobs are queued by the robot's scheduler. A failure here means the job was never accepted, not that the robot refused it."
-              >
-                <DispatchPanel
-                  dispatch={dispatch}
-                  ready={stepsOk && robotId !== null && !mapMismatch}
-                  reason={dispatchReason ?? mismatchReason}
-                  onDispatch={() => void dispatch.send(toStepRequests(drafts.steps))}
-                />
-              </InstrumentGroup>
-            ) : (
               <InstrumentGroup
                 label="Schedule"
                 caption={
@@ -462,7 +411,6 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
                   }}
                 />
               </InstrumentGroup>
-            )}
           </div>
         </div>
     </>

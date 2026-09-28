@@ -14,11 +14,7 @@ import { useSchedules } from "@/hooks/use-schedules";
 import { useTaskDispatch } from "@/hooks/use-task-dispatch";
 import { useTaskDraft } from "@/hooks/use-task-draft";
 import type { TaskTemplate } from "@/lib/api/task-template";
-import {
-  draftFromTemplate,
-  draftWouldBeLost,
-  type TaskEditorMode,
-} from "@/lib/task/draft-store";
+import { draftFromTemplate, draftWouldBeLost } from "@/lib/task/draft-store";
 import { toDispatchSteps } from "@/lib/task/step";
 
 /**
@@ -72,18 +68,16 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
    * Open a saved job in the editor. The draft is on another page from here,
    * so replacing steps the operator built is asked about rather than done;
    * declining still goes to the editor, on the work they kept. Reopening the
-   * template already loaded keeps its unsaved edits and only sets the mode.
+   * template already loaded keeps its unsaved edits.
    */
-  const openInEditor = (template: TaskTemplate, mode: TaskEditorMode) => {
+  const openInEditor = (template: TaskTemplate) => {
     const keep =
       draft.editing?.id === template.id ||
       (draftWouldBeLost(draft, template.id) &&
         !window.confirm(
           `Open "${template.name}"? The unsaved steps in the editor will be replaced.`,
         ));
-    updateDraft((current) =>
-      keep ? { ...current, mode } : draftFromTemplate(current, template, mode),
-    );
+    if (!keep) updateDraft((current) => draftFromTemplate(current, template));
     router.push("/tasks/editor");
   };
 
@@ -170,11 +164,12 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
             taskStatus={dispatch.taskStatus}
             stepStates={dispatch.stepStates}
             onDispatch={dispatchTemplate}
-            onLoad={(template) => openInEditor(template, "now")}
+            onLoad={openInEditor}
             // The trigger is authored in the editor's Schedule pane, which is
             // the only place a timed/interval form exists. Loading the template
-            // first is what makes that pane describe the thing being scheduled.
-            onSchedule={(template) => openInEditor(template, "schedule")}
+            // first is what makes that pane describe the thing being scheduled;
+            // the pane is always open there, so this is the same trip as Load.
+            onSchedule={openInEditor}
             onShowSchedules={showSchedules}
             onDelete={(template) => {
               // A confirm rather than an undo: there is no local history to step

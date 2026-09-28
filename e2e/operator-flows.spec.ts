@@ -668,7 +668,7 @@ test.describe("the task console", () => {
     await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
     await expect(page.getByPlaceholder("Morning patrol")).toHaveValue("");
 
-    await page.getByRole("link", { name: "Back to Tasks" }).click();
+    await page.getByRole("button", { name: "Go back" }).click();
     await expect(page).toHaveURL(/\/tasks$/);
     // Opening an editor is not a write.
     expect(writes).toEqual([]);
@@ -814,16 +814,129 @@ test.describe("the task console", () => {
     await page.reload();
     await asLeft();
 
-    // Stop editing empties it and goes back to the overview, and empty is
-    // what the editor then finds, across a reload too.
-    page.once("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: /Stop editing/ }).click();
+    // Go back leaves it too: the overview, and the same job on return.
+    await page.getByRole("button", { name: "Go back" }).click();
     await expect(page).toHaveURL(/\/tasks$/);
     await page.goto("/tasks/editor");
+    await asLeft();
+
+    // Only Create task, once confirmed, empties it — across a reload too.
+    await page.goto("/tasks");
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Create task" }).click();
     await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
     await page.reload();
     await expect(page.getByText("Editing Morning round")).toHaveCount(0);
     await expect(page.getByText(/^dock · \(/)).toHaveCount(0);
+  });
+
+  test("saves over the loaded job, and over the one it just created", async ({
+    page,
+  }) => {
+    // One Save now does both writes Update and Save as new used to split. The
+    // rule it has to keep: a loaded template is updated in place, never
+    // copied, and a job saved for the first time becomes the loaded one, so a
+    // second press does not make a second row.
+    const loaded = "22222222-2222-2222-2222-222222222222";
+    const created = "44444444-4444-4444-4444-444444444444";
+    await mockBackend(page);
+    const writes: { method: string; path: string }[] = [];
+    await page.route("**/api/v1/task_templates**", (route) => {
+      const request = route.request();
+      const method = request.method();
+      if (method === "GET") return route.fallback();
+      const path = new URL(request.url()).pathname;
+      writes.push({ method, path });
+      const body = request.postDataJSON() as { name: string };
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({ id: method === "POST" ? created : loaded, name: body.name }),
+        ),
+      });
+    });
+
+    await page.goto("/tasks");
+    await page
+      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => writes).toEqual([
+      { method: "PUT", path: `/api/v1/task_templates/${loaded}` },
+    ]);
+
+    // A fresh job: created once, then updated. The loaded one is still in
+    // the draft, so Create task asks first.
+    await page.goto("/tasks");
+    page.once("dialog", (dialog) => void dialog.accept());
+    await page.getByRole("button", { name: "Create task" }).click();
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
+    const save = page.getByRole("button", { name: "Save", exact: true });
+    // Held until it has a name.
+    await expect(save).toBeDisabled();
+    await page.getByPlaceholder("Morning patrol").fill("greeting");
+    await save.click();
+    await expect(page.getByRole("heading", { name: "Editing greeting" })).toBeVisible();
+    await save.click();
+    await expect.poll(() => writes.slice(1)).toEqual([
+      { method: "POST", path: "/api/v1/task_templates" },
+      { method: "PUT", path: `/api/v1/task_templates/${created}` },
+    ]);
+    // Nothing in the editor runs the robot any more.
+    await expect(page.getByRole("button", { name: "Dispatch" })).toHaveCount(0);
+    await expect(page.getByRole("radiogroup", { name: "When to run" })).toHaveCount(0);
+  });
+
+  test("deletes the loaded job only once confirmed, and leaves", async ({ page }) => {
+    // Delete sits beside Save, so a dismissed confirm must send nothing; and
+    // the confirm names the schedules that will outlive the job, since each
+    // keeps its own copy of the steps.
+    const template = "22222222-2222-2222-2222-222222222222";
+    const writes = await mockBackend(page, {
+      schedules: [
+        {
+          id: "half-hourly",
+          trigger: { interval_seconds: 1800 },
+          paused: false,
+          next_run_times: [],
+          task_template_id: template,
+        },
+      ],
+    });
+    await page.goto("/tasks/editor");
+    // A new job has nothing to delete.
+    await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
+
+    await page.goto("/tasks");
+    await page
+      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .click();
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
+    const remove = page.getByRole("button", { name: "Delete", exact: true });
+
+    let asked = "";
+    page.once("dialog", (dialog) => {
+      asked = dialog.message();
+      void dialog.dismiss();
+    });
+    await remove.click();
+    expect(asked).toContain('"Morning round"');
+    expect(asked).toContain("Its schedule keeps running");
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
+    expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
+
+    page.once("dialog", (dialog) => void dialog.accept());
+    await remove.click();
+    await expect(page).toHaveURL(/\/tasks$/);
+    expect(writes.filter((w) => w.method === "DELETE").map((w) => w.path)).toEqual([
+      `/api/v1/task_templates/${template}`,
+    ]);
+    // The draft went with it: the editor opens empty.
+    await page.goto("/tasks/editor");
+    await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
   });
 
   test("authors a job for a map the robot is not on", async ({ page }) => {
@@ -879,13 +992,13 @@ test.describe("the task console", () => {
     await expect(waypoint).toContainText("bay-1");
 
     // Held, with the reason, until that map is the loaded one.
-    await expect(page.getByRole("button", { name: "Dispatch", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Create schedule" })).toBeDisabled();
     await expect(
       page.getByText("This job is for wh1; the robot has dp2f loaded", { exact: false }).first(),
     ).toBeVisible();
 
     await page.getByPlaceholder("Morning patrol").fill("to bay");
-    await page.getByRole("button", { name: "Save as new" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
 
     await expect.poll(() => saved).toHaveLength(1);
     const body = saved[0] as { map_name: string; steps: { vertex_id: string }[] };
@@ -1453,7 +1566,7 @@ test.describe("the step editor", () => {
     await expect.poll(order).toEqual(["Lie", "Stand", "Speak"]);
 
     await page.getByPlaceholder("Morning patrol").fill("reorder-check");
-    await page.getByRole("button", { name: "Save as new" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
 
     await expect.poll(() => saved).toHaveLength(1);
     const body = saved[0] as { steps: { id: string }[] };
@@ -1603,7 +1716,7 @@ test.describe("the step editor", () => {
     await expect(page.getByText(/^room-a · \(/)).toBeVisible();
 
     await page.getByPlaceholder("Morning patrol").fill("to room");
-    await page.getByRole("button", { name: "Save as new" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
 
     await expect.poll(() => saved).toHaveLength(1);
     const body = saved[0] as {
