@@ -24,7 +24,7 @@ import type { RobotState } from "@/lib/types/robot";
  * because they qualify the whole console rather than this screen.
  */
 export function TelemetryRail({ state }: { state: RobotState }) {
-  const { position, velocity } = state.localization_status;
+  const { position } = state.localization_status;
   const network = state.network_status;
   // A false flag means the pose fields are a zeroed placeholder, not a
   // reading — a state frame arrives before the localizer converges (and all
@@ -59,12 +59,9 @@ export function TelemetryRail({ state }: { state: RobotState }) {
           unit="°"
           tone={localized ? "live" : "neutral"}
         />
-        <Readout
-          label="Velocity"
-          value={velocity.toFixed(2)}
-          unit="m/s"
-          tone="live"
-        />
+        {/* No velocity row, by request. The field is still on the wire and in
+          * the schema; the pose group is where the robot *is*, and how fast it
+          * is going is a reading nobody watched here. */}
       </InstrumentGroup>
 
       <InstrumentGroup label="Link">
