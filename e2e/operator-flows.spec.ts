@@ -610,7 +610,7 @@ test.describe("words and names on the operator's screens", () => {
   }) => {
     await mockBackend(page);
     await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
-    await expect(page.getByText("Floor plan editor")).toBeVisible();
+    await expect(page.getByRole("toolbar", { name: "Draw" })).toBeVisible();
     await expect(page.getByText(/gridmap|vertices/i)).toHaveCount(0);
 
     await page.getByRole("button", { name: "Place" }).click();

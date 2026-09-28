@@ -207,7 +207,7 @@ test.describe("the console on a phone", () => {
     // the toolbar's Save.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
     await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
-    await expect(page.getByText("Floor plan editor")).toBeVisible();
+    await expect(page.getByRole("toolbar", { name: "Draw" })).toBeVisible();
 
     const save = await page.getByRole("button", { name: "Save" }).boundingBox();
     // .last(): the Mode row's "Waypoints" segment comes first in the DOM.
@@ -236,7 +236,7 @@ test.describe("the console on a phone", () => {
     // Unknown cells, so painting Floor is a change worth saving.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
     await page.goto(`/maps/${MAP_NAME}/edit`);
-    await expect(page.getByText("Floor plan editor")).toBeVisible();
+    await expect(page.getByRole("toolbar", { name: "Draw" })).toBeVisible();
     await page.locator("canvas").waitFor();
 
     const box = (await page.locator("canvas").boundingBox())!;
