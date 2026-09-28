@@ -11,8 +11,7 @@ export default function MapsPage() {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-5xl px-4 py-4 sm:py-8">
         <header className="mb-6">
-          <p className="instrument-label text-muted-foreground">Robot</p>
-          <h1 className="mt-1.5 text-xl font-semibold tracking-tight">Maps</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Maps</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Areas{" "}
             <span className="readout">{state?.robot_id ?? "this robot"}</span>{" "}
