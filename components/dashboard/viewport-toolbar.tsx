@@ -86,7 +86,7 @@ export function ViewportToolbar({
   className?: string;
 }) {
   return (
-    <ToolStrip label="Viewport" className={className}>
+    <ToolStrip label="Viewport" compact className={className}>
         <ToolGroup label="Pose tools">
           <ToolButton
             label="Set goal"
@@ -215,7 +215,7 @@ export function MapToolbar({
   className?: string;
 }) {
   return (
-    <ToolStrip label="Map" className={className}>
+    <ToolStrip label="Map" compact className={className}>
         <ToolButton
           label="Recenter"
           hint="frame the whole map again"
