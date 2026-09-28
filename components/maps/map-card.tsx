@@ -1,39 +1,20 @@
 "use client";
 
-import * as React from "react";
 import Link from "next/link";
 import {
   BoxIcon,
   CheckIcon,
-  ChevronDownIcon,
   LayersIcon,
   PencilIcon,
 } from "lucide-react";
 
-import { Chip, Readout } from "@/components/console/instrument";
+import { Chip } from "@/components/console/instrument";
 import { GridRebuildControl } from "@/components/maps/grid-rebuild-control";
 import { MapActivateControl } from "@/components/maps/map-activate-control";
 import { MapDeleteControl } from "@/components/maps/map-delete-control";
 import { MapRenameControl } from "@/components/maps/map-rename-control";
 import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
-
-/** GiB/MiB, one decimal — a map is 20–50 MB of .pcd and nothing needs bytes. */
-function formatSize(bytes: number): string {
-  const mib = bytes / (1024 * 1024);
-  if (mib >= 1024) return `${(mib / 1024).toFixed(1)} GiB`;
-  return `${mib.toFixed(0)} MiB`;
-}
-
-/**
- * `2026-07-31 10:35` sliced straight out of the ISO string rather than run
- * through toLocaleString: this is a client component that Next still prerenders,
- * and a server/browser timezone difference would be a hydration mismatch. UTC
- * for everyone is the honest trade.
- */
-function formatTimestamp(iso: string): string {
-  return iso.slice(0, 16).replace("T", " ");
-}
 
 /**
  * The tile the map is read from.
@@ -106,8 +87,8 @@ function GridStatusChip({ map }: { map: MapSummary }) {
  * What to do about a gridmap that is not there, or not the one that was asked
  * for — the actionable half of the chip above, next to the control that acts.
  *
- * Always visible rather than inside the card's collapsed details, and that is
- * the point of the whole change: these sentences used to be one generic
+ * Always on the card, and that is the point of it: these sentences used to be
+ * one generic
  * "never converted" line, and a conversion that actually failed said nothing
  * here and left its reason in the robot's backend log. A reason an operator
  * cannot see is a reason nobody reads.
@@ -172,23 +153,22 @@ function GridStatusNote({ map }: { map: MapSummary }) {
 /**
  * One map in the catalogue.
  *
- * Instrument vocabulary rather than a shadcn Card: the values here are the same
- * kind of readout the telemetry rail carries, and `signal-cmd` for the loaded map
- * is the console's existing meaning for "the value in force" — the rail's location
- * tick and the active segment of a Segmented control are the same hue.
+ * Instrument vocabulary rather than a shadcn Card: `signal-cmd` for the loaded
+ * map is the console's existing meaning for "the value in force" — the rail's
+ * location tick and the active segment of a Segmented control are the same hue.
  *
- * The readouts collapse, and default to collapsed. Six of them per card is more
- * than this screen is for — the question it answers is "which maps are on the
- * robot and which one is loaded", which the thumbnail, the name and the chips
- * answer on their own. Extents and byte counts are what you open one card to
- * check, not what you scan four cards for.
+ * No readouts at all, by request. It used to carry six behind a Details
+ * toggle — extent, cells, resolution, waypoint count, size, save time — and the
+ * question this screen answers is "which maps are on the robot and which one is
+ * loaded", which the thumbnail, the name and the chips answer on their own.
+ * What a map measures is the editor's business, where it is being worked on.
  *
- * What never collapses: "In use", the gridmap-state chip, and the sentence that
- * says what to do about it. A map the nav stack cannot load must say so with the
- * card shut, or the flag is worthless — and a conversion in flight is why Edit
- * and Rebuild are greyed, so hiding it would make the card look broken instead
- * of busy. The note earns the same treatment for a stronger reason: a failed
- * conversion's only other record is a log line on the robot.
+ * What the card always shows: "In use", the gridmap-state chip, and the
+ * sentence that says what to do about it. A map the nav stack cannot load must
+ * say so at a glance, or the flag is worthless — and a conversion in flight is
+ * why Edit and Rebuild are greyed, so hiding it would make the card look broken
+ * instead of busy. The note earns the same treatment for a stronger reason: a
+ * failed conversion's only other record is a log line on the robot.
  *
  * "In use" gets three signals rather than one, because *which map is loaded* is
  * the question the screen exists to answer and one card in the grid has to win
@@ -220,9 +200,7 @@ export function MapCard({
   /** The backend's sentence about where the robot ended up after a map switch. */
   onSwitched?: (message: string) => void;
 }) {
-  const [open, setOpen] = React.useState(false);
   const grid = map.grid;
-  const detailsId = `map-${map.name}-details`;
 
   return (
     <article
@@ -276,19 +254,6 @@ export function MapCard({
       <div className="px-3 py-3">
         <header className="flex items-center gap-2">
           <MapRenameControl map={map} onRenamed={onRenamed} />
-          <button
-            type="button"
-            onClick={() => setOpen((prev) => !prev)}
-            aria-expanded={open}
-            aria-controls={detailsId}
-            className="instrument-label flex h-5 shrink-0 items-center gap-1 rounded-sm px-1 text-muted-foreground pointer-coarse:min-h-10 transition-colors hover:bg-elevated hover:text-foreground"
-          >
-            {open ? "Hide" : "Details"}
-            <ChevronDownIcon
-              aria-hidden
-              className={cn("size-3 transition-transform", open && "rotate-180")}
-            />
-          </button>
         </header>
 
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
@@ -330,40 +295,6 @@ export function MapCard({
          * map.pcd there is nothing to convert and the backend would 400. */}
         <GridStatusNote map={map} />
         {map.has_pointcloud && <GridRebuildControl map={map} />}
-
-        {/* `hidden` rather than unmounting: aria-controls above must keep pointing
-         * at an element that exists, and the native attribute is what takes the
-         * collapsed rows out of the accessibility tree. */}
-        <div id={detailsId} hidden={!open}>
-          <div className="mt-2.5 space-y-1.5 border-t border-hairline pt-2.5">
-            {grid ? (
-              <>
-                <Readout
-                  label="Extent"
-                  value={`${(grid.width * grid.resolution).toFixed(1)} × ${(
-                    grid.height * grid.resolution
-                  ).toFixed(1)}`}
-                  unit="m"
-                />
-                <Readout
-                  label="Grid"
-                  value={`${grid.width} × ${grid.height}`}
-                  unit="cells"
-                />
-                <Readout
-                  label="Resolution"
-                  value={grid.resolution.toFixed(2)}
-                  unit="m/cell"
-                />
-              </>
-            ) : (
-              <Readout label="Ready" value="No" tone="caution" />
-            )}
-            <Readout label="Waypoints" value={map.vertex_count} />
-            <Readout label="Size" value={formatSize(map.size_bytes)} />
-            <Readout label="Saved" value={formatTimestamp(map.modified_at)} />
-          </div>
-        </div>
       </div>
     </article>
   );

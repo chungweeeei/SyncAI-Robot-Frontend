@@ -216,7 +216,7 @@ export function formatLocalRunTime(iso: string): string {
  * `2026-08-04 09:00` sliced straight out of the ISO string, so it is UTC and
  * needs no clock. The server render's answer: a prerendered page has no idea
  * where the operator is, and toLocaleString there would hydrate to a different
- * string in the browser. Same reasoning as map-card's formatTimestamp.
+ * string in the browser. Same rule as formatTimestamp in lib/recording/format.ts.
  */
 export function formatUtcRunTime(iso: string): string {
   return iso.slice(0, 16).replace("T", " ");
