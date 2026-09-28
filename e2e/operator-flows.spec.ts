@@ -1251,7 +1251,7 @@ test.describe("the step editor", () => {
     await page.getByRole("button", { name: "Expand all" }).click();
     await expect(waypoint).toBeVisible();
     // Unfolded, a MOVE row is the picker alone: no coordinate fields.
-    await expect(page.getByLabel(/^(X|Y|Heading)\b/)).toHaveCount(0);
+    await expect(page.getByLabel(/^(X|Y|Orientation)\b/)).toHaveCount(0);
     await page.getByRole("button", { name: "Collapse all" }).click();
     await expect(waypoint).toHaveCount(0);
     // Empty, and folded all the same: the header says what is missing.

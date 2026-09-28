@@ -102,7 +102,7 @@ export function VertexMoveDialog({
               <Readout label="X" value={shown.x.toFixed(2)} unit="m" tone="cmd" />
               <Readout label="Y" value={shown.y.toFixed(2)} unit="m" tone="cmd" />
               <Readout
-                label="Heading"
+                label="Orientation"
                 value={shown.theta.toFixed(1)}
                 unit="°"
                 tone="cmd"

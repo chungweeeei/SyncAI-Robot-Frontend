@@ -207,7 +207,7 @@ function NameForm({
       <div className="space-y-1 rounded-md border border-hairline bg-elevated/50 p-2.5">
         <Readout label="X" value={pose.x.toFixed(2)} unit="m" tone="cmd" />
         <Readout label="Y" value={pose.y.toFixed(2)} unit="m" tone="cmd" />
-        <Readout label="Heading" value={pose.theta.toFixed(1)} unit="°" tone="cmd" />
+        <Readout label="Orientation" value={pose.theta.toFixed(1)} unit="°" tone="cmd" />
       </div>
 
       {error && (

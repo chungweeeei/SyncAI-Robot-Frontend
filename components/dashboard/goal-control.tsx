@@ -50,7 +50,7 @@ export function GoalControl({
           <Readout label="Goal X" value={goal.x.toFixed(2)} unit="m" tone="cmd" />
           <Readout label="Goal Y" value={goal.y.toFixed(2)} unit="m" tone="cmd" />
           <Readout
-            label="Heading"
+            label="Orientation"
             value={goal.theta.toFixed(1)}
             unit="°"
             tone="cmd"

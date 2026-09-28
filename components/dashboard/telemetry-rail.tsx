@@ -54,7 +54,7 @@ export function TelemetryRail({ state }: { state: RobotState }) {
           />
         </div>
         <Readout
-          label="Heading"
+          label="Orientation"
           value={localized ? position.theta.toFixed(1) : "—"}
           unit="°"
           tone={localized ? "live" : "neutral"}
