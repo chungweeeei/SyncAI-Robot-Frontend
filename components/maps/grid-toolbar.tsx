@@ -249,7 +249,7 @@ export function EditorToolBar({
     drawKind === null || (drawKind === "waypoint" ? vertexTool === "pan" : tool === "pan");
 
   return (
-    <ToolStrip label="Editor" className={className}>
+    <ToolStrip label="Editor" compact className={className}>
       <ToolButton label="Fit to view" hint="the whole floor plan, centred" icon={MaximizeIcon} onClick={onFit} />
 
       <ToolDivider />
@@ -340,11 +340,13 @@ export function EditorToolBar({
             if (next) onBrushChange(Number(next));
           }}
         >
+          {/* 32 px under a finger, the height of the compact buttons beside
+            * it, so the strip does not grow by the one control that is taller. */}
           <SelectTrigger
             size="sm"
             aria-label="Brush size"
             title="Brush size — how many cells across a stroke is"
-            className="ml-0.5 rounded-sm text-[12px] pointer-coarse:min-h-10"
+            className="ml-0.5 rounded-sm text-[12px] pointer-coarse:min-h-8"
           >
             <SelectValue />
           </SelectTrigger>
@@ -384,7 +386,7 @@ export function EditorDrawBar({
   className?: string;
 }) {
   return (
-    <ToolStrip label="Draw" className={className}>
+    <ToolStrip label="Draw" compact className={className}>
       <Select
         items={DRAW_ITEMS}
         value={drawKind ?? NONE}
@@ -397,7 +399,7 @@ export function EditorDrawBar({
           size="sm"
           aria-label="Draw"
           title="What a press on the map puts there"
-          className="min-w-32 rounded-sm text-[12px] pointer-coarse:min-h-10"
+          className="min-w-32 rounded-sm text-[12px] pointer-coarse:min-h-8"
         >
           <SelectValue />
         </SelectTrigger>
