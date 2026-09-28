@@ -1197,6 +1197,42 @@ test.describe("the floor plan editor's draw bar", () => {
   });
 });
 
+test.describe("the floor plan editor's waypoint list", () => {
+  test("shows five rows of twenty, and scrolls to the rest", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const twenty = Array.from({ length: 20 }, (_, i) =>
+      vertex({
+        id: `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`,
+        name: `stop-${String(i + 1).padStart(2, "0")}`,
+      }),
+    );
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254), vertices: twenty });
+    await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
+
+    const toggle = page.getByRole("button", { name: /^Waypoints/ });
+    await expect(toggle).toContainText("20");
+    await toggle.click();
+
+    // Rows whose whole box lies inside the list's box are the ones on screen.
+    const list = page.locator("ul").filter({ has: page.getByRole("button", { name: /stop-01/ }) });
+    const visibleRows = () =>
+      list.evaluate((ul) => {
+        const box = ul.getBoundingClientRect();
+        return [...ul.querySelectorAll("li")].filter((li) => {
+          const row = li.getBoundingClientRect();
+          return row.top >= box.top - 0.5 && row.bottom <= box.bottom + 0.5;
+        }).length;
+      });
+    await expect.poll(visibleRows).toBe(5);
+
+    // The other fifteen are a scroll away, inside the list.
+    await list.evaluate((ul) => ul.scrollTo({ top: ul.scrollHeight }));
+    await expect(page.getByRole("button", { name: /stop-20/ })).toBeInViewport();
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+});
+
 test.describe("the floor plan editor", () => {
   test("aims a new waypoint by the direction it was dragged", async ({ page }) => {
     // The heading rule is shared with the dashboard now, so this holds the

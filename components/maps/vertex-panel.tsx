@@ -403,10 +403,11 @@ function VertexList({
           No waypoint matches.
         </p>
       ) : (
-        // Capped at about six rows with its own scroll: the panel floats over
-        // the canvas, and a map with thirty stops would otherwise grow it past
-        // the viewport.
-        <ul className="max-h-36 space-y-px overflow-y-auto">
+        // Five rows, by request, then its own scroll: the panel floats over the
+        // canvas, and a map with thirty stops would otherwise grow it past the
+        // viewport. 114 px is five 22 px rows and the four 1 px gaps between
+        // them, so the fifth row ends at the edge instead of being cut through.
+        <ul className="max-h-[114px] space-y-px overflow-y-auto">
           {shown.map((vertex) => (
             <li key={vertex.id}>
               <button
