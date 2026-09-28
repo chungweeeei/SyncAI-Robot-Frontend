@@ -31,6 +31,13 @@ import { taskTemplateNameOk } from "@/lib/task/template";
 const NO_STEP_STATES: ReadonlyMap<string, TaskStepState> = new Map();
 
 /**
+ * The header's three buttons: a 40 px target under a finger from sm up, and
+ * a 32 px icon square below it (see the header). `!` because the button's own
+ * inline-start padding is a more specific rule than a width variant.
+ */
+const HEADER_BUTTON = "sm:pointer-coarse:min-h-10 max-sm:size-8 max-sm:px-0!";
+
+/**
  * The task editor, on a page of its own (/tasks/editor): the steps being
  * authored and the job's name. Go back, Save and Delete sit in the header, and
  * the name is the heading itself, edited in place (TaskTitle).
@@ -287,17 +294,22 @@ export function TaskEditor() {
             skipped.
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        {/* Below sm the three are icons alone, 32 px square, by request: with
+          * their words they took most of a phone's width and squeezed the
+          * heading to one letter. Their names stay as aria-labels, and the
+          * words come back from sm up, where there is room for both. */}
+        <div className="flex shrink-0 items-center gap-1 sm:gap-2">
           {/* Leaves the draft as it is: unsaved steps are still there next
             * time, and Create task on /tasks is what asks before clearing
             * them. It used to be Stop editing, which emptied the editor. */}
           <Button
             variant="outline"
             onClick={() => router.push("/tasks")}
-            className="pointer-coarse:min-h-10"
+            aria-label="Go back"
+            className={HEADER_BUTTON}
           >
             <ArrowLeftIcon data-icon="inline-start" aria-hidden />
-            Go back
+            <span className="max-sm:hidden">Go back</span>
           </Button>
           <Button
             onClick={() => save()}
@@ -305,20 +317,22 @@ export function TaskEditor() {
             // The step list says which rows are unfinished; this is for the
             // operator whose eyes are on the button.
             title={saveReason ?? undefined}
-            className="pointer-coarse:min-h-10"
+            aria-label="Save"
+            className={HEADER_BUTTON}
           >
             <SaveIcon data-icon="inline-start" aria-hidden />
-            Save
+            <span className="max-sm:hidden">Save</span>
           </Button>
           {editing && (
             <Button
               variant="destructive"
               onClick={remove}
               disabled={library.busy}
-              className="pointer-coarse:min-h-10"
+              aria-label="Delete"
+              className={HEADER_BUTTON}
             >
               <Trash2Icon data-icon="inline-start" aria-hidden />
-              Delete
+              <span className="max-sm:hidden">Delete</span>
             </Button>
           )}
         </div>
