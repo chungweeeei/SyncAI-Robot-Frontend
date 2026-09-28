@@ -72,6 +72,71 @@ export function applyCameraMode(
 // origin, so a modest span centred on the origin frames them sensibly.
 export const DEFAULT_SPAN_M = 20;
 
+/** The rectangle a scene was built around, in metres on the z=0 floor. */
+export interface MapFrame {
+  cx: number;
+  cy: number;
+  widthM: number;
+  heightM: number;
+}
+
+/**
+ * The view the viewport opens on: aimed at the map's centre from south of it
+ * and above, far enough back that the whole extent is in the frame at a
+ * three-quarter tilt.
+ *
+ * Written once and called twice — by the scene setup, and by the toolbar's
+ * Recenter — so "back to the opening view" cannot drift from the opening
+ * view. The framing is deliberately oblique rather than overhead: overhead is
+ * what Top down is for, and a recenter that also flattened the view would take
+ * away the depth an operator went looking for by orbiting.
+ */
+export function frameMap(
+  camera: THREE.PerspectiveCamera,
+  controls: OrbitControls,
+  frame: MapFrame,
+) {
+  const span = Math.max(frame.widthM, frame.heightM);
+  camera.position.set(frame.cx, frame.cy - span * 0.6, span * 0.8);
+  controls.target.set(frame.cx, frame.cy, 0);
+  controls.update();
+}
+
+/**
+ * Closest a zoom step may bring the camera to its target, in metres.
+ *
+ * Not the near plane: at that distance the floor under the target is already
+ * clipped and the next step would put the camera through the target and flip
+ * the view. Half a metre is well inside where the wheel stops being useful on
+ * a robot-scale scene and keeps the step monotonic.
+ */
+export const MIN_DOLLY_M = 0.5;
+
+/**
+ * Move the camera one zoom step along its line to the target: `factor` above 1
+ * closes in by that ratio, below 1 backs off.
+ *
+ * Expressed about the target and not as a shift of it, on purpose. In focus
+ * mode the render loop pins `controls.target` to the robot every frame, so a
+ * zoom that moved the target (the way zoom-to-cursor does) would be undone a
+ * frame later; scaling the camera's offset from the target is the one form of
+ * zoom both modes agree on, and it is also what OrbitControls' own dolly does
+ * internally. That method is private, hence this.
+ */
+export function dollyStep(
+  camera: THREE.PerspectiveCamera,
+  controls: OrbitControls,
+  factor: number,
+) {
+  const offset = camera.position.clone().sub(controls.target);
+  // A camera sitting on its target has no line to move along; leave it, rather
+  // than normalise a zero vector into NaN and lose the view.
+  if (offset.lengthSq() === 0) return;
+  offset.setLength(Math.max(offset.length() / factor, MIN_DOLLY_M));
+  camera.position.copy(controls.target).add(offset);
+  controls.update();
+}
+
 /**
  * How far south of the target an overhead camera is parked, as a fraction of its
  * height.
