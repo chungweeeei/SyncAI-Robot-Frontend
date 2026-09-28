@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   MAP_NAME,
   failOnConsoleErrors,
+  floorPlanPng,
   mapSummary,
   mockBackend,
   recording,
@@ -704,11 +705,11 @@ test.describe("the task console", () => {
 
     await page.getByRole("link", { name: "Add waypoints on the floor plan" }).click();
     await expect(page).toHaveURL(/\/maps\/dp2f\/edit\?mode=vertex&from=tasks$/);
-    // Opened in Waypoints mode, not the Grid mode the editor defaults to.
-    await expect(page.getByRole("button", { name: "Waypoints" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    // Opened with Waypoint chosen to draw, not with nothing chosen as the
+    // editor otherwise opens.
+    await expect(
+      page.getByRole("group", { name: "Draw" }).getByRole("button", { name: "Waypoint" }),
+    ).toHaveAttribute("aria-pressed", "true");
 
     await page.getByRole("button", { name: "Back to tasks" }).click();
     await expect(page).toHaveURL(/\/tasks$/);
@@ -1067,6 +1068,127 @@ test.describe("the manual drive panel", () => {
     await expect.poll(last).toEqual({ vx: 0.5, vy: 0, wz: 0 });
     await page.keyboard.up("w");
     await expect.poll(last).toEqual({ vx: 0, vy: 0, wz: 0 });
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+});
+
+test.describe("the floor plan editor's draw bar", () => {
+  const drawBar = (page: Page) => page.getByRole("toolbar", { name: "Draw" });
+  const drawButton = (page: Page, name: string) =>
+    drawBar(page).getByRole("group", { name: "Draw" }).getByRole("button", { name, exact: true });
+  const toolNames = async (page: Page) =>
+    (await drawBar(page).getByRole("group", { name: "Tool" }).getByRole("button").all()).length === 0
+      ? []
+      : await drawBar(page)
+          .getByRole("group", { name: "Tool" })
+          .getByRole("button")
+          .evaluateAll((buttons) => buttons.map((b) => b.getAttribute("aria-label")));
+
+  test("opens with nothing to draw, and offers the tools each choice allows", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    await expect(drawBar(page)).toBeVisible();
+
+    // Nothing chosen: Pan alone, and no panel.
+    for (const name of ["Wall", "Floor", "Unknown", "Waypoint"]) {
+      await expect(drawButton(page, name)).toHaveAttribute("aria-pressed", "false");
+    }
+    expect(await toolNames(page)).toEqual(["Pan"]);
+
+    await drawButton(page, "Wall").click();
+    await expect(drawButton(page, "Wall")).toHaveAttribute("aria-pressed", "true");
+    expect(await toolNames(page)).toEqual(["Pan", "Brush", "Line", "Rect"]);
+
+    await drawButton(page, "Waypoint").click();
+    await expect(drawButton(page, "Wall")).toHaveAttribute("aria-pressed", "false");
+    expect(await toolNames(page)).toEqual(["Pan", "Place", "Select"]);
+    await expect(page.getByText("Place as")).toBeVisible();
+
+    // Pressing the lit choice again puts it down.
+    await drawButton(page, "Waypoint").click();
+    expect(await toolNames(page)).toEqual(["Pan"]);
+    await expect(page.getByText("Place as")).toHaveCount(0);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("keeps the Waypoints layer shown, and on while placing them", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    const layer = page
+      .getByRole("toolbar", { name: "Editor" })
+      .getByRole("button", { name: "Waypoints" });
+
+    await expect(layer).toHaveAttribute("aria-pressed", "true");
+    await drawButton(page, "Floor").click();
+    await layer.click();
+    await expect(layer).toHaveAttribute("aria-pressed", "false");
+
+    // Placing waypoints you cannot see is not offered: held on, and greyed.
+    await drawButton(page, "Waypoint").click();
+    await expect(layer).toHaveAttribute("aria-pressed", "true");
+    await expect(layer).toBeDisabled();
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("paints Wall as obstacle cells, and saves them", async ({ page }) => {
+    // Both halves: the stroke is made with Wall chosen, and what reaches the
+    // robot is the obstacle byte under it. A swapped Wall / Floor mapping
+    // would pass a screen-only test and paint walls where they were erased.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+    let saved: Buffer | null = null;
+    await page.route(/\/api\/v1\/maps\/[^/]+\/grid$/, (route, request) => {
+      if (request.method() !== "PUT") return route.fallback();
+      saved = request.postDataBuffer();
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          name: MAP_NAME,
+          etag: "e2e",
+          active: true,
+          reloaded: true,
+          message: "Saved and reloaded.",
+        }),
+      });
+    });
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    const canvas = page.locator("canvas");
+    await canvas.waitFor();
+
+    // Nothing chosen: a drag only moves the view.
+    const box = (await canvas.boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height * 0.6;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 60, y, { steps: 4 });
+    await page.mouse.up();
+    const save = page.getByRole("button", { name: "Save" });
+    await expect(save).toBeDisabled();
+
+    await drawButton(page, "Wall").click();
+    await drawBar(page).getByRole("button", { name: "Brush" }).click();
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 60, y, { steps: 4 });
+    await page.mouse.up();
+    await expect(page.getByText("Unsaved")).toBeVisible();
+
+    await save.click();
+    await expect.poll(() => saved?.length ?? 0).toBe(400 * 300);
+    const walls = [...saved!].filter((byte) => byte === 0).length;
+    expect(walls).toBeGreaterThan(0);
+    // Only walls were painted: nothing turned Unknown on the way.
+    expect([...saved!].filter((byte) => byte === 205)).toEqual([]);
+    await expect(page.getByText("Unsaved")).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
 });

@@ -233,7 +233,7 @@ test.describe("the console on a phone", () => {
     // A real grid, matching the catalogue's 400 x 300: the 1 px default is
     // one cell the size of the canvas, and a pinch shrinks it out from under
     // the fingers, which would make both halves of this test touch nothing.
-    // Unknown cells, so the brush's default (Free) is a change worth saving.
+    // Unknown cells, so painting Floor is a change worth saving.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
     await page.goto(`/maps/${MAP_NAME}/edit`);
     await expect(page.getByText("Floor plan editor")).toBeVisible();
@@ -251,8 +251,9 @@ test.describe("the console on a phone", () => {
       touchPoints: { x: number; y: number; id: number }[],
     ) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
 
-    // A pan-armed press, then the pinch: Pan is what the editor opens in, so
-    // this is the gesture a phone makes to look around before painting.
+    // A pan press, then the pinch: the editor opens with nothing chosen to
+    // draw and only Pan offered, so this is the gesture a phone makes to look
+    // around before painting.
     // exact: "Manual drive panel" in the strip contains the word.
     await page.getByRole("button", { name: "Pan", exact: true }).click();
     await touch("touchStart", [finger(cx - 30, cy, 1)]);
@@ -271,7 +272,10 @@ test.describe("the console on a phone", () => {
     await expect.poll(() => zoom.textContent()).not.toMatch(/Zoom94%/);
     expect(Number((await zoom.textContent())?.match(/Zoom(\d+)%/)?.[1])).toBeGreaterThan(94);
 
-    // The positive control: one finger with Brush armed does paint.
+    // The positive control: one finger with Brush armed does paint. Brush is
+    // only offered once something is chosen to draw, and Floor on these
+    // Unknown cells is a change worth saving.
+    await page.getByRole("button", { name: "Floor" }).click();
     await page.getByRole("button", { name: "Brush" }).click();
     await touch("touchStart", [finger(cx, cy, 1)]);
     await touch("touchMove", [finger(cx + 20, cy + 20, 1)]);
