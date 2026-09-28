@@ -146,26 +146,6 @@ export function ViewportToolbar({
           onClick={onTopDown}
         />
 
-        <Divider />
-
-        {/* Zoom is otherwise the wheel and, on a phone, the pinch. One press is
-          * one step in either mode: it moves the camera along its line to the
-          * target, which is the one form of zoom focus mode does not undo. */}
-        <ToolGroup label="Zoom">
-          <ToolButton
-            label="Zoom in"
-            hint="one step closer"
-            icon={ZoomInIcon}
-            onClick={onZoomIn}
-          />
-          <ToolButton
-            label="Zoom out"
-            hint="one step back"
-            icon={ZoomOutIcon}
-            onClick={onZoomOut}
-          />
-        </ToolGroup>
-
         {layers.length > 0 && (
           <>
             <Divider />
@@ -190,6 +170,28 @@ export function ViewportToolbar({
             </ToolGroup>
           </>
         )}
+
+        <Divider />
+
+        {/* Last, at the strip's outer edge: zoom is otherwise the wheel and, on
+          * a phone, the pinch, so these are the buttons reached for least and
+          * the ones a thumb finds without looking. One press is one step in
+          * either mode: it moves the camera along its line to the target,
+          * which is the one form of zoom focus mode does not undo. */}
+        <ToolGroup label="Zoom">
+          <ToolButton
+            label="Zoom in"
+            hint="one step closer"
+            icon={ZoomInIcon}
+            onClick={onZoomIn}
+          />
+          <ToolButton
+            label="Zoom out"
+            hint="one step back"
+            icon={ZoomOutIcon}
+            onClick={onZoomOut}
+          />
+        </ToolGroup>
       </div>
     </TooltipProvider>
   );
