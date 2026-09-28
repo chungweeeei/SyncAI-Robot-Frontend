@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   MAP_NAME,
   failOnConsoleErrors,
+  floorPlanPng,
   mapSummary,
   mockBackend,
   recording,
@@ -609,7 +610,7 @@ test.describe("words and names on the operator's screens", () => {
   }) => {
     await mockBackend(page);
     await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
-    await expect(page.getByText("Floor plan editor")).toBeVisible();
+    await expect(page.getByRole("toolbar", { name: "Draw" })).toBeVisible();
     await expect(page.getByText(/gridmap|vertices/i)).toHaveCount(0);
 
     await page.getByRole("button", { name: "Place" }).click();
@@ -704,11 +705,9 @@ test.describe("the task console", () => {
 
     await page.getByRole("link", { name: "Add waypoints on the floor plan" }).click();
     await expect(page).toHaveURL(/\/maps\/dp2f\/edit\?mode=vertex&from=tasks$/);
-    // Opened in Waypoints mode, not the Grid mode the editor defaults to.
-    await expect(page.getByRole("button", { name: "Waypoints" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    // Opened with Waypoint chosen to draw, not with nothing chosen as the
+    // editor otherwise opens.
+    await expect(page.getByRole("combobox", { name: "Draw" })).toContainText("Waypoint");
 
     await page.getByRole("button", { name: "Back to tasks" }).click();
     await expect(page).toHaveURL(/\/tasks$/);
@@ -1067,6 +1066,169 @@ test.describe("the manual drive panel", () => {
     await expect.poll(last).toEqual({ vx: 0.5, vy: 0, wz: 0 });
     await page.keyboard.up("w");
     await expect.poll(last).toEqual({ vx: 0, vy: 0, wz: 0 });
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+});
+
+test.describe("the floor plan editor's draw bar", () => {
+  const drawList = (page: Page) => page.getByRole("combobox", { name: "Draw" });
+  const choose = async (page: Page, name: string) => {
+    await drawList(page).click();
+    await page.getByRole("option", { name, exact: true }).click();
+  };
+  const drawBar = (page: Page) => page.getByRole("toolbar", { name: "Editor" });
+  const toolNames = (page: Page) =>
+    page
+      .getByRole("toolbar", { name: "Editor" })
+      .getByRole("group", { name: "Tool" })
+      .getByRole("button")
+      .evaluateAll((buttons) => buttons.map((b) => b.getAttribute("aria-label")));
+
+  test("opens with no type, and offers the tools each type allows", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+
+    // No type: Pan alone, lit, and no panel.
+    await expect(drawList(page)).toContainText("No type");
+    await expect.poll(() => toolNames(page)).toEqual(["Pan"]);
+    await expect(page.getByRole("button", { name: "Pan", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // Wall: its mark, then the paint tools.
+    await choose(page, "Wall");
+    await expect(page.getByRole("img", { name: "Drawing Wall" })).toBeVisible();
+    await expect.poll(() => toolNames(page)).toEqual(["Pan", "Brush", "Line", "Rect"]);
+
+    await choose(page, "Waypoint");
+    await expect.poll(() => toolNames(page)).toEqual(["Pan", "Place", "Select"]);
+    await expect(page.getByRole("combobox", { name: "Waypoint type" })).toBeVisible();
+
+    // The list is shut by default, with the count on its header, and the
+    // filter narrows it by name.
+    const listToggle = page.getByRole("button", { name: /^Waypoints/ });
+    await expect(listToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("button", { name: /dock/ })).toHaveCount(0);
+    await listToggle.click();
+    const filter = page.getByRole("searchbox", { name: "Filter waypoints" });
+    await filter.fill("nothing-like-it");
+    await expect(page.getByText("No waypoint matches.")).toBeVisible();
+    await filter.fill("DOCK");
+    await expect(page.getByRole("button", { name: /dock/ })).toBeVisible();
+
+    // Going back to Pan drops a selected waypoint: pick one from the list with
+    // Select armed, press Pan, and the panel is back to its list.
+    await drawBar(page).getByRole("button", { name: "Select" }).click();
+    await page.getByRole("button", { name: /dock/ }).click();
+    await expect(page.getByRole("button", { name: "Delete waypoint" })).toBeVisible();
+    // The form puts the name and the type on one row, the type as a list.
+    await expect(page.getByLabel("Name", { exact: true })).toHaveValue("dock");
+    await expect(page.getByRole("combobox", { name: "Type" })).toContainText("Chg");
+    // Editing one waypoint shows that one only: the list is not under the form.
+    await expect(page.getByRole("button", { name: /dock/ })).toHaveCount(0);
+    await page.getByRole("button", { name: "Pan", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Delete waypoint" })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Waypoint type" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /dock/ })).toBeVisible();
+
+    // No type is an item of its own, and puts the choice down.
+    await choose(page, "No type");
+    await expect.poll(() => toolNames(page)).toEqual(["Pan"]);
+    await expect(page.getByRole("combobox", { name: "Waypoint type" })).toHaveCount(0);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("paints Wall as obstacle cells, and saves them", async ({ page }) => {
+    // Both halves: the stroke is made with Wall chosen, and what reaches the
+    // robot is the obstacle byte under it. A swapped Wall / Floor mapping
+    // would pass a screen-only test and paint walls where they were erased.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+    let saved: Buffer | null = null;
+    await page.route(/\/api\/v1\/maps\/[^/]+\/grid$/, (route, request) => {
+      if (request.method() !== "PUT") return route.fallback();
+      saved = request.postDataBuffer();
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          name: MAP_NAME,
+          etag: "e2e",
+          active: true,
+          reloaded: true,
+          message: "Saved and reloaded.",
+        }),
+      });
+    });
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    const canvas = page.locator("canvas");
+    await canvas.waitFor();
+    const stroke = async () => {
+      const box = (await canvas.boundingBox())!;
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height * 0.6;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x + 60, y, { steps: 4 });
+      await page.mouse.up();
+    };
+
+    // No type: a drag only moves the view, so there is nothing to save.
+    await stroke();
+    const save = page.getByRole("button", { name: "Save" });
+    await expect(save).toBeDisabled();
+
+    await choose(page, "Wall");
+    await page.getByRole("button", { name: "Brush" }).click();
+    await stroke();
+    await expect(save).toBeEnabled();
+
+    await save.click();
+    await expect.poll(() => saved?.length ?? 0).toBe(400 * 300);
+    expect([...saved!].filter((byte) => byte === 0).length).toBeGreaterThan(0);
+    // Only walls were painted: nothing turned Unknown on the way.
+    expect([...saved!].filter((byte) => byte === 205)).toEqual([]);
+    await expect(save).toBeDisabled();
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+});
+
+test.describe("the floor plan editor's waypoint list", () => {
+  test("shows five rows of twenty, and scrolls to the rest", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const twenty = Array.from({ length: 20 }, (_, i) =>
+      vertex({
+        id: `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`,
+        name: `stop-${String(i + 1).padStart(2, "0")}`,
+      }),
+    );
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254), vertices: twenty });
+    await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
+
+    const toggle = page.getByRole("button", { name: /^Waypoints/ });
+    await expect(toggle).toContainText("20");
+    await toggle.click();
+
+    // Rows whose whole box lies inside the list's box are the ones on screen.
+    const list = page.locator("ul").filter({ has: page.getByRole("button", { name: /stop-01/ }) });
+    const visibleRows = () =>
+      list.evaluate((ul) => {
+        const box = ul.getBoundingClientRect();
+        return [...ul.querySelectorAll("li")].filter((li) => {
+          const row = li.getBoundingClientRect();
+          return row.top >= box.top - 0.5 && row.bottom <= box.bottom + 0.5;
+        }).length;
+      });
+    await expect.poll(visibleRows).toBe(5);
+
+    // The other fifteen are a scroll away, inside the list.
+    await list.evaluate((ul) => ul.scrollTo({ top: ul.scrollHeight }));
+    await expect(page.getByRole("button", { name: /stop-20/ })).toBeInViewport();
     expect(errors, "the page logged errors").toEqual([]);
   });
 });

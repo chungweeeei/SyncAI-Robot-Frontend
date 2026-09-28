@@ -207,10 +207,10 @@ test.describe("the console on a phone", () => {
     // the toolbar's Save.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
     await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
-    await expect(page.getByText("Floor plan editor")).toBeVisible();
+    await expect(page.getByRole("toolbar", { name: "Draw" })).toBeVisible();
 
     const save = await page.getByRole("button", { name: "Save" }).boundingBox();
-    // .last(): the Mode row's "Waypoints" segment comes first in the DOM.
+    // .last(): the list header is the last "Waypoints" on the page.
     const waypoints = await page.getByText("Waypoints", { exact: true }).last().boundingBox();
     await expectOnScreen(page, "Save", save);
     await expectOnScreen(page, "the waypoint panel's heading", waypoints);
@@ -233,10 +233,10 @@ test.describe("the console on a phone", () => {
     // A real grid, matching the catalogue's 400 x 300: the 1 px default is
     // one cell the size of the canvas, and a pinch shrinks it out from under
     // the fingers, which would make both halves of this test touch nothing.
-    // Unknown cells, so the brush's default (Free) is a change worth saving.
+    // Unknown cells, so painting Floor is a change worth saving.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
     await page.goto(`/maps/${MAP_NAME}/edit`);
-    await expect(page.getByText("Floor plan editor")).toBeVisible();
+    await expect(page.getByRole("toolbar", { name: "Draw" })).toBeVisible();
     await page.locator("canvas").waitFor();
 
     const box = (await page.locator("canvas").boundingBox())!;
@@ -251,8 +251,9 @@ test.describe("the console on a phone", () => {
       touchPoints: { x: number; y: number; id: number }[],
     ) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
 
-    // A pan-armed press, then the pinch: Pan is what the editor opens in, so
-    // this is the gesture a phone makes to look around before painting.
+    // A pan press, then the pinch: the editor opens with nothing chosen to
+    // draw and only Pan offered, so this is the gesture a phone makes to look
+    // around before painting.
     // exact: "Manual drive panel" in the strip contains the word.
     await page.getByRole("button", { name: "Pan", exact: true }).click();
     await touch("touchStart", [finger(cx - 30, cy, 1)]);
@@ -262,20 +263,22 @@ test.describe("the console on a phone", () => {
     await touch("touchEnd", []);
     // Nothing was painted, so there is nothing to save — and the map did
     // zoom, or "nothing painted" would be true of a canvas that ignored the
-    // second finger, which is what it did before it had a pinch. The zoom
-    // readout is display:none on a phone (it follows a hover), but it is
-    // still in the DOM to be read.
+    // second finger, which is what it did before it had a pinch. Nothing on
+    // screen shows the zoom, so it is read off the editor's data-zoom, which
+    // is 94 at fit on this phone.
     await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
-    await expect(page.getByText("Unsaved")).toHaveCount(0);
-    const zoom = page.getByText("Zoom", { exact: true }).locator("xpath=..");
-    await expect.poll(() => zoom.textContent()).not.toMatch(/Zoom94%/);
-    expect(Number((await zoom.textContent())?.match(/Zoom(\d+)%/)?.[1])).toBeGreaterThan(94);
+    const zoom = page.locator("[data-zoom]");
+    await expect.poll(async () => Number(await zoom.getAttribute("data-zoom"))).toBeGreaterThan(94);
 
-    // The positive control: one finger with Brush armed does paint.
+    // The positive control: one finger with Brush armed does paint. Brush is
+    // only offered once something is chosen to draw, and Floor on these
+    // Unknown cells is a change worth saving.
+    await page.getByRole("combobox", { name: "Draw" }).click();
+    await page.getByRole("option", { name: "Floor", exact: true }).click();
     await page.getByRole("button", { name: "Brush" }).click();
     await touch("touchStart", [finger(cx, cy, 1)]);
     await touch("touchMove", [finger(cx + 20, cy + 20, 1)]);
     await touch("touchEnd", []);
-    await expect(page.getByText("Unsaved")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
   });
 });

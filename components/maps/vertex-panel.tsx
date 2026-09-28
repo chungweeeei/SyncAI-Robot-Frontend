@@ -1,10 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { LocateFixedIcon, Trash2Icon } from "lucide-react";
+import { ChevronDownIcon, LocateFixedIcon, SearchIcon, Trash2Icon } from "lucide-react";
 
-import { Chip, Readout, Segmented, overlayPanel } from "@/components/console/instrument";
+import { Chip, Readout, overlayPanel } from "@/components/console/instrument";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { VertexChanges } from "@/lib/api/vertex";
 import { VERTEX_TYPES, vertexGlyph } from "@/lib/map/vertex";
 import { cn } from "@/lib/utils";
@@ -79,17 +86,52 @@ export interface VertexPanelProps {
 export function VertexPanel(props: VertexPanelProps) {
   const { vertices, status, error, draft, selected, selectedIds, className } = props;
   const band = selectedIds.length > 1;
+  /**
+   * Whether the list of waypoints is open. Shut by default, by request: a map
+   * can carry dozens of stops, and a list that long would cover the right of
+   * the canvas in the one mode where the canvas is what is being edited. The
+   * header keeps the count, so a shut list still says how many there are.
+   * Held here, so it survives a stop being opened and closed again.
+   */
+  const [listOpen, setListOpen] = React.useState(false);
+  const listView = !draft && !band && !selected;
+  const listId = React.useId();
+
+  const count =
+    status === "loading" ? (
+      <Chip>Loading</Chip>
+    ) : (
+      <Chip tone={vertices.length ? "neutral" : "caution"}>{vertices.length}</Chip>
+    );
 
   return (
     <div className={cn(overlayPanel, "flex w-60 flex-col gap-2 p-2.5", className)}>
-      <div className="flex h-4 items-center justify-between gap-2">
-        <span className="instrument-label text-muted-foreground">Waypoints</span>
-        {status === "loading" ? (
-          <Chip>Loading</Chip>
-        ) : (
-          <Chip tone={vertices.length ? "neutral" : "caution"}>{vertices.length}</Chip>
-        )}
-      </div>
+      {listView && vertices.length > 0 ? (
+        <button
+          type="button"
+          aria-expanded={listOpen}
+          aria-controls={listId}
+          onClick={() => setListOpen((open) => !open)}
+          className="-mx-1 flex h-5 items-center justify-between gap-2 rounded-sm px-1 transition-colors pointer-coarse:min-h-10 hover:bg-elevated"
+        >
+          <span className="instrument-label text-muted-foreground">Waypoints</span>
+          <span className="flex items-center gap-1">
+            {count}
+            <ChevronDownIcon
+              aria-hidden
+              className={cn(
+                "size-3.5 text-muted-foreground transition-transform",
+                listOpen && "rotate-180",
+              )}
+            />
+          </span>
+        </button>
+      ) : (
+        <div className="flex h-4 items-center justify-between gap-2">
+          <span className="instrument-label text-muted-foreground">Waypoints</span>
+          {count}
+        </div>
+      )}
 
       {error && (
         <p role="alert" className="text-[11px] leading-snug break-words text-signal-warn">
@@ -146,46 +188,63 @@ export function VertexPanel(props: VertexPanelProps) {
           onCancel={() => props.onSelect(null)}
           onDelete={props.onDelete}
         />
-        {/* Kept below the form so the selection can move without closing it
-         * first — the form is keyed on the id, so picking another row remounts
-         * it with that vertex's values. */}
-        <VertexList
-          vertices={vertices}
-          selectedIds={selectedIds}
-          onSelect={props.onSelect}
-          empty={null}
-        />
+        {/* No list under the form, by request: while one waypoint is being
+         * edited the panel is about that one. Another is still one click away
+         * on the map, and Close brings the list back. */}
         </>
       ) : (
         <>
-          <div>
-            <p className="instrument-label mb-1 text-muted-foreground">Place as</p>
-            <Segmented
-              label="Place as"
-              stretch
-              value={props.type}
-              options={TYPE_OPTIONS}
-              onChange={props.onTypeChange}
-            />
-          </div>
-
-          {/* The second way to produce a pose, for the stop you mark by driving
-            * to it: the operator parks the robot on the spot — a dock, a charger,
-            * a doorway they had to squeeze through — and takes the pose off the
-            * robot instead of hunting for the cell it is standing on. It stages a
+          {/* One row, by request: the type the next waypoint is placed as, and
+            * the second way to place one. The type is a list rather than the
+            * form's segmented row, because this row also holds a button and
+            * five segments beside it would not fit a 240 px panel.
+            *
+            * Use robot position is for the stop you mark by driving to it: the
+            * operator parks the robot on the spot — a dock, a charger, a doorway
+            * they had to squeeze through — and takes the pose off the robot
+            * instead of hunting for the cell it is standing on. It stages a
             * draft like a press on the map does, rather than creating the vertex
             * outright, so naming and typing it stay one flow with the placed
             * kind, and a mis-press is a Cancel rather than a row to delete. */}
           <div>
-            <button
-              type="button"
-              disabled={!props.robotPose || props.busy}
-              onClick={props.onUseRobotPose}
-              className="instrument-label flex h-7 w-full items-center justify-center gap-1.5 rounded-sm border border-hairline text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-            >
-              <LocateFixedIcon className="size-3.5" aria-hidden />
-              Use robot position
-            </button>
+            <div className="flex items-center gap-1.5">
+              <Select
+                items={TYPE_OPTIONS}
+                value={props.type}
+                onValueChange={(next) => {
+                  if (next) props.onTypeChange(next);
+                }}
+              >
+                <SelectTrigger
+                  size="sm"
+                  aria-label="Waypoint type"
+                  title="The type the next waypoint is placed as"
+                  className="min-w-0 flex-1 rounded-sm text-[12px] pointer-coarse:min-h-10"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {VERTEX_TYPES.map((spec) => (
+                    <SelectItem key={spec.value} value={spec.value}>
+                      <span className="flex items-baseline gap-2">
+                        {spec.label}
+                        <span className="text-xs text-muted-foreground">{spec.hint}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <button
+                type="button"
+                disabled={!props.robotPose || props.busy}
+                onClick={props.onUseRobotPose}
+                title="Place a waypoint where the robot is standing"
+                className="instrument-label flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-sm border border-hairline px-2 text-muted-foreground transition-colors pointer-coarse:min-h-10 hover:bg-elevated hover:text-foreground disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+              >
+                <LocateFixedIcon className="size-3.5" aria-hidden />
+                Use robot position
+              </button>
+            </div>
             {!props.robotPose && props.robotPoseReason && (
               <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
                 {props.robotPoseReason}
@@ -193,23 +252,28 @@ export function VertexPanel(props: VertexPanelProps) {
             )}
           </div>
 
-          <VertexList
-            vertices={vertices}
-            selectedIds={selectedIds}
-            onSelect={props.onSelect}
-            empty={status === "ok" ? "No waypoints on this map yet." : null}
-          />
+          {vertices.length === 0 ? (
+            status === "ok" && (
+              <p className="text-[11px] leading-tight text-muted-foreground">
+                No waypoints on this map yet.
+              </p>
+            )
+          ) : (
+            listOpen && (
+              <div id={listId}>
+                <VertexList
+                  vertices={vertices}
+                  selectedIds={selectedIds}
+                  onSelect={props.onSelect}
+                  empty={null}
+                />
+              </div>
+            )
+          )}
 
-          {/* The panel is the only place the tool row's icons are spelled out.
-            * Worth the four lines: "why does pressing the map do nothing" is the
-            * question the unarmed default buys, and this is where an operator
-            * looking at the vertex layer is already looking. */}
-          <p className="text-[11px] leading-tight text-muted-foreground">
-            Choose <span className="text-foreground">Place</span>, then press the
-            map where the robot should stop and drag to set which way it faces.{" "}
-            <span className="text-foreground">Select</span> drags a box over
-            several; hold Shift to add more. Escape goes back to Pan.
-          </p>
+          {/* No how-to line here any more, by request. The tool buttons carry
+            * their own names and what a press does in their tooltips, and a
+            * finger reads the name printed under each icon. */}
         </>
       )}
     </div>
@@ -304,41 +368,73 @@ function VertexList({
   onSelect: (id: string) => void;
   empty: string | null;
 }) {
+  const [filter, setFilter] = React.useState("");
   if (!vertices.length) {
     return empty ? (
       <p className="text-[11px] leading-tight text-muted-foreground">{empty}</p>
     ) : null;
   }
 
+  // By name, case-folded: a stop is found by what it was called, and the
+  // operator typing "Dock" means the one named "dock-a".
+  const needle = filter.trim().toLowerCase();
+  const shown = needle
+    ? vertices.filter((vertex) => vertex.name.toLowerCase().includes(needle))
+    : vertices;
+
   return (
-    // Capped height with its own scroll: the panel floats over the canvas, and a
-    // map with thirty stops would otherwise grow it past the viewport.
-    <ul className="max-h-48 space-y-px overflow-y-auto border-t border-hairline pt-1.5">
-      {vertices.map((vertex) => (
-        <li key={vertex.id}>
-          <button
-            type="button"
-            onClick={() => onSelect(vertex.id)}
-            className={cn(
-              "flex w-full items-center gap-1.5 rounded-sm px-1 py-0.5 text-left transition-colors",
-              selectedIds.includes(vertex.id)
-                ? "bg-signal-cmd/12 text-signal-cmd"
-                : "hover:bg-elevated",
-            )}
-          >
-            <span className="instrument-label w-3 shrink-0 text-muted-foreground">
-              {vertexGlyph(vertex.type)}
-            </span>
-            <span className="readout min-w-0 flex-1 truncate text-[12px]">
-              {vertex.name}
-            </span>
-            <span className="readout shrink-0 text-[11px] text-muted-foreground">
-              {vertex.x.toFixed(1)}, {vertex.y.toFixed(1)}
-            </span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <div className="border-t border-hairline pt-1.5">
+      <div className="relative mb-1">
+        <SearchIcon
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 left-1.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          type="search"
+          aria-label="Filter waypoints"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          placeholder="Filter by name"
+          className="h-7 rounded-sm pl-6 md:text-[12px]"
+        />
+      </div>
+      {shown.length === 0 ? (
+        <p className="px-1 py-0.5 text-[11px] leading-tight text-muted-foreground">
+          No waypoint matches.
+        </p>
+      ) : (
+        // Five rows, by request, then its own scroll: the panel floats over the
+        // canvas, and a map with thirty stops would otherwise grow it past the
+        // viewport. 114 px is five 22 px rows and the four 1 px gaps between
+        // them, so the fifth row ends at the edge instead of being cut through.
+        <ul className="max-h-[114px] space-y-px overflow-y-auto">
+          {shown.map((vertex) => (
+            <li key={vertex.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(vertex.id)}
+                className={cn(
+                  "flex w-full items-center gap-1.5 rounded-sm px-1 py-0.5 text-left transition-colors",
+                  selectedIds.includes(vertex.id)
+                    ? "bg-signal-cmd/12 text-signal-cmd"
+                    : "hover:bg-elevated",
+                )}
+              >
+                <span className="instrument-label w-3 shrink-0 text-muted-foreground">
+                  {vertexGlyph(vertex.type)}
+                </span>
+                <span className="readout min-w-0 flex-1 truncate text-[12px]">
+                  {vertex.name}
+                </span>
+                <span className="readout shrink-0 text-[11px] text-muted-foreground">
+                  {vertex.x.toFixed(1)}, {vertex.y.toFixed(1)}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -386,6 +482,10 @@ function VertexForm({
         if (submittable) onSubmit(trimmed, type);
       }}
     >
+      {/* Name and type on one row, by request, with the type as a list — the
+        * same control the panel's placing row uses, so a waypoint's type is
+        * chosen one way wherever it is chosen. The label names the name field;
+        * the list carries its own accessible name. */}
       <div>
         <label
           htmlFor={nameId}
@@ -393,30 +493,46 @@ function VertexForm({
         >
           Name
         </label>
-        <Input
-          id={nameId}
-          autoFocus
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder="dock-a"
-          // Squared off and shortened to match the overlay's chrome; the shared
-          // Input is sized for the settings forms, which have room.
-          className="h-7 rounded-sm md:text-[13px]"
-        />
-      </div>
-
-      <div>
-        <p className="instrument-label mb-1 text-muted-foreground">Type</p>
-        <Segmented
-          label="Type"
-          stretch
-          value={type}
-          options={TYPE_OPTIONS}
-          onChange={(next) => {
-            setType(next);
-            onTypeChange?.(next);
-          }}
-        />
+        <div className="flex items-center gap-1.5">
+          <Input
+            id={nameId}
+            autoFocus
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="dock-a"
+            // Squared off and shortened to match the overlay's chrome; the
+            // shared Input is sized for the settings forms, which have room.
+            className="h-7 min-w-0 flex-1 rounded-sm md:text-[13px]"
+          />
+          <Select
+            items={TYPE_OPTIONS}
+            value={type}
+            onValueChange={(next) => {
+              if (!next) return;
+              setType(next);
+              onTypeChange?.(next);
+            }}
+          >
+            <SelectTrigger
+              size="sm"
+              aria-label="Type"
+              title="What this waypoint is for"
+              className="shrink-0 rounded-sm text-[12px] pointer-coarse:min-h-10"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {VERTEX_TYPES.map((spec) => (
+                <SelectItem key={spec.value} value={spec.value}>
+                  <span className="flex items-baseline gap-2">
+                    {spec.label}
+                    <span className="text-xs text-muted-foreground">{spec.hint}</span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="space-y-1 border-t border-hairline pt-2">

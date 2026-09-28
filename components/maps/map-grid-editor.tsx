@@ -5,15 +5,22 @@ import * as React from "react";
 import {
   GridCanvas,
 } from "@/components/maps/grid-canvas";
-import type {
-  CellProbe,
-  EditMode,
-  EditTool,
-  VertexGesture,
-  VertexTool,
+import {
+  editStateOf,
+  type CellProbe,
+  type DrawKind,
+  type EditMode,
+  type EditTool,
+  type VertexGesture,
+  type VertexTool,
 } from "@/lib/map/editor";
 import { GridStatus } from "@/components/maps/grid-status";
-import { GridToolbar, type SaveState } from "@/components/maps/grid-toolbar";
+import {
+  EditorDrawBar,
+  EditorToolBar,
+  SaveNote,
+  type SaveState,
+} from "@/components/maps/grid-toolbar";
 import { VertexPanel } from "@/components/maps/vertex-panel";
 import { useSaveMapGrid } from "@/hooks/use-map-actions";
 import { useMapGrid } from "@/hooks/use-map-grid";
@@ -22,9 +29,8 @@ import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import type { VertexChanges } from "@/lib/api/vertex";
 import { isTypingTarget } from "@/lib/keyboard";
 import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
-import { FREE, countValues, type GridValue, type ValueCounts } from "@/lib/map/grid";
+import { FREE, type GridValue } from "@/lib/map/grid";
 import {
-  applyCountsDelta,
   applyPatch,
   createUndoStack,
   popRedo,
@@ -48,11 +54,13 @@ const DEFAULT_BRUSH = 7;
  * before they notice. Undo would reach it, but only if they realised; the map is
  * blitted literally and a Free stroke across free space is invisible.
  *
- * Painting therefore costs one click on the Tool row, which is the trade this
- * makes: an explicit arming gesture for the destructive default, in exchange for
- * "look around" being the safe thing that needs no decision. Right/middle-drag
- * and Space still pan whatever the tool is — Pan being the *default* does not
- * make it the only way.
+ * Painting therefore costs two clicks — what to draw, then Brush — which is
+ * the trade this makes: explicit arming for the destructive default, in
+ * exchange for "look around" being the safe thing that needs no decision. The
+ * editor now opens one step further back still, with nothing chosen to draw at
+ * all (see DrawKind), and every change of Draw choice lands back on Pan.
+ * Right/middle-drag and Space still pan whatever the tool is — Pan being the
+ * *default* does not make it the only way.
  */
 const DEFAULT_TOOL: EditTool = "pan";
 
@@ -79,7 +87,7 @@ const DEFAULT_VERTEX_TOOL: VertexTool = "pan";
  * Loads the map and shows the guard states; EditorSurface does the editing.
  *
  * The split exists so that everything belonging to one loaded grid — the undo
- * history, the cell census — is initialised by *mounting* the surface rather than
+ * history — is initialised by *mounting* the surface rather than
  * by clearing state in an effect when the session changes. Patches index into a
  * specific buffer, so carrying a history across a load would corrupt the new one,
  * and a remount makes that impossible by construction.
@@ -158,6 +166,14 @@ function EditorSurface({
   initialMode: EditMode;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
+  /**
+   * What a press puts on the map, or nothing — the Draw strip's choice, and
+   * the one `mode` and `value` below follow from (see editStateOf). Opens with
+   * nothing chosen, unless a link asked for Waypoints.
+   */
+  const [drawKind, setDrawKind] = React.useState<DrawKind | null>(
+    initialMode === "vertex" ? "waypoint" : null,
+  );
   const [mode, setMode] = React.useState<EditMode>(initialMode);
   const [tool, setTool] = React.useState<EditTool>(DEFAULT_TOOL);
   const [vertexTool, setVertexTool] = React.useState<VertexTool>(DEFAULT_VERTEX_TOOL);
@@ -181,11 +197,6 @@ function EditorSurface({
 
   const [hover, setHover] = React.useState<CellProbe | null>(null);
   const [scale, setScale] = React.useState(1);
-  // Lazy initialiser, not an effect: one full pass over the grid at mount, then
-  // maintained incrementally from each patch.
-  const [counts, setCounts] = React.useState<ValueCounts>(() =>
-    countValues(session.grid),
-  );
   const [fitNonce, setFitNonce] = React.useState(0);
   const [spacePan, setSpacePan] = React.useState(false);
 
@@ -282,6 +293,40 @@ function EditorSurface({
       if (next === "grid") clearVertexEdit();
     },
     [clearVertexEdit],
+  );
+
+  /**
+   * Arm a waypoint tool. Going back to Pan also drops whatever waypoint is
+   * selected or staged, by request: Pan is "I am done with that one, let me
+   * look around", and a marker left lit — or a just-placed draft left open in
+   * the panel — would keep claiming the operator's attention for an edit they
+   * have walked away from.
+   */
+  const chooseVertexTool = React.useCallback(
+    (next: VertexTool) => {
+      setVertexTool(next);
+      if (next === "pan") clearVertexEdit();
+    },
+    [clearVertexEdit],
+  );
+
+  /**
+   * Put a Draw choice down on the map, or pick it up again (`null`).
+   *
+   * Every change lands on Pan, in both tool axes, for DEFAULT_TOOL's reason:
+   * the choice says what a press *would* put there, and the tool is a second,
+   * deliberate step. Through changeMode, never setMode, so leaving Waypoint
+   * with a draft staged still drops it.
+   */
+  const chooseDraw = React.useCallback(
+    (next: DrawKind | null) => {
+      const state = editStateOf(next);
+      setDrawKind(next);
+      changeMode(state.mode);
+      setTool(DEFAULT_TOOL);
+      if (state.value !== undefined) setValue(state.value);
+    },
+    [changeMode],
   );
 
   /**
@@ -430,7 +475,6 @@ function EditorSurface({
     // is stale, and "Saved" next to a lit Unsaved chip is the one genuinely
     // confusing pair this panel can show.
     setSaveState({ kind: "idle" });
-    setCounts((current) => applyCountsDelta(current, patch, "after"));
   }, []);
 
   const step = React.useCallback(
@@ -442,7 +486,6 @@ function EditorSurface({
       const side = direction === "undo" ? "before" : "after";
       applyPatch(session.grid, patch, side);
       session.repaint?.(patch.bounds);
-      setCounts((current) => applyCountsDelta(current, patch, side));
       setCanUndo(stack.undo.length > 0);
       setCanRedo(stack.redo.length > 0);
       // Still dirty after undoing to the start: the stack is byte-capped, so an
@@ -518,9 +561,9 @@ function EditorSurface({
        */
       if (event.key === "Escape") {
         event.preventDefault();
-        clearVertexEdit();
-        setTool(DEFAULT_TOOL);
-        setVertexTool(DEFAULT_VERTEX_TOOL);
+        // Puts the Draw choice down as well, which drops a staged draft and
+        // lands both tool axes on Pan — one press for "give me the map back".
+        chooseDraw(null);
         return;
       }
 
@@ -572,7 +615,7 @@ function EditorSurface({
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
     };
-  }, [undo, redo, fit, clearVertexEdit]);
+  }, [undo, redo, fit, chooseDraw]);
 
   /**
    * Covers reload and tab close only. The App Router has no navigation blocker, so
@@ -586,8 +629,38 @@ function EditorSurface({
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty]);
 
+  const vertexPanelProps = {
+    vertices: vertexList,
+    status: vertexStatus,
+    error: vertexError,
+    busy: vertexBusy,
+    type: vertexType,
+    onTypeChange: setVertexType,
+    draft,
+    selected,
+    selectedIds,
+    stagedPose,
+    robotPose,
+    robotPoseReason,
+    onUseRobotPose: placeAtRobot,
+    onSelect: selectVertex,
+    // A draft and a selection are mutually exclusive by construction, so
+    // clearing the whole vertex edit *is* "drop the draft", and the same call
+    // is what the band selection's Clear does.
+    onCancelDraft: clearVertexEdit,
+    onClearSelection: clearVertexEdit,
+    onCreate: createFromDraft,
+    onSave: saveSelected,
+    onDelete: deleteSelected,
+  };
+
   return (
-    <div className="relative h-full w-full">
+    // data-zoom is the view's scale in percent, for the e2e suite: nothing on
+    // screen shows it since the readout lost its Zoom row, and the pinch test
+    // has to prove the second finger zoomed rather than only that it did not
+    // paint. An attribute, not text, so it can never become an on-screen
+    // diagnostic by accident.
+    <div className="relative h-full w-full" data-zoom={Math.round(scale * 100)}>
       <GridCanvas
         session={session}
         mode={mode}
@@ -612,76 +685,64 @@ function EditorSurface({
         onVertexGesture={handleVertexGesture}
       />
 
-      {/* Top-left from sm, the full width on a phone: at 375 px a 224 px
-        * toolbar and a 240 px waypoint panel could not both hang from a
-        * corner without one covering the other. Capped to the canvas at
-        * every width, because a phone held sideways leaves ~210 px and the
-        * Save button was what got clipped. */}
-      <GridToolbar
-        className="absolute top-3 right-3 left-3 max-h-[calc(100%-1.5rem)] w-auto overflow-y-auto sm:right-auto sm:w-56"
-        mode={mode}
-        // changeMode, never setMode: going back to grid with a draft still staged
-        // leaves a dashed marker on the canvas and no panel to commit or dismiss
-        // it. Note that setMode typechecks fine here, so this one is on us.
-        onModeChange={changeMode}
-        tool={tool}
-        onToolChange={setTool}
-        vertexTool={vertexTool}
-        onVertexToolChange={setVertexTool}
-        value={value}
-        onValueChange={setValue}
-        brush={brush}
-        onBrushChange={setBrush}
-        canUndo={canUndo}
-        canRedo={canRedo}
-        onUndo={undo}
-        onRedo={redo}
-        onFit={fit}
-        onZoomIn={zoomIn}
-        onZoomOut={zoomOut}
-        dirty={dirty}
-        save={save}
-        onSave={onSave}
-      />
-      {/* Top-right from sm; along the bottom on a phone, where the toolbar
-        * has the top (see above). Capped and scrolling for the same reason.
-        *
-        * The toolbar owns top-left and GridStatus bottom-left.
-        *
-        * Mounted only in vertex mode, because unmounting discards nothing that the
-        * mode switch was not already discarding — changeMode("grid") clears draft
-        * / selectedIds / stagedPose, and VertexForm is keyed on "draft"
-        * or selected.id, so its local name/type state is already gone by then. The
-        * one thing worth keeping across the toggle, `vertexType`, lives up here
-        * for exactly that reason. Left mounted it would cover 240 px of map in the
-        * mode where nothing in it is actionable. */}
-      {mode === "vertex" && (
-        <VertexPanel
-          className="absolute right-3 bottom-3 left-3 max-h-[45%] w-auto overflow-y-auto sm:top-3 sm:bottom-auto sm:left-auto sm:max-h-[calc(100%-1.5rem)] sm:w-60"
-          vertices={vertexList}
-          status={vertexStatus}
-          error={vertexError}
-          busy={vertexBusy}
-          type={vertexType}
-          onTypeChange={setVertexType}
-          draft={draft}
-          selected={selected}
-          selectedIds={selectedIds}
-          stagedPose={stagedPose}
-          robotPose={robotPose}
-          robotPoseReason={robotPoseReason}
-          onUseRobotPose={placeAtRobot}
-          onSelect={selectVertex}
-          // A draft and a selection are mutually exclusive by construction, so
-          // clearing the whole vertex edit *is* "drop the draft", and the same
-          // call is what the band selection's Clear does.
-          onCancelDraft={clearVertexEdit}
-          onClearSelection={clearVertexEdit}
-          onCreate={createFromDraft}
-          onSave={saveSelected}
-          onDelete={deleteSelected}
-        />
-      )}
+      {/* One row across the top, as on the dashboard: Editor at the left, Draw
+        * at the right, wrapping onto two lines on a phone rather than
+        * overlapping. The overlay covers the canvas but is pointer-transparent,
+        * so the map behind its empty stretches still takes a drag — only the
+        * strips and the panels in it catch the pointer. It spans the full
+        * height so the waypoint panel can drop to its bottom edge on a phone. */}
+      <div className="pointer-events-none absolute inset-3 flex flex-col gap-2">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <EditorToolBar
+            className="pointer-events-auto"
+            onFit={fit}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={undo}
+            onRedo={redo}
+            dirty={dirty}
+            save={save}
+            onSave={onSave}
+            drawKind={drawKind}
+            tool={tool}
+            onToolChange={setTool}
+            vertexTool={vertexTool}
+            onVertexToolChange={chooseVertexTool}
+            brush={brush}
+            onBrushChange={setBrush}
+          />
+          <EditorDrawBar
+            className="pointer-events-auto"
+            drawKind={drawKind}
+            onDrawKindChange={chooseDraw}
+            onZoomIn={zoomIn}
+            onZoomOut={zoomOut}
+          />
+        </div>
+
+        {/* Under each strip, what it reports into: the save note under the
+          * strip that holds Save, the waypoint panel under the one that chose
+          * Waypoint. On a phone the panel drops to the bottom of the canvas
+          * instead, where the stacked strips leave it room — one panel, placed
+          * by CSS, so there is one form to type in.
+          *
+          * The panel is mounted only in vertex mode, because unmounting
+          * discards nothing that the mode switch was not already discarding —
+          * changeMode("grid") clears draft / selectedIds / stagedPose, and
+          * VertexForm is keyed on "draft" or selected.id, so its local
+          * name/type state is already gone by then. The one thing worth
+          * keeping across the toggle, `vertexType`, lives up here for exactly
+          * that reason. */}
+        <div className="flex min-h-0 items-start justify-between gap-2">
+          <SaveNote save={save} className="pointer-events-auto max-w-72" />
+          {mode === "vertex" && (
+            <VertexPanel
+              className="pointer-events-auto ml-auto max-h-full min-h-0 overflow-y-auto max-sm:absolute max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[45%] max-sm:w-auto"
+              {...vertexPanelProps}
+            />
+          )}
+        </div>
+      </div>
 
       {/* The other half of "Use robot position" — the pose you capture is the
         * one you drove the robot to — is now the masthead's drive panel
@@ -697,8 +758,6 @@ function EditorSurface({
         className="absolute bottom-3 left-3 hidden sm:block [@media(max-height:480px)]:hidden"
         meta={session.meta}
         hover={hover}
-        scale={scale}
-        counts={counts}
       />
     </div>
   );

@@ -160,7 +160,8 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
 
   return (
     <div className="min-w-0">
-      <p className="instrument-label text-muted-foreground">Floor plan editor</p>
+      {/* No "Floor plan editor" eyebrow over the name, by request: the rail
+        * marks the Maps screen and the strips say what this one is for. */}
       {/* Focusable, and Enter or F2 opens it: a double-click is a mouse-only
         * gesture, and refusing to add a button is not a reason to make the one
         * rename path unreachable from the keyboard. F2 because that is what
