@@ -666,9 +666,8 @@ test.describe("the task console", () => {
 
     await expect(page).toHaveURL(/\/tasks\/editor$/);
     await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
-    await expect(page.getByPlaceholder("Morning patrol")).toHaveValue("");
 
-    await page.getByRole("link", { name: "Back to Tasks" }).click();
+    await page.getByRole("button", { name: "Go back" }).click();
     await expect(page).toHaveURL(/\/tasks$/);
     // Opening an editor is not a write.
     expect(writes).toEqual([]);
@@ -783,7 +782,7 @@ test.describe("the task console", () => {
     // missing a stop, and the only way to add one was to leave — which threw
     // the job away. The link opens that map's editor in Waypoints mode, the
     // editor's back button returns here, and the draft (steps, the loaded
-    // template, the renamed field) is as it was, across a reload too.
+    // template) is as it was, across a reload too.
     await mockBackend(page);
     await page.goto("/tasks");
     await page
@@ -792,7 +791,6 @@ test.describe("the task console", () => {
     await expect(page).toHaveURL(/\/tasks\/editor$/);
     await page.getByTitle("Say a line on the robot speaker (TTS).").click();
     await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
-    await page.getByPlaceholder("Morning patrol").fill("night run");
 
     await page.getByRole("link", { name: "Add waypoints on the floor plan" }).click();
     await expect(page).toHaveURL(/\/maps\/dp2f\/edit\?mode=vertex&from=tasks$/);
@@ -803,10 +801,9 @@ test.describe("the task console", () => {
     await page.getByRole("button", { name: "Back to tasks" }).click();
     await expect(page).toHaveURL(/\/tasks\/editor$/);
     const asLeft = async () => {
-      await expect(page.getByText("Editing Morning round")).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Morning round" })).toBeVisible();
       await expect(page.getByText(/^dock · \(/)).toBeVisible();
       await expect(page.getByText("\u201cArrived\u201d")).toBeVisible();
-      await expect(page.getByPlaceholder("Morning patrol")).toHaveValue("night run");
     };
     await asLeft();
 
@@ -814,16 +811,175 @@ test.describe("the task console", () => {
     await page.reload();
     await asLeft();
 
-    // Stop editing empties it and goes back to the overview, and empty is
-    // what the editor then finds, across a reload too.
-    page.once("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: /Stop editing/ }).click();
+    // Go back leaves it too: the overview, and the same job on return.
+    await page.getByRole("button", { name: "Go back" }).click();
     await expect(page).toHaveURL(/\/tasks$/);
     await page.goto("/tasks/editor");
+    await asLeft();
+
+    // Only Create task, once confirmed, empties it — across a reload too.
+    await page.goto("/tasks");
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Create task" }).click();
     await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
     await page.reload();
-    await expect(page.getByText("Editing Morning round")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Morning round" })).toHaveCount(0);
     await expect(page.getByText(/^dock · \(/)).toHaveCount(0);
+  });
+
+  test("saves over the loaded job, and over the one it just created", async ({
+    page,
+  }) => {
+    // One Save now does both writes Update and Save as new used to split. The
+    // rule it has to keep: a loaded template is updated in place, never
+    // copied, and a job saved for the first time becomes the loaded one, so a
+    // second press does not make a second row.
+    const loaded = "22222222-2222-2222-2222-222222222222";
+    const created = "44444444-4444-4444-4444-444444444444";
+    await mockBackend(page);
+    const writes: { method: string; path: string }[] = [];
+    await page.route("**/api/v1/task_templates**", (route) => {
+      const request = route.request();
+      const method = request.method();
+      if (method === "GET") return route.fallback();
+      const path = new URL(request.url()).pathname;
+      writes.push({ method, path });
+      const body = request.postDataJSON() as { name: string };
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({ id: method === "POST" ? created : loaded, name: body.name }),
+        ),
+      });
+    });
+
+    await page.goto("/tasks");
+    await page
+      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => writes).toEqual([
+      { method: "PUT", path: `/api/v1/task_templates/${loaded}` },
+    ]);
+
+    // A fresh job: created once, then updated. The loaded one is still in
+    // the draft, so Create task asks first.
+    await page.goto("/tasks");
+    page.once("dialog", (dialog) => void dialog.accept());
+    await page.getByRole("button", { name: "Create task" }).click();
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
+    const save = page.getByRole("button", { name: "Save", exact: true });
+    // No name yet: Save opens the heading to name it, and confirming saves.
+    await save.click();
+    expect(writes).toHaveLength(1);
+    await page.getByRole("textbox", { name: "Task name" }).fill("greeting");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("heading", { name: "greeting" })).toBeVisible();
+    await save.click();
+    await expect.poll(() => writes.slice(1)).toEqual([
+      { method: "POST", path: "/api/v1/task_templates" },
+      { method: "PUT", path: `/api/v1/task_templates/${created}` },
+    ]);
+    // Nothing in the editor runs the robot any more.
+    await expect(page.getByRole("button", { name: "Dispatch" })).toHaveCount(0);
+    await expect(page.getByRole("radiogroup", { name: "When to run" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Create schedule" })).toHaveCount(0);
+  });
+
+  test("renames a saved job by name alone, and backs out without a write", async ({
+    page,
+  }) => {
+    // The PUT is partial on purpose: a rename must not also save step edits
+    // the operator has not saved yet.
+    const template = "22222222-2222-2222-2222-222222222222";
+    await mockBackend(page);
+    const puts: unknown[] = [];
+    await page.route(`**/api/v1/task_templates/${template}`, (route) => {
+      if (route.request().method() !== "PUT") return route.fallback();
+      const body = route.request().postDataJSON() as { name: string };
+      puts.push(body);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(taskTemplate({ name: body.name })),
+      });
+    });
+    await page.goto("/tasks");
+    await page
+      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .click();
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
+    // An unsaved step edit the rename must leave alone.
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+
+    const rename = page.getByRole("button", { name: "Rename task" });
+    const field = page.getByRole("textbox", { name: "Task name" });
+    await rename.click();
+    await expect(field).toHaveValue("Morning round");
+    await field.fill("Evening round");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("heading", { name: "Morning round" })).toBeVisible();
+    // Back on the button that opened it.
+    await expect(rename).toBeFocused();
+    expect(puts).toEqual([]);
+
+    await rename.click();
+    await field.fill("Evening round");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("heading", { name: "Evening round" })).toBeVisible();
+    expect(puts).toEqual([{ name: "Evening round" }]);
+  });
+
+  test("deletes the loaded job only once confirmed, and leaves", async ({ page }) => {
+    // Delete sits beside Save, so a dismissed confirm must send nothing; and
+    // the confirm names the schedules that will outlive the job, since each
+    // keeps its own copy of the steps.
+    const template = "22222222-2222-2222-2222-222222222222";
+    const writes = await mockBackend(page, {
+      schedules: [
+        {
+          id: "half-hourly",
+          trigger: { interval_seconds: 1800 },
+          paused: false,
+          next_run_times: [],
+          task_template_id: template,
+        },
+      ],
+    });
+    await page.goto("/tasks/editor");
+    // A new job has nothing to delete.
+    await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
+
+    await page.goto("/tasks");
+    await page
+      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .click();
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
+    const remove = page.getByRole("button", { name: "Delete", exact: true });
+
+    let asked = "";
+    page.once("dialog", (dialog) => {
+      asked = dialog.message();
+      void dialog.dismiss();
+    });
+    await remove.click();
+    expect(asked).toContain('"Morning round"');
+    expect(asked).toContain("Its schedule keeps running");
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
+    expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
+
+    page.once("dialog", (dialog) => void dialog.accept());
+    await remove.click();
+    await expect(page).toHaveURL(/\/tasks$/);
+    expect(writes.filter((w) => w.method === "DELETE").map((w) => w.path)).toEqual([
+      `/api/v1/task_templates/${template}`,
+    ]);
+    // The draft went with it: the editor opens empty.
+    await page.goto("/tasks/editor");
+    await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
   });
 
   test("authors a job for a map the robot is not on", async ({ page }) => {
@@ -879,13 +1035,13 @@ test.describe("the task console", () => {
     await expect(waypoint).toContainText("bay-1");
 
     // Held, with the reason, until that map is the loaded one.
-    await expect(page.getByRole("button", { name: "Dispatch", exact: true })).toBeDisabled();
     await expect(
       page.getByText("This job is for wh1; the robot has dp2f loaded", { exact: false }).first(),
     ).toBeVisible();
 
-    await page.getByPlaceholder("Morning patrol").fill("to bay");
-    await page.getByRole("button", { name: "Save as new" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("textbox", { name: "Task name" }).fill("to bay");
+    await page.keyboard.press("Enter");
 
     await expect.poll(() => saved).toHaveLength(1);
     const body = saved[0] as { map_name: string; steps: { vertex_id: string }[] };
@@ -949,6 +1105,9 @@ test.describe("the task console", () => {
     await page.goto("/tasks");
 
     await page.getByRole("button", { name: 'Schedule "Morning round"' }).click();
+    // The form opens here, over the list it will join, not in the editor.
+    await expect(page).toHaveURL(/\/tasks$/);
+    await expect(page.getByText("Schedule Morning round")).toBeVisible();
     await page.getByPlaceholder("robot01-daily-patrol").fill("weekday-patrol");
     await page.getByRole("button", { name: "Weekdays" }).click();
     await page.getByLabel("Time").fill("09:00");
@@ -1452,8 +1611,9 @@ test.describe("the step editor", () => {
     await page.keyboard.press("Space");
     await expect.poll(order).toEqual(["Lie", "Stand", "Speak"]);
 
-    await page.getByPlaceholder("Morning patrol").fill("reorder-check");
-    await page.getByRole("button", { name: "Save as new" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("textbox", { name: "Task name" }).fill("reorder-check");
+    await page.keyboard.press("Enter");
 
     await expect.poll(() => saved).toHaveLength(1);
     const body = saved[0] as { steps: { id: string }[] };
@@ -1602,8 +1762,9 @@ test.describe("the step editor", () => {
     await page.getByRole("button", { name: /^Move/, expanded: true }).click();
     await expect(page.getByText(/^room-a · \(/)).toBeVisible();
 
-    await page.getByPlaceholder("Morning patrol").fill("to room");
-    await page.getByRole("button", { name: "Save as new" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("textbox", { name: "Task name" }).fill("to room");
+    await page.keyboard.press("Enter");
 
     await expect.poll(() => saved).toHaveLength(1);
     const body = saved[0] as {

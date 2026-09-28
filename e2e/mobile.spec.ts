@@ -91,6 +91,32 @@ test.describe("the console on a phone", () => {
     ).toBe(true);
   });
 
+  test("keeps a loaded task's name readable beside the editor's buttons", async ({
+    page,
+  }) => {
+    // Go back, Save and Delete with their words took most of 375 px and
+    // truncated the heading to one letter. Below sm they are icons alone.
+    await mockBackend(page);
+    await page.goto("/tasks");
+    await page
+      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .click();
+    const heading = page.getByRole("heading", { name: "Morning round" });
+    await expect(heading).toBeVisible();
+    expect(
+      await heading.evaluate((el) => el.scrollWidth <= el.clientWidth),
+      "the heading is cut off",
+    ).toBe(true);
+
+    for (const name of ["Go back", "Save", "Delete"]) {
+      const button = page.getByRole("button", { name, exact: true });
+      await expectOnScreen(page, name, await button.boundingBox());
+      // Named for a screen reader; nothing printed (innerText skips what is
+      // display:none, where textContent would not).
+      expect(await button.evaluate((el) => (el as HTMLElement).innerText.trim())).toBe("");
+    }
+  });
+
   test("drops the drive panel and the camera window inside the viewport", async ({
     page,
   }) => {

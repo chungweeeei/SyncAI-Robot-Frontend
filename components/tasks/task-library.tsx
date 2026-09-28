@@ -129,10 +129,12 @@ export function TaskLibrary({
       )}
 
       {/*
-       * The honesty footnote. A schedule registered from loose steps — the composer's Schedule pane with nothing
-       * loaded — records no source, so no row above can carry its clock chip. It
-       * still runs the robot unattended, and an operator reading a library with
-       * no clock chips on it would otherwise conclude nothing does.
+       * The honesty footnote. A schedule registered from loose steps — which
+       * the old editor's Schedule pane could do with nothing loaded — records
+       * no source, so no row above can carry its clock chip. None can be made
+       * that way now, but the ones already registered still run the robot
+       * unattended, and a library with no clock chips on it would otherwise
+       * read as nothing doing so.
        */}
       {unlinkedScheduleCount > 0 && (
         <p className="text-[11px] leading-tight text-signal-caution">

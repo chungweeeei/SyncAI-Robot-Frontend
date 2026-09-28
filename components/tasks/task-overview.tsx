@@ -8,17 +8,14 @@ import { Chip, InstrumentGroup } from "@/components/console/instrument";
 import { ActiveRunBanner } from "@/components/tasks/active-run-banner";
 import { ScheduleList } from "@/components/tasks/schedule-list";
 import { TaskLibrary } from "@/components/tasks/task-library";
+import { TemplateScheduleForm } from "@/components/tasks/template-schedule-form";
 import { useMaps } from "@/hooks/use-maps";
 import { useTaskTemplates } from "@/hooks/use-task-templates";
 import { useSchedules } from "@/hooks/use-schedules";
 import { useTaskDispatch } from "@/hooks/use-task-dispatch";
 import { useTaskDraft } from "@/hooks/use-task-draft";
 import type { TaskTemplate } from "@/lib/api/task-template";
-import {
-  draftFromTemplate,
-  draftWouldBeLost,
-  type TaskEditorMode,
-} from "@/lib/task/draft-store";
+import { draftFromTemplate, draftWouldBeLost } from "@/lib/task/draft-store";
 import { toDispatchSteps } from "@/lib/task/step";
 
 /**
@@ -31,12 +28,12 @@ import { toDispatchSteps } from "@/lib/task/step";
  * answer "what do I have". The schedules sit right under it because they
  * answer the same question for what runs unattended.
  *
- * **Run stays here; Edit and Schedule go to the editor.** A row's Run
+ * **Run and Schedule stay here; Load goes to the editor.** A row's Run
  * dispatches the saved template as it is, and the tracker that reports its
  * steps back belongs to this mount, so the row's readback works without a trip
- * anywhere. Edit and Schedule both need the editor — the schedule's trigger is
- * only authored there — so they write the template into the tab's draft and
- * navigate.
+ * anywhere. Its Schedule opens the trigger form at the top of the schedule
+ * list, where the new schedule will appear. Load is the only one that needs
+ * the editor, so it writes the template into the tab's draft and navigates.
  */
 export function TaskOverview({ robotId }: { robotId: string | null }) {
   const router = useRouter();
@@ -72,18 +69,16 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
    * Open a saved job in the editor. The draft is on another page from here,
    * so replacing steps the operator built is asked about rather than done;
    * declining still goes to the editor, on the work they kept. Reopening the
-   * template already loaded keeps its unsaved edits and only sets the mode.
+   * template already loaded keeps its unsaved edits.
    */
-  const openInEditor = (template: TaskTemplate, mode: TaskEditorMode) => {
+  const openInEditor = (template: TaskTemplate) => {
     const keep =
       draft.editing?.id === template.id ||
       (draftWouldBeLost(draft, template.id) &&
         !window.confirm(
           `Open "${template.name}"? The unsaved steps in the editor will be replaced.`,
         ));
-    updateDraft((current) =>
-      keep ? { ...current, mode } : draftFromTemplate(current, template, mode),
-    );
+    if (!keep) updateDraft((current) => draftFromTemplate(current, template));
     router.push("/tasks/editor");
   };
 
@@ -98,10 +93,14 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
   const highlightTimer = React.useRef<number | undefined>(undefined);
   React.useEffect(() => () => window.clearTimeout(highlightTimer.current), []);
 
-  const showSchedules = (template: TaskTemplate) => {
-    setHighlighted(template.id);
+  const flash = (templateId: string) => {
+    setHighlighted(templateId);
     window.clearTimeout(highlightTimer.current);
     highlightTimer.current = window.setTimeout(() => setHighlighted(null), 2500);
+  };
+
+  const showSchedules = (template: TaskTemplate) => {
+    flash(template.id);
     // Scrolled and focused here, in the handler: the rows are already on
     // screen, so there is no render to wait for. Focus goes to the first row
     // so a keyboard or screen reader lands where the eye was sent.
@@ -113,6 +112,15 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
     first.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
     first.focus({ preventScroll: true });
   };
+
+  /**
+   * The saved job whose trigger form is open over the schedule list, by id,
+   * so a job deleted meanwhile closes its form rather than leaving one that
+   * would schedule a template that is gone.
+   */
+  const [schedulingId, setSchedulingId] = React.useState<string | null>(null);
+  const scheduling =
+    library.templates.find((template) => template.id === schedulingId) ?? null;
 
   const dispatchTemplate = (template: TaskTemplate) => {
     setDispatchedFrom(template.id);
@@ -170,11 +178,8 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
             taskStatus={dispatch.taskStatus}
             stepStates={dispatch.stepStates}
             onDispatch={dispatchTemplate}
-            onLoad={(template) => openInEditor(template, "now")}
-            // The trigger is authored in the editor's Schedule pane, which is
-            // the only place a timed/interval form exists. Loading the template
-            // first is what makes that pane describe the thing being scheduled.
-            onSchedule={(template) => openInEditor(template, "schedule")}
+            onLoad={openInEditor}
+            onSchedule={(template) => setSchedulingId(template.id)}
             onShowSchedules={showSchedules}
             onDelete={(template) => {
               // A confirm rather than an undo: there is no local history to step
@@ -223,6 +228,21 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
             </button>
           }
         >
+          {scheduling && (
+            <TemplateScheduleForm
+              // One form per job: switching rows starts a fresh one.
+              key={scheduling.id}
+              template={scheduling}
+              existingIds={schedules.schedules.map((entry) => entry.id)}
+              onScheduled={() => {
+                setSchedulingId(null);
+                // The new row is the list's own re-read away; lighting the
+                // job's rows is what says which one just arrived.
+                flash(scheduling.id);
+              }}
+              onCancel={() => setSchedulingId(null)}
+            />
+          )}
           <ScheduleList
             schedules={schedules.schedules}
             readAtMs={schedules.readAtMs}

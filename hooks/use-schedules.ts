@@ -6,13 +6,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { writeState } from "@/lib/api/mutation-state";
 import { queryKeys } from "@/lib/api/query-keys";
 import {
-  createSchedule,
   deleteSchedule,
   getSchedule,
   listSchedules,
   pauseSchedule,
   resumeSchedule,
-  type ScheduleDraft,
   type ScheduleState,
   type ScheduleTrigger,
 } from "@/lib/api/schedule";
@@ -45,10 +43,13 @@ export interface UseSchedules {
   status: SchedulesStatus;
   /** The load failure, or the most recent write failure. Rendered verbatim. */
   error: string | null;
-  /** True while a create / pause / resume / delete is in flight. */
+  /**
+   * True while a pause / resume / delete is in flight. Registering one is
+   * useScheduleTaskTemplate: a schedule is only ever made from a saved job,
+   * so the loose-steps POST /api/v1/schedules this hook used to wrap has no
+   * caller.
+   */
   busy: boolean;
-  /** True when the schedule was registered. */
-  create: (draft: ScheduleDraft) => Promise<boolean>;
   pause: (id: string) => Promise<boolean>;
   resume: (id: string) => Promise<boolean>;
   remove: (id: string) => Promise<boolean>;
@@ -144,10 +145,6 @@ export function useSchedules(): UseSchedules {
     [queryClient, refresh],
   );
 
-  const createMutation = useMutation({
-    mutationFn: (draft: ScheduleDraft) => createSchedule(draft),
-    onSettled: refresh,
-  });
   const removeMutation = useMutation({
     mutationFn: (id: string) => deleteSchedule(id),
     onSettled: refresh,
@@ -163,7 +160,6 @@ export function useSchedules(): UseSchedules {
     onError: refresh,
   });
 
-  const { mutateAsync: createAsync } = createMutation;
   const { mutateAsync: removeAsync } = removeMutation;
   const { mutateAsync: pauseAsync } = pauseMutation;
   const { mutateAsync: resumeAsync } = resumeMutation;
@@ -171,10 +167,6 @@ export function useSchedules(): UseSchedules {
   // Rejections are swallowed rather than rethrown because every caller is wired
   // straight to an onClick — a rethrow would be an unhandled rejection, and the
   // components read the outcome off `error` and the returned boolean.
-  const create = React.useCallback(
-    (draft: ScheduleDraft) => createAsync(draft).then(ok, no),
-    [createAsync],
-  );
   const pause = React.useCallback((id: string) => pauseAsync(id).then(ok, no), [pauseAsync]);
   const resume = React.useCallback(
     (id: string) => resumeAsync(id).then(ok, no),
@@ -182,17 +174,15 @@ export function useSchedules(): UseSchedules {
   );
   const remove = React.useCallback((id: string) => removeAsync(id).then(ok, no), [removeAsync]);
 
-  const write = writeState([createMutation, pauseMutation, resumeMutation, removeMutation]);
-  const { reset: resetCreate } = createMutation;
+  const write = writeState([pauseMutation, resumeMutation, removeMutation]);
   const { reset: resetPause } = pauseMutation;
   const { reset: resetResume } = resumeMutation;
   const { reset: resetRemove } = removeMutation;
   const clearError = React.useCallback(() => {
-    resetCreate();
     resetPause();
     resetResume();
     resetRemove();
-  }, [resetCreate, resetPause, resetResume, resetRemove]);
+  }, [resetPause, resetResume, resetRemove]);
 
   return {
     schedules: query.data ?? [],
@@ -200,7 +190,6 @@ export function useSchedules(): UseSchedules {
     status: query.isPending ? "loading" : query.isError ? "error" : "ok",
     error: write.error ?? query.error?.message ?? null,
     busy: write.busy,
-    create,
     pause,
     resume,
     remove,

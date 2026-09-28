@@ -47,13 +47,6 @@ export interface ScheduleTrigger {
   timezone?: string | null;
 }
 
-/** What the operator supplies. `steps` is the same wire shape a task takes. */
-export interface ScheduleDraft {
-  id: string;
-  trigger: ScheduleTrigger;
-  steps: readonly TaskStepRequest[];
-}
-
 /** `ScheduleStateResponse`, verbatim. */
 export interface ScheduleState {
   id: string;
@@ -150,19 +143,11 @@ export function getSchedule(
   });
 }
 
-// The four writes all drop the `{id, message}` envelope: it says nothing the
+// The three writes all drop the `{id, message}` envelope: it says nothing the
 // caller does not already know from the request having succeeded, which is the
 // same reasoning `deleteVertex` records. What a caller *does* need afterwards —
 // the recomputed `next_run_times` — is only knowable by asking, so every one of
 // these is followed by a list refresh rather than a local splice.
-
-export function createSchedule(draft: ScheduleDraft): Promise<void> {
-  return requestJson<void>(schedulePath(), {
-    method: "POST",
-    body: JSON.stringify(draft),
-    parse: false,
-  });
-}
 
 export function pauseSchedule(id: string): Promise<void> {
   return requestJson<void>(schedulePath(id, "pause"), {

@@ -19,8 +19,9 @@ import { runSeconds } from "@/lib/task/history";
  * Cancel anywhere on screen, and the Temporal UI on :8081 as the only recourse.
  * GET /api/v1/active_tasks is what ended that, and this is where it is spent.
  *
- * Rows this tab *is* following are filtered out, because DispatchPanel already
- * shows them with per-step detail this list does not have. So an empty banner is
+ * Rows this tab *is* following are filtered out, because the library row that
+ * started them already shows them with per-step detail this list does not
+ * have. So an empty banner is
  * the normal state, and a non-empty one always means "something is running that
  * you are not looking at".
  */

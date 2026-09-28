@@ -54,7 +54,7 @@ describe("decodeTaskDraft", () => {
     expect(decodeTaskDraft("{not json")).toBe(EMPTY_TASK_DRAFT);
     expect(decodeTaskDraft(JSON.stringify({ steps: "nope" }))).toBe(EMPTY_TASK_DRAFT);
     // A required field missing is a draft from another build, not a draft.
-    expect(decodeTaskDraft(JSON.stringify({ ...draft(), mode: undefined }))).toBe(
+    expect(decodeTaskDraft(JSON.stringify({ ...draft(), name: undefined }))).toBe(
       EMPTY_TASK_DRAFT,
     );
   });
@@ -68,12 +68,16 @@ describe("decodeTaskDraft", () => {
     expect(restored.steps.map(withoutKey)).toEqual(stored.steps.map(withoutKey));
   });
 
-  it("still restores a draft written while the editor could fold away", () => {
-    // Builds before the editor had its own page stored `composerOpen`; an
-    // unknown key is stripped rather than costing the operator their steps.
-    const restored = decodeTaskDraft(JSON.stringify({ ...draft(), composerOpen: true }));
+  it("still restores a draft written by an older editor", () => {
+    // Older builds stored `composerOpen` (the fold) and `mode` (Run now or
+    // On a schedule); an unknown key is stripped rather than costing the
+    // operator their steps.
+    const restored = decodeTaskDraft(
+      JSON.stringify({ ...draft(), composerOpen: true, mode: "schedule" }),
+    );
     expect(restored.name).toBe("night run");
     expect(restored).not.toHaveProperty("composerOpen");
+    expect(restored).not.toHaveProperty("mode");
   });
 
   it("re-mints every restored key so a row added next cannot collide", () => {
@@ -176,17 +180,16 @@ function template(over: Partial<TaskTemplate> = {}): TaskTemplate {
 }
 
 describe("draftFromTemplate", () => {
-  it("opens the template on its own map, named, in the mode asked for", () => {
-    const next = draftFromTemplate(draft(), template(), "schedule");
+  it("opens the template on its own map, named", () => {
+    const next = draftFromTemplate(draft(), template());
     expect(next.editing).toEqual({ id: "t2", name: "Dock check" });
     expect(next.name).toBe("Dock check");
     expect(next.chosenMap).toBe("wh2");
-    expect(next.mode).toBe("schedule");
     expect(next.steps.map((step) => step.text)).toEqual(["hello"]);
   });
 
   it("leaves the map choice alone for a template that names none", () => {
-    expect(draftFromTemplate(draft(), template({ map_name: null }), "now").chosenMap).toBe(
+    expect(draftFromTemplate(draft(), template({ map_name: null })).chosenMap).toBe(
       "wh1",
     );
   });
