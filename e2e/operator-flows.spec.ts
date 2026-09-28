@@ -1112,6 +1112,9 @@ test.describe("the floor plan editor's draw bar", () => {
     await drawBar(page).getByRole("button", { name: "Select" }).click();
     await page.getByRole("button", { name: /dock/ }).click();
     await expect(page.getByRole("button", { name: "Delete waypoint" })).toBeVisible();
+    // The form puts the name and the type on one row, the type as a list.
+    await expect(page.getByLabel("Name", { exact: true })).toHaveValue("dock");
+    await expect(page.getByRole("combobox", { name: "Type" })).toContainText("Chg");
     await page.getByRole("button", { name: "Pan", exact: true }).click();
     await expect(page.getByRole("button", { name: "Delete waypoint" })).toHaveCount(0);
     await expect(page.getByRole("combobox", { name: "Waypoint type" })).toBeVisible();

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { LocateFixedIcon, Trash2Icon } from "lucide-react";
 
-import { Chip, Readout, Segmented, overlayPanel } from "@/components/console/instrument";
+import { Chip, Readout, overlayPanel } from "@/components/console/instrument";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -409,6 +409,10 @@ function VertexForm({
         if (submittable) onSubmit(trimmed, type);
       }}
     >
+      {/* Name and type on one row, by request, with the type as a list — the
+        * same control the panel's placing row uses, so a waypoint's type is
+        * chosen one way wherever it is chosen. The label names the name field;
+        * the list carries its own accessible name. */}
       <div>
         <label
           htmlFor={nameId}
@@ -416,30 +420,46 @@ function VertexForm({
         >
           Name
         </label>
-        <Input
-          id={nameId}
-          autoFocus
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder="dock-a"
-          // Squared off and shortened to match the overlay's chrome; the shared
-          // Input is sized for the settings forms, which have room.
-          className="h-7 rounded-sm md:text-[13px]"
-        />
-      </div>
-
-      <div>
-        <p className="instrument-label mb-1 text-muted-foreground">Type</p>
-        <Segmented
-          label="Type"
-          stretch
-          value={type}
-          options={TYPE_OPTIONS}
-          onChange={(next) => {
-            setType(next);
-            onTypeChange?.(next);
-          }}
-        />
+        <div className="flex items-center gap-1.5">
+          <Input
+            id={nameId}
+            autoFocus
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="dock-a"
+            // Squared off and shortened to match the overlay's chrome; the
+            // shared Input is sized for the settings forms, which have room.
+            className="h-7 min-w-0 flex-1 rounded-sm md:text-[13px]"
+          />
+          <Select
+            items={TYPE_OPTIONS}
+            value={type}
+            onValueChange={(next) => {
+              if (!next) return;
+              setType(next);
+              onTypeChange?.(next);
+            }}
+          >
+            <SelectTrigger
+              size="sm"
+              aria-label="Type"
+              title="What this waypoint is for"
+              className="shrink-0 rounded-sm text-[12px] pointer-coarse:min-h-10"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {VERTEX_TYPES.map((spec) => (
+                <SelectItem key={spec.value} value={spec.value}>
+                  <span className="flex items-baseline gap-2">
+                    {spec.label}
+                    <span className="text-xs text-muted-foreground">{spec.hint}</span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="space-y-1 border-t border-hairline pt-2">
