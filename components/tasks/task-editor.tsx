@@ -3,7 +3,13 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeftIcon, MapPinPlusIcon, SaveIcon, Trash2Icon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  MapPinPlusIcon,
+  SaveIcon,
+  SettingsIcon,
+  Trash2Icon,
+} from "lucide-react";
 
 import { InstrumentGroup } from "@/components/console/instrument";
 import { ActiveRunBanner } from "@/components/tasks/active-run-banner";
@@ -241,9 +247,26 @@ export function TaskEditor() {
     <>
       <header className="mb-6 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="truncate text-xl font-semibold tracking-tight">
-            {editing ? `Editing ${editing.name}` : "New task"}
-          </h1>
+          <div className="flex min-w-0 items-center gap-1.5">
+            {/* The job's own name, not "Editing …": being on this page already
+              * says it is being edited. */}
+            <h1 className="truncate text-xl font-semibold tracking-tight">
+              {editing ? editing.name : "New task"}
+            </h1>
+            {/* A placeholder: what the job's settings are is still to be
+              * decided, so the button is on the page but does nothing yet.
+              * Disabled rather than inert, so it does not look broken. */}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              disabled
+              aria-label="Job settings"
+              title="Job settings"
+              className="shrink-0 text-muted-foreground"
+            >
+              <SettingsIcon aria-hidden />
+            </Button>
+          </div>
           <p className="mt-1 text-sm text-muted-foreground">
             Steps run in order, one at a time, and if a step fails the rest are
             skipped.

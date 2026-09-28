@@ -803,7 +803,7 @@ test.describe("the task console", () => {
     await page.getByRole("button", { name: "Back to tasks" }).click();
     await expect(page).toHaveURL(/\/tasks\/editor$/);
     const asLeft = async () => {
-      await expect(page.getByText("Editing Morning round")).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Morning round" })).toBeVisible();
       await expect(page.getByText(/^dock · \(/)).toBeVisible();
       await expect(page.getByText("\u201cArrived\u201d")).toBeVisible();
       await expect(page.getByPlaceholder("Morning patrol")).toHaveValue("night run");
@@ -826,7 +826,7 @@ test.describe("the task console", () => {
     await page.getByRole("button", { name: "Create task" }).click();
     await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
     await page.reload();
-    await expect(page.getByText("Editing Morning round")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Morning round" })).toHaveCount(0);
     await expect(page.getByText(/^dock · \(/)).toHaveCount(0);
   });
 
@@ -878,7 +878,7 @@ test.describe("the task console", () => {
     await expect(save).toBeDisabled();
     await page.getByPlaceholder("Morning patrol").fill("greeting");
     await save.click();
-    await expect(page.getByRole("heading", { name: "Editing greeting" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "greeting" })).toBeVisible();
     await save.click();
     await expect.poll(() => writes.slice(1)).toEqual([
       { method: "POST", path: "/api/v1/task_templates" },
