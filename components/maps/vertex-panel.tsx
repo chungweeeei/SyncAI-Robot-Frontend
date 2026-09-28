@@ -422,7 +422,7 @@ function VertexForm({
       <div className="space-y-1 border-t border-hairline pt-2">
         <Readout label="X" value={pose.x.toFixed(2)} unit="m" tone="cmd" />
         <Readout label="Y" value={pose.y.toFixed(2)} unit="m" tone="cmd" />
-        <Readout label="Heading" value={pose.theta.toFixed(1)} unit="°" tone="cmd" />
+        <Readout label="Orientation" value={pose.theta.toFixed(1)} unit="°" tone="cmd" />
       </div>
 
       <div className="flex gap-1.5">

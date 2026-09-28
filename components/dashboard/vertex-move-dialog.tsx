@@ -1,23 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { MapPinIcon, SendIcon } from "lucide-react";
+import { MapPinIcon, SendIcon, Trash2Icon } from "lucide-react";
 
 import { Readout } from "@/components/console/instrument";
 import {
   AlertDialog,
   AlertDialogContent,
-  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { VERTEX_TYPES, vertexGlyph } from "@/lib/map/vertex";
 import type { MapVertex } from "@/lib/types/map";
 
 /**
- * "Move to this stop?" — the confirm behind a tap on a vertex in the
+ * "Move to this stop" — the confirm behind a tap on a vertex in the
  * viewport.
  *
  * The dialog is where the vertex's *name* lives. On the map a stop is a mark and
@@ -37,13 +35,21 @@ import type { MapVertex } from "@/lib/types/map";
  * the alternative is a second gesture on the map for a rare action. It is styled
  * as the secondary of the two: sending the robot is what this dialog is for, and
  * moving the mark is what you do when the stop turns out to be in a wall.
+ *
+ * Delete is the third, between Cancel and Move, and asks once more before it
+ * writes — a confirm rather than an undo, for the reason the editor's Delete
+ * gives: the row is written through, so there is no local history to step
+ * back over. A refusal keeps the dialog open with the backend's sentence.
  */
 export function VertexMoveDialog({
   vertex,
   busy,
   running,
+  deleting,
+  deleteError,
   onConfirm,
   onReplace,
+  onDelete,
   onClose,
 }: {
   /** The stop being asked about, or null when the dialog is closed. */
@@ -52,9 +58,15 @@ export function VertexMoveDialog({
   busy: boolean;
   /** A task is already running, so this one cannot be dispatched. */
   running: boolean;
+  /** The delete is in flight. */
+  deleting: boolean;
+  /** The backend's refusal of the delete, or null. Rendered verbatim. */
+  deleteError: string | null;
   onConfirm: (vertex: MapVertex) => void;
   /** Hand the stop's pose to the pointer so it can be put somewhere else. */
   onReplace: (vertex: MapVertex) => void;
+  /** Already confirmed by the operator; the row goes now. */
+  onDelete: (vertex: MapVertex) => void;
   onClose: () => void;
 }) {
   // The close transition outlives the prop going null, so the last stop asked
@@ -67,8 +79,6 @@ export function VertexMoveDialog({
   const [shown, setShown] = React.useState<MapVertex | null>(vertex);
   if (vertex && vertex !== shown) setShown(vertex);
 
-  const spec = shown && VERTEX_TYPES.find((type) => type.value === shown.type);
-
   return (
     <AlertDialog
       open={vertex !== null}
@@ -80,13 +90,9 @@ export function VertexMoveDialog({
         {shown && (
           <>
             <AlertDialogHeader>
-              <AlertDialogTitle>Move to {shown.name}?</AlertDialogTitle>
-              <AlertDialogDescription>
-                {spec
-                  ? `${vertexGlyph(shown.type)} · ${spec.label} — ${spec.hint}`
-                  : `Type ${shown.type}.`}{" "}
-                The robot drives there on its own once the task is sent.
-              </AlertDialogDescription>
+              <AlertDialogTitle>Move to {shown.name}</AlertDialogTitle>
+              {/* No description, by request: the title names the stop and the
+                * Move button says what confirming does. */}
             </AlertDialogHeader>
 
             {/* Same three readouts, in the same order and the same commanded
@@ -96,7 +102,7 @@ export function VertexMoveDialog({
               <Readout label="X" value={shown.x.toFixed(2)} unit="m" tone="cmd" />
               <Readout label="Y" value={shown.y.toFixed(2)} unit="m" tone="cmd" />
               <Readout
-                label="Heading"
+                label="Orientation"
                 value={shown.theta.toFixed(1)}
                 unit="°"
                 tone="cmd"
@@ -107,6 +113,11 @@ export function VertexMoveDialog({
               <p className="text-[11px] leading-snug text-signal-caution">
                 A task is already running. Cancel it first — the robot takes one
                 goal at a time.
+              </p>
+            )}
+            {deleteError && (
+              <p role="alert" className="text-[11px] leading-snug break-words text-signal-warn">
+                {deleteError}
               </p>
             )}
 
@@ -123,12 +134,25 @@ export function VertexMoveDialog({
                 <MapPinIcon data-icon="inline-start" />
                 Reposition
               </Button>
-              <Button variant="outline" size="sm" onClick={onClose}>
+              <Button variant="outline" size="sm" disabled={deleting} onClick={onClose}>
                 Cancel
               </Button>
               <Button
+                variant="destructive"
                 size="sm"
-                disabled={busy || running}
+                disabled={deleting || busy}
+                onClick={() => {
+                  if (window.confirm(`Delete "${shown.name}"? This cannot be undone.`)) {
+                    onDelete(shown);
+                  }
+                }}
+              >
+                <Trash2Icon data-icon="inline-start" />
+                Delete
+              </Button>
+              <Button
+                size="sm"
+                disabled={busy || running || deleting}
                 onClick={() => onConfirm(shown)}
               >
                 <SendIcon data-icon="inline-start" />

@@ -11,9 +11,7 @@ import { batteryTone } from "@/lib/robot/levels";
 import {
   Chip,
   SegmentMeter,
-  SignalBars,
   StripDivider,
-  rssiToBars,
   type Tone,
 } from "@/components/console/instrument";
 import { cn } from "@/lib/utils";
@@ -31,16 +29,6 @@ const MODE_TONE: Record<RobotMode, Tone> = {
   MANUAL: "caution",
   MAINTENANCE: "warn",
 };
-
-/** 24-hour clock with leading zeros — a readout, not prose. */
-function clockOf(epochSeconds: number): string {
-  return new Date(epochSeconds * 1000).toLocaleTimeString([], {
-    hour12: false,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
 
 /**
  * The console's masthead: which robot, what mode, and is the link alive. It is
@@ -99,7 +87,6 @@ export function StatusStrip() {
           : { label: "No signal", tone: "warn" };
 
   const battery = state?.battery_status.battery_percentage;
-  const network = state?.network_status;
 
   return (
     <header className="relative shrink-0 bg-panel">
@@ -151,33 +138,25 @@ export function StatusStrip() {
             <DriveDisclosure />
             <CameraDisclosure />
             {link && <Chip tone={link.tone}>{link.label}</Chip>}
-            {/* Bars only, no dBm: the number is an engineer's reading, and
-              * the four-step glyph is the whole of what an operator does with
-              * it. The exact figure stays on the Settings screen's Wi-Fi
-              * panel, next to the network it belongs to — as does the name,
-              * which is why the bars show on a phone too: the hover that
-              * carries it here is not a thing a finger has, and without the
-              * bars a phone had no link reading at all. */}
-            {network && (
-              <span className="flex items-center" title={`Wi-Fi: ${network.ssid}`}>
-                <SignalBars
-                  bars={rssiToBars(network.rssi)}
-                  tone={status === "ok" ? "live" : "caution"}
-                />
-              </span>
-            )}
+            {/* No Wi-Fi bars here any more, by request. The link chip above
+              * still names a dead or stale link, and the SSID, the bars and
+              * the dBm stay together on the dashboard's Link group and the
+              * Settings screen's Wi-Fi panel, next to the network they
+              * belong to. */}
           </div>
 
           <StripDivider />
 
-          {/* No "Batt" label: the percent sign and the segment meter name the
+          {/* No "Batt" label: the segment meter and the percent sign name the
             * quantity between them, and the row is worth more than a word that
-            * repeats what the glyph beside it already shows. */}
+            * repeats what the glyph beside it already shows. Meter first, then
+            * the figure: the glyph is the glance, the number is the read. */}
           <div className="flex items-center gap-2">
             {battery === undefined ? (
               <span className="readout text-[13px] text-muted-foreground">—</span>
             ) : (
               <>
+                <SegmentMeter value={battery} tone={batteryTone(battery)} />
                 <span
                   className={cn(
                     "readout text-[13px] font-medium",
@@ -190,16 +169,13 @@ export function StatusStrip() {
                     %
                   </span>
                 </span>
-                <SegmentMeter value={battery} tone={batteryTone(battery)} />
               </>
             )}
           </div>
 
-          <StripDivider className="hidden md:block" />
-
-          <span className="readout hidden text-[13px] text-muted-foreground md:inline">
-            {state ? clockOf(state.timestamp) : "--:--:--"}
-          </span>
+          {/* No clock, by request: the heartbeat on the strip's bottom edge is
+            * the freshness reading, and the wall time is on every operator's
+            * own machine already. */}
         </div>
       </div>
 

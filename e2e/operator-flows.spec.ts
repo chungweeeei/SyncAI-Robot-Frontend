@@ -301,6 +301,230 @@ test.describe("the dashboard's map scan layer", () => {
   });
 });
 
+test.describe("adding a waypoint from the dashboard", () => {
+  const verticesPath = `/api/v1/maps/${MAP_NAME}/vertices`;
+
+  /**
+   * Arm the tool and make the placing gesture on the viewport: a press near
+   * the middle of the region (the opening view is centred on the map, so the
+   * floor there is inside it), a drag to the right to aim it, a release.
+   */
+  const placeOnMap = async (page: Page) => {
+    const region = page.getByRole("region", { name: "Map viewport" });
+    await expect(region).toBeVisible();
+    const place = page.getByRole("button", { name: "Add waypoint" });
+    await place.click();
+    await expect(place).toHaveAttribute("aria-pressed", "true");
+    const box = (await region.boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height * 0.6;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 40, y, { steps: 4 });
+    await page.mouse.up();
+  };
+
+  test("asks for a name after the drag, and posts the placed pose with it", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page);
+    await page.goto("/");
+
+    await placeOnMap(page);
+    const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
+    await expect(dialog).toBeVisible();
+    // Nothing has been written yet: the release only asks the question.
+    expect(writes.filter((w) => w.path === verticesPath)).toEqual([]);
+
+    const create = dialog.getByRole("button", { name: "Create" });
+    await expect(create).toBeDisabled();
+    await dialog.getByLabel("Name").fill("shelf-b");
+    await dialog.getByRole("combobox", { name: "Type" }).click();
+    await page.getByRole("option", { name: /^Wait/ }).click();
+    await create.click();
+
+    await expect
+      .poll(() => writes.filter((w) => w.path === verticesPath))
+      .toHaveLength(1);
+    const write = writes.find((w) => w.path === verticesPath)!;
+    expect(write.method).toBe("POST");
+    const body = write.body as { name: string; type: string; x: number; y: number; theta: number }[];
+    expect(body).toHaveLength(1);
+    expect(body[0].name).toBe("shelf-b");
+    expect(body[0].type).toBe("WAITING");
+    expect(Number.isFinite(body[0].x)).toBe(true);
+    expect(Number.isFinite(body[0].y)).toBe(true);
+    // A drag to screen-right on the opening view aims along map +x.
+    expect(Math.abs(body[0].theta)).toBeLessThan(30);
+
+    // The echoed row closed the dialog: the create parsed and was spliced in.
+    await expect(dialog).toHaveCount(0);
+    // And the tool disarmed on release, so a stray click cannot place another.
+    await expect(page.getByRole("button", { name: "Add waypoint" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("takes the robot's own position instead, and keeps the typed name", async ({
+    page,
+  }) => {
+    // The stop you mark by driving to it: the fake's robot stands at
+    // (1.25, -3.5, 90°) on the active map, and the button swaps the placed
+    // pose for that one without throwing away the name already typed.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page);
+    await page.goto("/");
+
+    await placeOnMap(page);
+    const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
+    await dialog.getByLabel("Name").fill("where-it-stands");
+    await dialog.getByRole("button", { name: "Use robot position" }).click();
+    await expect(dialog.getByLabel("Name")).toHaveValue("where-it-stands");
+    await dialog.getByRole("button", { name: "Create" }).click();
+
+    await expect
+      .poll(() => writes.filter((w) => w.path === verticesPath))
+      .toHaveLength(1);
+    const body = writes.find((w) => w.path === verticesPath)!.body as {
+      name: string;
+      x: number;
+      y: number;
+      theta: number;
+    }[];
+    expect(body[0]).toMatchObject({ name: "where-it-stands", x: 1.25, y: -3.5, theta: 90 });
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("writes nothing when the name is cancelled", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page);
+    await page.goto("/");
+
+    await placeOnMap(page);
+    const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("Name").fill("oops");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+
+    await expect(dialog).toHaveCount(0);
+    expect(writes.filter((w) => w.path === verticesPath)).toEqual([]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  // No console-error guard: the browser logs the 409 itself.
+  test("keeps the dialog open with the backend's refusal", async ({ page }) => {
+    await mockBackend(page);
+    await page.route(/\/api\/v1\/maps\/[^/]+\/vertices$/, (route, request) =>
+      request.method() === "POST"
+        ? route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({ detail: 'A waypoint named "dock" already exists' }),
+          })
+        : route.fallback(),
+    );
+    await page.goto("/");
+
+    await placeOnMap(page);
+    const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
+    await dialog.getByLabel("Name").fill("dock");
+    await dialog.getByRole("button", { name: "Create" }).click();
+
+    await expect(dialog.getByRole("alert")).toHaveText(
+      'A waypoint named "dock" already exists',
+    );
+    await expect(dialog).toBeVisible();
+  });
+
+  test("is greyed with no map to put a waypoint on", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, { maps: [] });
+    await page.goto("/");
+    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+
+    await expect(page.getByRole("button", { name: "Add waypoint" })).toBeDisabled();
+    // The camera buttons do not need a map.
+    await expect(page.getByRole("button", { name: "Recenter" })).toBeEnabled();
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+});
+
+test.describe("tapping a stop on the dashboard", () => {
+  const stop = vertex();
+  const stopPath = `/api/v1/maps/${MAP_NAME}/vertices/${stop.id}`;
+
+  /**
+   * Open the stop's dialog by tapping its marker. Top down first, because
+   * from overhead the floor is a plain scale: the fake map is 20 x 15 m
+   * about (-2.3, -0.3) and overheadDistance frames its height with an 8 %
+   * margin at a 60° fov, so the stop at (2.5, 1.25) lands a known number of
+   * pixels from the region's centre.
+   */
+  const tapStop = async (page: Page) => {
+    const region = page.getByRole("region", { name: "Map viewport" });
+    await expect(region).toBeVisible();
+    await page.getByRole("button", { name: "Top down" }).click();
+    const box = (await region.boundingBox())!;
+    const tanHalfFov = Math.tan(Math.PI / 6);
+    const height =
+      Math.max(7.5 / tanHalfFov, 10 / (tanHalfFov * (box.width / box.height))) * 1.08;
+    const pxPerM = box.height / (2 * height * tanHalfFov);
+    const x = box.x + box.width / 2 + (stop.x - -2.3) * pxPerM;
+    const y = box.y + box.height / 2 - (stop.y - -0.3) * pxPerM;
+    // Polled: the camera eases into the overhead view over a few frames.
+    await expect(async () => {
+      await page.mouse.click(x, y);
+      await expect(page.getByRole("alertdialog", { name: `Move to ${stop.name}` })).toBeVisible({
+        timeout: 500,
+      });
+    }).toPass();
+  };
+
+  test("deletes the stop once the operator confirms, and closes", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page);
+    await page.goto("/");
+
+    await tapStop(page);
+    page.once("dialog", (confirm) => {
+      expect(confirm.message()).toContain(`Delete "${stop.name}"?`);
+      void confirm.accept();
+    });
+    await page.getByRole("button", { name: "Delete" }).click();
+
+    await expect
+      .poll(() => writes.filter((w) => w.method === "DELETE").map((w) => w.path))
+      .toEqual([stopPath]);
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    // The layer toggle goes with the last stop: nothing left to hide.
+    await expect(page.getByRole("button", { name: "Waypoints" })).toHaveCount(0);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("writes nothing when the confirm is dismissed", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page);
+    await page.goto("/");
+
+    await tapStop(page);
+    page.once("dialog", (confirm) => void confirm.dismiss());
+    await page.getByRole("button", { name: "Delete" }).click();
+
+    await expect(page.getByRole("alertdialog", { name: `Move to ${stop.name}` })).toBeVisible();
+    expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+});
+
 test.describe("words and names on the operator's screens", () => {
   // What reaches an operator names what they see, never the stack underneath
   // it, and every control has a name a screen reader can say. Both are easy to
@@ -791,9 +1015,11 @@ test.describe("the manual drive panel", () => {
   test("limits translation to the Max speed it shows, and never rotation", async ({
     page,
   }) => {
-    // Both halves: the slider and the readouts say one number, and the teleop
-    // frames the robot receives carry the same one. Keyboard deflection is
-    // always full, so without the limit there is no slow drive from the keys.
+    // Both halves: the slider says one number, and the teleop frames the robot
+    // receives carry the same one (the panel shows no per-axis readout, so the
+    // wire is the only place the scaled value can be read). Keyboard
+    // deflection is always full, so without the limit there is no slow drive
+    // from the keys.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page);
@@ -827,7 +1053,7 @@ test.describe("the manual drive panel", () => {
     for (let step = 0; step < 5; step += 1) await page.keyboard.press("ArrowLeft");
     await expect(speed).toHaveAttribute("aria-valuetext", "50 percent of full speed");
     await expect.poll(last).toEqual({ vx: 0.5, vy: 0, wz: -1 });
-    await expect(page.getByText("+0.50", { exact: true })).toBeVisible();
+    await expect(page.getByText("50%", { exact: true })).toBeVisible();
 
     await page.keyboard.up("w");
     await page.keyboard.up("d");
@@ -1025,7 +1251,7 @@ test.describe("the step editor", () => {
     await page.getByRole("button", { name: "Expand all" }).click();
     await expect(waypoint).toBeVisible();
     // Unfolded, a MOVE row is the picker alone: no coordinate fields.
-    await expect(page.getByLabel(/^(X|Y|Heading)\b/)).toHaveCount(0);
+    await expect(page.getByLabel(/^(X|Y|Orientation)\b/)).toHaveCount(0);
     await page.getByRole("button", { name: "Collapse all" }).click();
     await expect(waypoint).toHaveCount(0);
     // Empty, and folded all the same: the header says what is missing.

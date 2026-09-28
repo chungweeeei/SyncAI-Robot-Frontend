@@ -64,7 +64,11 @@ export function StripDisclosure({
         title={open ? hideTitle : showTitle}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex size-6 items-center justify-center rounded-sm border transition-colors pointer-coarse:size-10",
+          // The full height of the strip and as wide as it is tall: these are
+          // the two things in the strip an operator presses, on a phone and at
+          // arm's length from a laptop, so they get the whole row rather than
+          // a 24 px target inside it. Square so the two read as a pair.
+          "flex size-14 items-center justify-center rounded-sm border transition-colors",
           // Open is the cmd hue, like every other operator choice in the
           // console. It is the only state these buttons show: what the panel
           // is doing once open is the panel's own business.
@@ -73,7 +77,7 @@ export function StripDisclosure({
             : "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground",
         )}
       >
-        <Icon aria-hidden className="size-3.5" />
+        <Icon aria-hidden className="size-5" />
       </button>
 
       <div id={panelId}>{open && children}</div>
@@ -85,10 +89,10 @@ export function StripDisclosure({
  * Where a dropped panel sits: under the strip, right edge aligned with the
  * button that opened it.
  *
- * mt-6 clears the strip — the button is 24px tall in a 56px row, so its bottom
- * edge sits 16px above the heartbeat hairline and the remaining 8px is the gap.
- * z-30 because <main> is a later sibling of the header and would otherwise
- * paint over anything that leaves the strip's box.
+ * mt-2 is the gap under the strip — the button is the full 56px of the row,
+ * so its bottom edge is the heartbeat hairline and 8px clears it. z-30 because
+ * <main> is a later sibling of the header and would otherwise paint over
+ * anything that leaves the strip's box.
  *
  * Below sm the panel is anchored to the viewport instead of the button: the
  * button sits 100–240 px from the right edge of a phone, and a 256–320 px
@@ -100,7 +104,7 @@ export function StripDisclosure({
  * is the 56 px strip, its hairline and the same 8 px gap.
  */
 export const droppedPanel =
-  "fixed top-16 right-3 z-30 sm:absolute sm:top-full sm:right-0 sm:mt-6";
+  "fixed top-16 right-3 z-30 sm:absolute sm:top-full sm:right-0 sm:mt-2";
 
 /**
  * The lowest a dropped panel may be dragged or grown to: the top of the nav

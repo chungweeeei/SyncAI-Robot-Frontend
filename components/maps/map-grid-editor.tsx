@@ -21,6 +21,7 @@ import { useMapVertices, type UseMapVertices } from "@/hooks/use-map-vertices";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import type { VertexChanges } from "@/lib/api/vertex";
 import { isTypingTarget } from "@/lib/keyboard";
+import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
 import { FREE, countValues, type GridValue, type ValueCounts } from "@/lib/map/grid";
 import {
   applyCountsDelta,
@@ -36,13 +37,6 @@ import { DEFAULT_VERTEX_TYPE } from "@/lib/map/vertex";
 import type { VertexType } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
-
-/**
- * One press of the toolbar's ± buttons. Two presses are a doubling, which
- * matches roughly a hand's width of wheel — enough to matter, few enough to
- * count back from.
- */
-const ZOOM_STEP_FACTOR = Math.SQRT2;
 const DEFAULT_BRUSH = 7;
 
 /**

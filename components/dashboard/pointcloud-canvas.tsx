@@ -12,7 +12,10 @@ import {
   DEFAULT_SPAN_M,
   TOP_DOWN_TILT,
   applyCameraMode,
+  dollyStep,
+  frameMap,
   overheadDistance,
+  type MapFrame,
 } from "@/lib/scene/camera";
 import {
   LIVE_POINT_SIZE,
@@ -78,8 +81,15 @@ const CARRY_LIFT_M = 0.35;
  * "vertex" re-places a stop that already exists, which is why the canvas needs
  * `movingVertex` alongside the mode: unlike the other two, the drag is *about*
  * a row, and the marker for it has to come off the map while it is in hand.
+ *
+ * "place" is a stop that does not exist yet. The gesture is the re-place one —
+ * the marker is carried under the bare pointer, a press plants it, a drag aims
+ * it — and the canvas hands the pose up on release exactly as for the others;
+ * what happens next (the dialog that names it, the write) is the view's. It is
+ * a mode rather than a tap because a new stop needs a heading, and only a drag
+ * gives one.
  */
-export type PickMode = "goal" | "initial-pose" | "vertex";
+export type PickMode = "goal" | "initial-pose" | "vertex" | "place";
 
 interface PointCloudCanvasProps {
   /** 2D map metadata; when omitted the cloud renders with no ground plane. */
@@ -124,9 +134,9 @@ interface PointCloudCanvasProps {
   showPath?: boolean;
   /**
    * The active map's stored vertices, drawn flat on the ground with their
-   * headings and names. Read-only here: placing and editing them belongs to the
-   * gridmap editor, and the dashboard's two ground gestures are already spoken
-   * for by the pick modes below.
+   * headings and names. The canvas only draws them: the two pick modes that
+   * change them ("vertex" and "place") hand a pose up, and the write is the
+   * view's. Renaming, retyping and deleting stay in the gridmap editor.
    */
   vertices?: MapVertex[];
   /** Hide the vertex layer without unmounting the canvas. Defaults to true. */
@@ -169,6 +179,21 @@ interface PointCloudCanvasProps {
    * option beside Move / Focus.
    */
   topDownNonce?: number;
+  /**
+   * Bumped by the view's Recenter button to put the camera back where the
+   * scene opened: the whole map, from the same oblique angle. Same shape and
+   * same reasons as `topDownNonce`. The view switches the camera mode to
+   * "move" in the same click, because focus mode re-pins the target to the
+   * robot every frame and would take the recentred view straight back.
+   */
+  recenterNonce?: number;
+  /**
+   * One zoom step, in or out, from the view's toolbar: `factor` above 1 closes
+   * in, below 1 backs off. A fresh object per press, because identity is what
+   * triggers it — pressing Zoom in twice has to zoom twice — which is the
+   * shape the gridmap editor's `zoomStep` already has. Null between presses.
+   */
+  zoomStep?: { factor: number } | null;
   /**
    * Open the streamed "map so far" WebSocket — pgo's merged, loop-closure-
    * corrected keyframe cloud, which only has a producer while a mapping
@@ -228,6 +253,8 @@ export function PointCloudCanvas({
   movingVertex = null,
   cameraMode = "move",
   topDownNonce = 0,
+  recenterNonce = 0,
+  zoomStep = null,
   mapCloudStream = false,
   onMapStatus,
   goal = null,
@@ -277,7 +304,7 @@ export function PointCloudCanvas({
      * top-down effect can frame the map without listing `meta` as a dependency —
      * which would re-frame the camera every time a map loads.
      */
-    mapFrame: { cx: number; cy: number; widthM: number; heightM: number } | null;
+    mapFrame: MapFrame | null;
     goalMarker: THREE.Group;
     initialPoseMarker: THREE.Group;
     draftMarker: THREE.Group;
@@ -491,8 +518,6 @@ export function PointCloudCanvas({
     // z-up world so ROS map coordinates (x, y, z) map straight through.
     const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 2000);
     camera.up.set(0, 0, 1);
-    const span = Math.max(widthM, heightM);
-    camera.position.set(centerX, centerY - span * 0.6, span * 0.8);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -509,7 +534,9 @@ export function PointCloudCanvas({
     // and a pinch still zooms), none from lg where nothing scrolls anyway,
     // and none while picking, since touch-action intersects up the tree.
     renderer.domElement.style.touchAction = "";
-    controls.target.set(centerX, centerY, 0);
+    // The opening view, shared with the Recenter effect below so the two
+    // cannot disagree about where "back to the start" is.
+    frameMap(camera, controls, { cx: centerX, cy: centerY, widthM, heightM });
     controls.enableDamping = true;
     // Left-button behaviour tracks the camera mode; the dedicated mode effect
     // keeps this in sync, but seed it here so a scene rebuild preserves it.
@@ -932,6 +959,35 @@ export function PointCloudCanvas({
     );
     controls.update();
   }, [topDownNonce]);
+
+  // ---- Recenter (one-shot) ----------------------------------------------
+  // The opening view again, from wherever the operator has orbited, panned or
+  // zoomed to. Declared *after* the camera-mode effect on purpose: the view
+  // sets the mode back to "move" in the same click, and effects run in
+  // declaration order, so this one has to come second to have the last word
+  // on the camera. Nonce-only deps for the same reason as top-down above: a
+  // map load or a theme toggle must not re-frame a view set by hand.
+  React.useEffect(() => {
+    if (!recenterNonce) return;
+    const ctx = sceneRef.current;
+    if (!ctx) return;
+    frameMap(
+      ctx.camera,
+      ctx.controls,
+      // With no map there is still an opening view: the fallback box around
+      // the origin the setup effect used.
+      ctx.mapFrame ?? { cx: 0, cy: 0, widthM: DEFAULT_SPAN_M, heightM: DEFAULT_SPAN_M },
+    );
+  }, [recenterNonce]);
+
+  // ---- Zoom step (one-shot) ---------------------------------------------
+  // Identity-triggered, like the gridmap editor's: a new object per press.
+  React.useEffect(() => {
+    if (!zoomStep) return;
+    const ctx = sceneRef.current;
+    if (!ctx) return;
+    dollyStep(ctx.camera, ctx.controls, zoomStep.factor);
+  }, [zoomStep]);
 
   // ---- Pick mode: hand the left button over ----------------------------
   // Separate from the effect above (which also re-frames the camera when focus

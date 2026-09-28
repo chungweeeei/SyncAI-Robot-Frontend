@@ -20,6 +20,16 @@ import type { EditMode, EditTool, VertexTool } from "@/lib/map/editor";
  */
 export const DRAG_DEADZONE_PX = 10;
 
+/**
+ * How much one press of a toolbar's Zoom in / Zoom out changes the view, on
+ * both map surfaces: the floor plan editor scales its view transform by it,
+ * the 3D viewport scales the camera's distance to its target by it. One number
+ * so a step feels the same size whichever map the operator is looking at;
+ * √2 so two presses are exactly one doubling, which is where the wheel and the
+ * pinch already land after a comfortable nudge.
+ */
+export const ZOOM_STEP_FACTOR = Math.SQRT2;
+
 /** Whether a pointer that went from one screen point to another dragged. */
 export function isDrag(fromX: number, fromY: number, toX: number, toY: number): boolean {
   return Math.hypot(toX - fromX, toY - fromY) >= DRAG_DEADZONE_PX;

@@ -65,7 +65,7 @@ export function InitialPoseControl({
             tone="caution"
           />
           <Readout
-            label="Heading"
+            label="Orientation"
             value={pose.theta.toFixed(1)}
             unit="°"
             tone="caution"
