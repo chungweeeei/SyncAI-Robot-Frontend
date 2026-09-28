@@ -20,25 +20,17 @@ import { isDrag } from "@/lib/map/gesture";
 import type { TeleopVector } from "@/lib/types/robot";
 import { cn } from "@/lib/utils";
 
-/**
- * Explicit sign, fixed 5-character width: with tabular-nums (the `readout`
- * utility) the row never reflows as values change, and "+0.00 / −0.00" makes
- * the at-rest state legible as a value rather than an empty display. U+2212
- * minus, not hyphen — same width as the plus in a tabular font.
- */
-function formatAxis(value: number): string {
-  return `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(2)}`;
-}
-
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
 /**
  * Manual drive panel: two thumbsticks (left = planar translation vx/vy — the
- * G23 can strafe — right = rotation wz) over a readout of the commanded,
- * normalized vector. Pointer and keyboard input (W/S drive, Q/E strafe, A/D
- * turn), merged in useJoystick.
+ * G23 can strafe — right = rotation wz) over the speed limit and the channel's
+ * state line. Pointer and keyboard input (W/S drive, Q/E strafe, A/D turn),
+ * merged in useJoystick. There is no readout of the commanded vector, by
+ * request: the sticks' own deflection is the read, and the numbers were
+ * three 5-char values nobody drove by.
  *
  * **Armed = sending.** While armed, TeleopFooter keeps a WS teleop channel
  * open and streams `vectorRef` at 10 Hz to the backend, which clamps, scales
@@ -75,8 +67,8 @@ function clamp(value: number, min: number, max: number): number {
  * The Max speed slider limits translation, vx and vy together, as a fraction
  * of full stick; rotation is not limited. It is the only way to drive slowly
  * from the keyboard, whose deflection is always full. The limit is applied
- * where the command is computed (lib/teleop/stick.ts), so the VX / VY
- * readouts below show the scaled number, which is the number sent. It starts
+ * where the command is computed (lib/teleop/stick.ts), so what is sent is
+ * the scaled number, not the stick's raw deflection. It starts
  * at full on every page load, so the panel drives as it always has until an
  * operator asks for slower. It is not remembered, so a lowered limit does not
  * outlive the session that chose it, and it can be set before arming.
@@ -299,25 +291,22 @@ export function ManualControl({ className }: { className?: string }) {
           {speedPercent}%
         </span>
       </div>
-      {/* Three columns rather than stacked Readout rows: Readout is a
-        * label-left/value-right line built for the rail's tall stack, and three
-        * of them would triple this panel's height for three 5-char numbers. */}
-      <div className="mt-2.5 grid grid-cols-3 border-t border-hairline pt-2 text-center">
-        <AxisReadout label="VX" value={stick.vector.vx} armed={armed} />
-        <AxisReadout label="VY" value={stick.vector.vy} armed={armed} />
-        <AxisReadout label="WZ" value={stick.vector.wz} armed={armed} />
-      </div>
       {/* Mounting TeleopFooter only while armed is what opens/closes the
         * channel AND what resets its per-session state — the mount boundary
         * replaces any setState-in-effect reset (Next 16 lint). Disarmed gets
-        * a same-height line so arming never reflows the panel. */}
-      {armed ? (
-        <TeleopFooter vectorRef={stick.vectorRef} onDrop={handleDrop} />
-      ) : (
-        <p className="mt-2 text-[11px] leading-tight text-muted-foreground">
-          Not armed — no commands are sent.
-        </p>
-      )}
+        * a same-height line so arming never reflows the panel. The hairline
+        * above it used to belong to the axis readouts; it stays, so the
+        * state line reads as the panel's footer rather than the slider's
+        * caption. */}
+      <div className="mt-2.5 border-t border-hairline">
+        {armed ? (
+          <TeleopFooter vectorRef={stick.vectorRef} onDrop={handleDrop} />
+        ) : (
+          <p className="mt-2 text-[11px] leading-tight text-muted-foreground">
+            Not armed — no commands are sent.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -378,29 +367,3 @@ function LabeledStick({
   );
 }
 
-/** One commanded axis: condensed caps label over the normalized value. Falls
- *  to the muted hue while disarmed — a cmd-cyan number on a panel that is not
- *  listening would claim a command channel that is switched off. */
-function AxisReadout({
-  label,
-  value,
-  armed,
-}: {
-  label: string;
-  value: number;
-  armed: boolean;
-}) {
-  return (
-    <div>
-      <span className="instrument-label text-muted-foreground">{label}</span>
-      <p
-        className={cn(
-          "readout text-[13px] font-medium",
-          armed ? "text-signal-cmd" : "text-muted-foreground",
-        )}
-      >
-        {formatAxis(value)}
-      </p>
-    </div>
-  );
-}

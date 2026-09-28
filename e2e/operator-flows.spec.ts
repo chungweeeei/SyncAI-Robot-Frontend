@@ -946,9 +946,11 @@ test.describe("the manual drive panel", () => {
   test("limits translation to the Max speed it shows, and never rotation", async ({
     page,
   }) => {
-    // Both halves: the slider and the readouts say one number, and the teleop
-    // frames the robot receives carry the same one. Keyboard deflection is
-    // always full, so without the limit there is no slow drive from the keys.
+    // Both halves: the slider says one number, and the teleop frames the robot
+    // receives carry the same one (the panel shows no per-axis readout, so the
+    // wire is the only place the scaled value can be read). Keyboard
+    // deflection is always full, so without the limit there is no slow drive
+    // from the keys.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page);
@@ -982,7 +984,7 @@ test.describe("the manual drive panel", () => {
     for (let step = 0; step < 5; step += 1) await page.keyboard.press("ArrowLeft");
     await expect(speed).toHaveAttribute("aria-valuetext", "50 percent of full speed");
     await expect.poll(last).toEqual({ vx: 0.5, vy: 0, wz: -1 });
-    await expect(page.getByText("+0.50", { exact: true })).toBeVisible();
+    await expect(page.getByText("50%", { exact: true })).toBeVisible();
 
     await page.keyboard.up("w");
     await page.keyboard.up("d");
