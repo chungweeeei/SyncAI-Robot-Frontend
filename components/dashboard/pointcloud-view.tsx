@@ -6,7 +6,10 @@ import { overlayPanel } from "@/components/console/instrument";
 import { GoalControl } from "@/components/dashboard/goal-control";
 import { InitialPoseControl } from "@/components/dashboard/initial-pose-control";
 import { PointCloudCanvas } from "@/components/dashboard/pointcloud-canvas";
-import { VertexCreateDialog } from "@/components/dashboard/vertex-create-dialog";
+import {
+  VertexCreateDialog,
+  type Placement,
+} from "@/components/dashboard/vertex-create-dialog";
 import { VertexMoveDialog } from "@/components/dashboard/vertex-move-dialog";
 import { VertexPlaceControl } from "@/components/dashboard/vertex-place-control";
 import {
@@ -19,6 +22,7 @@ import { useGoalTask } from "@/hooks/use-goal-task";
 import { useInitialPose } from "@/hooks/use-initial-pose";
 import { useMapPointCloud } from "@/hooks/use-map-point-cloud";
 import { useActiveMap } from "@/hooks/use-maps";
+import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import { apiUrl } from "@/lib/api/config";
 import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
@@ -129,9 +133,16 @@ export function PointCloudView({
    * The pose an Add waypoint drag produced, waiting for a name; null when the
    * dialog is closed. Held here and not written yet: the row is created when
    * the dialog's Create is pressed, so a placement that turns out wrong costs
-   * a Cancel and nothing else.
+   * a Cancel and nothing else. The key counts placements, so the dialog can
+   * tell a new stop (fresh form) from the same stop moved onto the robot.
    */
-  const [placedPose, setPlacedPose] = React.useState<PlanarPose | null>(null);
+  const [placement, setPlacement] = React.useState<Placement | null>(null);
+  const placementSeq = React.useRef(0);
+  // The robot's pose *on this map*, with the reason when there is none — the
+  // same hook and the same sentences as the editor's Use robot position.
+  const { pose: robotPose, reason: robotPoseReason } = useRobotMapPose(
+    activeMap?.name ?? "",
+  );
   /**
    * A stop whose new pose is being written. It keeps the marker off the map for
    * the length of the request: dropping it at release would put the old mark
@@ -183,7 +194,7 @@ export function PointCloudView({
       if (pick?.mode === "initial-pose") {
         commitPose(picked);
       } else if (pick?.mode === "place") {
-        setPlacedPose(picked);
+        setPlacement({ key: ++placementSeq.current, pose: picked });
       } else if (pick?.mode === "vertex") {
         const target = pick.vertex;
         setSavingVertex(target);
@@ -221,17 +232,25 @@ export function PointCloudView({
   // same list the layer reads, so nothing here has to add one.
   const createPlaced = React.useCallback(
     (name: string, type: VertexType) => {
-      if (!placedPose) return;
-      void createVertex({ name, type, ...placedPose }).then((created) => {
-        if (created) setPlacedPose(null);
+      if (!placement) return;
+      void createVertex({ name, type, ...placement.pose }).then((created) => {
+        if (created) setPlacement(null);
       });
     },
-    [placedPose, createVertex],
+    [placement, createVertex],
   );
+
+  // A snapshot, not a live binding, for the reason the editor's placeAtRobot
+  // gives: a pose that crept across the map while its name was being typed
+  // would be a stop nobody placed. Same key, so the typed name survives.
+  const useRobotPose = React.useCallback(() => {
+    if (!robotPose) return;
+    setPlacement((cur) => (cur ? { ...cur, pose: robotPose } : cur));
+  }, [robotPose]);
 
   const { clearWriteError } = stops;
   const closeCreate = React.useCallback(() => {
-    setPlacedPose(null);
+    setPlacement(null);
     // A refusal belongs to the attempt it answered; the next placement starts
     // clean, and VertexPlaceControl must not show it over the map either.
     clearWriteError();
@@ -301,9 +320,12 @@ export function PointCloudView({
       />
 
       <VertexCreateDialog
-        pose={placedPose}
+        placement={placement}
+        robotPose={robotPose}
+        robotPoseReason={robotPoseReason}
         busy={stops.busy}
         error={stops.writeError}
+        onUseRobotPose={useRobotPose}
         onCreate={createPlaced}
         onClose={closeCreate}
       />
@@ -373,9 +395,9 @@ export function PointCloudView({
           {pick?.mode === "initial-pose" && (
             <ArmedHint tone="caution">Press the map, then drag to aim</ArmedHint>
           )}
-          {pick?.mode === "place" && (
-            <ArmedHint tone="cmd">Press the map to place, drag to aim, release to name it</ArmedHint>
-          )}
+          {/* No hint for Add waypoint, by request: the lit button and the
+            * marker carried under the pointer already say what is going on,
+            * and the dialog that follows the release carries the rest. */}
           <GoalControl task={task} className="pointer-events-auto" />
           <InitialPoseControl estimate={estimate} className="pointer-events-auto" />
           {/* Only while it is live: a re-place is entered from the map, not
@@ -387,8 +409,8 @@ export function PointCloudView({
             vertex={pick?.mode === "vertex" ? pick.vertex : null}
             // The hook reports one busy flag and one sentence for both writes;
             // while the naming dialog is up they are its, and it shows them.
-            busy={placedPose ? false : stops.busy}
-            error={placedPose ? null : stops.writeError}
+            busy={placement ? false : stops.busy}
+            error={placement ? null : stops.writeError}
             onCancel={() => setPick(null)}
             onDismissError={stops.clearWriteError}
           />

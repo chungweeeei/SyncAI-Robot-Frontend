@@ -176,9 +176,9 @@ test.describe("the console shell", () => {
     await place.click();
     await expect(place).toHaveAttribute("aria-pressed", "true");
     await expect(goal).toHaveAttribute("aria-pressed", "false");
-    await expect(
-      page.getByRole("status").filter({ hasText: "release to name it" }),
-    ).toBeVisible();
+    // Add waypoint carries no hint under the strips: the lit button and the
+    // marker under the pointer are the whole read-back until the dialog.
+    await expect(page.getByRole("status").filter({ hasText: "drag to aim" })).toHaveCount(0);
 
     await goal.click();
     await expect(place).toHaveAttribute("aria-pressed", "false");

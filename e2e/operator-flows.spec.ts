@@ -312,10 +312,9 @@ test.describe("adding a waypoint from the dashboard", () => {
   const placeOnMap = async (page: Page) => {
     const region = page.getByRole("region", { name: "Map viewport" });
     await expect(region).toBeVisible();
-    await page.getByRole("button", { name: "Add waypoint" }).click();
-    await expect(
-      page.getByRole("status").filter({ hasText: "release to name it" }),
-    ).toBeVisible();
+    const place = page.getByRole("button", { name: "Add waypoint" });
+    await place.click();
+    await expect(place).toHaveAttribute("aria-pressed", "true");
     const box = (await region.boundingBox())!;
     const x = box.x + box.width / 2;
     const y = box.y + box.height * 0.6;
@@ -334,7 +333,7 @@ test.describe("adding a waypoint from the dashboard", () => {
     await page.goto("/");
 
     await placeOnMap(page);
-    const dialog = page.getByRole("alertdialog", { name: "New waypoint" });
+    const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
     await expect(dialog).toBeVisible();
     // Nothing has been written yet: the release only asks the question.
     expect(writes.filter((w) => w.path === verticesPath)).toEqual([]);
@@ -342,7 +341,8 @@ test.describe("adding a waypoint from the dashboard", () => {
     const create = dialog.getByRole("button", { name: "Create" });
     await expect(create).toBeDisabled();
     await dialog.getByLabel("Name").fill("shelf-b");
-    await dialog.getByRole("group", { name: "Type" }).getByRole("button", { name: "Wait" }).click();
+    await dialog.getByRole("combobox", { name: "Type" }).click();
+    await page.getByRole("option", { name: /^Wait/ }).click();
     await create.click();
 
     await expect
@@ -369,6 +369,37 @@ test.describe("adding a waypoint from the dashboard", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
+  test("takes the robot's own position instead, and keeps the typed name", async ({
+    page,
+  }) => {
+    // The stop you mark by driving to it: the fake's robot stands at
+    // (1.25, -3.5, 90°) on the active map, and the button swaps the placed
+    // pose for that one without throwing away the name already typed.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page);
+    await page.goto("/");
+
+    await placeOnMap(page);
+    const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
+    await dialog.getByLabel("Name").fill("where-it-stands");
+    await dialog.getByRole("button", { name: "Use robot position" }).click();
+    await expect(dialog.getByLabel("Name")).toHaveValue("where-it-stands");
+    await dialog.getByRole("button", { name: "Create" }).click();
+
+    await expect
+      .poll(() => writes.filter((w) => w.path === verticesPath))
+      .toHaveLength(1);
+    const body = writes.find((w) => w.path === verticesPath)!.body as {
+      name: string;
+      x: number;
+      y: number;
+      theta: number;
+    }[];
+    expect(body[0]).toMatchObject({ name: "where-it-stands", x: 1.25, y: -3.5, theta: 90 });
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
   test("writes nothing when the name is cancelled", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
@@ -376,7 +407,7 @@ test.describe("adding a waypoint from the dashboard", () => {
     await page.goto("/");
 
     await placeOnMap(page);
-    const dialog = page.getByRole("alertdialog", { name: "New waypoint" });
+    const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
     await expect(dialog).toBeVisible();
     await dialog.getByLabel("Name").fill("oops");
     await dialog.getByRole("button", { name: "Cancel" }).click();
@@ -401,7 +432,7 @@ test.describe("adding a waypoint from the dashboard", () => {
     await page.goto("/");
 
     await placeOnMap(page);
-    const dialog = page.getByRole("alertdialog", { name: "New waypoint" });
+    const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
     await dialog.getByLabel("Name").fill("dock");
     await dialog.getByRole("button", { name: "Create" }).click();
 
