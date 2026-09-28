@@ -5,12 +5,7 @@ import { RecordingDeleteControl } from "@/components/recordings/recording-delete
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRecordings } from "@/hooks/use-recordings";
 import type { RecordingSummary } from "@/lib/api/recording";
-import {
-  formatCount,
-  formatDuration,
-  formatSize,
-  formatTimestamp,
-} from "@/lib/recording/format";
+import { formatSize, formatTimestamp } from "@/lib/recording/format";
 
 /** Same panel shape /maps and /settings use when there is nothing to list. */
 function Notice({
@@ -42,6 +37,9 @@ function StatusChip({ recording }: { recording: RecordingSummary }) {
   }
   if (recording.status === "interrupted") {
     return (
+      // The chip is all an interrupted row says now: the paragraph under it
+      // (cut short by a restart, needs repairing, contact support) was
+      // removed by request, so the hover title carries the one fact left.
       <Chip tone="caution" title="This recording did not close cleanly.">
         No index
       </Chip>
@@ -65,17 +63,6 @@ function EmptyWarning({ recording }: { recording: RecordingSummary }) {
     <p className="mt-1 text-[11px] leading-snug text-signal-caution">
       This recording is empty — the channels it was set to record sent nothing
       while it ran.
-    </p>
-  );
-}
-
-function InterruptedHint({ recording }: { recording: RecordingSummary }) {
-  if (recording.status !== "interrupted") return null;
-  return (
-    <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-      This recording was cut short — restarting the robot mid-recording does
-      that. The data is safe on the robot but needs repairing before it can be
-      used; contact support if you need this one.
     </p>
   );
 }
@@ -109,8 +96,8 @@ function RecordingRow({ recording }: { recording: RecordingSummary }) {
   const live = recording.status === "recording";
 
   return (
-    // Stacked below sm: Length, Messages and Size beside the name left it
-    // ~60 px at 375, which is an ellipsis.
+    // Stacked below sm: the numbers beside the name left it ~60 px at 375,
+    // which is an ellipsis.
     <li className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:gap-3">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
@@ -143,30 +130,13 @@ function RecordingRow({ recording }: { recording: RecordingSummary }) {
         </p>
 
         <EmptyWarning recording={recording} />
-        <InterruptedHint recording={recording} />
         <LiveHint recording={recording} />
       </div>
 
-      {/* Duration and messages come from the bag's own metadata, so a live or
-        * interrupted bag has neither — an em dash rather than a zero, which
-        * would be a claim. */}
+      {/* Size only. Length and message count sat beside it and were dropped
+        * by request; the message count still drives the empty warning above,
+        * which is the one thing it was needed for on this screen. */}
       <div className="flex shrink-0 items-start justify-between gap-4 sm:justify-start">
-        <Cell
-          label="Length"
-          value={
-            recording.duration_seconds === null
-              ? "—"
-              : formatDuration(recording.duration_seconds)
-          }
-        />
-        <Cell
-          label="Messages"
-          value={
-            recording.message_count === null
-              ? "—"
-              : formatCount(recording.message_count)
-          }
-        />
         <Cell label="Size" value={formatSize(recording.size_bytes)} />
         <RecordingDeleteControl recording={recording} />
       </div>
@@ -195,7 +165,7 @@ function LoadingList() {
  * which is the order they are looked for.
  *
  * A row list rather than the map library's card grid: a bag has no picture, and
- * four numbers per entry read as columns. The live recording stays in the list
+ * its size reads as a column. The live recording stays in the list
  * with its own chip instead of being filtered out; the panel above says what it
  * is doing, and a row that vanished while recording and reappeared on stop
  * would be the one moment the list looked wrong.
