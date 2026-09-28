@@ -18,9 +18,11 @@ import { cn } from "@/lib/utils";
  * same wherever an operator meets them — the way lib/map/gesture.ts already
  * makes a drag mean the same thing on both.
  *
- * Nothing here is icon-only. Each button carries its name as its accessible
- * name and in a tooltip beside what a press will do; under a finger, which
- * never hovers, the name is printed under the icon instead.
+ * Nothing here is icon-only to a mouse or a screen reader. Each button
+ * carries its name as its accessible name and in a tooltip beside what a
+ * press will do; under a finger, which never hovers, the name is printed under
+ * the icon instead — unless the strip is `compact`, which trades that label
+ * for a strip that fits on one row of a phone (see ToolStrip).
  */
 
 export type ToolTone = "cmd" | "caution";
@@ -41,26 +43,42 @@ const PRESSED: Record<ToolTone, string> = {
   caution: "border-signal-caution/50 bg-signal-caution/12 text-signal-caution",
 };
 
-/** The strip itself: a named `toolbar` on the overlay panel ground. */
+/** Whether the strip's buttons drop their printed label under a finger. */
+const CompactContext = React.createContext(false);
+
+/**
+ * The strip itself: a named `toolbar` on the overlay panel ground.
+ *
+ * `compact` is for a strip that has to fit on a phone in one row. Under a
+ * coarse pointer its buttons are 32 px icons with no label under them, by
+ * request: the dashboard's nine viewport tools, labelled and 40 px wide,
+ * wrapped to two rows over a 390 px viewport and hid a third of the scene. It
+ * gives up the house 40 px target and the finger's only reading of each
+ * name, so it is an opt-in per strip rather than the default.
+ */
 export function ToolStrip({
   label,
+  compact = false,
   className,
   children,
 }: {
   label: string;
+  compact?: boolean;
   className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <TooltipProvider delay={200}>
-      <div
-        role="toolbar"
-        aria-label={label}
-        className={cn(overlayPanel, "flex flex-wrap items-center gap-1 p-1", className)}
-      >
-        {children}
-      </div>
-    </TooltipProvider>
+    <CompactContext.Provider value={compact}>
+      <TooltipProvider delay={200}>
+        <div
+          role="toolbar"
+          aria-label={label}
+          className={cn(overlayPanel, "flex flex-wrap items-center gap-1 p-1", className)}
+        >
+          {children}
+        </div>
+      </TooltipProvider>
+    </CompactContext.Provider>
   );
 }
 
@@ -107,6 +125,7 @@ export function ToolButton({
   disabled?: boolean;
   onClick: () => void;
 }) {
+  const compact = React.useContext(CompactContext);
   return (
     <Tooltip>
       <TooltipTrigger
@@ -120,7 +139,9 @@ export function ToolButton({
             onClick={onClick}
             className={cn(
               "flex size-7 items-center justify-center rounded-sm border transition-colors disabled:opacity-40",
-              "pointer-coarse:h-10 pointer-coarse:w-auto pointer-coarse:min-w-10 pointer-coarse:flex-col pointer-coarse:gap-0.5 pointer-coarse:px-1",
+              compact
+                ? "pointer-coarse:size-8"
+                : "pointer-coarse:h-10 pointer-coarse:w-auto pointer-coarse:min-w-10 pointer-coarse:flex-col pointer-coarse:gap-0.5 pointer-coarse:px-1",
               pressed
                 ? PRESSED[tone]
                 : "border-transparent text-muted-foreground hover:bg-elevated hover:text-foreground disabled:hover:bg-transparent",
@@ -131,9 +152,11 @@ export function ToolButton({
         <Icon aria-hidden className={cn("size-4", busy && "animate-pulse")} />
         {/* A finger never hovers, so it never reads the tooltip; under a
           * coarse pointer the button is 40 px tall and has room to say it. */}
-        <span className="instrument-label hidden text-[9px] leading-none pointer-coarse:block">
-          {label}
-        </span>
+        {!compact && (
+          <span className="instrument-label hidden text-[9px] leading-none pointer-coarse:block">
+            {label}
+          </span>
+        )}
       </TooltipTrigger>
       {/* Hidden under a coarse pointer: the label is already printed on the
         * button, and a tap would otherwise leave a tooltip standing over the

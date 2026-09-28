@@ -489,7 +489,9 @@ it is run in, so it does not belong to any one of them.
   screen beside it, not in a new `localStorage` call.
 - **Phone layouts are CSS, not JS.** Anything that changes with the screen
   uses Tailwind's width breakpoints and its `pointer-coarse:` variant (a
-  40 px target under a finger, a 24 px one under a mouse); there is no
+  40 px target under a finger, a 24 px one under a mouse — the dashboard's
+  two `compact` tool strips are the one opt-out, 32 px icons with no label so
+  nine tools fit one row of a phone); there is no
   `useIsMobile` hook and there should not be one, because a class-only rule
   cannot disagree with the server render the way a `matchMedia` read in an
   effect does. The two floating panels are the exception that proves it:
