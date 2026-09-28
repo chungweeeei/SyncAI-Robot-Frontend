@@ -23,22 +23,25 @@ export default function RecordingsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-4xl px-4 py-4 sm:py-8">
+      {/* /maps' width, so walking between the two libraries does not move
+        * the header. */}
+      <div className="mx-auto w-full max-w-5xl px-4 py-4 sm:py-8">
         <header className="mb-6">
           <h1 className="text-xl font-semibold tracking-tight">
             Recordings
           </h1>
+          {/* Kept short, like /maps. What it used to spell out — a mapping
+            * run lives only in the robot's memory until it is saved, so a
+            * recording is the one way to rebuild a lost one — is why the
+            * link points there. */}
           <p className="mt-1 text-sm text-muted-foreground">
             Sensor recordings from{" "}
-            <span className="readout">{state?.robot_id ?? "this robot"}</span>,
-            kept until you delete them. A recording is a safety net rather than
-            something to play back here. The run worth recording is a{" "}
+            <span className="readout">{state?.robot_id ?? "this robot"}</span>.
+            Record a{" "}
             <Link href="/mapping" className="underline underline-offset-2">
               mapping run
-            </Link>
-            : until a new map is saved it exists only in the robot&apos;s
-            memory, and a recording is the only way to rebuild one that was
-            lost.
+            </Link>{" "}
+            so a lost map can be rebuilt.
           </p>
         </header>
 
