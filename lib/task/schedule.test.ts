@@ -13,6 +13,7 @@ import {
   fromCron,
   nextScheduleRefetchMs,
   nextTimedRun,
+  scheduleChipSummary,
   scheduleDrift,
   toCron,
   upcomingRun,
@@ -351,5 +352,46 @@ describe("scheduleDrift", () => {
   it("is not comparable when a template step has nothing to dispatch", () => {
     const unresolved: TemplateStep = { ...moveT("1", 0, 0, 0), resolved_params: null };
     expect(scheduleDrift([move("1", 0, 0, 0)], [unresolved])).toBeNull();
+  });
+});
+
+describe("scheduleChipSummary", () => {
+  const entry = (over: Partial<ScheduleState> = {}): ScheduleState => ({
+    id: "s",
+    trigger: { interval_seconds: 1800 },
+    paused: false,
+    next_run_times: [],
+    ...over,
+  });
+
+  it("says nothing for a job with no schedules", () => {
+    expect(scheduleChipSummary([])).toBeNull();
+  });
+
+  it("keeps a lone schedule's trigger, paused or not", () => {
+    // "paused" alone used to hide when it would have run.
+    expect(scheduleChipSummary([entry()])).toEqual({
+      label: "every 30 min",
+      tone: "active",
+    });
+    expect(scheduleChipSummary([entry({ paused: true })])).toEqual({
+      label: "every 30 min · paused",
+      tone: "caution",
+    });
+  });
+
+  it("counts the paused ones instead of reading green over them", () => {
+    const armed = entry();
+    const paused = entry({ paused: true });
+    expect(scheduleChipSummary([armed, armed, armed])?.label).toBe("3 schedules");
+    expect(scheduleChipSummary([armed, paused, paused])).toEqual({
+      label: "3 schedules · 2 paused",
+      // One of them still runs, so the job still runs on its own.
+      tone: "active",
+    });
+    expect(scheduleChipSummary([paused, paused])).toEqual({
+      label: "2 schedules · all paused",
+      tone: "caution",
+    });
   });
 });

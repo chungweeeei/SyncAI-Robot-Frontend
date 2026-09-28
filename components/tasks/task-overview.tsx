@@ -87,6 +87,33 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
     router.push("/tasks/editor");
   };
 
+  /**
+   * The saved job whose schedules are lit in the list, after its clock chip
+   * was pressed; null otherwise. A flash rather than a selection: it answers
+   * "which of these are that job's" once, and a highlight that stayed would
+   * be one more state for the list to explain.
+   */
+  const [highlighted, setHighlighted] = React.useState<string | null>(null);
+  const scheduleFrame = React.useRef<HTMLDivElement>(null);
+  const highlightTimer = React.useRef<number | undefined>(undefined);
+  React.useEffect(() => () => window.clearTimeout(highlightTimer.current), []);
+
+  const showSchedules = (template: TaskTemplate) => {
+    setHighlighted(template.id);
+    window.clearTimeout(highlightTimer.current);
+    highlightTimer.current = window.setTimeout(() => setHighlighted(null), 2500);
+    // Scrolled and focused here, in the handler: the rows are already on
+    // screen, so there is no render to wait for. Focus goes to the first row
+    // so a keyboard or screen reader lands where the eye was sent.
+    const first = scheduleFrame.current?.querySelector<HTMLElement>(
+      `[data-template-id="${CSS.escape(template.id)}"]`,
+    );
+    if (!first) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    first.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
+    first.focus({ preventScroll: true });
+  };
+
   const dispatchTemplate = (template: TaskTemplate) => {
     setDispatchedFrom(template.id);
     // Deliberately does NOT load the template into the editor: that would
@@ -148,6 +175,7 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
             // the only place a timed/interval form exists. Loading the template
             // first is what makes that pane describe the thing being scheduled.
             onSchedule={(template) => openInEditor(template, "schedule")}
+            onShowSchedules={showSchedules}
             onDelete={(template) => {
               // A confirm rather than an undo: there is no local history to step
               // back over. Same stance as the vertex panel and the schedule list.
@@ -176,34 +204,38 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
        * from the saved jobs: one is what could run, the other what will run on
        * its own. Always shown, so an empty list says so rather than leaving
        * the operator to wonder whether anything is registered. */}
-      <div className="mb-4 overflow-hidden rounded-md border border-hairline bg-panel">
-          <InstrumentGroup
-            label="Registered schedules"
-            action={
-              <button
-                type="button"
-                aria-label="Refresh schedules"
-                title="Refresh schedules"
-                disabled={schedules.busy}
-                onClick={schedules.refresh}
-                className="flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-40"
-              >
-                <RefreshCwIcon className="size-3.5" aria-hidden />
-              </button>
-            }
-          >
-            <ScheduleList
-              schedules={schedules.schedules}
-              readAtMs={schedules.readAtMs}
-              templates={library.templates}
-              status={schedules.status}
-              busy={schedules.busy}
-              onPause={schedules.pause}
-              onResume={schedules.resume}
-              onDelete={schedules.remove}
-            />
-          </InstrumentGroup>
-        </div>
+      <div
+        ref={scheduleFrame}
+        className="mb-4 overflow-hidden rounded-md border border-hairline bg-panel"
+      >
+        <InstrumentGroup
+          label="Registered schedules"
+          action={
+            <button
+              type="button"
+              aria-label="Refresh schedules"
+              title="Refresh schedules"
+              disabled={schedules.busy}
+              onClick={schedules.refresh}
+              className="flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-40"
+            >
+              <RefreshCwIcon className="size-3.5" aria-hidden />
+            </button>
+          }
+        >
+          <ScheduleList
+            schedules={schedules.schedules}
+            readAtMs={schedules.readAtMs}
+            templates={library.templates}
+            status={schedules.status}
+            busy={schedules.busy}
+            onPause={schedules.pause}
+            onResume={schedules.resume}
+            onDelete={schedules.remove}
+            highlightTemplateId={highlighted}
+          />
+        </InstrumentGroup>
+      </div>
     </>
   );
 }

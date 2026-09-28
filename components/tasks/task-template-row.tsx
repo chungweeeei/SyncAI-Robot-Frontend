@@ -17,7 +17,7 @@ import { IconButton } from "@/components/tasks/icon-button";
 import type { ScheduleState } from "@/lib/api/schedule";
 import type { TemplateStep, TaskTemplate } from "@/lib/api/task-template";
 import type { TaskStepState } from "@/lib/api/task";
-import { describeTrigger } from "@/lib/task/schedule";
+import { describeTrigger, scheduleChipSummary } from "@/lib/task/schedule";
 import { stepGlyph } from "@/lib/task/step";
 
 export interface TaskTemplateRowProps {
@@ -42,6 +42,8 @@ export interface TaskTemplateRowProps {
   onLoad: () => void;
   onSchedule: () => void;
   onDelete: () => void;
+  /** Point at this row's schedules in the Registered schedules list. */
+  onShowSchedules: () => void;
 }
 
 /**
@@ -65,38 +67,26 @@ export function TaskTemplateRow({
   onLoad,
   onSchedule,
   onDelete,
+  onShowSchedules,
 }: TaskTemplateRowProps) {
   const [open, setOpen] = React.useState(false);
 
   /**
-   * One chip for however many schedules point at this template.
+   * One chip for however many schedules point at this template, worded by
+   * `scheduleChipSummary` (which has why paused ones are counted).
    *
-   * A single schedule spells its trigger out, because that is the fact the
-   * operator is actually after — "every 30 min" answers "will this run on its
-   * own, and when" in one read. Two or more collapse to a count: a row is not
-   * the place to list them, and the Registered schedules frame sits directly
-   * under this library.
-   *
-   * Paused counts as scheduled but not as armed, so an all-paused row goes
-   * caution — the same tone the wrong-map chip uses for "registered, but it will
-   * not do what the label implies".
+   * A row is not the place to list them, and the Registered schedules frame
+   * sits directly under this library — so the chip is a button that takes the
+   * operator there and lights this job's rows. The hover title still lists
+   * them for a mouse; the button is what a finger gets.
    */
-  const schedule =
-    schedules.length === 0
-      ? null
-      : {
-          label:
-            schedules.length === 1
-              ? describeTrigger(schedules[0].trigger)
-              : `${schedules.length} schedules`,
-          paused: schedules.every((entry) => entry.paused),
-          title: schedules
-            .map(
-              (entry) =>
-                `${entry.id}: ${describeTrigger(entry.trigger)}${entry.paused ? " (paused)" : ""}`,
-            )
-            .join("\n"),
-        };
+  const schedule = scheduleChipSummary(schedules);
+  const scheduleTitle = schedules
+    .map(
+      (entry) =>
+        `${entry.id}: ${describeTrigger(entry.trigger)}${entry.paused ? " (paused)" : ""}`,
+    )
+    .join("\n");
 
   // The one hard gate in this feature. A task whose coordinates are in another
   // map's frame points somewhere else entirely in the loaded map, so it cannot be
@@ -137,14 +127,18 @@ export function TaskTemplateRow({
         {/* Before the map chip: whether the robot runs this by itself outranks
           * which map it is in. */}
         {schedule && (
-          <Chip
-            tone={schedule.paused ? "caution" : "active"}
-            title={schedule.title}
-            className="gap-1"
+          <button
+            type="button"
+            onClick={onShowSchedules}
+            aria-label={`Show the schedules for "${template.name}": ${schedule.label}`}
+            title={scheduleTitle}
+            className="shrink-0 rounded-sm transition-opacity hover:opacity-80 pointer-coarse:min-h-10"
           >
-            <ClockIcon className="size-3" aria-hidden />
-            {schedule.paused ? "paused" : schedule.label}
-          </Chip>
+            <Chip tone={schedule.tone} className="gap-1">
+              <ClockIcon className="size-3" aria-hidden />
+              {schedule.label}
+            </Chip>
+          </button>
         )}
         {template.map_name && (
           <Chip tone={wrongMap ? "caution" : "neutral"}>{template.map_name}</Chip>

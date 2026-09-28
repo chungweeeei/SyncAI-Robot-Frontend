@@ -45,6 +45,7 @@ export interface TaskLibraryProps {
   onLoad: (template: TaskTemplate) => void;
   onSchedule: (template: TaskTemplate) => void;
   onDelete: (template: TaskTemplate) => void;
+  onShowSchedules: (template: TaskTemplate) => void;
 }
 
 /**
@@ -71,6 +72,7 @@ export function TaskLibrary({
   onLoad,
   onSchedule,
   onDelete,
+  onShowSchedules,
 }: TaskLibraryProps) {
   const scheduledBy = React.useMemo(
     () => schedulesByTemplate(schedules),
@@ -120,6 +122,7 @@ export function TaskLibrary({
               onLoad={() => onLoad(template)}
               onSchedule={() => onSchedule(template)}
               onDelete={() => onDelete(template)}
+              onShowSchedules={() => onShowSchedules(template)}
             />
           ))}
         </ul>

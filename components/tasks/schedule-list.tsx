@@ -25,6 +25,7 @@ import {
   upcomingRun,
 } from "@/lib/task/schedule";
 import type { TaskTemplate } from "@/lib/api/task-template";
+import { cn } from "@/lib/utils";
 
 export interface ScheduleListProps {
   schedules: ScheduleState[];
@@ -37,6 +38,8 @@ export interface ScheduleListProps {
   onPause: (id: string) => void;
   onResume: (id: string) => void;
   onDelete: (id: string) => void;
+  /** The saved job whose schedules to light, from its row's clock chip. */
+  highlightTemplateId?: string | null;
 }
 
 export function ScheduleList({
@@ -48,6 +51,7 @@ export function ScheduleList({
   onPause,
   onResume,
   onDelete,
+  highlightTemplateId = null,
 }: ScheduleListProps) {
   if (status === "loading") {
     return (
@@ -87,6 +91,10 @@ export function ScheduleList({
           onPause={onPause}
           onResume={onResume}
           onDelete={onDelete}
+          highlighted={
+            highlightTemplateId !== null &&
+            schedule.task_template_id === highlightTemplateId
+          }
         />
       ))}
     </ul>
@@ -107,6 +115,7 @@ function ScheduleRow({
   onPause,
   onResume,
   onDelete,
+  highlighted,
 }: {
   schedule: ScheduleState;
   templates: TaskTemplate[];
@@ -115,6 +124,7 @@ function ScheduleRow({
   onPause: (id: string) => void;
   onResume: (id: string) => void;
   onDelete: (id: string) => void;
+  highlighted: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
   const timezone = useBrowserTimeZone();
@@ -151,7 +161,19 @@ function ScheduleRow({
     templates.find((template) => template.id === schedule.task_template_id) ?? null;
 
   return (
-    <li className="rounded-sm border border-hairline bg-elevated/40 px-2 py-2">
+    <li
+      // The anchor a saved job's clock chip scrolls to and focuses; -1 so the
+      // row takes focus from script without becoming a tab stop of its own.
+      data-template-id={schedule.task_template_id ?? undefined}
+      tabIndex={-1}
+      data-highlighted={highlighted || undefined}
+      className={cn(
+        "rounded-sm border px-2 py-2 transition-colors duration-500 outline-none",
+        highlighted
+          ? "border-signal-cmd/60 bg-signal-cmd/10"
+          : "border-hairline bg-elevated/40",
+      )}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
