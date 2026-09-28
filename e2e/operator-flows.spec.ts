@@ -1107,6 +1107,18 @@ test.describe("the floor plan editor's draw bar", () => {
     await expect.poll(() => toolNames(page)).toEqual(["Pan", "Place", "Select"]);
     await expect(page.getByRole("combobox", { name: "Waypoint type" })).toBeVisible();
 
+    // The list is shut by default, with the count on its header, and the
+    // filter narrows it by name.
+    const listToggle = page.getByRole("button", { name: /^Waypoints/ });
+    await expect(listToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("button", { name: /dock/ })).toHaveCount(0);
+    await listToggle.click();
+    const filter = page.getByRole("searchbox", { name: "Filter waypoints" });
+    await filter.fill("nothing-like-it");
+    await expect(page.getByText("No waypoint matches.")).toBeVisible();
+    await filter.fill("DOCK");
+    await expect(page.getByRole("button", { name: /dock/ })).toBeVisible();
+
     // Going back to Pan drops a selected waypoint: pick one from the list with
     // Select armed, press Pan, and the panel is back to its list.
     await drawBar(page).getByRole("button", { name: "Select" }).click();

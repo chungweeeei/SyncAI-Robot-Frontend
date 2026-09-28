@@ -210,7 +210,7 @@ test.describe("the console on a phone", () => {
     await expect(page.getByRole("toolbar", { name: "Draw" })).toBeVisible();
 
     const save = await page.getByRole("button", { name: "Save" }).boundingBox();
-    // .last(): the Mode row's "Waypoints" segment comes first in the DOM.
+    // .last(): the list header is the last "Waypoints" on the page.
     const waypoints = await page.getByText("Waypoints", { exact: true }).last().boundingBox();
     await expectOnScreen(page, "Save", save);
     await expectOnScreen(page, "the waypoint panel's heading", waypoints);

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { LocateFixedIcon, Trash2Icon } from "lucide-react";
+import { ChevronDownIcon, LocateFixedIcon, SearchIcon, Trash2Icon } from "lucide-react";
 
 import { Chip, Readout, overlayPanel } from "@/components/console/instrument";
 import { Input } from "@/components/ui/input";
@@ -86,17 +86,52 @@ export interface VertexPanelProps {
 export function VertexPanel(props: VertexPanelProps) {
   const { vertices, status, error, draft, selected, selectedIds, className } = props;
   const band = selectedIds.length > 1;
+  /**
+   * Whether the list of waypoints is open. Shut by default, by request: a map
+   * can carry dozens of stops, and a list that long would cover the right of
+   * the canvas in the one mode where the canvas is what is being edited. The
+   * header keeps the count, so a shut list still says how many there are.
+   * Held here, so it survives a stop being opened and closed again.
+   */
+  const [listOpen, setListOpen] = React.useState(false);
+  const listView = !draft && !band && !selected;
+  const listId = React.useId();
+
+  const count =
+    status === "loading" ? (
+      <Chip>Loading</Chip>
+    ) : (
+      <Chip tone={vertices.length ? "neutral" : "caution"}>{vertices.length}</Chip>
+    );
 
   return (
     <div className={cn(overlayPanel, "flex w-60 flex-col gap-2 p-2.5", className)}>
-      <div className="flex h-4 items-center justify-between gap-2">
-        <span className="instrument-label text-muted-foreground">Waypoints</span>
-        {status === "loading" ? (
-          <Chip>Loading</Chip>
-        ) : (
-          <Chip tone={vertices.length ? "neutral" : "caution"}>{vertices.length}</Chip>
-        )}
-      </div>
+      {listView && vertices.length > 0 ? (
+        <button
+          type="button"
+          aria-expanded={listOpen}
+          aria-controls={listId}
+          onClick={() => setListOpen((open) => !open)}
+          className="-mx-1 flex h-5 items-center justify-between gap-2 rounded-sm px-1 transition-colors pointer-coarse:min-h-10 hover:bg-elevated"
+        >
+          <span className="instrument-label text-muted-foreground">Waypoints</span>
+          <span className="flex items-center gap-1">
+            {count}
+            <ChevronDownIcon
+              aria-hidden
+              className={cn(
+                "size-3.5 text-muted-foreground transition-transform",
+                listOpen && "rotate-180",
+              )}
+            />
+          </span>
+        </button>
+      ) : (
+        <div className="flex h-4 items-center justify-between gap-2">
+          <span className="instrument-label text-muted-foreground">Waypoints</span>
+          {count}
+        </div>
+      )}
 
       {error && (
         <p role="alert" className="text-[11px] leading-snug break-words text-signal-warn">
@@ -217,12 +252,24 @@ export function VertexPanel(props: VertexPanelProps) {
             )}
           </div>
 
-          <VertexList
-            vertices={vertices}
-            selectedIds={selectedIds}
-            onSelect={props.onSelect}
-            empty={status === "ok" ? "No waypoints on this map yet." : null}
-          />
+          {vertices.length === 0 ? (
+            status === "ok" && (
+              <p className="text-[11px] leading-tight text-muted-foreground">
+                No waypoints on this map yet.
+              </p>
+            )
+          ) : (
+            listOpen && (
+              <div id={listId}>
+                <VertexList
+                  vertices={vertices}
+                  selectedIds={selectedIds}
+                  onSelect={props.onSelect}
+                  empty={null}
+                />
+              </div>
+            )
+          )}
 
           {/* No how-to line here any more, by request. The tool buttons carry
             * their own names and what a press does in their tooltips, and a
@@ -321,41 +368,72 @@ function VertexList({
   onSelect: (id: string) => void;
   empty: string | null;
 }) {
+  const [filter, setFilter] = React.useState("");
   if (!vertices.length) {
     return empty ? (
       <p className="text-[11px] leading-tight text-muted-foreground">{empty}</p>
     ) : null;
   }
 
+  // By name, case-folded: a stop is found by what it was called, and the
+  // operator typing "Dock" means the one named "dock-a".
+  const needle = filter.trim().toLowerCase();
+  const shown = needle
+    ? vertices.filter((vertex) => vertex.name.toLowerCase().includes(needle))
+    : vertices;
+
   return (
-    // Capped height with its own scroll: the panel floats over the canvas, and a
-    // map with thirty stops would otherwise grow it past the viewport.
-    <ul className="max-h-48 space-y-px overflow-y-auto border-t border-hairline pt-1.5">
-      {vertices.map((vertex) => (
-        <li key={vertex.id}>
-          <button
-            type="button"
-            onClick={() => onSelect(vertex.id)}
-            className={cn(
-              "flex w-full items-center gap-1.5 rounded-sm px-1 py-0.5 text-left transition-colors",
-              selectedIds.includes(vertex.id)
-                ? "bg-signal-cmd/12 text-signal-cmd"
-                : "hover:bg-elevated",
-            )}
-          >
-            <span className="instrument-label w-3 shrink-0 text-muted-foreground">
-              {vertexGlyph(vertex.type)}
-            </span>
-            <span className="readout min-w-0 flex-1 truncate text-[12px]">
-              {vertex.name}
-            </span>
-            <span className="readout shrink-0 text-[11px] text-muted-foreground">
-              {vertex.x.toFixed(1)}, {vertex.y.toFixed(1)}
-            </span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <div className="border-t border-hairline pt-1.5">
+      <div className="relative mb-1">
+        <SearchIcon
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 left-1.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          type="search"
+          aria-label="Filter waypoints"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          placeholder="Filter by name"
+          className="h-7 rounded-sm pl-6 md:text-[12px]"
+        />
+      </div>
+      {shown.length === 0 ? (
+        <p className="px-1 py-0.5 text-[11px] leading-tight text-muted-foreground">
+          No waypoint matches.
+        </p>
+      ) : (
+        // Capped at about six rows with its own scroll: the panel floats over
+        // the canvas, and a map with thirty stops would otherwise grow it past
+        // the viewport.
+        <ul className="max-h-36 space-y-px overflow-y-auto">
+          {shown.map((vertex) => (
+            <li key={vertex.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(vertex.id)}
+                className={cn(
+                  "flex w-full items-center gap-1.5 rounded-sm px-1 py-0.5 text-left transition-colors",
+                  selectedIds.includes(vertex.id)
+                    ? "bg-signal-cmd/12 text-signal-cmd"
+                    : "hover:bg-elevated",
+                )}
+              >
+                <span className="instrument-label w-3 shrink-0 text-muted-foreground">
+                  {vertexGlyph(vertex.type)}
+                </span>
+                <span className="readout min-w-0 flex-1 truncate text-[12px]">
+                  {vertex.name}
+                </span>
+                <span className="readout shrink-0 text-[11px] text-muted-foreground">
+                  {vertex.x.toFixed(1)}, {vertex.y.toFixed(1)}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
