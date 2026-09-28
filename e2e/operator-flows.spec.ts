@@ -301,6 +301,130 @@ test.describe("the dashboard's map scan layer", () => {
   });
 });
 
+test.describe("adding a waypoint from the dashboard", () => {
+  const verticesPath = `/api/v1/maps/${MAP_NAME}/vertices`;
+
+  /**
+   * Arm the tool and make the placing gesture on the viewport: a press near
+   * the middle of the region (the opening view is centred on the map, so the
+   * floor there is inside it), a drag to the right to aim it, a release.
+   */
+  const placeOnMap = async (page: Page) => {
+    const region = page.getByRole("region", { name: "Map viewport" });
+    await expect(region).toBeVisible();
+    await page.getByRole("button", { name: "Add waypoint" }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "release to name it" }),
+    ).toBeVisible();
+    const box = (await region.boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height * 0.6;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 40, y, { steps: 4 });
+    await page.mouse.up();
+  };
+
+  test("asks for a name after the drag, and posts the placed pose with it", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page);
+    await page.goto("/");
+
+    await placeOnMap(page);
+    const dialog = page.getByRole("alertdialog", { name: "New waypoint" });
+    await expect(dialog).toBeVisible();
+    // Nothing has been written yet: the release only asks the question.
+    expect(writes.filter((w) => w.path === verticesPath)).toEqual([]);
+
+    const create = dialog.getByRole("button", { name: "Create" });
+    await expect(create).toBeDisabled();
+    await dialog.getByLabel("Name").fill("shelf-b");
+    await dialog.getByRole("group", { name: "Type" }).getByRole("button", { name: "Wait" }).click();
+    await create.click();
+
+    await expect
+      .poll(() => writes.filter((w) => w.path === verticesPath))
+      .toHaveLength(1);
+    const write = writes.find((w) => w.path === verticesPath)!;
+    expect(write.method).toBe("POST");
+    const body = write.body as { name: string; type: string; x: number; y: number; theta: number }[];
+    expect(body).toHaveLength(1);
+    expect(body[0].name).toBe("shelf-b");
+    expect(body[0].type).toBe("WAITING");
+    expect(Number.isFinite(body[0].x)).toBe(true);
+    expect(Number.isFinite(body[0].y)).toBe(true);
+    // A drag to screen-right on the opening view aims along map +x.
+    expect(Math.abs(body[0].theta)).toBeLessThan(30);
+
+    // The echoed row closed the dialog: the create parsed and was spliced in.
+    await expect(dialog).toHaveCount(0);
+    // And the tool disarmed on release, so a stray click cannot place another.
+    await expect(page.getByRole("button", { name: "Add waypoint" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("writes nothing when the name is cancelled", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page);
+    await page.goto("/");
+
+    await placeOnMap(page);
+    const dialog = page.getByRole("alertdialog", { name: "New waypoint" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("Name").fill("oops");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+
+    await expect(dialog).toHaveCount(0);
+    expect(writes.filter((w) => w.path === verticesPath)).toEqual([]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  // No console-error guard: the browser logs the 409 itself.
+  test("keeps the dialog open with the backend's refusal", async ({ page }) => {
+    await mockBackend(page);
+    await page.route(/\/api\/v1\/maps\/[^/]+\/vertices$/, (route, request) =>
+      request.method() === "POST"
+        ? route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({ detail: 'A waypoint named "dock" already exists' }),
+          })
+        : route.fallback(),
+    );
+    await page.goto("/");
+
+    await placeOnMap(page);
+    const dialog = page.getByRole("alertdialog", { name: "New waypoint" });
+    await dialog.getByLabel("Name").fill("dock");
+    await dialog.getByRole("button", { name: "Create" }).click();
+
+    await expect(dialog.getByRole("alert")).toHaveText(
+      'A waypoint named "dock" already exists',
+    );
+    await expect(dialog).toBeVisible();
+  });
+
+  test("is greyed with no map to put a waypoint on", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, { maps: [] });
+    await page.goto("/");
+    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+
+    await expect(page.getByRole("button", { name: "Add waypoint" })).toBeDisabled();
+    // The camera buttons do not need a map.
+    await expect(page.getByRole("button", { name: "Recenter" })).toBeEnabled();
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+});
+
 test.describe("words and names on the operator's screens", () => {
   // What reaches an operator names what they see, never the stack underneath
   // it, and every control has a name a screen reader can say. Both are easy to

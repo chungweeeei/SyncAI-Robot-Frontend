@@ -237,7 +237,9 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
 
   const state = over.state === undefined ? robotState() : over.state;
   const maps = over.maps ?? [mapSummary()];
-  const vertices = over.vertices ?? [vertex()];
+  // Typed as rows rather than left to the fixture's exact shape, because the
+  // POST route below appends whatever the console sent.
+  const vertices: Record<string, unknown>[] = over.vertices ?? [vertex()];
   const recordings = over.recordings ?? [recording()];
   const activeRecording =
     over.activeRecording === undefined ? null : over.activeRecording;
@@ -327,6 +329,21 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
 
     // Writes. Enough of a body for the hook that reads the echo; anything
     // a test needs to be specific about it overrides with its own route.
+    if (verticesMatch && method === "POST") {
+      // The batch endpoint: an array in, the stored rows out. Echoed with an
+      // id and the map from the URL, which is what the hook's schema checks
+      // and splices into the list the layer draws.
+      const name = decodeURIComponent(verticesMatch[1]);
+      const drafts = parseBody(request.postData()) as Record<string, unknown>[];
+      const stored = drafts.map((draft, index) => ({
+        ...draft,
+        id: `33333333-3333-3333-3333-${String(index).padStart(12, "0")}`,
+        map_name: name,
+      }));
+      // Kept, so a later GET lists it the way the robot's would.
+      vertices.push(...stored);
+      return json(route, stored);
+    }
     if (path === "/api/v1/recordings/stop") {
       return json(route, {
         name: "rec_20260918T0922Z",

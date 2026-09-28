@@ -117,9 +117,24 @@ test.describe("the console shell", () => {
     // the glyph: the accessible name, and a tooltip on hover.
     await page.goto("/");
     const toolbar = page.getByRole("toolbar", { name: "Viewport" });
-    for (const name of ["Set goal", "Set initial pose", "Move", "Focus", "Top down"]) {
+    for (const name of [
+      "Set goal",
+      "Set initial pose",
+      "Move",
+      "Focus",
+      "Top down",
+      "Zoom in",
+      "Zoom out",
+    ]) {
       await expect(toolbar.getByRole("button", { name })).toBeVisible();
     }
+    // The left strip is what is done to the map itself; the stream pill that
+    // used to sit opposite the toolbar is gone.
+    const mapTools = page.getByRole("toolbar", { name: "Map" });
+    for (const name of ["Recenter", "Add waypoint"]) {
+      await expect(mapTools.getByRole("button", { name })).toBeVisible();
+    }
+    await expect(page.getByText("Scan live")).toHaveCount(0);
     const goal = toolbar.getByRole("button", { name: "Set goal" });
     await goal.hover();
     await expect(page.getByText("— drag on the map to aim, release to send")).toBeVisible();
@@ -144,6 +159,30 @@ test.describe("the console shell", () => {
     await pose.click();
     await expect(pose).toHaveAttribute("aria-pressed", "false");
     await expect(page.getByRole("status").filter({ hasText: "drag to aim" })).toHaveCount(0);
+  });
+
+  test("keeps one pick mode across both strips", async ({ page }) => {
+    // Add waypoint sits in the other strip but is the same kind of tool as
+    // Set goal, and one pick mode still means one: arming either disarms the
+    // other. Its own test because every click on this page costs the
+    // software-rendered viewport a couple of seconds, and the icon test above
+    // is already close to the budget.
+    await page.goto("/");
+    const goal = page.getByRole("toolbar", { name: "Viewport" }).getByRole("button", { name: "Set goal" });
+    const place = page.getByRole("toolbar", { name: "Map" }).getByRole("button", { name: "Add waypoint" });
+
+    await goal.click();
+    await expect(goal).toHaveAttribute("aria-pressed", "true");
+    await place.click();
+    await expect(place).toHaveAttribute("aria-pressed", "true");
+    await expect(goal).toHaveAttribute("aria-pressed", "false");
+    await expect(
+      page.getByRole("status").filter({ hasText: "release to name it" }),
+    ).toBeVisible();
+
+    await goal.click();
+    await expect(place).toHaveAttribute("aria-pressed", "false");
+    await expect(goal).toHaveAttribute("aria-pressed", "true");
   });
 
   test("reaches every operator screen from the rail", async ({ page }) => {
