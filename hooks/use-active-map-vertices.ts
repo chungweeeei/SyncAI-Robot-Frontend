@@ -6,7 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMapVertexList, type MapVertexListStatus } from "@/hooks/use-map-vertex-list";
 import { useActiveMap } from "@/hooks/use-maps";
 import { queryKeys } from "@/lib/api/query-keys";
-import { updateVertex } from "@/lib/api/vertex";
+import { createVertex, updateVertex, type VertexDraft } from "@/lib/api/vertex";
 import type { MapVertex } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
@@ -18,9 +18,9 @@ export interface UseActiveMapVertices {
   /** Sorted by name. Empty unless `status` is "ok". */
   vertices: MapVertex[];
   status: ActiveVerticesStatus;
-  /** True while a re-place write is in flight. */
+  /** True while a re-place or a create write is in flight. */
   busy: boolean;
-  /** The last re-place failure, or null. Rendered verbatim. */
+  /** The last write failure, or null. Rendered verbatim. */
   writeError: string | null;
   /**
    * Move one vertex to a new pose. True when the row is stored.
@@ -29,29 +29,36 @@ export interface UseActiveMapVertices {
    * hook about why the rest of the CRUD surface stays out of it).
    */
   moveVertex: (id: string, pose: PlanarPose) => Promise<boolean>;
+  /**
+   * Store a new vertex on the active map. The created row, or null when the
+   * request failed (see `writeError`) or there is no active map to put it on.
+   */
+  createVertex: (draft: VertexDraft) => Promise<MapVertex | null>;
   clearWriteError: () => void;
 }
 
 /**
  * The active map's vertices: the markers the dashboard draws on the floor, and
- * — through `moveVertex` — the one field it may write.
+ * — through `moveVertex` and `createVertex` — the two things it may write.
  *
  * The list itself is useMapVertexList, keyed by the loaded map's name; this
- * hook adds where that name comes from and the one write. (The task editor
- * used to read through here too, and now reads useMapVertexList directly with
+ * hook adds where that name comes from and the writes. (The task editor used
+ * to read through here too, and now reads useMapVertexList directly with
  * whichever map it is authoring for.)
  *
- * Position is the exception, and only because the dashboard is where the mistake
- * is *visible*: a stop drawn half a metre inside a wall is obvious with the live
- * cloud drawn over it and invisible on the editor's flat raster, so requiring a
- * trip to another screen to nudge it would mean fixing it from the one view that
- * cannot see the problem. Name and type are not part of that argument and stay
- * where the rest of the CRUD lives.
+ * Both writes are about *where* a stop is, and both exist because the dashboard
+ * is where that is visible: a stop drawn half a metre inside a wall is obvious
+ * with the live cloud drawn over it and invisible on the editor's flat raster,
+ * and the spot an operator wants a new stop at is the one they are looking at
+ * on the same view. Requiring a trip to another screen for either would mean
+ * placing from the one view that cannot see the problem. Rename, retype and
+ * delete are not part of that argument and stay where the rest of the CRUD
+ * lives.
  *
  * `writeError` is separate from `status` rather than shared the way
  * useMapVertices shares its `error`: here the two really can be live at once —
- * the list loads fine and a re-place fails — and a failed write must not make
- * the layer read as unloaded.
+ * the list loads fine and a write fails — and a failed write must not make the
+ * layer read as unloaded.
  */
 export function useActiveMapVertices(): UseActiveMapVertices {
   const { map, status: mapsStatus } = useActiveMap();
@@ -81,7 +88,24 @@ export function useActiveMapVertices(): UseActiveMapVertices {
     },
   });
 
+  const create = useMutation({
+    mutationFn: ({ map, draft }: { map: string; draft: VertexDraft }) =>
+      createVertex(map, draft),
+    onSuccess: (created, { map }) => {
+      queryClient.setQueryData<MapVertex[]>(
+        queryKeys.mapVertices(map),
+        (current) => (current ? [...current, created] : current),
+      );
+      // The same two keys useMapVertices marks on a create: the catalogue's
+      // vertex_count, and the templates whose step pickers list this map's
+      // stops.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.taskTemplates });
+    },
+  });
+
   const { mutateAsync: moveAsync, reset: resetMove } = move;
+  const { mutateAsync: createAsync, reset: resetCreate } = create;
 
   const moveVertex = React.useCallback(
     (id: string, pose: PlanarPose) => {
@@ -94,7 +118,18 @@ export function useActiveMapVertices(): UseActiveMapVertices {
     [name, moveAsync],
   );
 
-  const clearWriteError = React.useCallback(() => resetMove(), [resetMove]);
+  const createOnActiveMap = React.useCallback(
+    (draft: VertexDraft) => {
+      if (!name) return Promise.resolve(null);
+      return createAsync({ map: name, draft }).catch(() => null);
+    },
+    [name, createAsync],
+  );
+
+  const clearWriteError = React.useCallback(() => {
+    resetMove();
+    resetCreate();
+  }, [resetMove, resetCreate]);
 
   // The catalogue's own state first: until it answers there is no name, and
   // "no-map" must mean the robot has none loaded, not that we have not asked.
@@ -105,9 +140,10 @@ export function useActiveMapVertices(): UseActiveMapVertices {
     mapName: name,
     vertices: list.vertices,
     status,
-    busy: move.isPending,
-    writeError: move.error?.message ?? null,
+    busy: move.isPending || create.isPending,
+    writeError: move.error?.message ?? create.error?.message ?? null,
     moveVertex,
+    createVertex: createOnActiveMap,
     clearWriteError,
   };
 }
