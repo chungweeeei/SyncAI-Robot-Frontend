@@ -5,6 +5,13 @@ import { LocateFixedIcon, Trash2Icon } from "lucide-react";
 
 import { Chip, Readout, Segmented, overlayPanel } from "@/components/console/instrument";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { VertexChanges } from "@/lib/api/vertex";
 import { VERTEX_TYPES, vertexGlyph } from "@/lib/map/vertex";
 import { cn } from "@/lib/utils";
@@ -158,34 +165,57 @@ export function VertexPanel(props: VertexPanelProps) {
         </>
       ) : (
         <>
-          <div>
-            <p className="instrument-label mb-1 text-muted-foreground">Place as</p>
-            <Segmented
-              label="Place as"
-              stretch
-              value={props.type}
-              options={TYPE_OPTIONS}
-              onChange={props.onTypeChange}
-            />
-          </div>
-
-          {/* The second way to produce a pose, for the stop you mark by driving
-            * to it: the operator parks the robot on the spot — a dock, a charger,
-            * a doorway they had to squeeze through — and takes the pose off the
-            * robot instead of hunting for the cell it is standing on. It stages a
+          {/* One row, by request: the type the next waypoint is placed as, and
+            * the second way to place one. The type is a list rather than the
+            * form's segmented row, because this row also holds a button and
+            * five segments beside it would not fit a 240 px panel.
+            *
+            * Use robot position is for the stop you mark by driving to it: the
+            * operator parks the robot on the spot — a dock, a charger, a doorway
+            * they had to squeeze through — and takes the pose off the robot
+            * instead of hunting for the cell it is standing on. It stages a
             * draft like a press on the map does, rather than creating the vertex
             * outright, so naming and typing it stay one flow with the placed
             * kind, and a mis-press is a Cancel rather than a row to delete. */}
           <div>
-            <button
-              type="button"
-              disabled={!props.robotPose || props.busy}
-              onClick={props.onUseRobotPose}
-              className="instrument-label flex h-7 w-full items-center justify-center gap-1.5 rounded-sm border border-hairline text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-            >
-              <LocateFixedIcon className="size-3.5" aria-hidden />
-              Use robot position
-            </button>
+            <div className="flex items-center gap-1.5">
+              <Select
+                items={TYPE_OPTIONS}
+                value={props.type}
+                onValueChange={(next) => {
+                  if (next) props.onTypeChange(next);
+                }}
+              >
+                <SelectTrigger
+                  size="sm"
+                  aria-label="Waypoint type"
+                  title="The type the next waypoint is placed as"
+                  className="min-w-0 flex-1 rounded-sm text-[12px] pointer-coarse:min-h-10"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {VERTEX_TYPES.map((spec) => (
+                    <SelectItem key={spec.value} value={spec.value}>
+                      <span className="flex items-baseline gap-2">
+                        {spec.label}
+                        <span className="text-xs text-muted-foreground">{spec.hint}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <button
+                type="button"
+                disabled={!props.robotPose || props.busy}
+                onClick={props.onUseRobotPose}
+                title="Place a waypoint where the robot is standing"
+                className="instrument-label flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-sm border border-hairline px-2 text-muted-foreground transition-colors pointer-coarse:min-h-10 hover:bg-elevated hover:text-foreground disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+              >
+                <LocateFixedIcon className="size-3.5" aria-hidden />
+                Use robot position
+              </button>
+            </div>
             {!props.robotPose && props.robotPoseReason && (
               <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
                 {props.robotPoseReason}
@@ -200,16 +230,9 @@ export function VertexPanel(props: VertexPanelProps) {
             empty={status === "ok" ? "No waypoints on this map yet." : null}
           />
 
-          {/* The panel is the only place the tool row's icons are spelled out.
-            * Worth the four lines: "why does pressing the map do nothing" is the
-            * question the unarmed default buys, and this is where an operator
-            * looking at the vertex layer is already looking. */}
-          <p className="text-[11px] leading-tight text-muted-foreground">
-            Choose <span className="text-foreground">Place</span>, then press the
-            map where the robot should stop and drag to set which way it faces.{" "}
-            <span className="text-foreground">Select</span> drags a box over
-            several; hold Shift to add more. Escape puts the type down.
-          </p>
+          {/* No how-to line here any more, by request. The tool buttons carry
+            * their own names and what a press does in their tooltips, and a
+            * finger reads the name printed under each icon. */}
         </>
       )}
     </div>

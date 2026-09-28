@@ -25,7 +25,7 @@ import { StrokeAccumulator } from "@/lib/map/patch";
 /**
  * Distinguishes two sessions for the same map name — which happens on every
  * strict-mode double mount. The editor keys its stateful surface on this, so
- * per-session state (history, cell counts) is initialised by mounting rather than
+ * per-session state (the undo history) is initialised by mounting rather than
  * by resetting it in an effect.
  */
 let nextSessionId = 1;

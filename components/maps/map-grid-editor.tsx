@@ -29,9 +29,8 @@ import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import type { VertexChanges } from "@/lib/api/vertex";
 import { isTypingTarget } from "@/lib/keyboard";
 import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
-import { FREE, countValues, type GridValue, type ValueCounts } from "@/lib/map/grid";
+import { FREE, type GridValue } from "@/lib/map/grid";
 import {
-  applyCountsDelta,
   applyPatch,
   createUndoStack,
   popRedo,
@@ -88,7 +87,7 @@ const DEFAULT_VERTEX_TOOL: VertexTool = "pan";
  * Loads the map and shows the guard states; EditorSurface does the editing.
  *
  * The split exists so that everything belonging to one loaded grid — the undo
- * history, the cell census — is initialised by *mounting* the surface rather than
+ * history — is initialised by *mounting* the surface rather than
  * by clearing state in an effect when the session changes. Patches index into a
  * specific buffer, so carrying a history across a load would corrupt the new one,
  * and a remount makes that impossible by construction.
@@ -198,11 +197,6 @@ function EditorSurface({
 
   const [hover, setHover] = React.useState<CellProbe | null>(null);
   const [scale, setScale] = React.useState(1);
-  // Lazy initialiser, not an effect: one full pass over the grid at mount, then
-  // maintained incrementally from each patch.
-  const [counts, setCounts] = React.useState<ValueCounts>(() =>
-    countValues(session.grid),
-  );
   const [fitNonce, setFitNonce] = React.useState(0);
   const [spacePan, setSpacePan] = React.useState(false);
 
@@ -297,6 +291,21 @@ function EditorSurface({
       // Back to grid mode with a draft still staged would leave a dashed marker
       // on the canvas and no panel to commit or dismiss it.
       if (next === "grid") clearVertexEdit();
+    },
+    [clearVertexEdit],
+  );
+
+  /**
+   * Arm a waypoint tool. Going back to Pan also drops whatever waypoint is
+   * selected or staged, by request: Pan is "I am done with that one, let me
+   * look around", and a marker left lit — or a just-placed draft left open in
+   * the panel — would keep claiming the operator's attention for an edit they
+   * have walked away from.
+   */
+  const chooseVertexTool = React.useCallback(
+    (next: VertexTool) => {
+      setVertexTool(next);
+      if (next === "pan") clearVertexEdit();
     },
     [clearVertexEdit],
   );
@@ -466,7 +475,6 @@ function EditorSurface({
     // is stale, and "Saved" next to a lit Unsaved chip is the one genuinely
     // confusing pair this panel can show.
     setSaveState({ kind: "idle" });
-    setCounts((current) => applyCountsDelta(current, patch, "after"));
   }, []);
 
   const step = React.useCallback(
@@ -478,7 +486,6 @@ function EditorSurface({
       const side = direction === "undo" ? "before" : "after";
       applyPatch(session.grid, patch, side);
       session.repaint?.(patch.bounds);
-      setCounts((current) => applyCountsDelta(current, patch, side));
       setCanUndo(stack.undo.length > 0);
       setCanRedo(stack.redo.length > 0);
       // Still dirty after undoing to the start: the stack is byte-capped, so an
@@ -695,7 +702,7 @@ function EditorSurface({
             tool={tool}
             onToolChange={setTool}
             vertexTool={vertexTool}
-            onVertexToolChange={setVertexTool}
+            onVertexToolChange={chooseVertexTool}
             brush={brush}
             onBrushChange={setBrush}
           />
@@ -747,7 +754,6 @@ function EditorSurface({
         meta={session.meta}
         hover={hover}
         scale={scale}
-        counts={counts}
       />
     </div>
   );

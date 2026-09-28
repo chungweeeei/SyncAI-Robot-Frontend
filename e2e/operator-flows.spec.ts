@@ -1076,6 +1076,7 @@ test.describe("the floor plan editor's draw bar", () => {
     await drawList(page).click();
     await page.getByRole("option", { name, exact: true }).click();
   };
+  const drawBar = (page: Page) => page.getByRole("toolbar", { name: "Editor" });
   const toolNames = (page: Page) =>
     page
       .getByRole("toolbar", { name: "Editor" })
@@ -1104,12 +1105,21 @@ test.describe("the floor plan editor's draw bar", () => {
 
     await choose(page, "Waypoint");
     await expect.poll(() => toolNames(page)).toEqual(["Pan", "Place", "Select"]);
-    await expect(page.getByText("Place as")).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Waypoint type" })).toBeVisible();
+
+    // Going back to Pan drops a selected waypoint: pick one from the list with
+    // Select armed, press Pan, and the panel is back to its list.
+    await drawBar(page).getByRole("button", { name: "Select" }).click();
+    await page.getByRole("button", { name: /dock/ }).click();
+    await expect(page.getByRole("button", { name: "Delete waypoint" })).toBeVisible();
+    await page.getByRole("button", { name: "Pan", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Delete waypoint" })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Waypoint type" })).toBeVisible();
 
     // No type is an item of its own, and puts the choice down.
     await choose(page, "No type");
     await expect.poll(() => toolNames(page)).toEqual(["Pan"]);
-    await expect(page.getByText("Place as")).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Waypoint type" })).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
 

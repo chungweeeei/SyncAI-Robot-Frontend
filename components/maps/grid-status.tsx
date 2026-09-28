@@ -2,7 +2,7 @@
 
 import { Readout, overlayPanel, type Tone } from "@/components/console/instrument";
 import { cn } from "@/lib/utils";
-import { FREE, OCCUPIED, classify, type ValueCounts } from "@/lib/map/grid";
+import { FREE, OCCUPIED, classify } from "@/lib/map/grid";
 import { gridToWorld } from "@/lib/map/view";
 import type { CellProbe } from "@/lib/map/editor";
 import type { MapMetadata } from "@/lib/types/robot";
@@ -25,11 +25,10 @@ export interface GridStatusProps {
   meta: MapMetadata;
   hover: CellProbe | null;
   scale: number;
-  counts: ValueCounts;
   className?: string;
 }
 
-export function GridStatus({ meta, hover, scale, counts, className }: GridStatusProps) {
+export function GridStatus({ meta, hover, scale, className }: GridStatusProps) {
   // Cell centres, not corners. gridToWorld(col, row) is the cell's corner, and at
   // 0.05 m/cell reporting that as "the position" is a 2.5 cm lie in a readout an
   // operator may be using to check where a wall actually is.
@@ -55,12 +54,9 @@ export function GridStatus({ meta, hover, scale, counts, className }: GridStatus
         />
         <Readout label="Zoom" value={Math.round(scale * 100)} unit="%" />
       </div>
-
-      <div className="mt-2.5 space-y-1.5 border-t border-hairline pt-2.5">
-        <Readout label="Wall" value={counts.occupied.toLocaleString("en-US")} tone="warn" />
-        <Readout label="Unknown" value={counts.unknown.toLocaleString("en-US")} tone="caution" />
-        <Readout label="Floor" value={counts.free.toLocaleString("en-US")} tone="live" />
-      </div>
+      {/* No per-value cell counts any more, by request: the totals were a
+        * census nobody edited by, and the readout is about the cell under the
+        * pointer. */}
     </div>
   );
 }
