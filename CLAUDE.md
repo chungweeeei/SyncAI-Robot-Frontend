@@ -149,7 +149,7 @@ components/
   maps/         map library cards and the gridmap editor (grid-canvas)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
-                and the /tasks/editor page (step composer, dispatch, scheduling)
+                and the /tasks/editor page (step composer, name, scheduling)
   history/      finished-job list: filters, cursor paging, per-run step detail
   settings/     appearance and Wi-Fi
   webrtc/       WHIP/WHEP bench (unlisted developer route — see deviations)
