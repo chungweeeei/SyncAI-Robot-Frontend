@@ -3,35 +3,24 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeftIcon,
-  MapPinPlusIcon,
-  SaveIcon,
-  SettingsIcon,
-  Trash2Icon,
-} from "lucide-react";
+import { ArrowLeftIcon, MapPinPlusIcon, SaveIcon, Trash2Icon } from "lucide-react";
 
 import { InstrumentGroup } from "@/components/console/instrument";
 import { ActiveRunBanner } from "@/components/tasks/active-run-banner";
 import { MapPicker } from "@/components/tasks/map-picker";
-import { ScheduleForm } from "@/components/tasks/schedule-form";
 import { StepList } from "@/components/tasks/step-list";
-import { TaskNameField } from "@/components/tasks/task-name-field";
+import { TaskTitle } from "@/components/tasks/task-title";
 import { Button } from "@/components/ui/button";
 import { useMapVertexList } from "@/hooks/use-map-vertex-list";
 import { useMaps } from "@/hooks/use-maps";
 import { useTaskTemplates } from "@/hooks/use-task-templates";
-import { useScheduleTaskTemplate, useSchedules } from "@/hooks/use-schedules";
+import { useSchedules } from "@/hooks/use-schedules";
 import { useStepDrafts } from "@/hooks/use-step-drafts";
 import { useTaskDraft } from "@/hooks/use-task-draft";
 import { waypointEditorHref } from "@/lib/map/links";
 import type { TaskStepState } from "@/lib/api/task";
 import type { TaskDraft } from "@/lib/task/draft-store";
-import {
-  stepDraftsSubmittable,
-  toStepRequests,
-  toTemplateSteps,
-} from "@/lib/task/step";
+import { stepDraftsSubmittable, toTemplateSteps } from "@/lib/task/step";
 import { taskTemplateNameOk } from "@/lib/task/template";
 
 /**
@@ -43,22 +32,18 @@ const NO_STEP_STATES: ReadonlyMap<string, TaskStepState> = new Map();
 
 /**
  * The task editor, on a page of its own (/tasks/editor): the steps being
- * authored, their name, and the schedule they can be registered on. Save and
- * Go back sit in the header.
+ * authored and the job's name. Go back, Save and Delete sit in the header, and
+ * the name is the heading itself, edited in place (TaskTitle).
  *
- * **It does not run anything.** Run now used to be a pane here beside On a
- * schedule, with its own dispatch tracker; both it and the picker between
- * them were removed by request. A job runs from its row on /tasks, after it is
- * saved, which is also the one place its per-step readback is shown.
+ * **It does not run or schedule anything.** Both used to be panes here. A job
+ * runs from its row on /tasks and is scheduled there too, where the schedule
+ * list it joins already is — and only a saved job can be, which retires the
+ * old trap of scheduling loose steps that no row could ever show.
  *
  * **Its own route, off the overview.** The draft outlives a navigation
  * (lib/task/draft-store.ts), so the overview hands a template over by writing
  * it into the draft and pushing here — there is no id in the URL to keep in
  * step with it — and Go back leaves it there for next time.
- *
- * **Two columns.** The step list takes the wide column; the name and the
- * schedule ride in a narrower one that sticks to the top of the viewport while
- * the steps scroll. Below `lg` the grid is one column again.
  */
 export function TaskEditor() {
   const router = useRouter();
@@ -75,10 +60,6 @@ export function TaskEditor() {
     (chosenMap: string | null) => updateDraft((current) => ({ ...current, chosenMap })),
     [updateDraft],
   );
-  const setDraftName = React.useCallback(
-    (name: string) => updateDraft((current) => ({ ...current, name })),
-    [updateDraft],
-  );
   const setSteps = React.useCallback(
     (change: (current: TaskDraft["steps"]) => TaskDraft["steps"]) =>
       updateDraft((current) => ({ ...current, steps: change(current.steps) })),
@@ -86,7 +67,6 @@ export function TaskEditor() {
   );
   const drafts = useStepDrafts(draft.steps, setSteps);
   const schedules = useSchedules();
-  const scheduleTemplate = useScheduleTaskTemplate();
   const library = useTaskTemplates();
   const { maps, status: mapsStatus } = useMaps();
   const activeMapName = maps?.find((map) => map.active)?.name ?? null;
@@ -118,11 +98,21 @@ export function TaskEditor() {
     mapsStatus === "loading" ? "loading" : mapsStatus === "error" ? "error" : list.status;
 
   /**
-   * Reset-by-remount for the schedule form, bumped after a successful write.
-   * The same trick the vertex panel uses to get a fresh field per draft,
-   * rather than clearing state in an effect.
+   * Whether the heading is the name field, and whether confirming it should
+   * go on to save — true when Save was pressed on a job with no name yet, so
+   * naming it is one step of saving rather than a detour before it.
+   *
+   * The heading is keyed by a count bumped on each *opening*, so every
+   * opening starts from the current name. Only opening: a key that changed on
+   * closing too would remount the heading as it closed, and it would lose the
+   * focus it hands back to the Rename button.
    */
-  const [scheduleNonce, setScheduleNonce] = React.useState(0);
+  const [naming, setNaming] = React.useState<{ thenSave: boolean } | null>(null);
+  const [namingKey, setNamingKey] = React.useState(0);
+  const openNaming = (thenSave: boolean) => {
+    setNamingKey((key) => key + 1);
+    setNaming({ thenSave });
+  };
 
   const stepsOk = stepDraftsSubmittable(drafts.steps);
   const stepReason = !drafts.steps.length
@@ -143,17 +133,13 @@ export function TaskEditor() {
       : null);
 
   /**
-   * The one thing a job for another map cannot do here is run. Its coordinates
-   * are in that map's frame and would point somewhere else entirely in the
-   * loaded one, so the schedule pane is held — the
-   * template schedule endpoint refuses this server-side too, but the loose-step
-   * paths send raw coordinates with no map attached, and nothing on the robot
-   * would notice. Saving is unaffected: that is what authoring for another map
-   * is for.
+   * A job for another map can be saved but not run or scheduled: its
+   * coordinates are in that map's frame. Those two buttons live on its row
+   * on /tasks, which holds them; this only says so where the job is built.
    */
   const mapMismatch = draftMapName !== null && draftMapName !== activeMapName;
   const mismatchReason = mapMismatch
-    ? `This job is for ${draftMapName}; the robot has ${activeMapName ?? "no map"} loaded, so it can be saved but not scheduled from here.`
+    ? `This job is for ${draftMapName}; the robot has ${activeMapName ?? "no map"} loaded, so it can be saved but not run or scheduled until that map is loaded.`
     : null;
 
   /**
@@ -191,14 +177,18 @@ export function TaskEditor() {
   /**
    * One Save: an update when a template is loaded, a new one otherwise. The
    * answer becomes the loaded template either way, so a second press updates
-   * what the first created instead of making another copy.
+   * what the first created instead of making another copy. A job with no
+   * name yet opens the heading to be named, and confirming it saves.
    */
-  const canSave =
-    stepsOk && saveReason === null && taskTemplateNameOk(draftName) && !library.busy;
-  const save = () => {
+  const canSave = stepsOk && saveReason === null && !library.busy;
+  const save = (name: string = draftName) => {
     if (!canSave) return;
+    if (!taskTemplateNameOk(name)) {
+      openNaming(true);
+      return;
+    }
     const body = {
-      name: draftName.trim(),
+      name: name.trim(),
       map_name: draftMapName,
       steps: toTemplateSteps(drafts.steps),
     };
@@ -212,6 +202,31 @@ export function TaskEditor() {
         }));
       },
     );
+  };
+
+  /**
+   * Confirming the heading. A saved job is renamed at once and by name alone
+   * — the PUT is partial, so step edits not yet saved stay unsaved, which is
+   * what a rename should leave alone. A new job only takes the name into the
+   * draft, unless Save is what asked for it.
+   */
+  const confirmName = (name: string) => {
+    const thenSave = naming?.thenSave ?? false;
+    if (editing && !thenSave) {
+      void library.update(editing.id, { name }).then((renamed) => {
+        if (!renamed) return;
+        setNaming(null);
+        updateDraft((current) => ({
+          ...current,
+          editing: { id: renamed.id, name: renamed.name },
+          name: renamed.name,
+        }));
+      });
+      return;
+    }
+    setNaming(null);
+    updateDraft((current) => ({ ...current, name }));
+    if (thenSave) save(name);
   };
 
   /**
@@ -246,27 +261,27 @@ export function TaskEditor() {
   return (
     <>
       <header className="mb-6 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-1.5">
-            {/* The job's own name, not "Editing …": being on this page already
-              * says it is being edited. */}
-            <h1 className="truncate text-xl font-semibold tracking-tight">
-              {editing ? editing.name : "New task"}
-            </h1>
-            {/* A placeholder: what the job's settings are is still to be
-              * decided, so the button is on the page but does nothing yet.
-              * Disabled rather than inert, so it does not look broken. */}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              disabled
-              aria-label="Job settings"
-              title="Job settings"
-              className="shrink-0 text-muted-foreground"
-            >
-              <SettingsIcon aria-hidden />
-            </Button>
-          </div>
+        <div className="min-w-0 flex-1">
+          <TaskTitle
+            key={namingKey}
+            // The job's own name, not "Editing …": being on this page
+            // already says it is being edited.
+            title={editing?.name ?? (draftName.trim() || "New task")}
+            name={draftName}
+            naming={naming !== null}
+            busy={library.busy}
+            existingNames={library.templates.map((template) => template.name)}
+            onStartNaming={() => openNaming(false)}
+            onCancel={() => setNaming(null)}
+            onSubmit={confirmName}
+          />
+          {/* The library's write error — a refused save, rename or delete —
+            * in the backend's own words, under the name it was about. */}
+          {library.error && (
+            <p role="alert" className="mt-1 text-[11px] leading-snug break-words text-signal-warn">
+              {library.error}
+            </p>
+          )}
           <p className="mt-1 text-sm text-muted-foreground">
             Steps run in order, one at a time, and if a step fails the rest are
             skipped.
@@ -285,11 +300,11 @@ export function TaskEditor() {
             Go back
           </Button>
           <Button
-            onClick={save}
+            onClick={() => save()}
             disabled={!canSave}
-            // The reason is also under the name field; this is for the
+            // The step list says which rows are unfinished; this is for the
             // operator whose eyes are on the button.
-            title={saveReason ?? (taskTemplateNameOk(draftName) ? undefined : "Name the job to save it.")}
+            title={saveReason ?? undefined}
             className="pointer-coarse:min-h-10"
           >
             <SaveIcon data-icon="inline-start" aria-hidden />
@@ -312,130 +327,58 @@ export function TaskEditor() {
       {/* A run this tab is not following, whichever page started it. */}
       <ActiveRunBanner trackedTaskId={null} />
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
-          <div className="overflow-hidden rounded-md border border-hairline bg-panel">
-            <InstrumentGroup
-              label="Steps"
-              action={
-                <div className="flex items-center gap-1.5">
-                  <MapPicker
-                    maps={maps}
-                    value={mapName}
-                    disabled={false}
-                    onPick={selectMap}
-                  />
-                  {/* The stop that is missing gets placed on the map, not here:
-                   * this opens that map's editor in Waypoints mode, and its back
-                   * button returns to this draft. A map with no floor plan has
-                   * nothing to place on, so the link is a disabled span (the
-                   * map card's Edit makes the same choice). */}
-                  {mapName !== null && mapGrid !== null ? (
-                    <Link
-                      href={waypointEditorHref(mapName, { from: "tasks" })}
-                      aria-label="Add waypoints on the floor plan"
-                      title="Add waypoints on the floor plan"
-                      className="flex size-6 items-center justify-center rounded-sm border border-hairline text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground"
-                    >
-                      <MapPinPlusIcon className="size-3.5" aria-hidden />
-                    </Link>
-                  ) : (
-                    <span
-                      aria-hidden
-                      className="flex size-6 items-center justify-center rounded-sm border border-hairline text-muted-foreground opacity-40"
-                    >
-                      <MapPinPlusIcon className="size-3.5" />
-                    </span>
-                  )}
-                </div>
-              }
-              caption={mismatchReason ?? undefined}
-            >
-              <StepList
-                steps={drafts.steps}
-                vertices={vertices}
-                verticesStatus={verticesStatus}
-                mapName={mapName}
-                mapGrid={mapGrid}
+      <div className="overflow-hidden rounded-md border border-hairline bg-panel">
+        <InstrumentGroup
+          label="Steps"
+          action={
+            <div className="flex items-center gap-1.5">
+              <MapPicker
+                maps={maps}
+                value={mapName}
                 disabled={false}
-                stepStates={NO_STEP_STATES}
-                onAdd={drafts.add}
-                onPatch={drafts.patch}
-                onRemove={drafts.remove}
-                onMoveTo={drafts.moveTo}
+                onPick={selectMap}
               />
-            </InstrumentGroup>
-          </div>
-
-          {/* The name and the schedule, in their own column. Sticky from lg so
-            * a forty-step list scrolls past a Create schedule button that stays
-            * put. `top-4`
-            * matches the page's own py-8 breathing room; the page scroller is the
-            * containing block (see app/tasks/editor/page.tsx). */}
-          <div className="overflow-hidden rounded-md border border-hairline bg-panel lg:sticky lg:top-4">
-            <InstrumentGroup label="Name">
-              <TaskNameField
-                editing={editing}
-                name={draftName}
-                onNameChange={setDraftName}
-                reason={saveReason}
-                busy={library.busy}
-                // The library's write error: a refused save or delete, in the
-                // backend's own words.
-                error={library.error}
-                existingNames={library.templates.map((template) => template.name)}
-                onSubmit={save}
-              />
-            </InstrumentGroup>
-
-              <InstrumentGroup
-                label="Schedule"
-                caption={
-                  editing
-                    ? "Scheduling a saved job locks in today\u2019s waypoint positions. Moving a waypoint later will not change what the schedule runs."
-                    : // Said before the fact, because it cannot be said after: a
-                      // schedule registered from loose steps records no source,
-                      // so no library row can ever show that it exists. Saving
-                      // first is the whole difference, and it is one button away.
-                      "These steps are not saved as a template, so this schedule will not show on any library row. Save it first if you want to see later that it runs on its own."
-                }
-              >
-                <ScheduleForm
-                  key={scheduleNonce}
-                  existingIds={schedules.schedules.map((entry) => entry.id)}
-                  ready={stepsOk && !mapMismatch}
-                  reason={stepReason ?? mismatchReason}
-                  busy={schedules.busy || library.busy || scheduleTemplate.isPending}
-                  // The template path's refusal first: it is the newer of the
-                  // two whenever it is set, because each path resets the other
-                  // before it goes out.
-                  error={scheduleTemplate.error?.message ?? schedules.error}
-                  onCreate={(id, trigger) => {
-                    // Two paths on purpose. With a template loaded, go through
-                    // /task_templates/{id}/schedule: it re-resolves server-side,
-                    // records the provenance in the schedule memo (so the row can
-                    // later be told it has gone stale), and refuses an unattended run
-                    // against another map or a deleted vertex. Without one, there is
-                    // no row to reference and the plain schedule endpoint takes the
-                    // steps. Both hooks re-read the list themselves on success.
-                    if (editing) {
-                      schedules.clearError();
-                      scheduleTemplate.mutate(
-                        { templateId: editing.id, scheduleId: id, trigger },
-                        { onSuccess: () => setScheduleNonce((n) => n + 1) },
-                      );
-                      return;
-                    }
-                    scheduleTemplate.reset();
-                    void schedules
-                      .create({ id, trigger, steps: toStepRequests(drafts.steps) })
-                      .then((created) => {
-                        if (created) setScheduleNonce((n) => n + 1);
-                      });
-                  }}
-                />
-              </InstrumentGroup>
-          </div>
-        </div>
+              {/* The stop that is missing gets placed on the map, not here:
+               * this opens that map's editor in Waypoints mode, and its back
+               * button returns to this draft. A map with no floor plan has
+               * nothing to place on, so the link is a disabled span (the
+               * map card's Edit makes the same choice). */}
+              {mapName !== null && mapGrid !== null ? (
+                <Link
+                  href={waypointEditorHref(mapName, { from: "tasks" })}
+                  aria-label="Add waypoints on the floor plan"
+                  title="Add waypoints on the floor plan"
+                  className="flex size-6 items-center justify-center rounded-sm border border-hairline text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground"
+                >
+                  <MapPinPlusIcon className="size-3.5" aria-hidden />
+                </Link>
+              ) : (
+                <span
+                  aria-hidden
+                  className="flex size-6 items-center justify-center rounded-sm border border-hairline text-muted-foreground opacity-40"
+                >
+                  <MapPinPlusIcon className="size-3.5" />
+                </span>
+              )}
+            </div>
+          }
+          caption={saveReason ?? mismatchReason ?? undefined}
+        >
+          <StepList
+            steps={drafts.steps}
+            vertices={vertices}
+            verticesStatus={verticesStatus}
+            mapName={mapName}
+            mapGrid={mapGrid}
+            disabled={false}
+            stepStates={NO_STEP_STATES}
+            onAdd={drafts.add}
+            onPatch={drafts.patch}
+            onRemove={drafts.remove}
+            onMoveTo={drafts.moveTo}
+          />
+        </InstrumentGroup>
+      </div>
     </>
   );
 }
