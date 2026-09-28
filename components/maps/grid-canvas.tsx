@@ -115,12 +115,6 @@ export interface GridCanvasProps {
   /** Vertices already stored for this map. Drawn in every mode. */
   vertices: MapVertex[];
   /**
-   * The Waypoints layer toggle. False hides the markers and takes them out of
-   * hit-testing, so a stroke laid under one is not stopped by a mark nobody can
-   * see. The shell holds it true in vertex mode.
-   */
-  showVertices: boolean;
-  /**
    * Where the robot is standing on this map, or null when that is not knowable
    * (another map loaded, not localized, no state) — see useRobotMapPose.
    *
@@ -300,9 +294,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       drawRobot(ctx, view, session.meta, current.robotPose, palette);
     }
     // Above the shape preview, so markers are never buried by it.
-    if (current.showVertices) {
-      drawVertices(ctx, view, session.meta, gestureRef.current, current, palette);
-    }
+    drawVertices(ctx, view, session.meta, gestureRef.current, current, palette);
     // Last of all: the band is chrome over everything it is selecting.
     drawMarquee(ctx, gestureRef.current, palette);
 
@@ -341,7 +333,6 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     requestDraw();
   }, [
     props.vertices,
-    props.showVertices,
     props.draft,
     props.selectedIds,
     props.mode,
@@ -494,8 +485,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
    * because that is paint order reversed: the marker drawn on top wins.
    */
   const vertexAt = (view: View, cx: number, cy: number, radius: number): MapVertex | null => {
-    const { vertices, showVertices } = propsRef.current;
-    if (!showVertices) return null;
+    const { vertices } = propsRef.current;
     for (let i = vertices.length - 1; i >= 0; i -= 1) {
       const vertex = vertices[i];
       const at = vertexScreen(view, session.meta, vertex.x, vertex.y);

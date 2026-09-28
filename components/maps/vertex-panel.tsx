@@ -208,7 +208,7 @@ export function VertexPanel(props: VertexPanelProps) {
             Choose <span className="text-foreground">Place</span>, then press the
             map where the robot should stop and drag to set which way it faces.{" "}
             <span className="text-foreground">Select</span> drags a box over
-            several; hold Shift to add more. Escape puts Waypoint down.
+            several; hold Shift to add more. Escape puts the type down.
           </p>
         </>
       )}

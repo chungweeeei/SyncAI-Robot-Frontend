@@ -16,8 +16,8 @@ import {
 } from "@/lib/map/editor";
 import { GridStatus } from "@/components/maps/grid-status";
 import {
-  EditorActionBar,
   EditorDrawBar,
+  EditorToolBar,
   SaveNote,
   type SaveState,
 } from "@/components/maps/grid-toolbar";
@@ -181,8 +181,6 @@ function EditorSurface({
   // Free by default: erasing phantom obstacles is the reason this screen exists.
   const [value, setValue] = React.useState<GridValue>(FREE);
   const [brush, setBrush] = React.useState<number>(DEFAULT_BRUSH);
-  /** The Waypoints layer toggle. Shown by default; forced on in vertex mode. */
-  const [showVertices, setShowVertices] = React.useState(true);
 
   const [canUndo, setCanUndo] = React.useState(false);
   const [canRedo, setCanRedo] = React.useState(false);
@@ -666,7 +664,6 @@ function EditorSurface({
         onHover={setHover}
         onScaleChange={setScale}
         vertices={vertexList}
-        showVertices={showVertices || mode === "vertex"}
         robotPose={robotPose}
         draft={draft}
         selectedIds={selectedIds}
@@ -676,7 +673,7 @@ function EditorSurface({
         onVertexGesture={handleVertexGesture}
       />
 
-      {/* One row across the top, as on the dashboard: Draw at the left, Editor
+      {/* One row across the top, as on the dashboard: Editor at the left, Draw
         * at the right, wrapping onto two lines on a phone rather than
         * overlapping. The overlay covers the canvas but is pointer-transparent,
         * so the map behind its empty stretches still takes a drag — only the
@@ -684,19 +681,9 @@ function EditorSurface({
         * height so the waypoint panel can drop to its bottom edge on a phone. */}
       <div className="pointer-events-none absolute inset-3 flex flex-col gap-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <EditorDrawBar
+          <EditorToolBar
             className="pointer-events-auto"
-            drawKind={drawKind}
-            onDrawKindChange={chooseDraw}
-            tool={tool}
-            onToolChange={setTool}
-            vertexTool={vertexTool}
-            onVertexToolChange={setVertexTool}
-            brush={brush}
-            onBrushChange={setBrush}
-          />
-          <EditorActionBar
-            className="pointer-events-auto"
+            onFit={fit}
             canUndo={canUndo}
             canRedo={canRedo}
             onUndo={undo}
@@ -704,32 +691,41 @@ function EditorSurface({
             dirty={dirty}
             save={save}
             onSave={onSave}
-            hasVertices={vertexList.length > 0}
-            showVertices={showVertices}
-            verticesLocked={mode === "vertex"}
-            onToggleVertices={() => setShowVertices((v) => !v)}
-            onFit={fit}
+            drawKind={drawKind}
+            tool={tool}
+            onToolChange={setTool}
+            vertexTool={vertexTool}
+            onVertexToolChange={setVertexTool}
+            brush={brush}
+            onBrushChange={setBrush}
+          />
+          <EditorDrawBar
+            className="pointer-events-auto"
+            drawKind={drawKind}
+            onDrawKindChange={chooseDraw}
             onZoomIn={zoomIn}
             onZoomOut={zoomOut}
           />
         </div>
 
-        {/* Under the Editor strip, at the right: the save note, and in
-          * Waypoint the waypoint panel. On a phone the panel drops to the
-          * bottom of the canvas instead, where the stacked strips leave it
-          * room — one panel, placed by CSS, so there is one form to type in.
+        {/* Under each strip, what it reports into: the save note under the
+          * strip that holds Save, the waypoint panel under the one that chose
+          * Waypoint. On a phone the panel drops to the bottom of the canvas
+          * instead, where the stacked strips leave it room — one panel, placed
+          * by CSS, so there is one form to type in.
           *
-          * Mounted only in vertex mode, because unmounting discards nothing
-          * that the mode switch was not already discarding — changeMode("grid")
-          * clears draft / selectedIds / stagedPose, and VertexForm is keyed on
-          * "draft" or selected.id, so its local name/type state is already gone
-          * by then. The one thing worth keeping across the toggle, `vertexType`,
-          * lives up here for exactly that reason. */}
-        <div className="pointer-events-none flex min-h-0 flex-col items-end gap-2">
+          * The panel is mounted only in vertex mode, because unmounting
+          * discards nothing that the mode switch was not already discarding —
+          * changeMode("grid") clears draft / selectedIds / stagedPose, and
+          * VertexForm is keyed on "draft" or selected.id, so its local
+          * name/type state is already gone by then. The one thing worth
+          * keeping across the toggle, `vertexType`, lives up here for exactly
+          * that reason. */}
+        <div className="flex min-h-0 items-start justify-between gap-2">
           <SaveNote save={save} className="pointer-events-auto max-w-72" />
           {mode === "vertex" && (
             <VertexPanel
-              className="pointer-events-auto min-h-0 overflow-y-auto max-sm:absolute max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[45%] max-sm:w-auto"
+              className="pointer-events-auto ml-auto max-h-full min-h-0 overflow-y-auto max-sm:absolute max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[45%] max-sm:w-auto"
               {...vertexPanelProps}
             />
           )}

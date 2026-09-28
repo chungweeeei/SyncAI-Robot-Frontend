@@ -7,6 +7,7 @@ import {
   MapPinPlusIcon,
   MaximizeIcon,
   Redo2Icon,
+  SaveIcon,
   SlashIcon,
   SquareDashedMousePointerIcon,
   SquareIcon,
@@ -15,7 +16,7 @@ import {
   ZoomOutIcon,
 } from "lucide-react";
 
-import { Chip, TONE_TEXT, overlayPanel, type Tone } from "@/components/console/instrument";
+import { TONE_TEXT, overlayPanel, type Tone } from "@/components/console/instrument";
 import {
   ToolButton,
   ToolDivider,
@@ -41,14 +42,14 @@ import { drawSwatch, type DrawKind, type EditTool, type VertexTool } from "@/lib
  *
  * They used to be one card at top-left that grew row by row: a Grid / Waypoints
  * mode switch, a tool row, a Paint row, a Size row, then history, zoom and
- * Save. Every choice was a labelled row of the same weight, so the one that
- * decides what a press on the map *means* sat among the ones that only tune
- * it. The strips put that choice first.
+ * Save. Every choice was a labelled row of the same weight.
  *
- * Left, **Draw**: what goes on the map — Wall, Floor, Unknown or Waypoint, or
- * nothing, which is where the editor opens — and then the tools that choice
- * allows. Right, **Editor**: what is done to the work as a whole — history,
- * Save, what is drawn, and the zoom at the outer edge as on the dashboard.
+ * Right, **Draw**: the one choice that decides what a press on the map means —
+ * nothing (where the editor opens), Wall, Floor, Unknown or Waypoint — as a
+ * list, beside the zoom at the outer edge. Left, **Editor**: everything that
+ * acts on the work — fit the view, history, Save — and then the tools the Draw
+ * choice allows, led by Pan, which is always there, and by a mark of what is
+ * being drawn so the strip that does the drawing says what it draws.
  */
 
 /**
@@ -124,6 +125,7 @@ function swatchIcon(kind: Exclude<DrawKind, "waypoint">): ToolIcon {
 const DRAW_KINDS: readonly {
   value: DrawKind;
   label: string;
+  /** What a press does with this kind chosen, for the list and the mark. */
   hint: string;
   icon: ToolIcon;
 }[] = [
@@ -181,21 +183,39 @@ function saveNote(
   };
 }
 
+
+/** The list's value for "nothing chosen": base-ui wants a string per item. */
+const NONE = "none";
+
+const DRAW_ITEMS = [
+  { value: NONE, label: "No type" },
+  ...DRAW_KINDS.map((kind) => ({ value: kind.value, label: kind.label })),
+];
+
 /**
- * The left strip: what a press on the map puts there, then how.
+ * The left strip: acting on the work, then drawing on it.
  *
- * Pressing the lit Draw button again puts it down, back to nothing chosen —
- * the same toggle the dashboard's pose tools use, and the same thing Escape
- * does. With nothing chosen the Tool group is Pan alone, lit, so the strip
- * still says what a drag does rather than going blank.
+ * Fit leads, because "put the whole floor plan back in front of me" is the
+ * first thing reached for after getting lost in a zoom. Save is an icon here
+ * like its neighbours; what it cannot say by shape it says by state — greyed
+ * with nothing to save, and a caution dot while there is.
  *
- * Size sits after the tools and only while it means something: Brush and Line
- * lay down a stroke that wide, Rect fills its box whatever the size, and a
- * control that changes nothing is one an operator learns to distrust.
+ * Pan is always offered, whatever is chosen, and with nothing chosen it is the
+ * only tool, lit, so the strip still says what a drag does. With a kind
+ * chosen, its mark (a swatch of the cell's grey, or a pin) stands before that
+ * kind's tools. Size follows only while it means something: Brush and Line lay
+ * down a stroke that wide, Rect fills its box whatever the size.
  */
-export function EditorDrawBar({
+export function EditorToolBar({
+  onFit,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+  dirty,
+  save,
+  onSave,
   drawKind,
-  onDrawKindChange,
   tool,
   onToolChange,
   vertexTool,
@@ -204,8 +224,15 @@ export function EditorDrawBar({
   onBrushChange,
   className,
 }: {
+  onFit: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+  dirty: boolean;
+  save: SaveState;
+  onSave: () => void;
   drawKind: DrawKind | null;
-  onDrawKindChange: (kind: DrawKind | null) => void;
   tool: EditTool;
   onToolChange: (tool: EditTool) => void;
   vertexTool: VertexTool;
@@ -216,50 +243,69 @@ export function EditorDrawBar({
 }) {
   const painting = drawKind !== null && drawKind !== "waypoint";
   const sized = painting && (tool === "brush" || tool === "line");
+  const kind = DRAW_KINDS.find((option) => option.value === drawKind) ?? null;
+  const saving = save.kind === "saving";
+  const panPressed =
+    drawKind === null || (drawKind === "waypoint" ? vertexTool === "pan" : tool === "pan");
 
   return (
-    <ToolStrip label="Draw" className={className}>
-      <ToolGroup label="Draw">
-        {DRAW_KINDS.map((kind) => (
-          <span key={kind.value} className="contents">
-            {/* Waypoints are not a cell value, so they sit apart from the
-              * three that are. */}
-            {kind.value === "waypoint" && <ToolDivider />}
-            <ToolButton
-              label={kind.label}
-              hint={kind.hint}
-              icon={kind.icon}
-              pressed={drawKind === kind.value}
-              onClick={() => onDrawKindChange(drawKind === kind.value ? null : kind.value)}
-            />
-          </span>
-        ))}
+    <ToolStrip label="Editor" className={className}>
+      <ToolButton label="Fit to view" hint="the whole floor plan, centred" icon={MaximizeIcon} onClick={onFit} />
+
+      <ToolDivider />
+
+      <ToolGroup label="History">
+        <ToolButton label="Undo" hint="take back the last stroke" icon={Undo2Icon} disabled={!canUndo} onClick={onUndo} />
+        <ToolButton label="Redo" hint="put it back" icon={Redo2Icon} disabled={!canRedo} onClick={onRedo} />
       </ToolGroup>
 
       <ToolDivider />
 
-      <ToolGroup label="Tool">
-        {drawKind === null ? (
-          <ToolButton
-            label="Pan"
-            hint="drag the map; choose what to draw to edit it"
-            icon={HandIcon}
-            pressed
-            onClick={() => {}}
+      {/* The dot is the old Unsaved chip, shrunk to fit an icon strip. It is
+        * decoration for the eye; the button's own hint and its enabled state
+        * carry the same fact to a screen reader. */}
+      <span className="relative flex">
+        <ToolButton
+          label="Save"
+          hint={saving ? "saving…" : dirty ? "unsaved changes — write them to the robot" : "nothing to save"}
+          icon={SaveIcon}
+          busy={saving}
+          disabled={!dirty || saving}
+          onClick={onSave}
+        />
+        {dirty && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute top-0.5 right-0.5 size-1.5 rounded-full bg-signal-caution"
           />
-        ) : drawKind === "waypoint" ? (
-          VERTEX_TOOLS.map((option) => (
-            <ToolButton
-              key={option.value}
-              label={option.label}
-              hint={option.hint}
-              icon={option.icon}
-              pressed={vertexTool === option.value}
-              onClick={() => onVertexToolChange(option.value)}
-            />
-          ))
-        ) : (
-          TOOLS.map((option) => (
+        )}
+      </span>
+
+      <ToolDivider />
+
+      <ToolGroup label="Tool">
+        <ToolButton
+          label="Pan"
+          hint={drawKind === null ? "drag the map; choose a type to edit it" : "drag the map"}
+          icon={HandIcon}
+          pressed={panPressed}
+          onClick={() => {
+            if (drawKind === "waypoint") onVertexToolChange("pan");
+            else onToolChange("pan");
+          }}
+        />
+        {kind && (
+          <span
+            role="img"
+            aria-label={`Drawing ${kind.label}`}
+            title={`${kind.label} — ${kind.hint}`}
+            className="mx-1 flex items-center text-muted-foreground"
+          >
+            <kind.icon className="size-4" />
+          </span>
+        )}
+        {painting &&
+          TOOLS.filter((option) => option.value !== "pan").map((option) => (
             <ToolButton
               key={option.value}
               label={option.label}
@@ -268,15 +314,24 @@ export function EditorDrawBar({
               pressed={tool === option.value}
               onClick={() => onToolChange(option.value)}
             />
-          ))
-        )}
+          ))}
+        {drawKind === "waypoint" &&
+          VERTEX_TOOLS.filter((option) => option.value !== "pan").map((option) => (
+            <ToolButton
+              key={option.value}
+              label={option.label}
+              hint={option.hint}
+              icon={option.icon}
+              pressed={vertexTool === option.value}
+              onClick={() => onVertexToolChange(option.value)}
+            />
+          ))}
       </ToolGroup>
 
       {/* Cells, not pixels — the number is the count of cells across, which is
         * what you are actually deciding about. A list of the fixed sizes
         * rather than a slider: knowing you are painting exactly 7 cells is
-        * worth more here than continuous control. `items` is what makes the
-        * trigger show the label rather than the bare number. */}
+        * worth more here than continuous control. */}
       {sized && (
         <Select
           items={SIZE_ITEMS}
@@ -307,102 +362,63 @@ export function EditorDrawBar({
 }
 
 /**
- * The right strip: what is done to the work as a whole, whatever is being drawn.
+ * The right strip: what a press puts on the map, and the zoom.
  *
- * Save stays whatever the Draw choice is, deliberately: the grid can be dirty
- * while waypoints are being placed, and hiding Save because the choice moved
- * is how unsaved cells get lost. It carries its words, unlike its neighbours,
- * because it is the one press here that writes to the robot.
- *
- * The Waypoints layer is the dashboard's layer toggle, for the editor's one
- * layer: on by default, hidden to paint under markers that are in the way,
- * and held on — pressed and greyed — while Waypoint is the Draw choice,
- * because placing or selecting stops you cannot see is not a thing to offer.
- * Like the dashboard's, it is left out on a map with no waypoints.
+ * A list rather than a row of buttons because it is one choice among five and
+ * changed rarely compared with the tools, so it can cost a click to open;
+ * "No type" is an item of its own, so putting the choice down is as visible as
+ * picking one (Escape does the same). Each item wears the mark the left strip
+ * will show for it.
  */
-export function EditorActionBar({
-  canUndo,
-  canRedo,
-  onUndo,
-  onRedo,
-  dirty,
-  save,
-  onSave,
-  hasVertices,
-  showVertices,
-  verticesLocked,
-  onToggleVertices,
-  onFit,
+export function EditorDrawBar({
+  drawKind,
+  onDrawKindChange,
   onZoomIn,
   onZoomOut,
   className,
 }: {
-  canUndo: boolean;
-  canRedo: boolean;
-  onUndo: () => void;
-  onRedo: () => void;
-  dirty: boolean;
-  save: SaveState;
-  onSave: () => void;
-  hasVertices: boolean;
-  showVertices: boolean;
-  /** Waypoint is the Draw choice, so the layer cannot be hidden. */
-  verticesLocked: boolean;
-  onToggleVertices: () => void;
-  onFit: () => void;
+  drawKind: DrawKind | null;
+  onDrawKindChange: (kind: DrawKind | null) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   className?: string;
 }) {
-  const shown = showVertices || verticesLocked;
   return (
-    <ToolStrip label="Editor" className={className}>
-      <ToolGroup label="History">
-        <ToolButton label="Undo" hint="take back the last stroke" icon={Undo2Icon} disabled={!canUndo} onClick={onUndo} />
-        <ToolButton label="Redo" hint="put it back" icon={Redo2Icon} disabled={!canRedo} onClick={onRedo} />
-      </ToolGroup>
-
-      <ToolDivider />
-
-      {dirty && <Chip tone="caution">Unsaved</Chip>}
-      <button
-        type="button"
-        disabled={!dirty || save.kind === "saving"}
-        onClick={onSave}
-        className="instrument-label h-7 rounded-sm border border-signal-cmd/50 bg-signal-cmd/12 px-2.5 text-signal-cmd transition-colors hover:bg-signal-cmd/20 pointer-coarse:min-h-10 disabled:border-hairline disabled:bg-transparent disabled:text-muted-foreground"
+    <ToolStrip label="Draw" className={className}>
+      <Select
+        items={DRAW_ITEMS}
+        value={drawKind ?? NONE}
+        onValueChange={(next) => {
+          if (next === null) return;
+          onDrawKindChange(next === NONE ? null : (next as DrawKind));
+        }}
       >
-        {save.kind === "saving" ? "Saving…" : "Save"}
-      </button>
-
-      {hasVertices && (
-        <>
-          <ToolDivider />
-          <ToolGroup label="Layers">
-            <ToolButton
-              label="Waypoints"
-              hint={
-                verticesLocked
-                  ? "shown while placing waypoints"
-                  : shown
-                    ? "shown — press to hide"
-                    : "hidden — press to show"
-              }
-              icon={MapPinIcon}
-              pressed={shown}
-              disabled={verticesLocked}
-              onClick={onToggleVertices}
-            />
-          </ToolGroup>
-        </>
-      )}
+        <SelectTrigger
+          size="sm"
+          aria-label="Draw"
+          title="What a press on the map puts there"
+          className="min-w-32 rounded-sm text-[12px] pointer-coarse:min-h-10"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NONE}>
+            <span className="text-muted-foreground">No type</span>
+          </SelectItem>
+          {DRAW_KINDS.map((kind) => (
+            <SelectItem key={kind.value} value={kind.value}>
+              <kind.icon className="size-3.5" />
+              {kind.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       <ToolDivider />
 
-      {/* Last, at the strip's outer edge, as on the dashboard. Zoom is
-        * otherwise the wheel and, on a phone, the pinch; one press is a step
-        * the operator can count. */}
+      {/* At the strip's outer edge, as on the dashboard. Zoom is otherwise the
+        * wheel and, on a phone, the pinch; one press is a step to count. */}
       <ToolGroup label="Zoom">
-        <ToolButton label="Fit to view" hint="the whole floor plan" icon={MaximizeIcon} onClick={onFit} />
         <ToolButton label="Zoom out" hint="one step back" icon={ZoomOutIcon} onClick={onZoomOut} />
         <ToolButton label="Zoom in" hint="one step closer" icon={ZoomInIcon} onClick={onZoomIn} />
       </ToolGroup>

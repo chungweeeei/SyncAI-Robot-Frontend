@@ -267,7 +267,6 @@ test.describe("the console on a phone", () => {
     // readout is display:none on a phone (it follows a hover), but it is
     // still in the DOM to be read.
     await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
-    await expect(page.getByText("Unsaved")).toHaveCount(0);
     const zoom = page.getByText("Zoom", { exact: true }).locator("xpath=..");
     await expect.poll(() => zoom.textContent()).not.toMatch(/Zoom94%/);
     expect(Number((await zoom.textContent())?.match(/Zoom(\d+)%/)?.[1])).toBeGreaterThan(94);
@@ -275,11 +274,12 @@ test.describe("the console on a phone", () => {
     // The positive control: one finger with Brush armed does paint. Brush is
     // only offered once something is chosen to draw, and Floor on these
     // Unknown cells is a change worth saving.
-    await page.getByRole("button", { name: "Floor" }).click();
+    await page.getByRole("combobox", { name: "Draw" }).click();
+    await page.getByRole("option", { name: "Floor", exact: true }).click();
     await page.getByRole("button", { name: "Brush" }).click();
     await touch("touchStart", [finger(cx, cy, 1)]);
     await touch("touchMove", [finger(cx + 20, cy + 20, 1)]);
     await touch("touchEnd", []);
-    await expect(page.getByText("Unsaved")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
   });
 });
