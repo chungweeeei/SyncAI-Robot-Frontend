@@ -20,7 +20,8 @@
 
 import { z } from "zod";
 
-import { reissueStepKeys, type StepDraft } from "@/lib/task/step";
+import type { TaskTemplate } from "@/lib/api/task-template";
+import { fromTemplateSteps, reissueStepKeys, type StepDraft } from "@/lib/task/step";
 
 export type TaskEditorMode = "now" | "schedule";
 
@@ -31,7 +32,6 @@ export interface TaskDraft {
   editing: { id: string; name: string } | null;
   /** The operator's map override; null follows the loaded map. */
   chosenMap: string | null;
-  composerOpen: boolean;
   mode: TaskEditorMode;
   /** The Save field, as typed — a half-named job is still the operator's work. */
   name: string;
@@ -41,7 +41,6 @@ export const EMPTY_TASK_DRAFT: TaskDraft = {
   steps: [],
   editing: null,
   chosenMap: null,
-  composerOpen: false,
   mode: "now",
   name: "",
 };
@@ -53,7 +52,6 @@ export function isEmptyTaskDraft(draft: TaskDraft): boolean {
     draft.editing === null &&
     draft.chosenMap === null &&
     draft.name === "" &&
-    !draft.composerOpen &&
     draft.mode === "now"
   );
 }
@@ -76,10 +74,43 @@ const TaskDraftSchema: z.ZodType<TaskDraft> = z.object({
   steps: z.array(StepDraftSchema),
   editing: z.object({ id: z.string(), name: z.string() }).nullable(),
   chosenMap: z.string().nullable(),
-  composerOpen: z.boolean(),
   mode: z.enum(["now", "schedule"]),
   name: z.string(),
 });
+
+/**
+ * A template opened in the editor, as a whole draft.
+ *
+ * `fromTemplateSteps` reads resolved_params, so a vertex moved since the save
+ * shows its *current* pose, and it mints fresh keys, so no incoming row is
+ * reconciled into an outgoing one. A template for another map opens on that
+ * map; one with no Move step names none and leaves the current choice alone.
+ */
+export function draftFromTemplate(
+  current: TaskDraft,
+  template: TaskTemplate,
+  mode: TaskEditorMode,
+): TaskDraft {
+  return {
+    steps: fromTemplateSteps(template.steps),
+    editing: { id: template.id, name: template.name },
+    chosenMap: template.map_name ?? current.chosenMap,
+    mode,
+    name: template.name,
+  };
+}
+
+/**
+ * Whether replacing the draft with `templateId` (or with nothing, for a new
+ * job) would throw away steps the operator built. The editor is a page of its
+ * own now, so the draft is off-screen whenever this is asked: replacing it
+ * silently would be data loss nobody saw happen. Reopening the template that
+ * is already loaded is not a replacement.
+ */
+export function draftWouldBeLost(draft: TaskDraft, templateId: string | null): boolean {
+  if (draft.steps.length === 0) return false;
+  return templateId === null || draft.editing?.id !== templateId;
+}
 
 /**
  * What storage holds, or the empty draft when it holds nothing usable.

@@ -5,10 +5,13 @@ import {
   TASK_DRAFT_KEY,
   createTaskDraftStore,
   decodeTaskDraft,
+  draftFromTemplate,
+  draftWouldBeLost,
   isEmptyTaskDraft,
   type DraftStorage,
   type TaskDraft,
 } from "@/lib/task/draft-store";
+import type { TaskTemplate } from "@/lib/api/task-template";
 import { newStepDraft, type StepDraft } from "@/lib/task/step";
 
 /**
@@ -40,7 +43,6 @@ function draft(over: Partial<TaskDraft> = {}): TaskDraft {
     steps: [{ ...newStepDraft("MOVE"), x: "1", y: "2", vertexId: "v1" }, newStepDraft("SPEAK")],
     editing: { id: "t1", name: "Morning round" },
     chosenMap: "wh1",
-    composerOpen: true,
     name: "night run",
     ...over,
   };
@@ -63,8 +65,15 @@ describe("decodeTaskDraft", () => {
     expect(restored.editing).toEqual(stored.editing);
     expect(restored.chosenMap).toBe("wh1");
     expect(restored.name).toBe("night run");
-    expect(restored.composerOpen).toBe(true);
     expect(restored.steps.map(withoutKey)).toEqual(stored.steps.map(withoutKey));
+  });
+
+  it("still restores a draft written while the editor could fold away", () => {
+    // Builds before the editor had its own page stored `composerOpen`; an
+    // unknown key is stripped rather than costing the operator their steps.
+    const restored = decodeTaskDraft(JSON.stringify({ ...draft(), composerOpen: true }));
+    expect(restored.name).toBe("night run");
+    expect(restored).not.toHaveProperty("composerOpen");
   });
 
   it("re-mints every restored key so a row added next cannot collide", () => {
@@ -133,10 +142,69 @@ describe("createTaskDraftStore", () => {
     for (const storage of [broken, null]) {
       const store = createTaskDraftStore(storage);
       expect(store.getSnapshot()).toBe(EMPTY_TASK_DRAFT);
-      store.update((current) => ({ ...current, composerOpen: true }));
-      expect(store.getSnapshot().composerOpen).toBe(true);
+      store.update((current) => ({ ...current, name: "x" }));
+      expect(store.getSnapshot().name).toBe("x");
       store.clear();
       expect(store.getSnapshot()).toBe(EMPTY_TASK_DRAFT);
     }
+  });
+});
+
+function template(over: Partial<TaskTemplate> = {}): TaskTemplate {
+  return {
+    id: "t2",
+    name: "Dock check",
+    description: "",
+    map_name: "wh2",
+    steps: [
+      {
+        id: "s1",
+        type: "SPEAK",
+        params: { text: "hello" },
+        resolved_params: { text: "hello" },
+        vertex_id: null,
+        vertex_name: null,
+        vertex_status: "NONE",
+      },
+    ],
+    map_matches_active: true,
+    missing_vertex_count: 0,
+    created_at: "2026-09-01T00:00:00Z",
+    updated_at: "2026-09-01T00:00:00Z",
+    ...over,
+  };
+}
+
+describe("draftFromTemplate", () => {
+  it("opens the template on its own map, named, in the mode asked for", () => {
+    const next = draftFromTemplate(draft(), template(), "schedule");
+    expect(next.editing).toEqual({ id: "t2", name: "Dock check" });
+    expect(next.name).toBe("Dock check");
+    expect(next.chosenMap).toBe("wh2");
+    expect(next.mode).toBe("schedule");
+    expect(next.steps.map((step) => step.text)).toEqual(["hello"]);
+  });
+
+  it("leaves the map choice alone for a template that names none", () => {
+    expect(draftFromTemplate(draft(), template({ map_name: null }), "now").chosenMap).toBe(
+      "wh1",
+    );
+  });
+});
+
+describe("draftWouldBeLost", () => {
+  it("is false for an empty editor, whatever replaces it", () => {
+    expect(draftWouldBeLost(draft({ steps: [] }), null)).toBe(false);
+    expect(draftWouldBeLost(draft({ steps: [] }), "t2")).toBe(false);
+  });
+
+  it("is true when steps would be replaced by a new job or another template", () => {
+    expect(draftWouldBeLost(draft(), null)).toBe(true);
+    expect(draftWouldBeLost(draft(), "t2")).toBe(true);
+    expect(draftWouldBeLost(draft({ editing: null }), "t1")).toBe(true);
+  });
+
+  it("is false when reopening the template already loaded", () => {
+    expect(draftWouldBeLost(draft(), "t1")).toBe(false);
   });
 });

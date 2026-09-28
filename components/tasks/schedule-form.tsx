@@ -89,7 +89,7 @@ export interface ScheduleFormProps {
  * durable named thing they have to recognise in the list a week later, and
  * `robot01-sched-1782786519` is not that.
  *
- * Reset is by remounting — TaskConsole keys this component and bumps the key
+ * Reset is by remounting — TaskEditor keys this component and bumps the key
  * after a successful create — rather than by clearing six fields in an effect.
  */
 export function ScheduleForm({
