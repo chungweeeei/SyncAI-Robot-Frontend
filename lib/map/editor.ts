@@ -6,7 +6,7 @@
 // the layering arrow pointing backwards. The component still owns the state
 // machine; this owns the words it is written in.
 
-import type { Cell, GridValue } from "@/lib/map/grid";
+import { FREE, OCCUPIED, UNKNOWN, type Cell, type GridValue } from "@/lib/map/grid";
 import type { MapVertex } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
@@ -34,6 +34,60 @@ export type VertexTool = "pan" | "place" | "select";
  * `viewRef`, which is the one thing GridCanvas does not expose.
  */
 export type EditMode = "grid" | "vertex";
+
+/**
+ * What the operator has chosen to put on the floor plan: one of the three cell
+ * values, or waypoints.
+ *
+ * The editor's first choice, and the one the rest of its toolbar follows from.
+ * It folds together two controls that used to be separate — a Grid / Waypoints
+ * mode switch and a Paint row — because they were one question asked twice:
+ * "what does a press on the map put there?" Painting Floor and placing a
+ * waypoint are both answers to it, and a mode switch that had to be flipped
+ * before the answer could be given was a step with nothing in it.
+ *
+ * `null` is a real state, and the one the editor opens in: nothing is chosen,
+ * only Pan is offered, and a press on the map can only move the view. The same
+ * reasoning as DEFAULT_TOOL, one step further — an operator who opened a map
+ * to look at it cannot mark it by accident.
+ */
+export type DrawKind = "wall" | "floor" | "unknown" | "waypoint";
+
+/** The byte each paint kind writes. Wall is an obstacle, Floor is free space. */
+const DRAW_VALUE: Record<Exclude<DrawKind, "waypoint">, GridValue> = {
+  wall: OCCUPIED,
+  floor: FREE,
+  unknown: UNKNOWN,
+};
+
+/**
+ * The editor state a Draw choice puts the canvas in.
+ *
+ * `value` is present only for a paint kind; for waypoints and for nothing the
+ * current paint byte is left alone, so picking Wall again later finds the
+ * brush size and tool the operator left. `panOnly` is the resting state's rule:
+ * with nothing chosen, Pan is the only tool there is.
+ */
+export function editStateOf(kind: DrawKind | null): {
+  mode: EditMode;
+  value?: GridValue;
+  panOnly: boolean;
+} {
+  if (kind === "waypoint") return { mode: "vertex", panOnly: false };
+  if (kind === null) return { mode: "grid", panOnly: true };
+  return { mode: "grid", value: DRAW_VALUE[kind], panOnly: false };
+}
+
+/**
+ * The CSS colour a cell of this value is drawn in on the floor plan, for the
+ * Draw buttons' swatches. The bytes are blitted literally as greys (see
+ * lib/map/render.ts), so the swatch is the byte itself and cannot drift from
+ * what a stroke will look like.
+ */
+export function drawSwatch(kind: Exclude<DrawKind, "waypoint">): string {
+  const byte = DRAW_VALUE[kind];
+  return `rgb(${byte} ${byte} ${byte})`;
+}
 
 /** What a completed vertex gesture produced. */
 export interface VertexGesture {
