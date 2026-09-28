@@ -53,7 +53,7 @@ function vertexWarning(map: MapSummary): string | null {
  *
  * An X pinned to the card's top-right corner, not a word in the header row.
  * Dismiss-this-thing is the one gesture that already has a universal glyph, and
- * the header row is a row of *labels* — Rename, Details — where a fourth word
+ * the header row is the map's name — the one thing Rename edits — where a word
  * would read as another view to open rather than the one action that destroys
  * something. The corner is also the only place on the card that is not already
  * carrying information.
