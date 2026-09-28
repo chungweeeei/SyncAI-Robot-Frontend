@@ -44,7 +44,7 @@ function MapEditScreen() {
   const search = useSearchParams();
   const name = params.name;
   const initialMode = search.get("mode") === "vertex" ? "vertex" : "grid";
-  const returnTo = search.get("from") === "tasks" ? "/tasks" : "/maps";
+  const returnTo = search.get("from") === "tasks" ? "/tasks/editor" : "/maps";
 
   /**
    * Mirrored out of the editor for two reasons. The App Router has no navigation
@@ -72,8 +72,8 @@ function MapEditScreen() {
         <button
           type="button"
           onClick={goBack}
-          aria-label={returnTo === "/tasks" ? "Back to tasks" : "Back to maps"}
-          title={returnTo === "/tasks" ? "Back to the task editor" : "Back to maps"}
+          aria-label={returnTo === "/tasks/editor" ? "Back to tasks" : "Back to maps"}
+          title={returnTo === "/tasks/editor" ? "Back to the task editor" : "Back to maps"}
           className="flex size-7 shrink-0 items-center justify-center rounded-sm border border-hairline text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:size-10"
         >
           <ArrowLeftIcon className="size-3.5" aria-hidden />

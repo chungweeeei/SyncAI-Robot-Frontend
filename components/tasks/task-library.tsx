@@ -97,7 +97,7 @@ export function TaskLibrary({
     <div className="space-y-1.5">
       {templates.length === 0 ? (
         <p className="text-[11px] leading-tight text-muted-foreground">
-          No saved jobs yet. Build a list below, name it, and press Save as new.
+          No saved jobs yet. Press Create task to build one.
         </p>
       ) : (
         // The cap and the inner scroll are for a desktop composer, where the

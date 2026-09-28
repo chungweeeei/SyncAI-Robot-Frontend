@@ -653,6 +653,50 @@ test.describe("the task console", () => {
     await expect(page.getByText("Morning round")).toBeVisible();
   });
 
+  test("opens an empty editor from Create task, and back", async ({ page }) => {
+    const writes = await mockBackend(page);
+    await page.goto("/tasks");
+    await page.getByRole("button", { name: "Create task" }).click();
+
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
+    await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
+    await expect(page.getByPlaceholder("Morning patrol")).toHaveValue("");
+
+    await page.getByRole("link", { name: "Back to Tasks" }).click();
+    await expect(page).toHaveURL(/\/tasks$/);
+    // Opening an editor is not a write.
+    expect(writes).toEqual([]);
+  });
+
+  test("asks before Create task clears unsaved steps", async ({ page }) => {
+    // The draft outlives the editor's page, so from the overview it is out of
+    // sight. Declining keeps it; accepting is the only way it goes.
+    const writes = await mockBackend(page);
+    await page.goto("/tasks/editor");
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
+    await page.goto("/tasks");
+
+    let asked = "";
+    page.once("dialog", (dialog) => {
+      asked = dialog.message();
+      void dialog.dismiss();
+    });
+    await page.getByRole("button", { name: "Create task" }).click();
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
+    expect(asked).toMatch(/unsaved steps/);
+    // Rows come back folded, read back as the line they say.
+    await expect(page.getByText("\u201cArrived\u201d")).toBeVisible();
+
+    await page.goto("/tasks");
+    page.once("dialog", (dialog) => void dialog.accept());
+    await page.getByRole("button", { name: "Create task" }).click();
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
+    await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
+    await expect(page.getByText("\u201cArrived\u201d")).toHaveCount(0);
+    expect(writes).toEqual([]);
+  });
+
   test("lists another map's jobs, marked and not runnable", async ({ page }) => {
     // A job for a map the robot is not on is still the operator's work: it is
     // listed and can be opened, but its coordinates are in another frame, so
@@ -692,13 +736,13 @@ test.describe("the task console", () => {
     // missing a stop, and the only way to add one was to leave — which threw
     // the job away. The link opens that map's editor in Waypoints mode, the
     // editor's back button returns here, and the draft (steps, the loaded
-    // template, the renamed field, the unfolded composer) is as it was,
-    // across a reload too.
+    // template, the renamed field) is as it was, across a reload too.
     await mockBackend(page);
     await page.goto("/tasks");
     await page
       .getByRole("button", { name: 'Load "Morning round" into the editor' })
       .click();
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
     await page.getByTitle("Say a line on the robot speaker (TTS).").click();
     await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
     await page.getByPlaceholder("Morning patrol").fill("night run");
@@ -710,7 +754,7 @@ test.describe("the task console", () => {
     await expect(page.getByRole("combobox", { name: "Draw" })).toContainText("Waypoint");
 
     await page.getByRole("button", { name: "Back to tasks" }).click();
-    await expect(page).toHaveURL(/\/tasks$/);
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
     const asLeft = async () => {
       await expect(page.getByText("Editing Morning round")).toBeVisible();
       await expect(page.getByText(/^dock · \(/)).toBeVisible();
@@ -723,10 +767,13 @@ test.describe("the task console", () => {
     await page.reload();
     await asLeft();
 
-    // Stop editing empties it, and empty is what a reload then finds.
+    // Stop editing empties it and goes back to the overview, and empty is
+    // what the editor then finds, across a reload too.
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: /Stop editing/ }).click();
-    await expect(page.getByText("Editing Morning round")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/tasks$/);
+    await page.goto("/tasks/editor");
+    await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
     await page.reload();
     await expect(page.getByText("Editing Morning round")).toHaveCount(0);
     await expect(page.getByText(/^dock · \(/)).toHaveCount(0);
@@ -767,8 +814,7 @@ test.describe("the task console", () => {
         ),
       });
     });
-    await page.goto("/tasks");
-    await page.getByRole("button", { name: /Task editor/ }).click();
+    await page.goto("/tasks/editor");
     await page.getByTitle("Drive to a pose in the map frame.").click();
 
     // Opens on the loaded map, and says so.
@@ -817,7 +863,7 @@ test.describe("the task console", () => {
     });
     await page.goto("/tasks");
 
-    await expect(page.getByText("Running outside this editor")).toBeVisible();
+    await expect(page.getByText("Running outside this page")).toBeVisible();
     await expect(page.getByText("robot01-task-1758000000-1")).toBeVisible();
     await expect(page.getByText("via nightly")).toBeVisible();
   });
@@ -921,7 +967,7 @@ test.describe("the task console", () => {
     // has no reason to name a zone: the schedule's and the browser's agree.
     test.use({ timezoneId: "Asia/Taipei" });
 
-    test("lists registered schedules above the editor, in words", async ({
+    test("lists registered schedules in words", async ({
       page,
     }) => {
       await mockBackend(page, {
@@ -948,21 +994,6 @@ test.describe("the task console", () => {
         page.getByText("2026-09-24 21:00", { exact: true }),
       ).toBeVisible();
       await expect(page.getByText("UTC", { exact: true })).toHaveCount(0);
-
-      // What the robot already does on its own sits with the library, above the
-      // thing being drafted.
-      const schedules = page.getByRole("heading", { name: "Registered schedules" });
-      const editor = page.getByRole("button", { name: /Task editor/ });
-      await expect(schedules).toBeVisible();
-      const editorFollows = await schedules.evaluate(
-        (heading, editorEl) =>
-          Boolean(
-            heading.compareDocumentPosition(editorEl as Node) &
-              Node.DOCUMENT_POSITION_FOLLOWING,
-          ),
-        await editor.elementHandle(),
-      );
-      expect(editorFollows).toBe(true);
     });
 
     test("re-reads the list once the soonest run has passed, and only then", async ({
@@ -1300,8 +1331,7 @@ test.describe("the step editor", () => {
         ),
       });
     });
-    await page.goto("/tasks");
-    await page.getByRole("button", { name: /Task editor/ }).click();
+    await page.goto("/tasks/editor");
 
     // The add row's buttons share their labels with each row's type picker,
     // so they are reached by their hints.
@@ -1445,8 +1475,7 @@ test.describe("the step editor", () => {
       const { pathname } = new URL(request.url());
       if (pathname.endsWith("/image")) imageReads.push(pathname);
     });
-    await page.goto("/tasks");
-    await page.getByRole("button", { name: /Task editor/ }).click();
+    await page.goto("/tasks/editor");
     await page.getByTitle("Drive to a pose in the map frame.").click();
     await page.getByRole("button", { name: "Floor plan" }).click();
     await expect(page.getByRole("img", { name: /^Floor plan of dp2f/ })).toBeVisible();
@@ -1490,8 +1519,7 @@ test.describe("the step editor", () => {
         ),
       });
     });
-    await page.goto("/tasks");
-    await page.getByRole("button", { name: /Task editor/ }).click();
+    await page.goto("/tasks/editor");
     await page.getByTitle("Drive to a pose in the map frame.").click();
 
     // Closed until asked for: a map under every row would bury the list.

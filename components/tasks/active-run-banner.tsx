@@ -42,7 +42,7 @@ export function ActiveRunBanner({
   return (
     <div className="mb-4 space-y-1.5 rounded-md border border-signal-active/40 bg-signal-active/8 p-2.5">
       <p className="instrument-label text-signal-active">
-        Running outside this editor
+        Running outside this page
       </p>
       {unattended.map((task) => (
         <ActiveRunRow key={task.id} task={task} asOf={asOf} />
