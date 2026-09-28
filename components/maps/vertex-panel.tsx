@@ -153,15 +153,9 @@ export function VertexPanel(props: VertexPanelProps) {
           onCancel={() => props.onSelect(null)}
           onDelete={props.onDelete}
         />
-        {/* Kept below the form so the selection can move without closing it
-         * first — the form is keyed on the id, so picking another row remounts
-         * it with that vertex's values. */}
-        <VertexList
-          vertices={vertices}
-          selectedIds={selectedIds}
-          onSelect={props.onSelect}
-          empty={null}
-        />
+        {/* No list under the form, by request: while one waypoint is being
+         * edited the panel is about that one. Another is still one click away
+         * on the map, and Close brings the list back. */}
         </>
       ) : (
         <>
