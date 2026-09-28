@@ -481,7 +481,7 @@ test.describe("tapping a stop on the dashboard", () => {
     // Polled: the camera eases into the overhead view over a few frames.
     await expect(async () => {
       await page.mouse.click(x, y);
-      await expect(page.getByRole("alertdialog", { name: `Move to ${stop.name}?` })).toBeVisible({
+      await expect(page.getByRole("alertdialog", { name: `Move to ${stop.name}` })).toBeVisible({
         timeout: 500,
       });
     }).toPass();
@@ -519,7 +519,7 @@ test.describe("tapping a stop on the dashboard", () => {
     page.once("dialog", (confirm) => void confirm.dismiss());
     await page.getByRole("button", { name: "Delete" }).click();
 
-    await expect(page.getByRole("alertdialog", { name: `Move to ${stop.name}?` })).toBeVisible();
+    await expect(page.getByRole("alertdialog", { name: `Move to ${stop.name}` })).toBeVisible();
     expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
     expect(errors, "the page logged errors").toEqual([]);
   });

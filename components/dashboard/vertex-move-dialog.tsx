@@ -13,11 +13,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { VERTEX_TYPES, vertexGlyph } from "@/lib/map/vertex";
 import type { MapVertex } from "@/lib/types/map";
 
 /**
- * "Move to this stop?" — the confirm behind a tap on a vertex in the
+ * "Move to this stop" — the confirm behind a tap on a vertex in the
  * viewport.
  *
  * The dialog is where the vertex's *name* lives. On the map a stop is a mark and
@@ -81,8 +80,6 @@ export function VertexMoveDialog({
   const [shown, setShown] = React.useState<MapVertex | null>(vertex);
   if (vertex && vertex !== shown) setShown(vertex);
 
-  const spec = shown && VERTEX_TYPES.find((type) => type.value === shown.type);
-
   return (
     <AlertDialog
       open={vertex !== null}
@@ -94,11 +91,10 @@ export function VertexMoveDialog({
         {shown && (
           <>
             <AlertDialogHeader>
-              <AlertDialogTitle>Move to {shown.name}?</AlertDialogTitle>
+              <AlertDialogTitle>Move to {shown.name}</AlertDialogTitle>
+              {/* No type line, by request: the marker's badge already carries
+                * the glyph, and this dialog is about where the stop is. */}
               <AlertDialogDescription>
-                {spec
-                  ? `${vertexGlyph(shown.type)} · ${spec.label} — ${spec.hint}`
-                  : `Type ${shown.type}.`}{" "}
                 The robot drives there on its own once the task is sent.
               </AlertDialogDescription>
             </AlertDialogHeader>
