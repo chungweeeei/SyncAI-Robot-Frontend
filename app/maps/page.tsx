@@ -12,13 +12,13 @@ export default function MapsPage() {
       <div className="mx-auto w-full max-w-5xl px-4 py-4 sm:py-8">
         <header className="mb-6">
           <h1 className="text-xl font-semibold tracking-tight">Maps</h1>
+          {/* One line, by request. What it used to spell out lives where it
+            * applies: the switch dialog says to set the robot's position
+            * afterwards, and Rename and Delete are greyed on the map in use. */}
           <p className="mt-1 text-sm text-muted-foreground">
-            Areas{" "}
+            Switch, edit and manage the maps{" "}
             <span className="readout">{state?.robot_id ?? "this robot"}</span>{" "}
-            can work in. The one it is using now is marked. Switching to another
-            takes effect straight away and is remembered after a restart, but
-            the robot loses track of where it is — set its position on the
-            Dashboard afterwards. The map in use cannot be renamed or deleted.
+            works in.
           </p>
         </header>
 
