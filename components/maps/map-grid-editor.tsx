@@ -5,15 +5,22 @@ import * as React from "react";
 import {
   GridCanvas,
 } from "@/components/maps/grid-canvas";
-import type {
-  CellProbe,
-  EditMode,
-  EditTool,
-  VertexGesture,
-  VertexTool,
+import {
+  editStateOf,
+  type CellProbe,
+  type DrawKind,
+  type EditMode,
+  type EditTool,
+  type VertexGesture,
+  type VertexTool,
 } from "@/lib/map/editor";
 import { GridStatus } from "@/components/maps/grid-status";
-import { GridToolbar, type SaveState } from "@/components/maps/grid-toolbar";
+import {
+  EditorActionBar,
+  EditorDrawBar,
+  SaveNote,
+  type SaveState,
+} from "@/components/maps/grid-toolbar";
 import { VertexPanel } from "@/components/maps/vertex-panel";
 import { useSaveMapGrid } from "@/hooks/use-map-actions";
 import { useMapGrid } from "@/hooks/use-map-grid";
@@ -48,11 +55,13 @@ const DEFAULT_BRUSH = 7;
  * before they notice. Undo would reach it, but only if they realised; the map is
  * blitted literally and a Free stroke across free space is invisible.
  *
- * Painting therefore costs one click on the Tool row, which is the trade this
- * makes: an explicit arming gesture for the destructive default, in exchange for
- * "look around" being the safe thing that needs no decision. Right/middle-drag
- * and Space still pan whatever the tool is — Pan being the *default* does not
- * make it the only way.
+ * Painting therefore costs two clicks — what to draw, then Brush — which is
+ * the trade this makes: explicit arming for the destructive default, in
+ * exchange for "look around" being the safe thing that needs no decision. The
+ * editor now opens one step further back still, with nothing chosen to draw at
+ * all (see DrawKind), and every change of Draw choice lands back on Pan.
+ * Right/middle-drag and Space still pan whatever the tool is — Pan being the
+ * *default* does not make it the only way.
  */
 const DEFAULT_TOOL: EditTool = "pan";
 
@@ -158,12 +167,22 @@ function EditorSurface({
   initialMode: EditMode;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
+  /**
+   * What a press puts on the map, or nothing — the Draw strip's choice, and
+   * the one `mode` and `value` below follow from (see editStateOf). Opens with
+   * nothing chosen, unless a link asked for Waypoints.
+   */
+  const [drawKind, setDrawKind] = React.useState<DrawKind | null>(
+    initialMode === "vertex" ? "waypoint" : null,
+  );
   const [mode, setMode] = React.useState<EditMode>(initialMode);
   const [tool, setTool] = React.useState<EditTool>(DEFAULT_TOOL);
   const [vertexTool, setVertexTool] = React.useState<VertexTool>(DEFAULT_VERTEX_TOOL);
   // Free by default: erasing phantom obstacles is the reason this screen exists.
   const [value, setValue] = React.useState<GridValue>(FREE);
   const [brush, setBrush] = React.useState<number>(DEFAULT_BRUSH);
+  /** The Waypoints layer toggle. Shown by default; forced on in vertex mode. */
+  const [showVertices, setShowVertices] = React.useState(true);
 
   const [canUndo, setCanUndo] = React.useState(false);
   const [canRedo, setCanRedo] = React.useState(false);
@@ -282,6 +301,25 @@ function EditorSurface({
       if (next === "grid") clearVertexEdit();
     },
     [clearVertexEdit],
+  );
+
+  /**
+   * Put a Draw choice down on the map, or pick it up again (`null`).
+   *
+   * Every change lands on Pan, in both tool axes, for DEFAULT_TOOL's reason:
+   * the choice says what a press *would* put there, and the tool is a second,
+   * deliberate step. Through changeMode, never setMode, so leaving Waypoint
+   * with a draft staged still drops it.
+   */
+  const chooseDraw = React.useCallback(
+    (next: DrawKind | null) => {
+      const state = editStateOf(next);
+      setDrawKind(next);
+      changeMode(state.mode);
+      setTool(DEFAULT_TOOL);
+      if (state.value !== undefined) setValue(state.value);
+    },
+    [changeMode],
   );
 
   /**
@@ -518,9 +556,9 @@ function EditorSurface({
        */
       if (event.key === "Escape") {
         event.preventDefault();
-        clearVertexEdit();
-        setTool(DEFAULT_TOOL);
-        setVertexTool(DEFAULT_VERTEX_TOOL);
+        // Puts the Draw choice down as well, which drops a staged draft and
+        // lands both tool axes on Pan — one press for "give me the map back".
+        chooseDraw(null);
         return;
       }
 
@@ -572,7 +610,7 @@ function EditorSurface({
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
     };
-  }, [undo, redo, fit, clearVertexEdit]);
+  }, [undo, redo, fit, chooseDraw]);
 
   /**
    * Covers reload and tab close only. The App Router has no navigation blocker, so
@@ -585,6 +623,31 @@ function EditorSurface({
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty]);
+
+  const vertexPanelProps = {
+    vertices: vertexList,
+    status: vertexStatus,
+    error: vertexError,
+    busy: vertexBusy,
+    type: vertexType,
+    onTypeChange: setVertexType,
+    draft,
+    selected,
+    selectedIds,
+    stagedPose,
+    robotPose,
+    robotPoseReason,
+    onUseRobotPose: placeAtRobot,
+    onSelect: selectVertex,
+    // A draft and a selection are mutually exclusive by construction, so
+    // clearing the whole vertex edit *is* "drop the draft", and the same call
+    // is what the band selection's Clear does.
+    onCancelDraft: clearVertexEdit,
+    onClearSelection: clearVertexEdit,
+    onCreate: createFromDraft,
+    onSave: saveSelected,
+    onDelete: deleteSelected,
+  };
 
   return (
     <div className="relative h-full w-full">
@@ -603,6 +666,7 @@ function EditorSurface({
         onHover={setHover}
         onScaleChange={setScale}
         vertices={vertexList}
+        showVertices={showVertices || mode === "vertex"}
         robotPose={robotPose}
         draft={draft}
         selectedIds={selectedIds}
@@ -612,76 +676,65 @@ function EditorSurface({
         onVertexGesture={handleVertexGesture}
       />
 
-      {/* Top-left from sm, the full width on a phone: at 375 px a 224 px
-        * toolbar and a 240 px waypoint panel could not both hang from a
-        * corner without one covering the other. Capped to the canvas at
-        * every width, because a phone held sideways leaves ~210 px and the
-        * Save button was what got clipped. */}
-      <GridToolbar
-        className="absolute top-3 right-3 left-3 max-h-[calc(100%-1.5rem)] w-auto overflow-y-auto sm:right-auto sm:w-56"
-        mode={mode}
-        // changeMode, never setMode: going back to grid with a draft still staged
-        // leaves a dashed marker on the canvas and no panel to commit or dismiss
-        // it. Note that setMode typechecks fine here, so this one is on us.
-        onModeChange={changeMode}
-        tool={tool}
-        onToolChange={setTool}
-        vertexTool={vertexTool}
-        onVertexToolChange={setVertexTool}
-        value={value}
-        onValueChange={setValue}
-        brush={brush}
-        onBrushChange={setBrush}
-        canUndo={canUndo}
-        canRedo={canRedo}
-        onUndo={undo}
-        onRedo={redo}
-        onFit={fit}
-        onZoomIn={zoomIn}
-        onZoomOut={zoomOut}
-        dirty={dirty}
-        save={save}
-        onSave={onSave}
-      />
-      {/* Top-right from sm; along the bottom on a phone, where the toolbar
-        * has the top (see above). Capped and scrolling for the same reason.
-        *
-        * The toolbar owns top-left and GridStatus bottom-left.
-        *
-        * Mounted only in vertex mode, because unmounting discards nothing that the
-        * mode switch was not already discarding — changeMode("grid") clears draft
-        * / selectedIds / stagedPose, and VertexForm is keyed on "draft"
-        * or selected.id, so its local name/type state is already gone by then. The
-        * one thing worth keeping across the toggle, `vertexType`, lives up here
-        * for exactly that reason. Left mounted it would cover 240 px of map in the
-        * mode where nothing in it is actionable. */}
-      {mode === "vertex" && (
-        <VertexPanel
-          className="absolute right-3 bottom-3 left-3 max-h-[45%] w-auto overflow-y-auto sm:top-3 sm:bottom-auto sm:left-auto sm:max-h-[calc(100%-1.5rem)] sm:w-60"
-          vertices={vertexList}
-          status={vertexStatus}
-          error={vertexError}
-          busy={vertexBusy}
-          type={vertexType}
-          onTypeChange={setVertexType}
-          draft={draft}
-          selected={selected}
-          selectedIds={selectedIds}
-          stagedPose={stagedPose}
-          robotPose={robotPose}
-          robotPoseReason={robotPoseReason}
-          onUseRobotPose={placeAtRobot}
-          onSelect={selectVertex}
-          // A draft and a selection are mutually exclusive by construction, so
-          // clearing the whole vertex edit *is* "drop the draft", and the same
-          // call is what the band selection's Clear does.
-          onCancelDraft={clearVertexEdit}
-          onClearSelection={clearVertexEdit}
-          onCreate={createFromDraft}
-          onSave={saveSelected}
-          onDelete={deleteSelected}
-        />
-      )}
+      {/* One row across the top, as on the dashboard: Draw at the left, Editor
+        * at the right, wrapping onto two lines on a phone rather than
+        * overlapping. The overlay covers the canvas but is pointer-transparent,
+        * so the map behind its empty stretches still takes a drag — only the
+        * strips and the panels in it catch the pointer. It spans the full
+        * height so the waypoint panel can drop to its bottom edge on a phone. */}
+      <div className="pointer-events-none absolute inset-3 flex flex-col gap-2">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <EditorDrawBar
+            className="pointer-events-auto"
+            drawKind={drawKind}
+            onDrawKindChange={chooseDraw}
+            tool={tool}
+            onToolChange={setTool}
+            vertexTool={vertexTool}
+            onVertexToolChange={setVertexTool}
+            brush={brush}
+            onBrushChange={setBrush}
+          />
+          <EditorActionBar
+            className="pointer-events-auto"
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={undo}
+            onRedo={redo}
+            dirty={dirty}
+            save={save}
+            onSave={onSave}
+            hasVertices={vertexList.length > 0}
+            showVertices={showVertices}
+            verticesLocked={mode === "vertex"}
+            onToggleVertices={() => setShowVertices((v) => !v)}
+            onFit={fit}
+            onZoomIn={zoomIn}
+            onZoomOut={zoomOut}
+          />
+        </div>
+
+        {/* Under the Editor strip, at the right: the save note, and in
+          * Waypoint the waypoint panel. On a phone the panel drops to the
+          * bottom of the canvas instead, where the stacked strips leave it
+          * room — one panel, placed by CSS, so there is one form to type in.
+          *
+          * Mounted only in vertex mode, because unmounting discards nothing
+          * that the mode switch was not already discarding — changeMode("grid")
+          * clears draft / selectedIds / stagedPose, and VertexForm is keyed on
+          * "draft" or selected.id, so its local name/type state is already gone
+          * by then. The one thing worth keeping across the toggle, `vertexType`,
+          * lives up here for exactly that reason. */}
+        <div className="pointer-events-none flex min-h-0 flex-col items-end gap-2">
+          <SaveNote save={save} className="pointer-events-auto max-w-72" />
+          {mode === "vertex" && (
+            <VertexPanel
+              className="pointer-events-auto min-h-0 overflow-y-auto max-sm:absolute max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[45%] max-sm:w-auto"
+              {...vertexPanelProps}
+            />
+          )}
+        </div>
+      </div>
 
       {/* The other half of "Use robot position" — the pose you capture is the
         * one you drove the robot to — is now the masthead's drive panel

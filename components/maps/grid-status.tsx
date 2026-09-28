@@ -8,8 +8,8 @@ import type { CellProbe } from "@/lib/map/editor";
 import type { MapMetadata } from "@/lib/types/robot";
 
 const VALUE_LABEL: Record<number, string> = {
-  [OCCUPIED]: "Obstacle",
-  [FREE]: "Free",
+  [OCCUPIED]: "Wall",
+  [FREE]: "Floor",
 };
 
 /**
@@ -57,9 +57,9 @@ export function GridStatus({ meta, hover, scale, counts, className }: GridStatus
       </div>
 
       <div className="mt-2.5 space-y-1.5 border-t border-hairline pt-2.5">
-        <Readout label="Obstacle" value={counts.occupied.toLocaleString("en-US")} tone="warn" />
+        <Readout label="Wall" value={counts.occupied.toLocaleString("en-US")} tone="warn" />
         <Readout label="Unknown" value={counts.unknown.toLocaleString("en-US")} tone="caution" />
-        <Readout label="Free" value={counts.free.toLocaleString("en-US")} tone="live" />
+        <Readout label="Floor" value={counts.free.toLocaleString("en-US")} tone="live" />
       </div>
     </div>
   );

@@ -1,11 +1,9 @@
 "use client";
 
-import * as React from "react";
 import {
   BrushIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
   HandIcon,
+  MapPinIcon,
   MapPinPlusIcon,
   MaximizeIcon,
   Redo2Icon,
@@ -17,21 +15,41 @@ import {
   ZoomOutIcon,
 } from "lucide-react";
 
+import { Chip, TONE_TEXT, overlayPanel, type Tone } from "@/components/console/instrument";
 import {
-  Chip,
-  Segmented,
-  TONE_TEXT,
-  overlayPanel,
-  type Tone,
-} from "@/components/console/instrument";
+  ToolButton,
+  ToolDivider,
+  ToolGroup,
+  ToolStrip,
+  type ToolIcon,
+} from "@/components/console/tool-strip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { BRUSH_SIZES, FREE, OCCUPIED, UNKNOWN, type GridValue } from "@/lib/map/grid";
-import type { EditMode, EditTool, VertexTool } from "@/lib/map/editor";
+import { BRUSH_SIZES } from "@/lib/map/grid";
+import { drawSwatch, type DrawKind, type EditTool, type VertexTool } from "@/lib/map/editor";
 
-const MODES: readonly { value: EditMode; label: string }[] = [
-  { value: "grid", label: "Grid" },
-  { value: "vertex", label: "Waypoints" },
-];
+/*
+ * The floor plan editor's controls, as two strips along the top of the canvas —
+ * the dashboard viewport's arrangement, from the same primitives
+ * (components/console/tool-strip.tsx).
+ *
+ * They used to be one card at top-left that grew row by row: a Grid / Waypoints
+ * mode switch, a tool row, a Paint row, a Size row, then history, zoom and
+ * Save. Every choice was a labelled row of the same weight, so the one that
+ * decides what a press on the map *means* sat among the ones that only tune
+ * it. The strips put that choice first.
+ *
+ * Left, **Draw**: what goes on the map — Wall, Floor, Unknown or Waypoint, or
+ * nothing, which is where the editor opens — and then the tools that choice
+ * allows. Right, **Editor**: what is done to the work as a whole — history,
+ * Save, what is drawn, and the zoom at the outer edge as on the dashboard.
+ */
 
 /**
  * One armable tool: what it is worth, what it does, and the shape it wears.
@@ -45,16 +63,15 @@ const MODES: readonly { value: EditMode; label: string }[] = [
  * dragging the map and painting on it — the trade that DEFAULT_TOOL and
  * DEFAULT_VERTEX_TOOL exist to make safe.
  *
- * `label` is not lost by that: it is the accessible name, half the tooltip, and
- * is spelled out in the Row heading above the icons, so what is armed is always
- * readable in words somewhere on screen. Nothing here is icon-only.
+ * `label` is not lost by that: it is the accessible name and half the tooltip,
+ * and a finger reads it printed under the icon. Nothing here is icon-only.
  */
 interface ToolOption<T extends string> {
   value: T;
   label: string;
   /** The rest of the tooltip, after the label: what a press will do. */
   hint: string;
-  icon: typeof HandIcon;
+  icon: ToolIcon;
 }
 
 /*
@@ -87,20 +104,38 @@ const VERTEX_TOOLS: readonly ToolOption<VertexTool>[] = [
 ];
 
 /**
- * There is no eraser, and that is not an omission: on an occupancy grid "erase"
- * has to mean a specific value, and painting Free *is* the erase — it is what the
- * hand-editing this screen replaces was doing to phantom obstacles. Naming a
- * fourth tool "eraser" would only hide which of the three bytes it writes.
+ * A paint kind's glyph: a square of the grey its cells are drawn in, so the
+ * button shows the result rather than a metaphor for it. Bordered, because
+ * Floor is near-white and would vanish on the light panel without one.
  */
-const VALUES: readonly { value: `${GridValue}`; label: string }[] = [
-  { value: `${FREE}`, label: "Free" },
-  { value: `${UNKNOWN}`, label: "Unknown" },
-  { value: `${OCCUPIED}`, label: "Obstacle" },
+function swatchIcon(kind: Exclude<DrawKind, "waypoint">): ToolIcon {
+  function Swatch({ className }: { className?: string }) {
+    return (
+      <span
+        aria-hidden
+        className={cn("block rounded-[2px] border border-foreground/40", className)}
+        style={{ background: drawSwatch(kind), width: "0.875rem", height: "0.875rem" }}
+      />
+    );
+  }
+  return Swatch;
+}
+
+const DRAW_KINDS: readonly {
+  value: DrawKind;
+  label: string;
+  hint: string;
+  icon: ToolIcon;
+}[] = [
+  { value: "wall", label: "Wall", hint: "paint where the robot cannot go", icon: swatchIcon("wall") },
+  { value: "floor", label: "Floor", hint: "paint where the robot can go", icon: swatchIcon("floor") },
+  { value: "unknown", label: "Unknown", hint: "paint what was never seen", icon: swatchIcon("unknown") },
+  { value: "waypoint", label: "Waypoint", hint: "place and edit waypoints", icon: MapPinIcon },
 ];
 
-const SIZES = BRUSH_SIZES.map((size) => ({
-  value: `${size}` as const,
-  label: `${size}`,
+const SIZE_ITEMS = BRUSH_SIZES.map((size) => ({
+  value: `${size}`,
+  label: `${size} cell${size === 1 ? "" : "s"}`,
 }));
 
 /**
@@ -146,286 +181,261 @@ function saveNote(
   };
 }
 
-export interface GridToolbarProps {
-  mode: EditMode;
-  onModeChange: (mode: EditMode) => void;
-  tool: EditTool;
-  onToolChange: (tool: EditTool) => void;
-  vertexTool: VertexTool;
-  onVertexToolChange: (tool: VertexTool) => void;
-  value: GridValue;
-  onValueChange: (value: GridValue) => void;
-  brush: number;
-  onBrushChange: (brush: number) => void;
-  canUndo: boolean;
-  canRedo: boolean;
-  onUndo: () => void;
-  onRedo: () => void;
-  onFit: () => void;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  dirty: boolean;
-  save: SaveState;
-  onSave: () => void;
-  className?: string;
-}
-
-function IconButton({
-  label,
-  icon: Icon,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  icon: typeof Undo2Icon;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-      className="instrument-label flex h-6 items-center gap-1 rounded-sm border border-hairline px-1.5 transition-colors hover:bg-elevated disabled:opacity-40 disabled:hover:bg-transparent pointer-coarse:min-h-10"
-    >
-      <Icon className="size-3.5" aria-hidden />
-    </button>
-  );
-}
-
 /**
- * A tool row: one icon segment per tool, styled as a `Segmented` control.
+ * The left strip: what a press on the map puts there, then how.
  *
- * Hand-rolled rather than made from `Segmented`, which takes a string label and
- * renders nothing else. Widening it to a ReactNode would give every caller a
- * control whose options need a separate accessible name — an icon segment has
- * no text for a screen reader to read — and these two rows are the only ones in
- * the console that want icons. The active styling is copied deliberately: this
- * reads as the same kind of control as the Mode row above it because it is one.
+ * Pressing the lit Draw button again puts it down, back to nothing chosen —
+ * the same toggle the dashboard's pose tools use, and the same thing Escape
+ * does. With nothing chosen the Tool group is Pan alone, lit, so the strip
+ * still says what a drag does rather than going blank.
+ *
+ * Size sits after the tools and only while it means something: Brush and Line
+ * lay down a stroke that wide, Rect fills its box whatever the size, and a
+ * control that changes nothing is one an operator learns to distrust.
  */
-function ToolRow<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T;
-  options: readonly ToolOption<T>[];
-  onChange: (tool: T) => void;
-}) {
-  return (
-    <div className="flex w-full overflow-hidden rounded-sm border border-hairline">
-      {options.map(({ value: option, label, hint, icon: Icon }) => {
-        const active = option === value;
-        return (
-          <button
-            key={option}
-            type="button"
-            aria-pressed={active}
-            title={`${label} — ${hint}`}
-            aria-label={label}
-            onClick={() => onChange(option)}
-            className={cn(
-              "flex h-6 min-w-0 flex-1 items-center justify-center border-l border-hairline transition-colors first:border-l-0 pointer-coarse:min-h-10 pointer-coarse:flex-col pointer-coarse:gap-0.5",
-              active
-                ? "bg-signal-cmd/12 text-signal-cmd"
-                : "text-muted-foreground hover:bg-elevated hover:text-foreground",
-            )}
-          >
-            <Icon className="size-3.5" aria-hidden />
-            {/* The name is the tooltip's first half, which a finger never
-              * reads; under a coarse pointer the segment is 40 px tall and
-              * has the room to say it. */}
-            <span className="instrument-label hidden text-[9px] leading-none pointer-coarse:block">
-              {label}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-export function GridToolbar({
-  mode,
-  onModeChange,
+export function EditorDrawBar({
+  drawKind,
+  onDrawKindChange,
   tool,
   onToolChange,
   vertexTool,
   onVertexToolChange,
-  value,
-  onValueChange,
   brush,
   onBrushChange,
-  canUndo,
-  canRedo,
-  onUndo,
-  onRedo,
-  onFit,
-  onZoomIn,
-  onZoomOut,
-  dirty,
-  save,
-  onSave,
   className,
-}: GridToolbarProps) {
-  const shapeTool = tool === "brush" || tool === "line";
-  const note = saveNote(save);
-  // Paint and Size fold away below sm, because on a phone the toolbar spans
-  // the top of a ~540 px canvas and those two rows are the ones changed
-  // least. Mode and Tool stay: without them the canvas cannot be used at all.
-  const [showPaint, setShowPaint] = React.useState(false);
+}: {
+  drawKind: DrawKind | null;
+  onDrawKindChange: (kind: DrawKind | null) => void;
+  tool: EditTool;
+  onToolChange: (tool: EditTool) => void;
+  vertexTool: VertexTool;
+  onVertexToolChange: (tool: VertexTool) => void;
+  brush: number;
+  onBrushChange: (brush: number) => void;
+  className?: string;
+}) {
+  const painting = drawKind !== null && drawKind !== "waypoint";
+  const sized = painting && (tool === "brush" || tool === "line");
 
   return (
-    // w-56 matches the dashboard's overlay controls, and is what "FREE / UNKNOWN /
-    // OBSTACLE" needs: eight condensed caps plus padding, three times over.
-    <div className={cn(overlayPanel, "flex w-56 flex-col gap-2 p-2.5", className)}>
-      <Row label="Mode">
-        <Segmented label="Mode" stretch value={mode} options={MODES} onChange={onModeChange} />
-      </Row>
-
-      {/* Vertex mode's counterpart to the Tool row below: which of the three
-       * things a left press can mean is armed. Escape returns it to Pan, and so
-       * does every mode change. */}
-      {mode === "vertex" && (
-        <Row label={`Tool · ${labelOf(VERTEX_TOOLS, vertexTool)}`}>
-          <ToolRow value={vertexTool} options={VERTEX_TOOLS} onChange={onVertexToolChange} />
-        </Row>
-      )}
-
-      {/* The paint controls describe a stroke, and vertex mode makes none. The
-       * block below them stays in both modes, deliberately: the grid can be
-       * dirty while the operator is placing vertices, and hiding Save because a
-       * mode toggle moved is how unsaved cells get lost. */}
-      {mode === "grid" && (
-        <>
-          <Row label={`Tool · ${labelOf(TOOLS, tool)}`}>
-            <ToolRow value={tool} options={TOOLS} onChange={onToolChange} />
-          </Row>
-
-          <Row label="Paint" className={cn(!showPaint && "max-sm:hidden")}>
-            <Segmented
-              label="Paint"
-              stretch
-              value={`${value}` as `${GridValue}`}
-              options={VALUES}
-              onChange={(next) => onValueChange(Number(next) as GridValue)}
+    <ToolStrip label="Draw" className={className}>
+      <ToolGroup label="Draw">
+        {DRAW_KINDS.map((kind) => (
+          <span key={kind.value} className="contents">
+            {/* Waypoints are not a cell value, so they sit apart from the
+              * three that are. */}
+            {kind.value === "waypoint" && <ToolDivider />}
+            <ToolButton
+              label={kind.label}
+              hint={kind.hint}
+              icon={kind.icon}
+              pressed={drawKind === kind.value}
+              onClick={() => onDrawKindChange(drawKind === kind.value ? null : kind.value)}
             />
-          </Row>
+          </span>
+        ))}
+      </ToolGroup>
 
-          {/* Cells, not pixels — the number is the count of cells across, which is
-           * what you are actually deciding about. Discrete sizes rather than a
-           * slider: no slider exists in components/ui, and knowing you are painting
-           * exactly 7 cells is worth more here than continuous control. */}
-          <Row
-            label={`Size · ${brush} cell${brush === 1 ? "" : "s"}`}
-            className={cn(!showPaint && "max-sm:hidden")}
-          >
-            <Segmented
-              label="Size"
-              stretch
-              value={`${brush}` as (typeof SIZES)[number]["value"]}
-              options={SIZES}
-              onChange={(next) => onBrushChange(Number(next))}
-              className={shapeTool ? undefined : "opacity-40"}
+      <ToolDivider />
+
+      <ToolGroup label="Tool">
+        {drawKind === null ? (
+          <ToolButton
+            label="Pan"
+            hint="drag the map; choose what to draw to edit it"
+            icon={HandIcon}
+            pressed
+            onClick={() => {}}
+          />
+        ) : drawKind === "waypoint" ? (
+          VERTEX_TOOLS.map((option) => (
+            <ToolButton
+              key={option.value}
+              label={option.label}
+              hint={option.hint}
+              icon={option.icon}
+              pressed={vertexTool === option.value}
+              onClick={() => onVertexToolChange(option.value)}
             />
-          </Row>
-        </>
-      )}
-
-      <div className="flex items-center gap-1.5 border-t border-hairline pt-2">
-        <IconButton label="Undo" icon={Undo2Icon} disabled={!canUndo} onClick={onUndo} />
-        <IconButton label="Redo" icon={Redo2Icon} disabled={!canRedo} onClick={onRedo} />
-        <IconButton label="Fit to view" icon={MaximizeIcon} onClick={onFit} />
-        {/* Zoom is otherwise the wheel and, on a phone, the pinch; one press
-          * is a step the operator can count. */}
-        <IconButton label="Zoom out" icon={ZoomOutIcon} onClick={onZoomOut} />
-        <IconButton label="Zoom in" icon={ZoomInIcon} onClick={onZoomIn} />
-        {mode === "grid" && (
-          <button
-            type="button"
-            aria-expanded={showPaint}
-            onClick={() => setShowPaint((v) => !v)}
-            className="instrument-label flex h-6 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground transition-colors hover:bg-elevated sm:hidden pointer-coarse:min-h-10"
-          >
-            Paint
-            {showPaint ? (
-              <ChevronUpIcon className="size-3.5" aria-hidden />
-            ) : (
-              <ChevronDownIcon className="size-3.5" aria-hidden />
-            )}
-          </button>
+          ))
+        ) : (
+          TOOLS.map((option) => (
+            <ToolButton
+              key={option.value}
+              label={option.label}
+              hint={option.hint}
+              icon={option.icon}
+              pressed={tool === option.value}
+              onClick={() => onToolChange(option.value)}
+            />
+          ))
         )}
-        {dirty && (
-          <Chip tone="caution" className="ml-auto">
-            Unsaved
-          </Chip>
-        )}
-      </div>
+      </ToolGroup>
 
-      <button
-        type="button"
-        disabled={!dirty || save.kind === "saving"}
-        onClick={onSave}
-        className="instrument-label h-7 rounded-sm border border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd transition-colors hover:bg-signal-cmd/20 pointer-coarse:min-h-10 disabled:border-hairline disabled:bg-transparent disabled:text-muted-foreground"
-      >
-        {save.kind === "saving" ? "Saving…" : "Save"}
-      </button>
-
-      {note && (
-        <p
-          role={note.alert ? "alert" : "status"}
-          className={cn(
-            "text-[11px] leading-tight",
-            note.tone === "neutral" ? "text-muted-foreground" : TONE_TEXT[note.tone],
-          )}
+      {/* Cells, not pixels — the number is the count of cells across, which is
+        * what you are actually deciding about. A list of the fixed sizes
+        * rather than a slider: knowing you are painting exactly 7 cells is
+        * worth more here than continuous control. `items` is what makes the
+        * trigger show the label rather than the bare number. */}
+      {sized && (
+        <Select
+          items={SIZE_ITEMS}
+          value={`${brush}`}
+          onValueChange={(next) => {
+            if (next) onBrushChange(Number(next));
+          }}
         >
-          {note.headline}
-          {note.detail && (
-            <span className="mt-0.5 block text-muted-foreground">{note.detail}</span>
-          )}
-        </p>
+          <SelectTrigger
+            size="sm"
+            aria-label="Brush size"
+            title="Brush size — how many cells across a stroke is"
+            className="ml-0.5 rounded-sm text-[12px] pointer-coarse:min-h-10"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SIZE_ITEMS.map((item) => (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       )}
-
-      {/*
-       * The keyboard/mouse hint line that used to close this panel was removed on
-       * request. The gestures it documented are all still live — right-drag and
-       * middle-drag pan in every mode, Space pans while held, Escape disarms back
-       * to Pan, 0 fits, scroll zooms — they are just undocumented on screen
-       * again. Both modes now have a Pan tool of their own, so those drags are a
-       * convenience rather than, as they were in vertex mode, the only way to
-       * move the view at all.
-       */}
-    </div>
+    </ToolStrip>
   );
 }
 
 /**
- * The armed tool's name, for the heading above its icons.
+ * The right strip: what is done to the work as a whole, whatever is being drawn.
  *
- * The heading is where the icon row's labels come back as words — see
- * ToolOption. `?? ""` never fires in practice (the state is a union of exactly
- * these values) and is there so a tool added to one list and not the other
- * degrades to a bare "Tool ·" rather than "Tool · undefined".
+ * Save stays whatever the Draw choice is, deliberately: the grid can be dirty
+ * while waypoints are being placed, and hiding Save because the choice moved
+ * is how unsaved cells get lost. It carries its words, unlike its neighbours,
+ * because it is the one press here that writes to the robot.
+ *
+ * The Waypoints layer is the dashboard's layer toggle, for the editor's one
+ * layer: on by default, hidden to paint under markers that are in the way,
+ * and held on — pressed and greyed — while Waypoint is the Draw choice,
+ * because placing or selecting stops you cannot see is not a thing to offer.
+ * Like the dashboard's, it is left out on a map with no waypoints.
  */
-function labelOf<T extends string>(options: readonly ToolOption<T>[], value: T): string {
-  return options.find((option) => option.value === value)?.label ?? "";
-}
-
-function Row({
-  label,
+export function EditorActionBar({
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
+  dirty,
+  save,
+  onSave,
+  hasVertices,
+  showVertices,
+  verticesLocked,
+  onToggleVertices,
+  onFit,
+  onZoomIn,
+  onZoomOut,
   className,
-  children,
 }: {
-  label: string;
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+  dirty: boolean;
+  save: SaveState;
+  onSave: () => void;
+  hasVertices: boolean;
+  showVertices: boolean;
+  /** Waypoint is the Draw choice, so the layer cannot be hidden. */
+  verticesLocked: boolean;
+  onToggleVertices: () => void;
+  onFit: () => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
   className?: string;
-  children: React.ReactNode;
 }) {
+  const shown = showVertices || verticesLocked;
   return (
-    <div className={className}>
-      <p className="instrument-label mb-1 text-muted-foreground">{label}</p>
-      {children}
-    </div>
+    <ToolStrip label="Editor" className={className}>
+      <ToolGroup label="History">
+        <ToolButton label="Undo" hint="take back the last stroke" icon={Undo2Icon} disabled={!canUndo} onClick={onUndo} />
+        <ToolButton label="Redo" hint="put it back" icon={Redo2Icon} disabled={!canRedo} onClick={onRedo} />
+      </ToolGroup>
+
+      <ToolDivider />
+
+      {dirty && <Chip tone="caution">Unsaved</Chip>}
+      <button
+        type="button"
+        disabled={!dirty || save.kind === "saving"}
+        onClick={onSave}
+        className="instrument-label h-7 rounded-sm border border-signal-cmd/50 bg-signal-cmd/12 px-2.5 text-signal-cmd transition-colors hover:bg-signal-cmd/20 pointer-coarse:min-h-10 disabled:border-hairline disabled:bg-transparent disabled:text-muted-foreground"
+      >
+        {save.kind === "saving" ? "Saving…" : "Save"}
+      </button>
+
+      {hasVertices && (
+        <>
+          <ToolDivider />
+          <ToolGroup label="Layers">
+            <ToolButton
+              label="Waypoints"
+              hint={
+                verticesLocked
+                  ? "shown while placing waypoints"
+                  : shown
+                    ? "shown — press to hide"
+                    : "hidden — press to show"
+              }
+              icon={MapPinIcon}
+              pressed={shown}
+              disabled={verticesLocked}
+              onClick={onToggleVertices}
+            />
+          </ToolGroup>
+        </>
+      )}
+
+      <ToolDivider />
+
+      {/* Last, at the strip's outer edge, as on the dashboard. Zoom is
+        * otherwise the wheel and, on a phone, the pinch; one press is a step
+        * the operator can count. */}
+      <ToolGroup label="Zoom">
+        <ToolButton label="Fit to view" hint="the whole floor plan" icon={MaximizeIcon} onClick={onFit} />
+        <ToolButton label="Zoom out" hint="one step back" icon={ZoomOutIcon} onClick={onZoomOut} />
+        <ToolButton label="Zoom in" hint="one step closer" icon={ZoomInIcon} onClick={onZoomIn} />
+      </ToolGroup>
+    </ToolStrip>
   );
 }
+
+/**
+ * What the last save did, under the right strip — in place and until the
+ * buffer moves on, for the reason SaveState gives.
+ */
+export function SaveNote({ save, className }: { save: SaveState; className?: string }) {
+  const note = saveNote(save);
+  if (!note) return null;
+  return (
+    <p
+      role={note.alert ? "alert" : "status"}
+      className={cn(
+        overlayPanel,
+        "px-2 py-1.5 text-[11px] leading-tight",
+        note.tone === "neutral" ? "text-muted-foreground" : TONE_TEXT[note.tone],
+        className,
+      )}
+    >
+      {note.headline}
+      {note.detail && <span className="mt-0.5 block text-muted-foreground">{note.detail}</span>}
+    </p>
+  );
+}
+
+/*
+ * The keyboard/mouse hint line that used to close the old card was removed on
+ * request, and stays removed. The gestures it documented are all still live —
+ * right-drag and middle-drag pan in every mode, Space pans while held, Escape
+ * puts the Draw choice down, 0 fits, scroll zooms.
+ */
