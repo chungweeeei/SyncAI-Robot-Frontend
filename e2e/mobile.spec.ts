@@ -263,13 +263,12 @@ test.describe("the console on a phone", () => {
     await touch("touchEnd", []);
     // Nothing was painted, so there is nothing to save — and the map did
     // zoom, or "nothing painted" would be true of a canvas that ignored the
-    // second finger, which is what it did before it had a pinch. The zoom
-    // readout is display:none on a phone (it follows a hover), but it is
-    // still in the DOM to be read.
+    // second finger, which is what it did before it had a pinch. Nothing on
+    // screen shows the zoom, so it is read off the editor's data-zoom, which
+    // is 94 at fit on this phone.
     await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
-    const zoom = page.getByText("Zoom", { exact: true }).locator("xpath=..");
-    await expect.poll(() => zoom.textContent()).not.toMatch(/Zoom94%/);
-    expect(Number((await zoom.textContent())?.match(/Zoom(\d+)%/)?.[1])).toBeGreaterThan(94);
+    const zoom = page.locator("[data-zoom]");
+    await expect.poll(async () => Number(await zoom.getAttribute("data-zoom"))).toBeGreaterThan(94);
 
     // The positive control: one finger with Brush armed does paint. Brush is
     // only offered once something is chosen to draw, and Floor on these

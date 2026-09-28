@@ -655,7 +655,12 @@ function EditorSurface({
   };
 
   return (
-    <div className="relative h-full w-full">
+    // data-zoom is the view's scale in percent, for the e2e suite: nothing on
+    // screen shows it since the readout lost its Zoom row, and the pinch test
+    // has to prove the second finger zoomed rather than only that it did not
+    // paint. An attribute, not text, so it can never become an on-screen
+    // diagnostic by accident.
+    <div className="relative h-full w-full" data-zoom={Math.round(scale * 100)}>
       <GridCanvas
         session={session}
         mode={mode}
@@ -753,7 +758,6 @@ function EditorSurface({
         className="absolute bottom-3 left-3 hidden sm:block [@media(max-height:480px)]:hidden"
         meta={session.meta}
         hover={hover}
-        scale={scale}
       />
     </div>
   );
