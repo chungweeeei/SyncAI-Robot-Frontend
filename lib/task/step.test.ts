@@ -12,6 +12,7 @@ import {
   stepDraftsSubmittable,
   stepIdFor,
   stepSummary,
+  stepWaypointOrdinals,
   toDispatchSteps,
   toStepRequests,
   toTemplateSteps,
@@ -128,6 +129,33 @@ describe("stepSummary", () => {
 
   it("quotes a spoken line", () => {
     expect(stepSummary(speak(" Hello "))).toBe("“Hello”");
+  });
+});
+
+describe("stepWaypointOrdinals", () => {
+  it("lists every step that goes to a stop, by the number printed on its row", () => {
+    // A patrol that returns to the dock: one marker, two numbers, in the
+    // order the job runs them.
+    const marks = stepWaypointOrdinals([
+      move({ vertexId: "dock" }),
+      move({ vertexId: "room" }),
+      move({ vertexId: "dock" }),
+    ]);
+    expect(marks.get("dock")).toEqual([1, 3]);
+    expect(marks.get("room")).toEqual([2]);
+  });
+
+  it("counts every row toward the ordinal but marks only picked MOVEs", () => {
+    // The SPEAK is step 2 and the hand-edited MOVE is step 3; neither is a
+    // stop on the map, and the pick after them is still step 4.
+    const marks = stepWaypointOrdinals([
+      move({ vertexId: "dock" }),
+      speak("hi"),
+      move({ vertexId: null }),
+      move({ vertexId: "room" }),
+    ]);
+    expect([...marks.keys()]).toEqual(["dock", "room"]);
+    expect(marks.get("room")).toEqual([4]);
   });
 });
 

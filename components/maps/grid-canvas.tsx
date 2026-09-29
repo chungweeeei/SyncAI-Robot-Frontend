@@ -37,6 +37,7 @@ import {
   idsInBand,
   isDrag,
   panPicks,
+  wheelZoomFactor,
 } from "@/lib/map/gesture";
 import { blitGrid, blitGridRect } from "@/lib/map/render";
 import type { GridPatch } from "@/lib/map/patch";
@@ -61,9 +62,6 @@ import type { PlanarPose } from "@/lib/types/robot";
 const VERTEX_HIT_RADIUS = 11;
 /** The same slop under a finger, which covers ~22 px and cannot see the dot. */
 const VERTEX_HIT_RADIUS_TOUCH = 22;
-
-const ZOOM_PER_PX = 0.0015;
-const WHEEL_LINE_PX = 16;
 
 export interface GridCanvasProps {
   session: GridSession;
@@ -429,12 +427,9 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       const bounds = container.getBoundingClientRect();
       const cx = event.clientX - bounds.left;
       const cy = event.clientY - bounds.top;
-      // deltaMode 1 is lines (Firefox) and 2 is pages; a raw deltaY would zoom
-      // ~16x per notch there. Exponential rather than 1 + k*delta so zoom is
-      // multiplicative: N notches up then N down returns to the same scale.
-      const unit =
-        event.deltaMode === 1 ? WHEEL_LINE_PX : event.deltaMode === 2 ? rect.height : 1;
-      const factor = Math.exp(-event.deltaY * unit * ZOOM_PER_PX);
+      // The notch-to-factor rule is shared with the task editor's floor plan
+      // (lib/map/gesture.ts), so a wheel feels the same on both.
+      const factor = wheelZoomFactor(event.deltaY, event.deltaMode, rect.height);
       viewRef.current = zoomAt(view, cx, cy, factor, rect, session.grid);
       requestDraw();
     };

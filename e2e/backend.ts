@@ -356,6 +356,17 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         complete: true,
       });
     }
+    const scheduleMatch = /^\/api\/v1\/schedules\/([^/]+)$/.exec(path);
+    if (scheduleMatch && method === "PATCH") {
+      // Applied to the list, the way Temporal's would be: the hook re-reads
+      // after an edit, and a fake that still answered the old trigger would
+      // put it back on the row mid-assertion.
+      const id = decodeURIComponent(scheduleMatch[1]);
+      const entry = schedules.find((row) => row.id === id);
+      if (!entry) return json(route, { detail: `Schedule ${id} not found` }, 404);
+      entry.trigger = (parseBody(request.postData()) as { trigger: unknown }).trigger;
+      return json(route, { id, message: `Schedule ${id} trigger has been updated.` });
+    }
     if (method === "DELETE") return route.fulfill({ status: 204, body: "" });
 
     return json(route, { message: "ok" });

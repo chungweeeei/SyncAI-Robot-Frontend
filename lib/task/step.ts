@@ -173,6 +173,30 @@ export function stepSummary(
 }
 
 /**
+ * Which waypoints the job goes to, and as which steps: vertex id → the
+ * 1-based ordinals of the MOVE rows picked from it, in list order.
+ *
+ * For the floor plan the task editor opens over the steps, which lights those
+ * stops and captions each with its step numbers. A list rather than one
+ * number because a patrol returns to `dock`, and "steps 1, 4" is exactly the
+ * thing an operator reading a map wants to know about it. A MOVE whose
+ * numbers were hand edited has no vertex and marks nothing: the map only
+ * knows stops, and a pose that is not one has nowhere to be lit.
+ */
+export function stepWaypointOrdinals(
+  drafts: readonly StepDraft[],
+): ReadonlyMap<string, readonly number[]> {
+  const marks = new Map<string, number[]>();
+  drafts.forEach((draft, index) => {
+    if (draft.type !== "MOVE" || draft.vertexId === null) return;
+    const ordinals = marks.get(draft.vertexId) ?? [];
+    ordinals.push(index + 1);
+    marks.set(draft.vertexId, ordinals);
+  });
+  return marks;
+}
+
+/**
  * The list with the item at `from` taken out and put back at `to`.
  *
  * Splice-and-insert rather than a swap, because dragging step 16 to the top of a

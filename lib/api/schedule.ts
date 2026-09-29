@@ -51,9 +51,11 @@ export interface ScheduleTrigger {
 export interface ScheduleState {
   id: string;
   /**
-   * The trigger as it was registered, read back from the Temporal schedule's
-   * memo rather than from the schedule spec — Temporal normalises a cron string
-   * into calendar fields, so the spec can no longer say what was asked for.
+   * The trigger as it was registered or last edited. Temporal compiles a cron
+   * string into calendar fields and forgets it, so the backend registers the
+   * cron again as the calendar's comment and reads it back from there. It used
+   * to live in the memo, which an edit cannot rewrite — so this is the current
+   * rule, not the first one.
    */
   trigger: ScheduleTrigger;
   paused: boolean;
@@ -143,7 +145,7 @@ export function getSchedule(
   });
 }
 
-// The three writes all drop the `{id, message}` envelope: it says nothing the
+// The four writes all drop the `{id, message}` envelope: it says nothing the
 // caller does not already know from the request having succeeded, which is the
 // same reasoning `deleteVertex` records. What a caller *does* need afterwards —
 // the recomputed `next_run_times` — is only knowable by asking, so every one of
@@ -166,6 +168,26 @@ export function resumeSchedule(id: string): Promise<void> {
 export function deleteSchedule(id: string): Promise<void> {
   return requestJson<void>(schedulePath(id), {
     method: "DELETE",
+    parse: false,
+  });
+}
+
+/**
+ * PATCH /api/v1/schedules/{id} — replace when a schedule fires, in place.
+ *
+ * The trigger is replaced whole (a timed schedule may become an interval one
+ * and back); the id, the frozen steps, the job it came from and the paused
+ * state stay as they are. That is why this is not a delete and a create: the
+ * id is what the operator recognises in the list, and a pause would otherwise
+ * be lost. The id itself cannot change — Temporal has no rename.
+ */
+export function updateScheduleTrigger(
+  id: string,
+  trigger: ScheduleTrigger,
+): Promise<void> {
+  return requestJson<void>(schedulePath(id), {
+    method: "PATCH",
+    body: JSON.stringify({ trigger }),
     parse: false,
   });
 }

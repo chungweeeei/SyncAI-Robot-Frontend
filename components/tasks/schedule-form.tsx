@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CalendarPlusIcon } from "lucide-react";
+import { CalendarCheckIcon, CalendarPlusIcon } from "lucide-react";
 
 import { Segmented } from "@/components/console/instrument";
 import { Input } from "@/components/ui/input";
@@ -9,18 +9,20 @@ import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";
 import type { ScheduleTrigger } from "@/lib/api/schedule";
 import {
   DAILY_DAYS,
+  DEFAULT_FORM_SEED,
   WEEKDAYS,
   WEEKDAY_DAYS,
   WEEKEND_DAYS,
   describeNextRun,
   describeTrigger,
   nextTimedRun,
+  sameTrigger,
+  scheduleFormSeed,
   toCron,
+  type IntervalUnit,
+  type ScheduleRepeat,
 } from "@/lib/task/schedule";
 import { cn } from "@/lib/utils";
-
-/** The presets: three one-click day sets, a free pick, and a plain interval. */
-type Repeat = "daily" | "weekdays" | "weekends" | "custom" | "interval";
 
 const REPEAT_OPTIONS = [
   { value: "daily", label: "Daily" },
@@ -28,9 +30,7 @@ const REPEAT_OPTIONS = [
   { value: "weekends", label: "Weekends" },
   { value: "custom", label: "Custom" },
   { value: "interval", label: "Interval" },
-] as const satisfies readonly { value: Repeat; label: string }[];
-
-type IntervalUnit = "minutes" | "hours";
+] as const satisfies readonly { value: ScheduleRepeat; label: string }[];
 
 const UNIT_OPTIONS = [
   { value: "minutes", label: "minutes" },
@@ -51,7 +51,13 @@ export interface ScheduleFormProps {
   reason: string | null;
   busy: boolean;
   error: string | null;
-  onCreate: (id: string, trigger: ScheduleTrigger) => void;
+  /**
+   * The registered schedule being changed, when this edits one rather than
+   * making one. Its trigger seeds the fields; the name is not asked for,
+   * because a schedule cannot be renamed.
+   */
+  editing?: { id: string; trigger: ScheduleTrigger };
+  onSubmit: (id: string, trigger: ScheduleTrigger) => void;
 }
 
 /**
@@ -91,7 +97,9 @@ export interface ScheduleFormProps {
  *
  * Reset is by remounting — TemplateScheduleForm closes, and so unmounts
  * this, after a successful create — rather than by clearing six fields in an
- * effect.
+ * effect. Editing works the same way from the other end: the fields are seeded
+ * once from the registered trigger (`scheduleFormSeed`), and the row mounts a
+ * fresh form each time Edit is pressed.
  */
 export function ScheduleForm({
   existingIds,
@@ -99,17 +107,21 @@ export function ScheduleForm({
   reason,
   busy,
   error,
-  onCreate,
+  editing,
+  onSubmit,
 }: ScheduleFormProps) {
-  const [id, setId] = React.useState("");
-  const [repeat, setRepeat] = React.useState<Repeat>("daily");
-  const [time, setTime] = React.useState("09:00");
-  // Only read while `repeat` is "custom"; seeded with the weekdays because a
-  // custom pick is almost always "weekdays, minus one" rather than a build-up
-  // from nothing.
-  const [customDays, setCustomDays] = React.useState<readonly number[]>(WEEKDAY_DAYS);
-  const [amountText, setAmountText] = React.useState("30");
-  const [unit, setUnit] = React.useState<IntervalUnit>("minutes");
+  // Read once, by the initialisers below: a seed that followed the prop would
+  // overwrite the operator's half-made change when the list re-read.
+  const [seed] = React.useState(() =>
+    editing ? scheduleFormSeed(editing.trigger) : DEFAULT_FORM_SEED,
+  );
+  const [id, setId] = React.useState(editing?.id ?? "");
+  const [repeat, setRepeat] = React.useState<ScheduleRepeat>(seed.repeat);
+  const [time, setTime] = React.useState(seed.time);
+  // Only read while `repeat` is "custom".
+  const [customDays, setCustomDays] = React.useState<readonly number[]>(seed.customDays);
+  const [amountText, setAmountText] = React.useState(seed.amountText);
+  const [unit, setUnit] = React.useState<IntervalUnit>(seed.unit);
   const timezone = useBrowserTimeZone();
 
   const trimmedId = id.trim();
@@ -133,9 +145,10 @@ export function ScheduleForm({
 
   // `id: str` has no min_length on the backend, so a blank one would reach
   // Temporal and come back as a 502 rather than a sentence about the name.
-  const duplicate = trimmedId.length > 0 && existingIds.includes(trimmedId);
+  const duplicate =
+    !editing && trimmedId.length > 0 && existingIds.includes(trimmedId);
 
-  const localReason = !trimmedId
+  const fieldsReason = !trimmedId
     ? "Name the schedule."
     : duplicate
       ? "A schedule with this name already exists."
@@ -148,8 +161,6 @@ export function ScheduleForm({
           : !days.length
             ? "Pick at least one day."
             : null;
-
-  const submittable = ready && !busy && !localReason;
 
   /**
    * What will be sent, built once so the preview and the request cannot drift.
@@ -168,6 +179,11 @@ export function ScheduleForm({
           ? { cron: toCron(timed), timezone }
           : { cron: toCron(timed) }
         : null;
+
+  const unchanged = !!editing && !!trigger && sameTrigger(trigger, editing.trigger);
+  const localReason =
+    fieldsReason ?? (unchanged ? "Change the time or how often it repeats." : null);
+  const submittable = ready && !busy && !localReason;
 
   // The preview is only shown once the browser has a zone: it is built from the
   // browser's clock, so a server-rendered version would name a different
@@ -198,19 +214,21 @@ export function ScheduleForm({
       onSubmit={(event) => {
         event.preventDefault();
         if (!submittable || !trigger) return;
-        onCreate(trimmedId, trigger);
+        onSubmit(trimmedId, trigger);
       }}
     >
-      <label className="block">
-        <span className="instrument-label text-muted-foreground">Schedule name</span>
-        <Input
-          value={id}
-          disabled={busy}
-          onChange={(event) => setId(event.target.value)}
-          placeholder="robot01-daily-patrol"
-          className="readout mt-0.5 h-7 rounded-sm md:text-[13px]"
-        />
-      </label>
+      {!editing && (
+        <label className="block">
+          <span className="instrument-label text-muted-foreground">Schedule name</span>
+          <Input
+            value={id}
+            disabled={busy}
+            onChange={(event) => setId(event.target.value)}
+            placeholder="robot01-daily-patrol"
+            className="readout mt-0.5 h-7 rounded-sm md:text-[13px]"
+          />
+        </label>
+      )}
 
       <div>
         <span className="instrument-label text-muted-foreground">Repeat</span>
@@ -289,8 +307,17 @@ export function ScheduleForm({
         disabled={!submittable}
         className="instrument-label flex h-7 w-full items-center justify-center gap-1.5 rounded-sm bg-primary pointer-coarse:min-h-10 text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
       >
-        <CalendarPlusIcon className="size-3.5" aria-hidden />
-        Create schedule
+        {editing ? (
+          <>
+            <CalendarCheckIcon className="size-3.5" aria-hidden />
+            Save schedule
+          </>
+        ) : (
+          <>
+            <CalendarPlusIcon className="size-3.5" aria-hidden />
+            Create schedule
+          </>
+        )}
       </button>
 
       {(localReason ?? reason) && (

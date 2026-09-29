@@ -69,7 +69,7 @@ export function TemplateScheduleForm({
         reason={null}
         busy={schedule.isPending}
         error={schedule.error?.message ?? null}
-        onCreate={(scheduleId, trigger) =>
+        onSubmit={(scheduleId, trigger) =>
           schedule.mutate(
             { templateId: template.id, scheduleId, trigger },
             { onSuccess: onScheduled },

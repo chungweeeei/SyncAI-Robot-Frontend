@@ -3,13 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeftIcon, MapPinPlusIcon, SaveIcon, Trash2Icon } from "lucide-react";
+import { ArrowLeftIcon, MapIcon, MapPinPlusIcon, SaveIcon, Trash2Icon } from "lucide-react";
 
 import { InstrumentGroup } from "@/components/console/instrument";
 import { ActiveRunBanner } from "@/components/tasks/active-run-banner";
 import { MapPicker } from "@/components/tasks/map-picker";
 import { StepList } from "@/components/tasks/step-list";
 import { TaskTitle } from "@/components/tasks/task-title";
+import { WaypointPreview } from "@/components/tasks/waypoint-preview";
 import { Button } from "@/components/ui/button";
 import { useMapVertexList } from "@/hooks/use-map-vertex-list";
 import { useMaps } from "@/hooks/use-maps";
@@ -20,8 +21,9 @@ import { useTaskDraft } from "@/hooks/use-task-draft";
 import { waypointEditorHref } from "@/lib/map/links";
 import type { TaskStepState } from "@/lib/api/task";
 import type { TaskDraft } from "@/lib/task/draft-store";
-import { stepDraftsSubmittable, toTemplateSteps } from "@/lib/task/step";
+import { stepDraftsSubmittable, stepWaypointOrdinals, toTemplateSteps } from "@/lib/task/step";
 import { taskTemplateNameOk } from "@/lib/task/template";
+import { cn } from "@/lib/utils";
 
 /**
  * The step list's per-row run readback, which this page no longer has: it
@@ -92,9 +94,8 @@ export function TaskEditor() {
     () => maps?.find((map) => map.name === mapName) ?? null,
     [maps, mapName],
   );
-  // The editor map's geometry, for the floor plan a MOVE row can open. Read
-  // here rather than in each row so unfolding a row never refetches the
-  // catalogue.
+  // The editor map's geometry, for the floor plan the Steps group can open
+  // over the list; null when the map has no floor plan to show.
   const mapGrid = editorMap?.grid ?? null;
   const list = useMapVertexList(mapName);
   const vertices = list.vertices;
@@ -103,6 +104,19 @@ export function TaskEditor() {
   // asked yet.
   const verticesStatus =
     mapsStatus === "loading" ? "loading" : mapsStatus === "error" ? "error" : list.status;
+
+  /**
+   * The job's floor plan, one for the whole list rather than one under each
+   * Move row, which is where it used to be: a map under every row of a long
+   * patrol buried the list, and a picture of the route wants all the steps
+   * on it at once. It needs a floor plan and nothing else — the waypoints
+   * are drawn as they arrive, and an empty map is still the map. Closed by
+   * default, and presentation state: nothing sent depends on it.
+   */
+  const canPreview = mapName !== null && mapGrid !== null;
+  const [planOpen, setPlanOpen] = React.useState(false);
+  const planId = React.useId();
+  const stepMarks = React.useMemo(() => stepWaypointOrdinals(drafts.steps), [drafts.steps]);
 
   /**
    * Whether the heading is the name field, and whether confirming it should
@@ -352,6 +366,34 @@ export function TaskEditor() {
                 disabled={false}
                 onPick={selectMap}
               />
+              {/* The floor plan, opened over the steps. Icon only, like the
+               * pin beside it, and the pressed state says more than a label
+               * that would have to flip between Show and Hide to keep up.
+               * Disabled rather than absent without a floor plan, so the
+               * header keeps its shape whichever map is picked. */}
+              <button
+                type="button"
+                aria-pressed={planOpen}
+                aria-controls={canPreview ? planId : undefined}
+                aria-label="Floor plan"
+                disabled={!canPreview}
+                title={
+                  !canPreview
+                    ? "This map has no floor plan yet"
+                    : planOpen
+                      ? "Hide the floor plan"
+                      : "Show where each waypoint is on the floor plan"
+                }
+                onClick={() => setPlanOpen((open) => !open)}
+                className={cn(
+                  "flex size-6 items-center justify-center rounded-sm border transition-colors disabled:opacity-40 disabled:hover:bg-transparent",
+                  planOpen && canPreview
+                    ? "border-signal-cmd/40 bg-signal-cmd/8 text-signal-cmd hover:bg-signal-cmd/16"
+                    : "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground",
+                )}
+              >
+                <MapIcon className="size-3.5" aria-hidden />
+              </button>
               {/* The stop that is missing gets placed on the map, not here:
                * this opens that map's editor in Waypoints mode, and its back
                * button returns to this draft. A map with no floor plan has
@@ -378,12 +420,21 @@ export function TaskEditor() {
           }
           caption={saveReason ?? mismatchReason ?? undefined}
         >
+          {canPreview && planOpen && (
+            <div id={planId}>
+              <WaypointPreview
+                mapName={mapName}
+                meta={mapGrid}
+                vertices={vertices}
+                steps={stepMarks}
+              />
+            </div>
+          )}
           <StepList
             steps={drafts.steps}
             vertices={vertices}
             verticesStatus={verticesStatus}
             mapName={mapName}
-            mapGrid={mapGrid}
             disabled={false}
             stepStates={NO_STEP_STATES}
             onAdd={drafts.add}

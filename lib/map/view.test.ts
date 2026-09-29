@@ -10,6 +10,7 @@ import {
   gridToScreen,
   gridToWorld,
   panBy,
+  reanchorView,
   screenToGrid,
   worldToGrid,
   zoomAt,
@@ -140,6 +141,27 @@ describe("zoomAt", () => {
     let view = start;
     for (let i = 0; i < 40; i += 1) view = zoomAt(view, 400, 300, 2, rect, size);
     expect(view.scale).toBe(MAX_SCALE);
+  });
+
+  it("zooms out to a smaller floor when the surface names one", () => {
+    // The task editor's floor plan opens fitted inside an inset, which is
+    // below the bare fit. With the default floor its first wheel notch out
+    // would land *above* where it opened; with its own it comes back exactly.
+    const floor = fitScale(rect, size) * 0.8;
+    const opened = { scale: floor, ox: 80, oy: 60 };
+    expect(zoomAt(opened, 400, 300, 0.5, rect, size, floor).scale).toBeCloseTo(floor, 9);
+    expect(zoomAt(opened, 400, 300, 0.5, rect, size).scale).toBeCloseTo(fitScale(rect, size), 9);
+  });
+});
+
+describe("reanchorView", () => {
+  it("keeps a surface's own floor across a resize", () => {
+    const floor = fitScale(rect, size) * 0.8;
+    const opened = { scale: floor, ox: 80, oy: 60 };
+    const to = { width: 900, height: 600 };
+    expect(reanchorView(opened, rect, to, size, floor).scale).toBeCloseTo(floor, 9);
+    // Without one, the wider viewport's bare fit is the floor, as the editor wants.
+    expect(reanchorView(opened, rect, to, size).scale).toBeCloseTo(fitScale(to, size), 9);
   });
 });
 
