@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { ArmedHint } from "@/components/console/armed-hint";
 import { overlayPanel } from "@/components/console/instrument";
 import { GoalControl } from "@/components/dashboard/goal-control";
 import { InitialPoseControl } from "@/components/dashboard/initial-pose-control";
@@ -457,33 +458,5 @@ export function PointCloudView({
         * operator park the panel there when the near-field returns are not in
         * the way. */}
     </div>
-  );
-}
-
-/**
- * The armed pose tool's next step, as a line of its own. `role="status"` so a
- * screen reader hears the instruction when the tool arms, which is when the
- * worded button it replaces used to change its name.
- */
-function ArmedHint({
-  tone,
-  children,
-}: {
-  tone: "cmd" | "caution";
-  children: React.ReactNode;
-}) {
-  return (
-    <p
-      role="status"
-      className={cn(
-        overlayPanel,
-        "instrument-label px-2 py-1.5",
-        tone === "cmd"
-          ? "border-signal-cmd/50 text-signal-cmd"
-          : "border-signal-caution/50 text-signal-caution",
-      )}
-    >
-      {children}
-    </p>
   );
 }
