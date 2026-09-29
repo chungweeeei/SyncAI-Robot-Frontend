@@ -1517,10 +1517,98 @@ test.describe("the floor plan editor's draw bar", () => {
     await expect(page.getByRole("combobox", { name: "Waypoint type" })).toBeVisible();
     await expect(page.getByRole("button", { name: /dock/ })).toBeVisible();
 
+    // Forbidden zone: Shape and Done, and until Shape is armed the map dims
+    // behind a line that asks for it. Done has nothing to close yet.
+    await choose(page, "Forbidden zone");
+    await expect.poll(() => toolNames(page)).toEqual(["Pan", "Shape", "Done"]);
+    const hint = page.getByRole("status").filter({ hasText: "Select the shape to work with" });
+    await expect(hint).toBeVisible();
+    await expect(page.getByRole("button", { name: "Done" })).toBeDisabled();
+    await page.getByRole("button", { name: "Shape" }).click();
+    await expect(hint).toHaveCount(0);
+
     // No type is an item of its own, and puts the choice down.
     await choose(page, "No type");
     await expect.poll(() => toolNames(page)).toEqual(["Pan"]);
     await expect(page.getByRole("combobox", { name: "Waypoint type" })).toHaveCount(0);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("draws a forbidden zone from three corners, and closes it on the first", async ({ page }) => {
+    // The canvas exposes nothing, so the count of finished zones is read off
+    // the editor's data-zones attribute — the shape has to *close*, not
+    // merely take clicks. Every corner is at least 22 px from the first, so a
+    // click on it is unambiguously a new corner and not a close.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    const canvas = page.locator("canvas");
+    await canvas.waitFor();
+    const zones = page.locator("[data-zones]");
+    const done = page.getByRole("button", { name: "Done" });
+
+    await choose(page, "Forbidden zone");
+    await page.getByRole("button", { name: "Shape" }).click();
+    await expect(zones).toHaveAttribute("data-zones", "0");
+
+    const box = (await canvas.boundingBox())!;
+    const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const corners = [
+      { x: mid.x - 60, y: mid.y - 40 },
+      { x: mid.x + 60, y: mid.y - 40 },
+      { x: mid.x, y: mid.y + 50 },
+    ];
+    const first = corners[0];
+
+    // Two corners: not a shape yet, and pressing the first adds nothing.
+    await page.mouse.click(corners[0].x, corners[0].y);
+    await page.mouse.click(corners[1].x, corners[1].y);
+    await expect(done).toBeDisabled();
+    await page.mouse.click(first.x, first.y);
+    await expect(done).toBeDisabled();
+
+    // A drag with Shape armed pans the map and adds no corner.
+    await page.mouse.move(mid.x + 80, mid.y + 80);
+    await page.mouse.down();
+    await page.mouse.move(mid.x + 140, mid.y + 80, { steps: 4 });
+    await page.mouse.up();
+    await expect(done).toBeDisabled();
+    // Drag the map back so the corners are where they were.
+    await page.mouse.move(mid.x + 140, mid.y + 80);
+    await page.mouse.down();
+    await page.mouse.move(mid.x + 80, mid.y + 80, { steps: 4 });
+    await page.mouse.up();
+
+    // The third corner makes it a shape; the first corner closes it.
+    await page.mouse.click(corners[2].x, corners[2].y);
+    await expect(done).toBeEnabled();
+    await page.mouse.click(first.x, first.y);
+    await expect(zones).toHaveAttribute("data-zones", "1");
+    await expect(done).toBeDisabled();
+
+    // Enter closes the next one.
+    for (const corner of corners) await page.mouse.click(corner.x, corner.y);
+    await expect(done).toBeEnabled();
+    await page.keyboard.press("Enter");
+    await expect(zones).toHaveAttribute("data-zones", "2");
+
+    // Done closes the one after that.
+    for (const corner of corners) await page.mouse.click(corner.x, corner.y);
+    await done.click();
+    await expect(zones).toHaveAttribute("data-zones", "3");
+
+    // Escape drops a shape in flight and keeps the choice; a second Escape
+    // puts the choice down. The finished zones survive both.
+    await page.mouse.click(corners[0].x, corners[0].y);
+    await page.mouse.click(corners[1].x, corners[1].y);
+    await page.keyboard.press("Escape");
+    await expect(drawList(page)).toContainText("Forbidden zone");
+    await expect(page.getByRole("button", { name: "Shape" })).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+    await expect(drawList(page)).toContainText("No type");
+    await expect.poll(() => toolNames(page)).toEqual(["Pan"]);
+    await expect(zones).toHaveAttribute("data-zones", "3");
     expect(errors, "the page logged errors").toEqual([]);
   });
 
