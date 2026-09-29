@@ -3,6 +3,7 @@
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { AppearanceSettings } from "@/components/settings/appearance-settings";
 import { NetworkSettings } from "@/components/settings/network-settings";
+import { RestartControl } from "@/components/settings/restart-control";
 
 export default function SettingsPage() {
   const { state } = useConsoleRobotState();
@@ -11,14 +12,17 @@ export default function SettingsPage() {
     // Settings is the one screen that scrolls; the shell's <main> does not.
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-2xl px-4 py-4 sm:py-8">
-        <header className="mb-6">
-          <h1 className="text-xl font-semibold tracking-tight">
-            Settings
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Wi-Fi and display preferences for{" "}
-            <span className="readout">{state?.robot_id ?? "this robot"}</span>.
-          </p>
+        <header className="mb-6 flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold tracking-tight">
+              Settings
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Wi-Fi and display preferences for{" "}
+              <span className="readout">{state?.robot_id ?? "this robot"}</span>.
+            </p>
+          </div>
+          <RestartControl />
         </header>
 
         <div className="grid gap-4">

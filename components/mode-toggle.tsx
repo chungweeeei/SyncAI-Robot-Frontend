@@ -9,7 +9,7 @@ const subscribeNoop = () => () => {};
 /**
  * Day / night, one click. The rail is 56 px wide, which is no place for a
  * three-item dropdown; the full light / dark / system choice lives in Settings →
- * Appearance, and this flips between the two an operator actually switches
+ * Preferences, and this flips between the two an operator actually switches
  * between when they walk outside.
  */
 export function ModeToggle() {
