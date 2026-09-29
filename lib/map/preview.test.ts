@@ -1,21 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  PREVIEW_INSET,
-  WAYPOINT_HIT_PX,
-  planCaptions,
-  previewView,
-  waypointAt,
-} from "@/lib/map/preview";
+import { PREVIEW_INSET, planCaptions, previewView, stepCaption } from "@/lib/map/preview";
 import { vertexScreen } from "@/lib/map/draw";
 import type { MapVertex } from "@/lib/types/map";
 import type { MapMetadata } from "@/lib/types/robot";
 
 /**
- * The rules the floor plan preview's hit test has to keep. A click on the
- * preview is the operator saying "that one", and these pin down what "that"
- * resolves to: the nearest dot within reach, in the same frame the markers
- * were drawn in.
+ * The rules the floor plan preview has to keep: the view it opens at leaves
+ * room for the marks on the map's edge, a lit stop says which steps go to it,
+ * and captions that would smear give way in a known order.
  */
 
 const meta: MapMetadata = {
@@ -44,9 +37,6 @@ function stop(over: Partial<MapVertex>): MapVertex {
   };
 }
 
-const dock = stop({ id: "dock", name: "dock", x: 2.5, y: 1.25 });
-const room = stop({ id: "room", name: "room-a", x: -3, y: 4 });
-
 describe("previewView", () => {
   it("fits the whole map inside the inset, centred", () => {
     const innerW = 320 - PREVIEW_INSET.left - PREVIEW_INSET.right;
@@ -68,51 +58,6 @@ describe("previewView", () => {
     const at = vertexScreen(view, meta, corner.x, corner.y);
     expect(rect.width - at.cx).toBeGreaterThanOrEqual(PREVIEW_INSET.right);
     expect(at.cy).toBeGreaterThanOrEqual(PREVIEW_INSET.top);
-  });
-});
-
-describe("waypointAt", () => {
-  it("returns the stop whose dot is under the pointer", () => {
-    const at = vertexScreen(view, meta, dock.x, dock.y);
-    expect(waypointAt(view, meta, [dock, room], at.cx, at.cy)).toBe(dock);
-  });
-
-  it("reaches to the hit radius and no further", () => {
-    const at = vertexScreen(view, meta, dock.x, dock.y);
-    expect(
-      waypointAt(view, meta, [dock], at.cx + WAYPOINT_HIT_PX, at.cy),
-    ).toBe(dock);
-    expect(
-      waypointAt(view, meta, [dock], at.cx + WAYPOINT_HIT_PX + 0.5, at.cy),
-    ).toBeNull();
-  });
-
-  it("picks the nearer of two stops whose hit discs overlap", () => {
-    // Two stops 6 cells (0.3 m) apart: at preview scale that is ~3 px, well
-    // inside one hit radius, so both discs cover the midpoint.
-    const near = stop({ id: "near", x: 2.5, y: 1.25 });
-    const far = stop({ id: "far", x: 2.8, y: 1.25 });
-    const a = vertexScreen(view, meta, near.x, near.y);
-    const b = vertexScreen(view, meta, far.x, far.y);
-    expect(waypointAt(view, meta, [far, near], a.cx + 1, a.cy)).toBe(near);
-    expect(waypointAt(view, meta, [far, near], b.cx + 1, b.cy)).toBe(far);
-  });
-
-  it("uses the drawn frame: a larger map y lands nearer the top of the canvas", () => {
-    // The y flip lives in worldToGrid. If the hit test ever derived its own
-    // transform without it, a click on the upper stop would resolve to the
-    // lower one.
-    const low = stop({ id: "low", x: 0, y: 0 });
-    const high = stop({ id: "high", x: 0, y: 5 });
-    const atHigh = vertexScreen(view, meta, high.x, high.y);
-    const atLow = vertexScreen(view, meta, low.x, low.y);
-    expect(atHigh.cy).toBeLessThan(atLow.cy);
-    expect(waypointAt(view, meta, [low, high], atHigh.cx, atHigh.cy)).toBe(high);
-  });
-
-  it("returns null with nothing in reach", () => {
-    expect(waypointAt(view, meta, [dock, room], 0, 0)).toBeNull();
-    expect(waypointAt(view, meta, [], 100, 80)).toBeNull();
   });
 });
 
@@ -142,5 +87,17 @@ describe("planCaptions", () => {
       measure,
     );
     expect([...kept]).toEqual(["lit", "next"]);
+  });
+});
+
+describe("stepCaption", () => {
+  it("names the step, or the steps, that go to a stop", () => {
+    expect(stepCaption("dock", [2])).toBe("dock · step 2");
+    // A patrol that returns: one marker, every visit, in job order.
+    expect(stepCaption("dock", [1, 4])).toBe("dock · steps 1, 4");
+  });
+
+  it("is just the name for a stop the job does not visit", () => {
+    expect(stepCaption("room-a", [])).toBe("room-a");
   });
 });
