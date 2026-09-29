@@ -3,6 +3,7 @@
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { AppearanceSettings } from "@/components/settings/appearance-settings";
 import { NetworkSettings } from "@/components/settings/network-settings";
+import { SystemSettings } from "@/components/settings/system-settings";
 
 export default function SettingsPage() {
   const { state } = useConsoleRobotState();
@@ -16,7 +17,7 @@ export default function SettingsPage() {
             Settings
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Wi-Fi and display preferences for{" "}
+            Wi-Fi, system and display preferences for{" "}
             <span className="readout">{state?.robot_id ?? "this robot"}</span>.
           </p>
         </header>
@@ -26,6 +27,7 @@ export default function SettingsPage() {
               a console that has never heard from the robot is exactly the one
               that needs to fix its WiFi. The card degrades its own readout. */}
           <NetworkSettings />
+          <SystemSettings />
           <AppearanceSettings />
         </div>
       </div>
