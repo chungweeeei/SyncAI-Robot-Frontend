@@ -1,38 +1,46 @@
 "use client";
 
 import * as React from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
-import { restartRobotStack } from "@/lib/api/robot";
-import { restartPending } from "@/lib/robot/restart";
+import { queryKeys } from "@/lib/api/query-keys";
+import { fetchRestartStatus, restartRobotStack } from "@/lib/api/robot";
+import type { RestartRecord } from "@/lib/api/robot";
 import type { RobotMode } from "@/lib/types/robot";
+
+// The rebuild takes about 30 s; a second's resolution on its end is plenty.
+const RESTART_POLL_MS = 1000;
 
 export interface RobotRestart {
   /** The mode the robot last reported, or null before the first state frame. */
   reported: RobotMode | null;
-  /** The state poll's health. "error" during a restart is the expected shape. */
+  /** The state poll's health. */
   stateStatus: "loading" | "ok" | "error";
   /**
-   * Whether a press here can do anything: the link is up and the robot is in
-   * Navigation. The backend refuses every other mode, and a press with the
-   * link already down would fail in the same way a restart that is working
-   * does — a dropped connection — and be shown as one.
+   * Whether a press here can do anything: the link is up, the robot is in
+   * Navigation (the backend refuses every other mode), and no restart is
+   * already under way.
    */
   canRestart: boolean;
   /**
-   * A restart this console asked for is still under way. Derived from the
-   * shared poll, not stored — see lib/robot/restart.ts for why the answer is
-   * "the link dropped and came back" rather than anything in the frame.
+   * A restart is under way, whichever console asked for it — the backend's
+   * own record says so, not anything this tab remembers.
    */
   pending: boolean;
+  /**
+   * How the restart this tab asked for ended, once it has. Null before, and
+   * for a restart some other console started: that operator is the one
+   * waiting on the answer.
+   */
+  outcome: Pick<RestartRecord, "status" | "message"> | null;
   /** True while the POST itself is in flight (well before `pending` clears). */
   busy: boolean;
+  /** The backend's refusal of the POST, verbatim. */
   error: string | null;
   /**
-   * Ask for the restart. Resolves false when the robot refused it — the one
-   * outcome the caller keeps its dialog open for, to show the sentence — and
-   * true for everything else, a dropped connection included. Never rejects.
+   * Ask for the restart. Resolves false when it was refused — the one outcome
+   * the caller keeps its dialog open for, to show the sentence. Never rejects.
    */
   restart: () => Promise<boolean>;
   /** Clear a previous refusal, before the dialog opens again. */
@@ -40,40 +48,55 @@ export interface RobotRestart {
 }
 
 /**
- * Restart the robot's software in the mode it is already in, and watch it
- * come back.
+ * Restart the robot's software in the mode it is already in, and report how
+ * it ended.
  *
- * The same two halves as useModeSwitch, whose doc explains them: the request
- * is recorded before it goes out because it usually kills its own responder,
- * and the confirmation channel is the console's 1 Hz state poll rather than
- * the POST. It reads that poll through useConsoleRobotState and starts none
- * of its own.
+ * The confirmation channel is GET /api/v1/robot/restart, not the robot-state
+ * poll: the backend keeps answering throughout (it is not part of the stack
+ * being rebuilt) and keeps serving the last state frame, so that poll never
+ * notices. The restart record is read once on mount and polled only while it
+ * says `restarting` — the backend is changing it on its own then, and the
+ * status that started the poll is what stops it.
  */
 export function useRobotRestart(): RobotRestart {
-  const { state, status, updatedAt, lastErrorAt } = useConsoleRobotState();
-  const [requestedAt, setRequestedAt] = React.useState<number | null>(null);
+  const queryClient = useQueryClient();
+  const { state, status } = useConsoleRobotState();
+  // Whether this tab pressed Restart, so the outcome is shown to the operator
+  // who asked for it and not to every console that happens to be on Settings.
+  const [asked, setAsked] = React.useState(false);
 
-  const reported = state?.mode ?? null;
-  const pending = restartPending({ requestedAt, updatedAt, lastErrorAt });
+  const record = useQuery({
+    queryKey: queryKeys.robotRestart,
+    queryFn: ({ signal }) => fetchRestartStatus(signal),
+    refetchInterval: (query) =>
+      query.state.data?.status === "restarting" ? RESTART_POLL_MS : false,
+  });
 
   const request = useMutation({
     mutationFn: () => restartRobotStack(),
-    // Recorded before the call: "the POST resolved" is not when the restart
-    // began, and the drop that follows has to land after this moment to count.
     onMutate: () => {
-      setRequestedAt(Date.now());
+      setAsked(false);
     },
     onSuccess: (result) => {
-      // Finished inside the backend's ack window: there is no drop to wait for.
-      if (!result.restarting) setRequestedAt(null);
-    },
-    onError: (cause) => {
-      // The connection dropped because the restart is tearing the backend
-      // down. Expected; the poll reports the return.
-      if (cause instanceof TypeError) return;
-      // A refusal (409 outside Navigation, 502 with the robot's reason): the
-      // restart did not start, so it must not be shown as under way.
-      setRequestedAt(null);
+      // Written before `asked` is read: until the refetch below lands, the
+      // cache still holds the *previous* restart's record, and this tab would
+      // otherwise announce that one's outcome as the answer to this press.
+      const now = new Date().toISOString();
+      queryClient.setQueryData<RestartRecord>(
+        queryKeys.robotRestart,
+        result.restarting
+          ? { status: "restarting", message: "", started_at: now, finished_at: null }
+          : {
+              status: "succeeded",
+              message: result.message,
+              started_at: now,
+              finished_at: now,
+            },
+      );
+      setAsked(true);
+      // The backend's own record, which is also what starts the poll. Not
+      // awaited.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.robotRestart });
     },
   });
 
@@ -83,22 +106,28 @@ export function useRobotRestart(): RobotRestart {
     () =>
       requestRestart().then(
         () => true,
-        (cause: unknown) => cause instanceof TypeError,
+        () => false,
       ),
     [requestRestart],
   );
 
+  const reported = state?.mode ?? null;
+  const current = record.data ?? null;
+  const pending = current?.status === "restarting";
+  const finished =
+    current?.status === "succeeded" || current?.status === "failed";
+
   return {
     reported,
     stateStatus: status,
-    canRestart: status === "ok" && reported === "AUTO",
+    canRestart: status === "ok" && reported === "AUTO" && !pending,
     pending,
+    outcome:
+      asked && finished && current
+        ? { status: current.status, message: current.message }
+        : null,
     busy: request.isPending,
-    // The forgiven TypeError is a restart in progress on screen, not an error.
-    error:
-      request.error instanceof TypeError
-        ? null
-        : (request.error?.message ?? null),
+    error: request.error?.message ?? null,
     restart,
     reset,
   };

@@ -29,13 +29,6 @@ export interface UseRobotState {
    * which is exactly that contract.)
    */
   updatedAt: number | null;
-  /**
-   * Client clock (ms) at the last failed fetch, null if none has failed.
-   * The one signal a restart has for being over — the frame looks the same
-   * before and after, so what useRobotRestart waits for is a failure after
-   * the press followed by a success (see lib/robot/restart.ts).
-   */
-  lastErrorAt: number | null;
 }
 
 /**
@@ -48,7 +41,7 @@ export interface UseRobotState {
  * an errored refetch, same contract as the hand-rolled interval this replaces.
  */
 export function useRobotState(pollMs: number = DEFAULT_POLL_MS): UseRobotState {
-  const { data, dataUpdatedAt, errorUpdatedAt, isPending, isError } = useQuery({
+  const { data, dataUpdatedAt, isPending, isError } = useQuery({
     queryKey: queryKeys.robotState,
     queryFn: ({ signal }) => fetchRobotState(signal),
     refetchInterval: pollMs,
@@ -59,6 +52,5 @@ export function useRobotState(pollMs: number = DEFAULT_POLL_MS): UseRobotState {
     status: isPending ? "loading" : isError ? "error" : "ok",
     // dataUpdatedAt is 0 until the first success; the contract wants null.
     updatedAt: dataUpdatedAt || null,
-    lastErrorAt: errorUpdatedAt || null,
   };
 }

@@ -9,6 +9,12 @@
 export const queryKeys = {
   /** GET /api/v1/robot/state — the console's single 1 Hz poll. */
   robotState: ["robot-state"] as const,
+  /**
+   * GET /api/v1/robot/restart — the latest restart and how it ended. Read once
+   * on mount, so a restart started from another console shows too, and polled
+   * only while it says `restarting`.
+   */
+  robotRestart: ["robot-restart"] as const,
   /** GET /api/v1/active_tasks — the console's single 2 s poll. */
   activeTasks: ["active-tasks"] as const,
   /**

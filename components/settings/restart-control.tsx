@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useConsoleActiveTasks } from "@/hooks/use-console-active-tasks";
 import { useRobotRestart } from "@/hooks/use-robot-restart";
+import { cn } from "@/lib/utils";
 import type { RobotMode } from "@/lib/types/robot";
 
 /**
@@ -41,8 +42,9 @@ function unavailableReason(
  *
  * In the Settings header rather than the status strip on purpose. The strip
  * is on every screen, and this is a rare, disruptive press that takes the
- * link down for about 30 seconds — it belongs on the screen where an operator
- * changes things about the robot itself, one deliberate step away. Solid red
+ * robot's navigation down for about 30 seconds — it belongs on the screen
+ * where an operator changes things about the robot itself, one deliberate
+ * step away. Solid red
  * because it is the one control on that screen that stops the machine's
  * software, and confirmed in a dialog for the same reason every stack
  * teardown in this console is.
@@ -53,23 +55,30 @@ export function RestartControl() {
   const [confirming, setConfirming] = React.useState(false);
   const hintId = React.useId();
 
-  const { reported, stateStatus, canRestart, pending, busy, error } = control;
+  const { reported, stateStatus, canRestart, pending, outcome, busy, error } =
+    control;
 
   const close = () => setConfirming(false);
 
   const submit = async () => {
-    // A refusal keeps the dialog open to show its sentence; anything else is
-    // a restart under way, which the hint below the button reports.
+    // A refusal keeps the dialog open to show its sentence; otherwise the
+    // restart is under way, and the hint below the button reports it.
     if (await control.restart()) setConfirming(false);
   };
 
   // Nothing to say while the button can simply be pressed: the dialog carries
   // the consequences, and a caption repeating them would crowd the header.
-  const hint = pending
-    ? "Restarting. This console reconnects on its own."
-    : canRestart
-      ? null
-      : unavailableReason(reported, stateStatus);
+  // A failure is the robot's own sentence, verbatim; a success is this
+  // console's word, since the robot's names its internal session.
+  const hint: { text: string; failed: boolean } | null = pending
+    ? { text: "Restarting. This takes about 30 seconds.", failed: false }
+    : outcome?.status === "failed"
+      ? { text: outcome.message, failed: true }
+      : !canRestart
+        ? { text: unavailableReason(reported, stateStatus), failed: false }
+        : outcome?.status === "succeeded"
+          ? { text: "Restarted.", failed: false }
+          : null;
 
   return (
     <div className="flex shrink-0 flex-col items-end gap-1">
@@ -87,14 +96,17 @@ export function RestartControl() {
         {/* One name throughout: the hint below is what says it is under way. */}
         Restart robot
       </Button>
-      {hint && (
-        <p
-          id={hintId}
-          className="max-w-56 text-right text-[11px] leading-snug text-muted-foreground"
-        >
-          {hint}
-        </p>
-      )}
+      {/* Always in the tree, so a screen reader hears the outcome land. */}
+      <p
+        id={hintId}
+        role="status"
+        className={cn(
+          "max-w-56 text-right text-[11px] leading-snug",
+          hint?.failed ? "text-signal-warn" : "text-muted-foreground",
+        )}
+      >
+        {hint?.text}
+      </p>
 
       <AlertDialog
         open={confirming}
@@ -108,8 +120,8 @@ export function RestartControl() {
             <AlertDialogDescription>
               {tasks.length > 0 &&
                 "The robot is running a job, and restarting stops it. "}
-              The robot stays in Navigation and this console loses contact for
-              about 30 seconds while it starts again.
+              The robot stays in Navigation, and stops navigating for about 30
+              seconds while its software starts again.
             </AlertDialogDescription>
           </AlertDialogHeader>
 

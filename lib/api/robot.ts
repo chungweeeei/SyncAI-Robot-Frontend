@@ -134,9 +134,10 @@ export function setPolicyMode(mode: PolicyMode): Promise<SetPolicyModeResult> {
 
 export interface RestartResult {
   /**
-   * True when the rebuild was dispatched. Rarely seen: the backend is one of
-   * the processes the restart tears down, so the usual answer is no answer.
-   * False means the rebuild already finished inside the backend's ack window.
+   * True when the rebuild was dispatched, which is the usual answer: the
+   * robot only reports back once it is over, and that report is read from
+   * fetchRestartStatus. False means it already finished inside the backend's
+   * ack window.
    */
   restarting: boolean;
   message: string;
@@ -154,15 +155,57 @@ const RestartResultSchema: z.ZodType<RestartResult> = z.object({
  * so this is the only way to restart a wedged stack without leaving the
  * mode. No body: the mode is whatever the robot reports.
  *
- * Outlives its server the same way switchRobotMode does (read its doc): a
- * dropped connection is the restart working. The refusals arrive fast and
- * with nothing touched — a 409 `restart_refused` in Mapping (an unsaved map
- * may be in memory), with nothing running, or with both stacks up — and the
- * UI only shows their sentence, so no `mapError`.
+ * The backend is not part of the stack it rebuilds and keeps answering, so
+ * this resolves within its ack window and the outcome is read afterwards
+ * from GET /api/v1/robot/restart. Refusals arrive here, with nothing
+ * touched: a 409 `restart_refused` in Mapping (an unsaved map may be in
+ * memory), with nothing running or with both stacks up, and a 409
+ * `restart_running` for a second press. The UI only shows their sentence,
+ * so no `mapError`.
  */
 export function restartRobotStack(): Promise<RestartResult> {
   return requestJson<RestartResult>(apiUrl("/api/v1/robot/restart"), {
     method: "POST",
     schema: RestartResultSchema,
+  });
+}
+
+export type RestartStatus = "idle" | "restarting" | "succeeded" | "failed";
+
+export interface RestartRecord {
+  /**
+   * The latest restart the backend dispatched. `idle` if none has been since
+   * the backend itself started — it keeps this in memory, and does not guess
+   * about a restart it did not watch.
+   */
+  status: RestartStatus;
+  /** The robot's answer once there is one; the reason, on `failed`. */
+  message: string;
+  /** ISO 8601, UTC. Null when idle. */
+  started_at: string | null;
+  /** ISO 8601, UTC. Null until it ended. */
+  finished_at: string | null;
+}
+
+const RestartRecordSchema: z.ZodType<RestartRecord> = z.object({
+  status: z.enum(["idle", "restarting", "succeeded", "failed"]),
+  message: z.string(),
+  started_at: z.string().nullable(),
+  finished_at: z.string().nullable(),
+});
+
+/**
+ * How the latest restart is going, or went.
+ *
+ * The one place a restart's outcome can be read. GET /robot/state cannot say:
+ * the backend keeps serving the last frame the robot published while its
+ * software is down, so that poll stays healthy through the whole rebuild.
+ * The backend fails a restart that goes unanswered for three minutes, so
+ * `restarting` always ends.
+ */
+export function fetchRestartStatus(signal?: AbortSignal): Promise<RestartRecord> {
+  return requestJson<RestartRecord>(apiUrl("/api/v1/robot/restart"), {
+    signal,
+    schema: RestartRecordSchema,
   });
 }
