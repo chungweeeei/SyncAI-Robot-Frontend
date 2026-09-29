@@ -253,9 +253,9 @@ export function drawBrushRing(
   props: DrawState,
   palette: Palette,
 ): void {
-  // Nothing is being painted in vertex mode, so a footprint would be a promise
-  // about cells that no press there will touch.
-  if (props.mode === "vertex") return;
+  // Nothing is being painted outside grid mode, so a footprint would be a
+  // promise about cells that no press there will touch.
+  if (props.mode !== "grid") return;
   if (!hover || props.tool === "pan" || props.spacePan) return;
   if (gesture?.kind === "pan") return;
 

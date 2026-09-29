@@ -13,6 +13,7 @@ import {
   type EditTool,
   type VertexGesture,
   type VertexTool,
+  type ZoneTool,
 } from "@/lib/map/editor";
 import { GridStatus } from "@/components/maps/grid-status";
 import {
@@ -40,6 +41,7 @@ import {
 } from "@/lib/map/patch";
 import type { GridSession } from "@/lib/map/session";
 import { DEFAULT_VERTEX_TYPE } from "@/lib/map/vertex";
+import { canCloseZone, newZoneId, type ZonePoint, type ZonePolygon } from "@/lib/map/zone";
 import type { VertexType } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
@@ -84,6 +86,14 @@ const DEFAULT_TOOL: EditTool = "pan";
 const DEFAULT_VERTEX_TOOL: VertexTool = "pan";
 
 /**
+ * Zone mode opens in Pan as well, for DEFAULT_VERTEX_TOOL's reason. A stray
+ * corner is cheap to drop, unlike a stray vertex; what Pan-as-resting buys
+ * here is the moment the editor dims the map and asks which tool to pick,
+ * which is the one place the console tells the operator what a zone tool is.
+ */
+const DEFAULT_ZONE_TOOL: ZoneTool = "pan";
+
+/**
  * Loads the map and shows the guard states; EditorSurface does the editing.
  *
  * The split exists so that everything belonging to one loaded grid — the undo
@@ -101,7 +111,8 @@ export function MapGridEditor({
   /**
    * The mode the surface opens in. Grid unless a link asked for Waypoints —
    * the task editor's does, for an operator who came here to add one stop.
-   * The tool still opens on Pan either way; see the note above DEFAULT_TOOL.
+   * No link asks for zones. The tool still opens on Pan either way; see the
+   * note above DEFAULT_TOOL.
    */
   initialMode?: EditMode;
   /** Lets the page guard its back button; see its comment on why it needs this. */
@@ -177,6 +188,7 @@ function EditorSurface({
   const [mode, setMode] = React.useState<EditMode>(initialMode);
   const [tool, setTool] = React.useState<EditTool>(DEFAULT_TOOL);
   const [vertexTool, setVertexTool] = React.useState<VertexTool>(DEFAULT_VERTEX_TOOL);
+  const [zoneTool, setZoneTool] = React.useState<ZoneTool>(DEFAULT_ZONE_TOOL);
   // Free by default: erasing phantom obstacles is the reason this screen exists.
   const [value, setValue] = React.useState<GridValue>(FREE);
   const [brush, setBrush] = React.useState<number>(DEFAULT_BRUSH);
@@ -235,6 +247,17 @@ function EditorSurface({
   /** The last point the shell asked the canvas to centre on; see GridCanvas.focus. */
   const [focus, setFocus] = React.useState<{ x: number; y: number } | null>(null);
 
+  /*
+   * Zone-layer state. Like the vertex layer's, none of it feeds `dirty`: the
+   * Unsaved chip and the back-button guard describe the gridmap only. Unlike
+   * the vertex layer's, none of it reaches the backend either — there is no
+   * zone endpoint yet, so a zone drawn here lives until the page is left and
+   * no longer. That is said here so nobody adds a "save your zones" prompt
+   * for state that has nowhere to go.
+   */
+  const [zones, setZones] = React.useState<ZonePolygon[]>([]);
+  const [zoneDraft, setZoneDraft] = React.useState<ZonePoint[]>([]);
+
   /**
    * The robot's pose, when it is a pose on the map open here.
    *
@@ -288,9 +311,14 @@ function EditorSurface({
       // DEFAULT_VERTEX_TOOL exists to stop, and a mode toggle is exactly when it
       // would come back.
       setVertexTool(DEFAULT_VERTEX_TOOL);
+      setZoneTool(DEFAULT_ZONE_TOOL);
       // Back to grid mode with a draft still staged would leave a dashed marker
       // on the canvas and no panel to commit or dismiss it.
       if (next === "grid") clearVertexEdit();
+      // The same for a shape in flight: out of zone mode nothing can finish
+      // it, so the dashed corners would just sit there. Finished zones stay,
+      // drawn in every mode like the vertices.
+      setZoneDraft([]);
     },
     [clearVertexEdit],
   );
@@ -309,6 +337,37 @@ function EditorSurface({
     },
     [clearVertexEdit],
   );
+
+  /**
+   * Arm a zone tool. Pan drops the shape in flight, chooseVertexTool's rule:
+   * it is "I am done with that one", and half a shape left dashed on the map
+   * would keep asking to be finished.
+   */
+  const chooseZoneTool = React.useCallback((next: ZoneTool) => {
+    setZoneTool(next);
+    if (next === "pan") setZoneDraft([]);
+  }, []);
+
+  const addZonePoint = React.useCallback((point: ZonePoint) => {
+    setZoneDraft((draft) => [...draft, point]);
+  }, []);
+
+  const dropZoneDraft = React.useCallback(() => setZoneDraft([]), []);
+
+  /**
+   * Close the shape in flight into a zone.
+   *
+   * Reads `zoneDraft` from the closure, so its identity changes with every
+   * corner; that is fine, because GridCanvas re-renders on the `zoneDraft`
+   * prop anyway. What it must not be is `setZones` nested inside a
+   * `setZoneDraft` updater to keep the identity stable: StrictMode runs an
+   * updater twice, and the zone would be added twice.
+   */
+  const closeZone = React.useCallback(() => {
+    if (!canCloseZone(zoneDraft)) return;
+    setZones((current) => [...current, { id: newZoneId(), points: zoneDraft }]);
+    setZoneDraft([]);
+  }, [zoneDraft]);
 
   /**
    * Put a Draw choice down on the map, or pick it up again (`null`).
@@ -555,14 +614,24 @@ function EditorSurface({
        * fields wants Escape for itself, so there is nothing to swallow.
        *
        * It does both halves of "put the mouse back": it drops whatever is staged
-       * and disarms both tool axes. One press, not two, because the operator
-       * pressing it wants the map back and does not care which of the two states
+       * and disarms every tool axis. One press, not two, because the operator
+       * pressing it wants the map back and does not care which of the states
        * is the one holding it.
+       *
+       * The one exception is a zone shape in flight, which Escape drops while
+       * keeping Forbidden zone and Shape armed. A waypoint draft is one click
+       * to redo, so throwing it out with everything else costs nothing; five
+       * corners are not, and the next thing after dropping a mis-drawn shape
+       * is drawing it again. A second press then puts the choice down as usual.
        */
       if (event.key === "Escape") {
         event.preventDefault();
+        if (zoneDraft.length) {
+          dropZoneDraft();
+          return;
+        }
         // Puts the Draw choice down as well, which drops a staged draft and
-        // lands both tool axes on Pan — one press for "give me the map back".
+        // lands every tool axis on Pan — one press for "give me the map back".
         chooseDraw(null);
         return;
       }
@@ -572,6 +641,15 @@ function EditorSurface({
       // exactly what silently eats typing. Ctrl+Z falls through to the field too,
       // becoming the browser's native text undo, which is what you want there.
       if (isTypingTarget(event.target)) return;
+
+      // Below the typing guard, unlike Escape: Enter in the waypoint form is
+      // the form's submit, and a shape can only be in flight in zone mode,
+      // where no form is mounted.
+      if (event.key === "Enter" && canCloseZone(zoneDraft)) {
+        event.preventDefault();
+        closeZone();
+        return;
+      }
 
       const mod = event.ctrlKey || event.metaKey;
       if (mod && event.key.toLowerCase() === "z") {
@@ -615,7 +693,9 @@ function EditorSurface({
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
     };
-  }, [undo, redo, fit, chooseDraw]);
+    // Re-subscribing on every corner is harmless: the listeners are on window
+    // and capture nothing that a pointer gesture in flight depends on.
+  }, [undo, redo, fit, chooseDraw, zoneDraft, dropZoneDraft, closeZone]);
 
   /**
    * Covers reload and tab close only. The App Router has no navigation blocker, so
@@ -659,8 +739,14 @@ function EditorSurface({
     // screen shows it since the readout lost its Zoom row, and the pinch test
     // has to prove the second finger zoomed rather than only that it did not
     // paint. An attribute, not text, so it can never become an on-screen
-    // diagnostic by accident.
-    <div className="relative h-full w-full" data-zoom={Math.round(scale * 100)}>
+    // diagnostic by accident. data-zones is the finished zone count, for the
+    // same suite and the same reason: the canvas exposes nothing, and the
+    // test has to prove a shape closed rather than only that clicks landed.
+    <div
+      className="relative h-full w-full"
+      data-zoom={Math.round(scale * 100)}
+      data-zones={zones.length}
+    >
       <GridCanvas
         session={session}
         mode={mode}
@@ -683,6 +769,11 @@ function EditorSurface({
         onVertexToggle={toggleVertex}
         onMarquee={selectMany}
         onVertexGesture={handleVertexGesture}
+        zoneTool={zoneTool}
+        zones={zones}
+        zoneDraft={zoneDraft}
+        onZonePoint={addZonePoint}
+        onZoneClose={closeZone}
       />
 
       {/* One row across the top, as on the dashboard: Editor at the left, Draw
@@ -708,6 +799,10 @@ function EditorSurface({
             onToolChange={setTool}
             vertexTool={vertexTool}
             onVertexToolChange={chooseVertexTool}
+            zoneTool={zoneTool}
+            onZoneToolChange={chooseZoneTool}
+            canCloseZone={canCloseZone(zoneDraft)}
+            onCloseZone={closeZone}
             brush={brush}
             onBrushChange={setBrush}
           />

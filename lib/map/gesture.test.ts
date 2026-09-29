@@ -27,6 +27,7 @@ const press = (over: Partial<PressInput> = {}): PressInput => ({
   mode: "grid",
   tool: "brush",
   vertexTool: "place",
+  zoneTool: "shape",
   onVertex: false,
   ...over,
 });
@@ -47,13 +48,24 @@ describe("classifyPress", () => {
   it("pans on the left button only when the mode's own tool is Pan", () => {
     expect(classifyPress(press({ tool: "pan" }))).toBe("pan");
     expect(classifyPress(press({ mode: "vertex", vertexTool: "pan" }))).toBe("pan");
+    expect(classifyPress(press({ mode: "zone", zoneTool: "pan" }))).toBe("pan");
   });
 
-  it("reads each mode's tool and ignores the other's", () => {
+  it("reads each mode's tool and ignores the others'", () => {
     // A brush armed in grid mode does not paint from waypoint mode, and Pan
-    // armed for waypoints does not stop a grid stroke.
+    // armed for waypoints does not stop a grid stroke — nor does a zone's.
     expect(classifyPress(press({ mode: "vertex", tool: "brush", vertexTool: "place" }))).toBe("aim");
     expect(classifyPress(press({ mode: "grid", tool: "line", vertexTool: "pan" }))).toBe("stroke");
+    expect(classifyPress(press({ mode: "grid", tool: "line", zoneTool: "pan" }))).toBe("stroke");
+    expect(classifyPress(press({ mode: "zone", tool: "brush", zoneTool: "pan" }))).toBe("pan");
+  });
+
+  it("adds a point with Shape armed for a zone, on a marker or not", () => {
+    // Zone mode has no markers to hit: a press anywhere is a corner, and
+    // whether it closes the shape is lib/map/zone.ts's question.
+    expect(classifyPress(press({ mode: "zone", zoneTool: "shape" }))).toBe("point");
+    expect(classifyPress(press({ mode: "zone", zoneTool: "shape", onVertex: true }))).toBe("point");
+    expect(classifyPress(press({ mode: "zone", zoneTool: "shape", button: 2 }))).toBe("pan");
   });
 
   it("strokes with any armed grid tool", () => {
@@ -101,6 +113,7 @@ describe("panPicks", () => {
     expect(panPicks({ mode: "vertex", vertexTool: "pan", button: 2, spacePan: false })).toBe(false);
     expect(panPicks({ mode: "vertex", vertexTool: "pan", button: 0, spacePan: true })).toBe(false);
     expect(panPicks({ mode: "grid", vertexTool: "pan", button: 0, spacePan: false })).toBe(false);
+    expect(panPicks({ mode: "zone", vertexTool: "pan", button: 0, spacePan: false })).toBe(false);
     expect(panPicks({ mode: "vertex", vertexTool: "select", button: 0, spacePan: false })).toBe(false);
   });
 });

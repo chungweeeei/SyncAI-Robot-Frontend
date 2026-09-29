@@ -8,7 +8,7 @@
 // pointer handlers, and the heading rule was written twice, once in each
 // canvas, with deadzones that had drifted to 8 px and 10 px.
 
-import type { EditMode, EditTool, VertexTool } from "@/lib/map/editor";
+import type { EditMode, EditTool, VertexTool, ZoneTool } from "@/lib/map/editor";
 
 /**
  * Screen distance, in CSS px, below which a press that moved is still a
@@ -81,7 +81,9 @@ export type PressIntent =
   /** Place a waypoint, or re-aim the pressed one. */
   | "aim"
   /** Paint cells with the armed brush, line or rectangle. */
-  | "stroke";
+  | "stroke"
+  /** Add a corner to the forbidden zone in flight, or close it. */
+  | "point";
 
 export interface PressInput {
   /** `PointerEvent.button`: 0 left, 1 middle, 2 right. */
@@ -94,6 +96,7 @@ export interface PressInput {
   mode: EditMode;
   tool: EditTool;
   vertexTool: VertexTool;
+  zoneTool: ZoneTool;
   /** The press landed on a waypoint marker. */
   onVertex: boolean;
 }
@@ -114,17 +117,24 @@ export interface PressInput {
  * on a marker re-aims it under either waypoint tool, so fixing a heading
  * does not depend on which tool is held. With Place armed, bare map places
  * a new waypoint; the caller still has to check the press landed on the grid.
+ *
+ * With a zone chosen, Shape claims the left button the way Place does, and
+ * every press is a point. Whether that point is a new corner or the one that
+ * closes the shape is classifyZonePress's question (lib/map/zone.ts), asked
+ * by the canvas, because answering it takes the view.
  */
 export function classifyPress(input: PressInput): PressIntent {
-  const { button, spacePan, shiftKey, touch, mode, tool, vertexTool, onVertex } = input;
+  const { button, spacePan, shiftKey, touch, mode, tool, vertexTool, zoneTool, onVertex } = input;
   const panning =
     button === 1 ||
     button === 2 ||
     spacePan ||
     (mode === "grid" && tool === "pan") ||
-    (mode === "vertex" && vertexTool === "pan");
+    (mode === "vertex" && vertexTool === "pan") ||
+    (mode === "zone" && zoneTool === "pan");
   if (panning) return "pan";
   if (mode === "grid") return "stroke";
+  if (mode === "zone") return "point";
   if (vertexTool === "select") {
     if (onVertex && (shiftKey || touch)) return "toggle";
     if (!onVertex) return "marquee";
@@ -136,7 +146,7 @@ export function classifyPress(input: PressInput): PressIntent {
  * Whether a pan press doubles as a waypoint pick when it turns out to be a
  * click. Only a plain left press with Pan armed in waypoint mode does: right,
  * middle and Space pan work under every tool, and must not also change the
- * selection.
+ * selection. Zone mode's Pan picks nothing — there is no zone selection.
  */
 export function panPicks(input: Pick<PressInput, "button" | "spacePan" | "mode" | "vertexTool">): boolean {
   return (

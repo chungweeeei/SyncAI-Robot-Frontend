@@ -28,6 +28,7 @@ import type {
   Gesture,
   VertexGesture,
   VertexTool,
+  ZoneTool,
 } from "@/lib/map/editor";
 import {
   bandBetween,
@@ -42,6 +43,7 @@ import {
 import { blitGrid, blitGridRect } from "@/lib/map/render";
 import type { GridPatch } from "@/lib/map/patch";
 import type { GridSession } from "@/lib/map/session";
+import { classifyZonePress, type ZonePoint, type ZonePolygon } from "@/lib/map/zone";
 import {
   CELL_GRID_MIN_SCALE,
   cellAt,
@@ -58,18 +60,26 @@ import {
 import type { MapVertex } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
-/** Click slop around a marker centre. Comfortably larger than the dot itself. */
+/**
+ * Click slop around a marker centre. Comfortably larger than the dot itself.
+ * Also the target for a zone's first corner, which is a dot of the same size.
+ */
 const VERTEX_HIT_RADIUS = 11;
 /** The same slop under a finger, which covers ~22 px and cannot see the dot. */
 const VERTEX_HIT_RADIUS_TOUCH = 22;
 
 export interface GridCanvasProps {
   session: GridSession;
-  /** Grid paints cells; vertex places poses and never touches the buffer. */
+  /**
+   * Grid paints cells; vertex places poses and never touches the buffer; zone
+   * collects the corners of a forbidden zone and touches neither.
+   */
   mode: EditMode;
   tool: EditTool;
   /** Read only in vertex mode, the way `tool` is read only in grid mode. */
   vertexTool: VertexTool;
+  /** Read only in zone mode, likewise. */
+  zoneTool: ZoneTool;
   value: GridValue;
   /** Odd cell diameter from BRUSH_SIZES. */
   brush: number;
@@ -145,6 +155,23 @@ export interface GridCanvasProps {
   onMarquee: (ids: string[], additive: boolean) => void;
   /** Fired once on pointer-up with the finished pose. */
   onVertexGesture: (gesture: VertexGesture) => void;
+
+  /**
+   * Forbidden zones drawn so far. Drawn in every mode, like the vertices: a
+   * stop placed inside one is exactly what an operator wants to notice.
+   */
+  zones: readonly ZonePolygon[];
+  /**
+   * The corners of the shape in flight, the shell's state rather than a ref
+   * in here: a corner arrives once per click, not at pointer rate, and the
+   * toolbar's Done button needs the count. The rubber line from the last
+   * corner still follows the pointer through hoverRef, with no React involved.
+   */
+  zoneDraft: readonly ZonePoint[];
+  /** A click with Shape armed, on bare map: one more corner. */
+  onZonePoint: (point: ZonePoint) => void;
+  /** A click on the first corner once there are three: close the shape. */
+  onZoneClose: () => void;
 
   className?: string;
 }
@@ -334,6 +361,10 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     props.draft,
     props.selectedIds,
     props.mode,
+    // A corner added by a click is on screen too, and the pointer is still
+    // when it lands.
+    props.zones,
+    props.zoneDraft,
     // Once a second at most, and only when the robot has actually moved — the
     // hook memoises the pose on its values, so a parked robot costs no frames.
     props.robotPose,
@@ -509,19 +540,24 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     if (!view) return;
     if (event.button !== 0 && event.button !== 1 && event.button !== 2) return;
 
-    const { mode, tool, vertexTool, value, brush, spacePan } = propsRef.current;
+    const { mode, tool, vertexTool, zoneTool, value, brush, spacePan } = propsRef.current;
     const { cx, cy } = localPoint(event);
 
     if (event.pointerType === "touch") {
       touchesRef.current.set(event.pointerId, { cx, cy });
-      // A second finger is a pinch — if the first one is panning or doing
-      // nothing. Over a stroke, a band or an aim it stays ignored: a stroke
-      // has already stamped, and the two-finger zoom would move the map out
-      // from under the cells still being painted. (Before the pinch existed
-      // a second finger replaced the gesture, and with Brush armed the next
-      // move painted a line from one finger to the other.)
+      // A second finger is a pinch — if the first one is panning, holding a
+      // zone corner it has not yet added, or doing nothing. Over a stroke, a
+      // band or an aim it stays ignored: a stroke has already stamped, and
+      // the two-finger zoom would move the map out from under the cells
+      // still being painted. (Before the pinch existed a second finger
+      // replaced the gesture, and with Brush armed the next move painted a
+      // line from one finger to the other.)
       const gesture = gestureRef.current;
-      if (touchesRef.current.size === 2 && !pinchRef.current && (!gesture || gesture.kind === "pan")) {
+      if (
+        touchesRef.current.size === 2 &&
+        !pinchRef.current &&
+        (!gesture || gesture.kind === "pan" || gesture.kind === "point")
+      ) {
         if (gesture) {
           // Ended without the click-pick: two fingers are never a click.
           gestureRef.current = null;
@@ -563,6 +599,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       mode,
       tool,
       vertexTool,
+      zoneTool,
       onVertex: hit !== null,
     });
 
@@ -629,6 +666,47 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
         theta: hit?.theta ?? draft?.theta ?? 0,
       };
       requestDraw();
+      return;
+    }
+
+    if (intent === "point") {
+      const { zoneDraft } = propsRef.current;
+      const firstAt = zoneDraft.length
+        ? vertexScreen(view, session.meta, zoneDraft[0].x, zoneDraft[0].y)
+        : null;
+      const verdict = classifyZonePress(
+        zoneDraft.length,
+        firstAt,
+        { cx, cy },
+        touch ? VERTEX_HIT_RADIUS_TOUCH : VERTEX_HIT_RADIUS,
+      );
+      if (verdict === "ignore") return;
+
+      let point: ZonePoint | null = null;
+      if (verdict === "add") {
+        // Only a press on the grid adds a corner; a press in the letterbox
+        // margin means nothing, as it does for a stroke and a waypoint.
+        const cell = cellAt(view, session.grid, cx, cy);
+        if (!cell) return;
+        // Cell centre, for the aim branch's reason: the corner is a pose on
+        // the map, and the cell's corner would be half a cell off.
+        const { wx, wy } = gridToWorld(cell.col + 0.5, cell.row + 0.5, session.meta);
+        point = { x: wx, y: wy };
+      }
+
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      // Nothing is added yet: the release decides whether this was a click
+      // (a corner) or a drag (a pan), the way `pan.pick` is resolved.
+      gestureRef.current = {
+        kind: "point",
+        pointerId: event.pointerId,
+        ox: cx,
+        oy: cy,
+        cx,
+        cy,
+        point,
+      };
       return;
     }
 
@@ -729,8 +807,15 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       return;
     }
 
-    if (gesture.kind === "pan") {
+    if (gesture.kind === "pan" || gesture.kind === "point") {
       if (!rect) return;
+      // A corner press pans from the first move, like Pan, rather than
+      // holding still for the deadzone and then jumping by it; the deadzone
+      // is the release's question. The grab cursor waits for it, though, so
+      // a plain click never flashes one.
+      if (gesture.kind === "point" && isDrag(gesture.ox, gesture.oy, cx, cy)) {
+        setPanCursor(true);
+      }
       viewRef.current = panBy(view, cx - gesture.cx, cy - gesture.cy, rect, session.grid);
       gesture.cx = cx;
       gesture.cy = cy;
@@ -822,6 +907,19 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       return;
     }
 
+    if (gesture.kind === "point") {
+      setPanCursor(false);
+      // A click adds the corner or closes the shape; a drag was a pan and
+      // adds nothing. Nothing in the cell buffer moved either way, so no
+      // patch is committed — the vertex branch's reasoning.
+      if (!isDrag(gesture.ox, gesture.oy, gesture.cx, gesture.cy)) {
+        if (gesture.point) propsRef.current.onZonePoint(gesture.point);
+        else propsRef.current.onZoneClose();
+      }
+      requestDraw();
+      return;
+    }
+
     if (gesture.kind === "marquee") {
       const { ox, oy, cx, cy, additive } = gesture;
       const band = bandBetween(ox, oy, cx, cy);
@@ -891,6 +989,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
   const panCursor =
     (props.mode === "grid" && props.tool === "pan") ||
     (props.mode === "vertex" && props.vertexTool === "pan") ||
+    (props.mode === "zone" && props.zoneTool === "pan") ||
     props.spacePan
       ? "cursor-grab active:cursor-grabbing"
       : "";

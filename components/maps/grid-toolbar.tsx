@@ -1,11 +1,14 @@
 "use client";
 
 import {
+  BanIcon,
   BrushIcon,
+  CheckIcon,
   HandIcon,
   MapPinIcon,
   MapPinPlusIcon,
   MaximizeIcon,
+  PentagonIcon,
   Redo2Icon,
   SaveIcon,
   SlashIcon,
@@ -33,7 +36,15 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { BRUSH_SIZES } from "@/lib/map/grid";
-import { drawSwatch, type DrawKind, type EditTool, type VertexTool } from "@/lib/map/editor";
+import {
+  drawSwatch,
+  isPaintKind,
+  type DrawKind,
+  type EditTool,
+  type PaintKind,
+  type VertexTool,
+  type ZoneTool,
+} from "@/lib/map/editor";
 
 /*
  * The floor plan editor's controls, as two strips along the top of the canvas —
@@ -45,8 +56,8 @@ import { drawSwatch, type DrawKind, type EditTool, type VertexTool } from "@/lib
  * Save. Every choice was a labelled row of the same weight.
  *
  * Right, **Draw**: the one choice that decides what a press on the map means —
- * nothing (where the editor opens), Wall, Floor, Unknown or Waypoint — as a
- * list, beside the zoom at the outer edge. Left, **Editor**: everything that
+ * nothing (where the editor opens), Wall, Floor, Unknown, Waypoint or Forbidden
+ * zone — as a list, beside the zoom at the outer edge. Left, **Editor**: everything that
  * acts on the work — fit the view, history, Save — and then the tools the Draw
  * choice allows, led by Pan, which is always there.
  *
@@ -109,11 +120,26 @@ const VERTEX_TOOLS: readonly ToolOption<VertexTool>[] = [
 ];
 
 /**
+ * Zone mode's. A pentagon rather than Rect's square, because the shape is
+ * whatever the operator's corners make it, and a square would promise the
+ * one thing this tool does not draw.
+ */
+const ZONE_TOOLS: readonly ToolOption<ZoneTool>[] = [
+  { value: "pan", label: "Pan", hint: "drag the map", icon: HandIcon },
+  {
+    value: "shape",
+    label: "Shape",
+    hint: "press three or more corners, then press the first one again to close",
+    icon: PentagonIcon,
+  },
+];
+
+/**
  * A paint kind's glyph: a square of the grey its cells are drawn in, so the
  * button shows the result rather than a metaphor for it. Bordered, because
  * Floor is near-white and would vanish on the light panel without one.
  */
-function swatchIcon(kind: Exclude<DrawKind, "waypoint">): ToolIcon {
+function swatchIcon(kind: PaintKind): ToolIcon {
   function Swatch({ className }: { className?: string }) {
     return (
       <span
@@ -135,6 +161,9 @@ const DRAW_KINDS: readonly {
   { value: "floor", label: "Floor", icon: swatchIcon("floor") },
   { value: "unknown", label: "Unknown", icon: swatchIcon("unknown") },
   { value: "waypoint", label: "Waypoint", icon: MapPinIcon },
+  // The "not here" sign: what the zone means, since its shape is the
+  // operator's to draw.
+  { value: "zone", label: "Forbidden zone", icon: BanIcon },
 ];
 
 const SIZE_ITEMS = BRUSH_SIZES.map((size) => ({
@@ -221,6 +250,10 @@ export function EditorToolBar({
   onToolChange,
   vertexTool,
   onVertexToolChange,
+  zoneTool,
+  onZoneToolChange,
+  canCloseZone,
+  onCloseZone,
   brush,
   onBrushChange,
   className,
@@ -238,15 +271,25 @@ export function EditorToolBar({
   onToolChange: (tool: EditTool) => void;
   vertexTool: VertexTool;
   onVertexToolChange: (tool: VertexTool) => void;
+  zoneTool: ZoneTool;
+  onZoneToolChange: (tool: ZoneTool) => void;
+  /** The shape in flight has enough corners for Done to close it. */
+  canCloseZone: boolean;
+  onCloseZone: () => void;
   brush: number;
   onBrushChange: (brush: number) => void;
   className?: string;
 }) {
-  const painting = drawKind !== null && drawKind !== "waypoint";
+  const painting = isPaintKind(drawKind);
   const sized = painting && (tool === "brush" || tool === "line");
   const saving = save.kind === "saving";
   const panPressed =
-    drawKind === null || (drawKind === "waypoint" ? vertexTool === "pan" : tool === "pan");
+    drawKind === null ||
+    (drawKind === "waypoint"
+      ? vertexTool === "pan"
+      : drawKind === "zone"
+        ? zoneTool === "pan"
+        : tool === "pan");
 
   return (
     <ToolStrip label="Editor" compact className={className}>
@@ -291,6 +334,7 @@ export function EditorToolBar({
           pressed={panPressed}
           onClick={() => {
             if (drawKind === "waypoint") onVertexToolChange("pan");
+            else if (drawKind === "zone") onZoneToolChange("pan");
             else onToolChange("pan");
           }}
         />
@@ -316,6 +360,32 @@ export function EditorToolBar({
               onClick={() => onVertexToolChange(option.value)}
             />
           ))}
+        {drawKind === "zone" && (
+          <>
+            {ZONE_TOOLS.filter((option) => option.value !== "pan").map((option) => (
+              <ToolButton
+                key={option.value}
+                label={option.label}
+                hint={option.hint}
+                icon={option.icon}
+                pressed={zoneTool === option.value}
+                onClick={() => onZoneToolChange(option.value)}
+              />
+            ))}
+            {/* The one one-shot action in the Tool group, unlike Fit and
+              * Save at the strip's head: it belongs to the shape in flight,
+              * so it sits beside the tool that makes one. It is also how a
+              * finger, which has no Enter key, closes a shape whose first
+              * corner has ended up under a panel. */}
+            <ToolButton
+              label="Done"
+              hint={canCloseZone ? "close the shape" : "needs three corners first"}
+              icon={CheckIcon}
+              disabled={!canCloseZone}
+              onClick={onCloseZone}
+            />
+          </>
+        )}
       </ToolGroup>
 
       {/* Cells, not pixels — the number is the count of cells across, which is
@@ -372,7 +442,7 @@ export function EditorToolBar({
 /**
  * The right strip: what a press puts on the map, and the zoom.
  *
- * A list rather than a row of buttons because it is one choice among five and
+ * A list rather than a row of buttons because it is one choice among six and
  * changed rarely compared with the tools, so it can cost a click to open;
  * "No type" is an item of its own, so putting the choice down is as visible as
  * picking one (Escape does the same). Each item wears the mark the left strip
