@@ -46,6 +46,12 @@ export interface Palette {
    * vertex at a glance.
    */
   live: string;
+  /**
+   * A forbidden zone. `signal-warn` by the console's rule — the same red as a
+   * failed task and a destructive button — and not `caution`, because a zone
+   * is a prohibition the operator drew, not a degraded reading.
+   */
+  warn: string;
 }
 
 /*
@@ -64,6 +70,7 @@ export const PALETTES: Record<"light" | "dark", Palette> = {
     cmd: cssHex(SIGNAL.light.cmd),
     vertex: "#2f4a58",
     live: cssHex(SIGNAL.light.live),
+    warn: cssHex(SIGNAL.light.warn),
   },
   dark: {
     well: "#22282c",
@@ -72,6 +79,7 @@ export const PALETTES: Record<"light" | "dark", Palette> = {
     cmd: cssHex(SIGNAL.dark.cmd),
     vertex: "#a8bcc7",
     live: cssHex(SIGNAL.dark.live),
+    warn: cssHex(SIGNAL.dark.warn),
   },
 };
 
