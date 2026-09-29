@@ -131,3 +131,38 @@ export function setPolicyMode(mode: PolicyMode): Promise<SetPolicyModeResult> {
     },
   );
 }
+
+export interface RestartResult {
+  /**
+   * True when the rebuild was dispatched. Rarely seen: the backend is one of
+   * the processes the restart tears down, so the usual answer is no answer.
+   * False means the rebuild already finished inside the backend's ack window.
+   */
+  restarting: boolean;
+  message: string;
+}
+
+const RestartResultSchema: z.ZodType<RestartResult> = z.object({
+  restarting: z.boolean(),
+  message: z.string(),
+});
+
+/**
+ * Rebuild the software stack of the mode already live.
+ *
+ * `POST /api/v1/robot/mode` treats a switch to the current mode as a no-op,
+ * so this is the only way to restart a wedged stack without leaving the
+ * mode. No body: the mode is whatever the robot reports.
+ *
+ * Outlives its server the same way switchRobotMode does (read its doc): a
+ * dropped connection is the restart working. The refusals arrive fast and
+ * with nothing touched — a 409 `restart_refused` in Mapping (an unsaved map
+ * may be in memory), with nothing running, or with both stacks up — and the
+ * UI only shows their sentence, so no `mapError`.
+ */
+export function restartRobotStack(): Promise<RestartResult> {
+  return requestJson<RestartResult>(apiUrl("/api/v1/robot/restart"), {
+    method: "POST",
+    schema: RestartResultSchema,
+  });
+}
