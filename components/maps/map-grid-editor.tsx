@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { ArmedHint } from "@/components/console/armed-hint";
 import {
   GridCanvas,
 } from "@/components/maps/grid-canvas";
@@ -709,6 +710,14 @@ function EditorSurface({
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty]);
 
+  /**
+   * Forbidden zone chosen, no tool armed yet: the map dims and asks. The
+   * other kinds do not need this — a brush and a pin are self-explanatory —
+   * but "Shape" is a word the operator meets here for the first time, and
+   * the dim is what says the map is waiting on that choice rather than broken.
+   */
+  const zoneUnarmed = drawKind === "zone" && zoneTool === "pan";
+
   const vertexPanelProps = {
     vertices: vertexList,
     status: vertexStatus,
@@ -775,6 +784,22 @@ function EditorSurface({
         onZonePoint={addZonePoint}
         onZoneClose={closeZone}
       />
+
+      {/* The wash is a sibling placed before the strips, so DOM order alone
+        * stacks the toolbars, the save note and the status readout above it.
+        * Pointer-transparent, so right-, middle- and Space-drag still pan the
+        * dimmed map. Grey rather than a theme surface because the grid never
+        * follows the theme (see lib/map/draw.ts), and the wash has to read
+        * the same over white free space in both. The hint sits outside the
+        * aria-hidden wash so its status role is heard. */}
+      {zoneUnarmed && (
+        <>
+          <div aria-hidden className="pointer-events-none absolute inset-0 bg-black/25" />
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <ArmedHint tone="cmd">Select the shape to work with</ArmedHint>
+          </div>
+        </>
+      )}
 
       {/* One row across the top, as on the dashboard: Editor at the left, Draw
         * at the right, wrapping onto two lines on a phone rather than
