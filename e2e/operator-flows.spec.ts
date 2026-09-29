@@ -1481,9 +1481,9 @@ test.describe("the floor plan editor's draw bar", () => {
       "true",
     );
 
-    // Wall: its mark, then the paint tools.
+    // Wall: the paint tools, and nothing in the row that is not a tool.
     await choose(page, "Wall");
-    await expect(page.getByRole("img", { name: "Drawing Wall" })).toBeVisible();
+    await expect(drawList(page)).toContainText("Wall");
     await expect.poll(() => toolNames(page)).toEqual(["Pan", "Brush", "Line", "Rect"]);
 
     await choose(page, "Waypoint");

@@ -48,8 +48,12 @@ import { drawSwatch, type DrawKind, type EditTool, type VertexTool } from "@/lib
  * nothing (where the editor opens), Wall, Floor, Unknown or Waypoint — as a
  * list, beside the zoom at the outer edge. Left, **Editor**: everything that
  * acts on the work — fit the view, history, Save — and then the tools the Draw
- * choice allows, led by Pan, which is always there, and by a mark of what is
- * being drawn so the strip that does the drawing says what it draws.
+ * choice allows, led by Pan, which is always there.
+ *
+ * The left strip holds nothing but buttons. A read-only mark of the chosen kind
+ * used to stand between Pan and that kind's tools; it was removed because an
+ * icon the same size and in the same row as its neighbours reads as a button
+ * that does not work. The Draw list names the choice, which is where it is made.
  */
 
 /**
@@ -125,14 +129,12 @@ function swatchIcon(kind: Exclude<DrawKind, "waypoint">): ToolIcon {
 const DRAW_KINDS: readonly {
   value: DrawKind;
   label: string;
-  /** What a press does with this kind chosen, for the list and the mark. */
-  hint: string;
   icon: ToolIcon;
 }[] = [
-  { value: "wall", label: "Wall", hint: "paint where the robot cannot go", icon: swatchIcon("wall") },
-  { value: "floor", label: "Floor", hint: "paint where the robot can go", icon: swatchIcon("floor") },
-  { value: "unknown", label: "Unknown", hint: "paint what was never seen", icon: swatchIcon("unknown") },
-  { value: "waypoint", label: "Waypoint", hint: "place and edit waypoints", icon: MapPinIcon },
+  { value: "wall", label: "Wall", icon: swatchIcon("wall") },
+  { value: "floor", label: "Floor", icon: swatchIcon("floor") },
+  { value: "unknown", label: "Unknown", icon: swatchIcon("unknown") },
+  { value: "waypoint", label: "Waypoint", icon: MapPinIcon },
 ];
 
 const SIZE_ITEMS = BRUSH_SIZES.map((size) => ({
@@ -201,10 +203,9 @@ const DRAW_ITEMS = [
  * with nothing to save, and a caution dot while there is.
  *
  * Pan is always offered, whatever is chosen, and with nothing chosen it is the
- * only tool, lit, so the strip still says what a drag does. With a kind
- * chosen, its mark (a swatch of the cell's grey, or a pin) stands before that
- * kind's tools. Size follows only while it means something: Brush and Line lay
- * down a stroke that wide, Rect fills its box whatever the size.
+ * only tool, lit, so the strip still says what a drag does. Size follows only
+ * while it means something: Brush and Line lay down a stroke that wide, Rect
+ * fills its box whatever the size.
  */
 export function EditorToolBar({
   onFit,
@@ -243,7 +244,6 @@ export function EditorToolBar({
 }) {
   const painting = drawKind !== null && drawKind !== "waypoint";
   const sized = painting && (tool === "brush" || tool === "line");
-  const kind = DRAW_KINDS.find((option) => option.value === drawKind) ?? null;
   const saving = save.kind === "saving";
   const panPressed =
     drawKind === null || (drawKind === "waypoint" ? vertexTool === "pan" : tool === "pan");
@@ -294,16 +294,6 @@ export function EditorToolBar({
             else onToolChange("pan");
           }}
         />
-        {kind && (
-          <span
-            role="img"
-            aria-label={`Drawing ${kind.label}`}
-            title={`${kind.label} — ${kind.hint}`}
-            className="mx-1 flex items-center text-muted-foreground"
-          >
-            <kind.icon className="size-4" />
-          </span>
-        )}
         {painting &&
           TOOLS.filter((option) => option.value !== "pan").map((option) => (
             <ToolButton
