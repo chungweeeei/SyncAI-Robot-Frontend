@@ -13,6 +13,7 @@ import { stampLine } from "@/lib/map/grid";
 import type { CellProbe, DrawState, Gesture } from "@/lib/map/editor";
 import type { GridSession } from "@/lib/map/session";
 import { vertexGlyph } from "@/lib/map/vertex";
+import { canCloseZone, type ZonePoint, type ZonePolygon } from "@/lib/map/zone";
 import { SIGNAL, cssHex } from "@/lib/theme/signal";
 import {
   gridToScreen,
@@ -448,6 +449,127 @@ export function drawRobot(
   ctx.strokeStyle = palette.live;
   ctx.lineWidth = 1.5;
   ctx.stroke(body);
+
+  ctx.restore();
+}
+
+/** A zone's corners as a closed screen-space path, via the one view transform. */
+function zonePath(view: View, meta: MapMetadata, points: readonly ZonePoint[]): Path2D {
+  const path = new Path2D();
+  points.forEach((point, index) => {
+    const at = vertexScreen(view, meta, point.x, point.y);
+    if (index === 0) path.moveTo(at.cx, at.cy);
+    else path.lineTo(at.cx, at.cy);
+  });
+  path.closePath();
+  return path;
+}
+
+/**
+ * The finished forbidden zones.
+ *
+ * The robot footprint's three passes — halo, wash, edge — for the footprint's
+ * reasons: the halo because the grid under it is blitted literally and no one
+ * hue is legible over both free space and obstacles, and a wash rather than a
+ * solid fill because the operator has to see the doorway they are fencing off
+ * through it. `warn`, because a zone is the one mark on this canvas that
+ * forbids.
+ */
+export function drawZones(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  meta: MapMetadata,
+  zones: readonly ZonePolygon[],
+  palette: Palette,
+): void {
+  if (zones.length === 0) return;
+  ctx.save();
+  ctx.lineJoin = "round";
+  ctx.setLineDash([]);
+  for (const zone of zones) {
+    const path = zonePath(view, meta, zone.points);
+    ctx.strokeStyle = MARKER_HALO;
+    ctx.lineWidth = 3.5;
+    ctx.stroke(path);
+    ctx.fillStyle = palette.warn;
+    ctx.globalAlpha = 0.22;
+    ctx.fill(path);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = palette.warn;
+    ctx.lineWidth = 1.5;
+    ctx.stroke(path);
+  }
+  ctx.restore();
+}
+
+/**
+ * The shape in flight: its corners, the edges between them, and a rubber
+ * edge from the last corner to the pointer.
+ *
+ * Dashed and in `cmd`, like the draft marker, because it is the same kind of
+ * thing — a value the operator is setting that is not stored anywhere yet —
+ * and the finished zones' red is reserved for shapes that already forbid.
+ *
+ * The first corner is drawn with emphasis exactly when pressing it closes
+ * the shape (see classifyZonePress). That is the only cue the operator gets
+ * that the shape can close now, and it lights at the moment it becomes true
+ * rather than being explained anywhere.
+ */
+export function drawZoneDraft(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  meta: MapMetadata,
+  gesture: Gesture | null,
+  hover: CellProbe | null,
+  props: DrawState,
+  palette: Palette,
+): void {
+  const corners = props.zoneDraft;
+  if (corners.length === 0) return;
+  const at = corners.map((point) => vertexScreen(view, meta, point.x, point.y));
+
+  ctx.save();
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
+  // The rubber edge follows the hovered cell, on the same terms as the brush
+  // ring: never mid-pan, because the map is moving under a pointer that is
+  // not choosing a corner.
+  const armed = props.mode === "zone" && props.zoneTool === "shape" && !props.spacePan;
+  const panning = gesture?.kind === "pan" || gesture?.kind === "point";
+  const head = armed && hover && !panning ? gridToScreen(view, hover.col + 0.5, hover.row + 0.5) : null;
+
+  const edges = new Path2D();
+  at.forEach(({ cx, cy }, index) => {
+    if (index === 0) edges.moveTo(cx, cy);
+    else edges.lineTo(cx, cy);
+  });
+  if (head) edges.lineTo(head.cx, head.cy);
+
+  ctx.strokeStyle = MARKER_HALO;
+  ctx.lineWidth = 3.5;
+  ctx.stroke(edges);
+  ctx.strokeStyle = palette.cmd;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 3]);
+  ctx.stroke(edges);
+  ctx.setLineDash([]);
+
+  const closable = canCloseZone(corners);
+  at.forEach(({ cx, cy }, index) => {
+    const emphasis = index === 0 && closable;
+    ctx.beginPath();
+    ctx.arc(cx, cy, emphasis ? VERTEX_DOT_RADIUS + 1.5 : VERTEX_DOT_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = MARKER_HALO;
+    ctx.fill();
+    ctx.strokeStyle = palette.cmd;
+    ctx.lineWidth = emphasis ? 2.5 : 1.5;
+    ctx.stroke();
+    if (emphasis) {
+      ctx.fillStyle = palette.cmd;
+      ctx.fill();
+    }
+  });
 
   ctx.restore();
 }

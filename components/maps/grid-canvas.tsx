@@ -19,6 +19,8 @@ import {
   drawPreview,
   drawRobot,
   drawVertices,
+  drawZoneDraft,
+  drawZones,
   vertexScreen,
 } from "@/lib/map/draw";
 import type {
@@ -313,6 +315,11 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     const current = propsRef.current;
     drawPreview(ctx, view, session, gestureRef.current, current, palette);
     drawBrushRing(ctx, view, gestureRef.current, hoverRef.current, current, palette);
+    // Above the grid and the stroke preview, so a zone's wash tints the cells
+    // it covers; below the robot and the markers, because a stop or a robot
+    // standing inside a zone is exactly what the operator is looking for.
+    drawZones(ctx, view, session.meta, current.zones, palette);
+    drawZoneDraft(ctx, view, session.meta, gestureRef.current, hoverRef.current, current, palette);
     // Under the vertex layer: the markers are what this screen edits, and a stop
     // placed where the robot is standing must not disappear beneath it.
     if (current.robotPose) {
