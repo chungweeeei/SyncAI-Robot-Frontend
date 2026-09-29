@@ -311,4 +311,45 @@ test.describe("the console on a phone", () => {
     await touch("touchEnd", []);
     await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
   });
+
+  test("zooms the task editor's floor plan with two fingers", async ({ page }) => {
+    // A phone has no wheel, so the pinch is how the job's floor plan is read
+    // up close. The same real grid as above, or the pinch would shrink the
+    // 1 px default out from under the fingers.
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
+    await page.goto("/tasks/editor");
+    await page.getByRole("button", { name: "Floor plan" }).click();
+    const plan = page.getByRole("img", { name: /^Floor plan of dp2f/ });
+    await expect(plan).toBeVisible();
+    const zoom = page.locator("[data-zoom]");
+    const readZoom = async () => Number(await zoom.getAttribute("data-zoom"));
+    await expect.poll(readZoom).toBeGreaterThan(0);
+    const fitted = await readZoom();
+
+    const box = (await plan.boundingBox())!;
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    const cdp = await page.context().newCDPSession(page);
+    const finger = (x: number, y: number, id: number) => ({ x, y, id });
+    const touch = (
+      type: "touchStart" | "touchMove" | "touchEnd",
+      touchPoints: { x: number; y: number; id: number }[],
+    ) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
+
+    // One finger pans and nothing else: the zoom it leaves is the one it
+    // found. This is the control for the pinch below — a panel that read
+    // the second finger as a second pan would also leave the zoom alone.
+    await touch("touchStart", [finger(cx, cy, 1)]);
+    await touch("touchMove", [finger(cx + 30, cy + 20, 1)]);
+    await touch("touchEnd", []);
+    expect(await readZoom()).toBe(fitted);
+
+    // Two fingers spreading is a zoom.
+    await touch("touchStart", [finger(cx - 30, cy, 1)]);
+    await touch("touchStart", [finger(cx - 30, cy, 1), finger(cx + 30, cy, 2)]);
+    await touch("touchMove", [finger(cx - 80, cy, 1), finger(cx + 80, cy, 2)]);
+    await touch("touchEnd", [finger(cx - 80, cy, 1)]);
+    await touch("touchEnd", []);
+    await expect.poll(readZoom).toBeGreaterThan(fitted);
+  });
 });
