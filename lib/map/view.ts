@@ -132,6 +132,11 @@ function clampAxis(offset: number, viewport: number, extent: number): number {
  * shrunk into a corner of the viewport, and it also bounds the downscale factor
  * to ~2x, which is the range the browser's filtered `drawImage` handles without
  * losing 1-cell-thick walls (see grid-canvas.tsx on imageSmoothingEnabled).
+ *
+ * `minScale` lets a surface whose opening view is smaller than the bare fit
+ * say so: the task editor's floor plan fits inside an inset that keeps edge
+ * captions on screen, and without this the first wheel notch would snap it to
+ * the edge-to-edge fit with no way back out.
  */
 export function zoomAt(
   view: View,
@@ -140,9 +145,9 @@ export function zoomAt(
   factor: number,
   rect: Size,
   size: GridSize,
+  minScale: number = fitScale(rect, size),
 ): View {
-  const min = fitScale(rect, size);
-  const scale = Math.min(Math.max(view.scale * factor, min), MAX_SCALE);
+  const scale = Math.min(Math.max(view.scale * factor, minScale), MAX_SCALE);
   const ratio = scale / view.scale;
   return clampView(
     { scale, ox: cx - (cx - view.ox) * ratio, oy: cy - (cy - view.oy) * ratio },
@@ -193,10 +198,15 @@ export function centerView(
  * Deliberately not a refit: a window resize (or opening a devtools pane) must not
  * throw away the zoom the operator set. "Fit" is the explicit way back.
  */
-export function reanchorView(view: View, from: Size, to: Size, size: GridSize): View {
+export function reanchorView(
+  view: View,
+  from: Size,
+  to: Size,
+  size: GridSize,
+  minScale: number = fitScale(to, size),
+): View {
   const centre = screenToGrid(view, from.width / 2, from.height / 2);
-  const min = fitScale(to, size);
-  const scale = Math.min(Math.max(view.scale, min), MAX_SCALE);
+  const scale = Math.min(Math.max(view.scale, minScale), MAX_SCALE);
   return clampView(
     {
       scale,

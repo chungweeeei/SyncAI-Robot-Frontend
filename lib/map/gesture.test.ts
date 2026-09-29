@@ -9,6 +9,7 @@ import {
   idsInBand,
   isDrag,
   panPicks,
+  wheelZoomFactor,
   type PressInput,
 } from "@/lib/map/gesture";
 
@@ -155,5 +156,21 @@ describe("the rubber band", () => {
       { id: "outside", cx: 101, cy: 50 },
     ];
     expect(idsInBand(band, markers)).toEqual(["inside", "edge"]);
+  });
+});
+
+describe("wheelZoomFactor", () => {
+  it("is multiplicative: a notch out undoes a notch in", () => {
+    // What makes a wheel a dial rather than a spring — N notches up then N
+    // down must land on the scale it started at.
+    expect(wheelZoomFactor(-100, 0, 400) * wheelZoomFactor(100, 0, 400)).toBeCloseTo(1, 12);
+    expect(wheelZoomFactor(-100, 0, 400)).toBeGreaterThan(1);
+  });
+
+  it("turns lines and pages into pixels before zooming", () => {
+    // Firefox reports lines (mode 1) and a page (mode 2) is the surface's own
+    // height; the raw deltaY would zoom ~16x per notch in the first case.
+    expect(wheelZoomFactor(-3, 1, 400)).toBeCloseTo(wheelZoomFactor(-48, 0, 400), 12);
+    expect(wheelZoomFactor(-1, 2, 400)).toBeCloseTo(wheelZoomFactor(-400, 0, 400), 12);
   });
 });

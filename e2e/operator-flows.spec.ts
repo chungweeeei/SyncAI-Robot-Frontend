@@ -1829,7 +1829,8 @@ test.describe("the step editor", () => {
       if (pathname.endsWith("/image")) imageReads.push(pathname);
     });
     await page.goto("/tasks/editor");
-    await page.getByTitle("Drive to a pose in the map frame.").click();
+    // The job's floor plan opens from the Steps header, with or without a
+    // Move step on the list.
     await page.getByRole("button", { name: "Floor plan" }).click();
     await expect(page.getByRole("img", { name: /^Floor plan of dp2f/ })).toBeVisible();
 
@@ -1846,11 +1847,14 @@ test.describe("the step editor", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("picks a waypoint by clicking it on the floor plan", async ({ page }) => {
-    // A name in the picker is not a place. The floor plan beside it is drawn
-    // in the same frame the map editor uses, so a click on a marker has to
-    // land on the stop the editor placed there — and what the console then
-    // saves has to be that stop's pose, not the one under the pointer.
+  test("lights the waypoints the job's Move steps go to on the floor plan", async ({
+    page,
+  }) => {
+    // A name in the picker is not a place. The floor plan used to open under
+    // each Move row and pick for it; now the Steps group opens one for the
+    // whole job, above the list, and what it adds is the route: the stops
+    // the job goes to are lit and named with their step numbers, in the
+    // words a screen reader hears too.
     const room = vertex({
       id: "44444444-4444-4444-4444-444444444444",
       name: "room-a",
@@ -1860,66 +1864,84 @@ test.describe("the step editor", () => {
       theta: 0,
     });
     await mockBackend(page, { vertices: [vertex(), room] });
-    const saved: unknown[] = [];
-    await page.route("**/api/v1/task_templates", (route) => {
-      if (route.request().method() !== "POST") return route.fallback();
-      saved.push(route.request().postDataJSON());
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(
-          taskTemplate({ id: "33333333-3333-3333-3333-333333333333", name: "to room" }),
-        ),
-      });
-    });
     await page.goto("/tasks/editor");
-    await page.getByTitle("Drive to a pose in the map frame.").click();
 
-    // Closed until asked for: a map under every row would bury the list.
+    // One button for the job, on the Steps header — none on the row.
+    const toggle = page.getByRole("button", { name: "Floor plan" });
+    await expect(toggle).toHaveCount(1);
+    await page.getByTitle("Drive to a pose in the map frame.").click();
+    await expect(toggle).toHaveCount(1);
+
+    // Closed until asked for.
     const plan = page.getByRole("img", { name: /^Floor plan of dp2f with 2 waypoints/ });
     await expect(plan).toHaveCount(0);
-    const toggle = page.getByRole("button", { name: "Floor plan" });
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await expect(plan).toBeVisible();
+    // Nothing picked yet, so nothing is lit.
     await expect(plan).toHaveAccessibleName(/waypoints\.$/);
 
-    // Where the marker is, from the mock's own geometry: the same fit-and-
-    // centre the preview draws with (lib/map/preview.ts previewView, which is
-    // fitView inside PREVIEW_INSET, then worldToGrid).
-    const grid = mapSummary().grid;
+    // The pick is made on the row, and the map says where it went.
+    const waypoint = page.getByRole("combobox", { name: "Waypoint for step 1" });
+    await waypoint.click();
+    await page.getByRole("option", { name: "room-a" }).click();
+    await expect(waypoint).toContainText("room-a");
+    await expect(plan).toHaveAccessibleName(/; room-a is step 1\.$/);
+
+    // A second Move to the dock: both stops, in job order.
+    await page.getByTitle("Drive to a pose in the map frame.").click();
+    const second = page.getByRole("combobox", { name: "Waypoint for step 2" });
+    await second.click();
+    await page.getByRole("option", { name: "dock" }).click();
+    await expect(plan).toHaveAccessibleName(/; room-a is step 1, dock is step 2\.$/);
+
+    // The map is a view: a click on it sets nothing on any row.
     const box = (await plan.boundingBox())!;
-    const inset = { top: 20, right: 48, bottom: 20, left: 20 };
-    const innerW = box.width - inset.left - inset.right;
-    const innerH = box.height - inset.top - inset.bottom;
-    const scale = Math.min(innerW / grid.width, innerH / grid.height);
-    const ox = inset.left + (innerW - grid.width * scale) / 2;
-    const oy = inset.top + (innerH - grid.height * scale) / 2;
-    const px = (room.x - grid.origin.x) / grid.resolution;
-    const py = grid.height - (room.y - grid.origin.y) / grid.resolution;
-    await page.mouse.click(box.x + ox + px * scale, box.y + oy + py * scale);
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(waypoint).toContainText("room-a");
+    await expect(second).toContainText("dock");
+  });
 
-    // Both faces of the row agree on the pick, and the map says so too.
-    await expect(
-      page.getByRole("combobox", { name: "Waypoint for step 1" }),
-    ).toContainText("room-a");
-    await expect(plan).toHaveAccessibleName(/room-a is picked\.$/);
-    await page.getByRole("button", { name: /^Move/, expanded: true }).click();
-    await expect(page.getByText(/^room-a · \(/)).toBeVisible();
+  test("zooms the floor plan and comes back to fit", async ({ page }) => {
+    // The fixed preview showed two stops a body length apart as one smear at
+    // fit scale. The wheel, the two buttons and Fit are the desktop's way in
+    // and out; nothing on screen prints the scale, so it is read off the
+    // panel's data-zoom, the same way the editor's is.
+    // A real grid, matching the catalogue's 400 x 300, so the raster has an
+    // extent to zoom into.
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
+    await page.goto("/tasks/editor");
+    await page.getByRole("button", { name: "Floor plan" }).click();
+    const plan = page.getByRole("img", { name: /^Floor plan of dp2f/ });
+    await expect(plan).toBeVisible();
+    const zoom = page.locator("[data-zoom]");
+    const readZoom = async () => Number(await zoom.getAttribute("data-zoom"));
+    await expect.poll(readZoom).toBeGreaterThan(0);
+    const fitted = await readZoom();
 
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    await page.getByRole("textbox", { name: "Task name" }).fill("to room");
-    await page.keyboard.press("Enter");
+    // Wheel up over the map zooms in about the pointer.
+    const box = (await plan.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -240);
+    await expect.poll(readZoom).toBeGreaterThan(fitted);
+    const wheeled = await readZoom();
 
-    await expect.poll(() => saved).toHaveLength(1);
-    const body = saved[0] as {
-      steps: { id: string; vertex_id: string; params: { x: number; y: number } }[];
-    };
-    expect(body.steps).toHaveLength(1);
-    expect(body.steps[0].id).toBe("1-move");
-    expect(body.steps[0].vertex_id).toBe(room.id);
-    expect(body.steps[0].params).toMatchObject({ x: -3, y: 4 });
+    // The toolbar steps in and out, and Fit is the way back to the opening view.
+    await page.getByRole("button", { name: "Zoom out" }).click();
+    await expect.poll(readZoom).toBeLessThan(wheeled);
+    await page.getByRole("button", { name: "Fit to view" }).click();
+    await expect.poll(readZoom).toBe(fitted);
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await expect.poll(readZoom).toBeGreaterThan(fitted);
+
+    // Zooming out never goes past where the map opened: that view already
+    // has the whole floor plan on it, and smaller would only shrink it into
+    // a corner.
+    for (let i = 0; i < 6; i += 1) {
+      await page.getByRole("button", { name: "Zoom out" }).click();
+    }
+    await expect.poll(readZoom).toBe(fitted);
   });
 });
 

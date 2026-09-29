@@ -1,8 +1,7 @@
-// The task editor's floor plan preview: the picture beside the waypoint picker
-// that shows where each stop is, and the hit test that lets a click on it pick
-// one. Pure like lib/map/draw.ts — the component owns the canvas, the pointer
-// and the frame scheduling, this owns what a frame looks like and what a point
-// on it means.
+// The task editor's floor plan: the picture the Steps group opens over the
+// step list, showing where each stop is and which steps of the job go there.
+// Pure like lib/map/draw.ts — the component owns the canvas, the pointer, the
+// view transform and the frame scheduling; this owns what a frame looks like.
 //
 // It borrows the editor's vocabulary on purpose (fitView, drawMarker, the
 // palette) rather than drawing its own dots: the operator learned what a
@@ -20,42 +19,34 @@ import { fitView, type Size, type View } from "@/lib/map/view";
 import type { MapVertex } from "@/lib/types/map";
 import type { MapMetadata } from "@/lib/types/robot";
 
-/**
- * How close, in CSS px, a pointer has to be to a marker's dot to be "on" it.
- *
- * Wider than the 4.5 px dot: on a preview the markers are the target, and a
- * ring that has to be hit exactly turns a click into a hunt. Narrower than the
- * 18 px arrow, so two stops a body length apart stay separately clickable.
- */
-export const WAYPOINT_HIT_PX = 10;
-/**
- * The same disc under a finger. A fingertip covers ~7 mm, which is 20–25 px
- * on a phone, and a ring the pointer has to land inside was a hunt again.
- * Still narrower than the gap two stops a body length apart leave at the
- * preview's smallest scale.
- */
-export const WAYPOINT_HIT_TOUCH_PX = 22;
-
-/** Which markers the preview lights up, by vertex id. */
+/** Which markers the preview lights up, and what it says about them. */
 export interface PreviewMarks {
-  /** The row's current pick — filled, in the command hue. */
-  selectedId: string | null;
-  /** The one under the pointer — the value about to be set, so the same hue. */
-  hoveredId: string | null;
+  /**
+   * Vertex id → the 1-based numbers of the job's MOVE steps that go there,
+   * in job order (lib/task/step.ts stepWaypointOrdinals). A stop with an
+   * entry is filled in the command hue and captioned with those numbers.
+   */
+  steps: ReadonlyMap<string, readonly number[]>;
 }
 
 /**
  * Room kept around the map for the marks that hang off its edge, in CSS px.
  *
- * The editor fits the grid edge to edge because it can pan; the preview
- * cannot, so a stop placed against the map's boundary would lose its arrow
- * (18 px, any direction) or its caption (drawn up and to the right of the
- * dot, so the right and top need the most). A stop that cannot be told from
- * its neighbour by name defeats the purpose of the picture.
+ * The editor fits the grid edge to edge; the preview opens inside this inset
+ * so a stop placed against the map's boundary keeps its arrow (18 px, any
+ * direction) and its caption (drawn up and to the right of the dot, so the
+ * right and top need the most) on screen at the first look. The preview can
+ * pan now, so the inset is no longer the only way to those marks — but the
+ * first look is the one most operators stop at, and a stop that cannot be
+ * told from its neighbour by name defeats the purpose of the picture.
  */
 export const PREVIEW_INSET = { top: 20, right: 48, bottom: 20, left: 20 } as const;
 
-/** The whole map, fitted and centred inside the inset. Never zooms or pans. */
+/**
+ * The whole map, fitted and centred inside the inset: the view the preview
+ * opens at, comes back to on Fit, and cannot zoom out past (its `scale` is the
+ * floor the component hands `zoomAt`).
+ */
 export function previewView(rect: Size, meta: MapMetadata): View {
   const inner = {
     width: Math.max(1, rect.width - PREVIEW_INSET.left - PREVIEW_INSET.right),
@@ -121,14 +112,27 @@ export function planCaptions(
 }
 
 /**
+ * A lit marker's caption: its name and the steps that go to it.
+ *
+ * "dock · steps 1, 4" rather than a bare "dock", because the map is open to
+ * answer "where does this job go, and in what order" — and the row numbers
+ * are how the step list names them, so the map speaks the same way. drawMarker
+ * puts the glyph in front itself.
+ */
+export function stepCaption(name: string, ordinals: readonly number[]): string {
+  if (!ordinals.length) return name;
+  return `${name} · ${ordinals.length === 1 ? "step" : "steps"} ${ordinals.join(", ")}`;
+}
+
+/**
  * One frame: the well, the raster, its extent, then every marker.
  *
  * Every marker carries its name where there is room for it (see
  * `planCaptions`) — the operator is here because they forgot which stop is
- * which, and a glyph alone would send them back to hovering each one. The lit
- * markers are drawn last so they sit above their neighbours; between the two,
- * the hovered one goes on top, because it is the one the pointer is asking
- * about.
+ * which, and a glyph alone would send them back to the editor. The job's own
+ * stops are lit, captioned with their step numbers, and drawn last so they
+ * sit above their neighbours; among them the earliest step goes on top, since
+ * it is the one the robot reaches first.
  *
  * `image` may be null while the raster loads or after it failed: the markers
  * are still drawn over the well, since where the stops are relative to each
@@ -163,35 +167,37 @@ export function drawWaypointPreview(
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
 
-  const lit = (vertex: MapVertex) =>
-    vertex.id === marks.selectedId || vertex.id === marks.hoveredId;
-  const hovered = vertices.filter(
-    (vertex) => vertex.id === marks.hoveredId && vertex.id !== marks.selectedId,
-  );
-  const selected = vertices.filter((vertex) => vertex.id === marks.selectedId);
-  const rest = vertices.filter((vertex) => !lit(vertex));
+  const ordinals = (vertex: MapVertex) => marks.steps.get(vertex.id) ?? [];
+  // Lit stops by the first step that reaches them, latest first, so that in
+  // the draw order below (rest, then lit) step 1 lands on top of them all.
+  const lit = vertices
+    .filter((vertex) => ordinals(vertex).length > 0)
+    .sort((a, b) => ordinals(b)[0] - ordinals(a)[0]);
+  const rest = vertices.filter((vertex) => ordinals(vertex).length === 0);
   const placed = new Map(
     vertices.map((vertex) => [vertex.id, vertexScreen(view, meta, vertex.x, vertex.y)]),
   );
+  const label = (vertex: MapVertex) => stepCaption(vertex.name, ordinals(vertex));
 
   ctx.font = CAPTION_FONT;
+  // Captions are placed lit first, earliest step first: the stops the job
+  // goes to must stay legible whatever is around them.
   const captioned = planCaptions(
-    [...hovered, ...selected, ...rest].map((vertex) => {
+    [...[...lit].reverse(), ...rest].map((vertex) => {
       const at = placed.get(vertex.id)!;
       return {
         id: vertex.id,
         cx: at.cx,
         cy: at.cy,
-        caption: `${vertexGlyph(vertex.type)} · ${vertex.name}`,
+        caption: `${vertexGlyph(vertex.type)} · ${label(vertex)}`,
       };
     }),
     (text) => ctx.measureText(text).width,
   );
 
-  // Lit last, so they sit above their neighbours' strokes.
-  for (const vertex of [...rest, ...selected, ...hovered]) {
+  for (const vertex of [...rest, ...lit]) {
     const at = placed.get(vertex.id)!;
-    const emphasis = lit(vertex);
+    const emphasis = ordinals(vertex).length > 0;
     drawMarker(ctx, {
       cx: at.cx,
       cy: at.cy,
@@ -199,39 +205,10 @@ export function drawWaypointPreview(
       colour: emphasis ? palette.cmd : palette.vertex,
       emphasis,
       glyph: vertexGlyph(vertex.type),
-      label: captioned.has(vertex.id) ? vertex.name : null,
+      label: captioned.has(vertex.id) ? label(vertex) : null,
       dashed: false,
     });
   }
 
   ctx.restore();
-}
-
-/**
- * The stop under a container-local point, or null.
- *
- * Nearest dot within WAYPOINT_HIT_PX wins, so two stops whose hit discs overlap
- * are still both reachable — whichever the pointer is closer to. Measured
- * against the dot, not the arrow: the arrow says which way the robot will face,
- * and is not where anyone aims.
- */
-export function waypointAt(
-  view: View,
-  meta: MapMetadata,
-  vertices: readonly MapVertex[],
-  cx: number,
-  cy: number,
-  hitPx: number = WAYPOINT_HIT_PX,
-): MapVertex | null {
-  let best: MapVertex | null = null;
-  let bestDistance = hitPx;
-  for (const vertex of vertices) {
-    const at = vertexScreen(view, meta, vertex.x, vertex.y);
-    const distance = Math.hypot(at.cx - cx, at.cy - cy);
-    if (distance <= bestDistance) {
-      best = vertex;
-      bestDistance = distance;
-    }
-  }
-  return best;
 }
