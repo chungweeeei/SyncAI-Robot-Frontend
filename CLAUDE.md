@@ -165,7 +165,8 @@ lib/
   ros/          WebSocket clients + frame decoders (telemetry, point cloud, teleop)
   map/          gridmap maths: view transforms, patches, session, vertex helpers,
                 name rule, the 2D drawing (draw.ts), the editor's vocabulary,
-                the forbidden zone rules (zone.ts: corner count, close-on-first) and
+                the forbidden zone rules (zone.ts: corner count, close-on-first,
+                point-in-polygon pick) and
                 the task editor's floor plan preview (preview.ts: fit, markers,
                 hit test), and the gesture rules both map surfaces share
                 (gesture.ts: press intent, drag deadzone, heading, band)

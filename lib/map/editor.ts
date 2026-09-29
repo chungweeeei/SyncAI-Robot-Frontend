@@ -189,9 +189,9 @@ export type Gesture =
   /**
    * A press with Shape armed. It moves the map like `pan` while the pointer
    * travels, and a release that never left the deadzone is a click, which is
-   * what adds a corner or closes the shape — the same click/drag split
-   * `pan.pick` makes, as a kind of its own because it never picks a waypoint
-   * and `pan` must not learn a second nullable payload.
+   * what adds a corner, closes the shape or selects a zone — the same
+   * click/drag split `pan.pick` makes, as a kind of its own because it never
+   * picks a waypoint and `pan` must not learn a second nullable payload.
    */
   | {
       kind: "point";
@@ -202,11 +202,11 @@ export type Gesture =
       /** Last point, for the pan delta. */
       cx: number;
       cy: number;
-      /**
-       * The corner a click adds, in the map frame; null when the press landed
-       * on the first corner and a click closes the shape instead.
-       */
-      point: ZonePoint | null;
+      /** What the click does, decided at the press (classifyZonePress). */
+      click:
+        | { kind: "add"; point: ZonePoint }
+        | { kind: "close" }
+        | { kind: "select"; id: string };
     };
 
 /**
@@ -230,4 +230,6 @@ export interface DrawState {
   zones: readonly ZonePolygon[];
   /** The corners of the shape in flight, oldest first. */
   zoneDraft: readonly ZonePoint[];
+  /** The finished zone the operator pressed, the one Remove would take. */
+  selectedZoneId: string | null;
 }

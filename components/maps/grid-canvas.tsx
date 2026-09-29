@@ -45,7 +45,7 @@ import {
 import { blitGrid, blitGridRect } from "@/lib/map/render";
 import type { GridPatch } from "@/lib/map/patch";
 import type { GridSession } from "@/lib/map/session";
-import { classifyZonePress, type ZonePoint, type ZonePolygon } from "@/lib/map/zone";
+import { classifyZonePress, zoneAt, type ZonePoint, type ZonePolygon } from "@/lib/map/zone";
 import {
   CELL_GRID_MIN_SCALE,
   cellAt,
@@ -174,6 +174,13 @@ export interface GridCanvasProps {
   onZonePoint: (point: ZonePoint) => void;
   /** A click on the first corner once there are three: close the shape. */
   onZoneClose: () => void;
+  /** Highlighted, and what Remove takes. Drawn heavier than the rest. */
+  selectedZoneId: string | null;
+  /**
+   * A click inside a finished zone with no shape in flight, or on bare map
+   * with one selected (null). Fired on release, like every other click here.
+   */
+  onZonePick: (id: string | null) => void;
 
   className?: string;
 }
@@ -318,7 +325,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     // Above the grid and the stroke preview, so a zone's wash tints the cells
     // it covers; below the robot and the markers, because a stop or a robot
     // standing inside a zone is exactly what the operator is looking for.
-    drawZones(ctx, view, session.meta, current.zones, palette);
+    drawZones(ctx, view, session.meta, current.zones, current.selectedZoneId, palette);
     drawZoneDraft(ctx, view, session.meta, gestureRef.current, hoverRef.current, current, palette);
     // Under the vertex layer: the markers are what this screen edits, and a stop
     // placed where the robot is standing must not disappear beneath it.
@@ -372,6 +379,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     // when it lands.
     props.zones,
     props.zoneDraft,
+    props.selectedZoneId,
     // Once a second at most, and only when the robot has actually moved — the
     // hook memoises the pose on its values, so a parked robot costs no frames.
     props.robotPose,
@@ -677,34 +685,32 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     }
 
     if (intent === "point") {
-      const { zoneDraft } = propsRef.current;
+      const { zoneDraft, zones } = propsRef.current;
+      // Only a press on the grid adds a corner or picks a zone; a press in
+      // the letterbox margin means nothing, as it does for a stroke and a
+      // waypoint. Cell centre, for the aim branch's reason: the corner is a
+      // pose on the map, and the cell's corner would be half a cell off.
+      const cell = cellAt(view, session.grid, cx, cy);
+      if (!cell) return;
+      const { wx, wy } = gridToWorld(cell.col + 0.5, cell.row + 0.5, session.meta);
+      const point = { x: wx, y: wy };
+      const under = zoneDraft.length === 0 ? zoneAt(zones, point) : null;
       const firstAt = zoneDraft.length
         ? vertexScreen(view, session.meta, zoneDraft[0].x, zoneDraft[0].y)
         : null;
-      const verdict = classifyZonePress(
-        zoneDraft.length,
+      const verdict = classifyZonePress({
+        count: zoneDraft.length,
         firstAt,
-        { cx, cy },
-        touch ? VERTEX_HIT_RADIUS_TOUCH : VERTEX_HIT_RADIUS,
-      );
+        press: { cx, cy },
+        radius: touch ? VERTEX_HIT_RADIUS_TOUCH : VERTEX_HIT_RADIUS,
+        onZone: under !== null,
+      });
       if (verdict === "ignore") return;
-
-      let point: ZonePoint | null = null;
-      if (verdict === "add") {
-        // Only a press on the grid adds a corner; a press in the letterbox
-        // margin means nothing, as it does for a stroke and a waypoint.
-        const cell = cellAt(view, session.grid, cx, cy);
-        if (!cell) return;
-        // Cell centre, for the aim branch's reason: the corner is a pose on
-        // the map, and the cell's corner would be half a cell off.
-        const { wx, wy } = gridToWorld(cell.col + 0.5, cell.row + 0.5, session.meta);
-        point = { x: wx, y: wy };
-      }
 
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
-      // Nothing is added yet: the release decides whether this was a click
-      // (a corner) or a drag (a pan), the way `pan.pick` is resolved.
+      // Nothing is done yet: the release decides whether this was a click
+      // or a drag (a pan), the way `pan.pick` is resolved.
       gestureRef.current = {
         kind: "point",
         pointerId: event.pointerId,
@@ -712,7 +718,12 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
         oy: cy,
         cx,
         cy,
-        point,
+        click:
+          verdict === "close"
+            ? { kind: "close" }
+            : verdict === "select" && under
+              ? { kind: "select", id: under.id }
+              : { kind: "add", point },
       };
       return;
     }
@@ -920,8 +931,10 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       // adds nothing. Nothing in the cell buffer moved either way, so no
       // patch is committed — the vertex branch's reasoning.
       if (!isDrag(gesture.ox, gesture.oy, gesture.cx, gesture.cy)) {
-        if (gesture.point) propsRef.current.onZonePoint(gesture.point);
-        else propsRef.current.onZoneClose();
+        const { click } = gesture;
+        if (click.kind === "add") propsRef.current.onZonePoint(click.point);
+        else if (click.kind === "close") propsRef.current.onZoneClose();
+        else propsRef.current.onZonePick(click.id);
       }
       requestDraw();
       return;

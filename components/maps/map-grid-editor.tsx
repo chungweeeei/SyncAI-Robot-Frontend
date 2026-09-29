@@ -258,6 +258,11 @@ function EditorSurface({
    */
   const [zones, setZones] = React.useState<ZonePolygon[]>([]);
   const [zoneDraft, setZoneDraft] = React.useState<ZonePoint[]>([]);
+  /**
+   * The zone Remove would take. One at most: a zone's only edit is removal,
+   * and a band over several is not worth a Select tool of its own here.
+   */
+  const [selectedZoneId, setSelectedZoneId] = React.useState<string | null>(null);
 
   /**
    * The robot's pose, when it is a pose on the map open here.
@@ -318,8 +323,10 @@ function EditorSurface({
       if (next === "grid") clearVertexEdit();
       // The same for a shape in flight: out of zone mode nothing can finish
       // it, so the dashed corners would just sit there. Finished zones stay,
-      // drawn in every mode like the vertices.
+      // drawn in every mode like the vertices, but none stays selected — no
+      // other mode offers Remove.
       setZoneDraft([]);
+      setSelectedZoneId(null);
     },
     [clearVertexEdit],
   );
@@ -346,12 +353,29 @@ function EditorSurface({
    */
   const chooseZoneTool = React.useCallback((next: ZoneTool) => {
     setZoneTool(next);
-    if (next === "pan") setZoneDraft([]);
+    if (next === "pan") {
+      setZoneDraft([]);
+      setSelectedZoneId(null);
+    }
   }, []);
 
+  /**
+   * A corner on bare map also drops the selection: the operator has moved on
+   * to drawing, and a zone left lit would keep offering a Remove for the
+   * wrong shape.
+   */
   const addZonePoint = React.useCallback((point: ZonePoint) => {
+    setSelectedZoneId(null);
     setZoneDraft((draft) => [...draft, point]);
   }, []);
+
+  const pickZone = React.useCallback((id: string | null) => setSelectedZoneId(id), []);
+
+  const removeZone = React.useCallback(() => {
+    if (!selectedZoneId) return;
+    setZones((current) => current.filter((zone) => zone.id !== selectedZoneId));
+    setSelectedZoneId(null);
+  }, [selectedZoneId]);
 
   const dropZoneDraft = React.useCallback(() => setZoneDraft([]), []);
 
@@ -623,12 +647,18 @@ function EditorSurface({
        * keeping Forbidden zone and Shape armed. A waypoint draft is one click
        * to redo, so throwing it out with everything else costs nothing; five
        * corners are not, and the next thing after dropping a mis-drawn shape
-       * is drawing it again. A second press then puts the choice down as usual.
+       * is drawing it again. A selected zone is put down the same way — it
+       * is the lit thing on screen, and the press is aimed at it. The next
+       * press then puts the choice down as usual.
        */
       if (event.key === "Escape") {
         event.preventDefault();
         if (zoneDraft.length) {
           dropZoneDraft();
+          return;
+        }
+        if (selectedZoneId) {
+          setSelectedZoneId(null);
           return;
         }
         // Puts the Draw choice down as well, which drops a staged draft and
@@ -649,6 +679,12 @@ function EditorSurface({
       if (event.key === "Enter" && canCloseZone(zoneDraft)) {
         event.preventDefault();
         closeZone();
+        return;
+      }
+      // Below the guard for the same reason: Backspace in a field is editing.
+      if ((event.key === "Delete" || event.key === "Backspace") && selectedZoneId) {
+        event.preventDefault();
+        removeZone();
         return;
       }
 
@@ -696,7 +732,7 @@ function EditorSurface({
     };
     // Re-subscribing on every corner is harmless: the listeners are on window
     // and capture nothing that a pointer gesture in flight depends on.
-  }, [undo, redo, fit, chooseDraw, zoneDraft, dropZoneDraft, closeZone]);
+  }, [undo, redo, fit, chooseDraw, zoneDraft, dropZoneDraft, closeZone, selectedZoneId, removeZone]);
 
   /**
    * Covers reload and tab close only. The App Router has no navigation blocker, so
@@ -783,6 +819,8 @@ function EditorSurface({
         zoneDraft={zoneDraft}
         onZonePoint={addZonePoint}
         onZoneClose={closeZone}
+        selectedZoneId={selectedZoneId}
+        onZonePick={pickZone}
       />
 
       {/* The wash is a sibling placed before the strips, so DOM order alone
@@ -828,6 +866,8 @@ function EditorSurface({
             onZoneToolChange={chooseZoneTool}
             canCloseZone={canCloseZone(zoneDraft)}
             onCloseZone={closeZone}
+            canRemoveZone={selectedZoneId !== null}
+            onRemoveZone={removeZone}
             brush={brush}
             onBrushChange={setBrush}
           />

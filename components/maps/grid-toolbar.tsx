@@ -14,6 +14,7 @@ import {
   SlashIcon,
   SquareDashedMousePointerIcon,
   SquareIcon,
+  Trash2Icon,
   Undo2Icon,
   ZoomInIcon,
   ZoomOutIcon,
@@ -129,7 +130,7 @@ const ZONE_TOOLS: readonly ToolOption<ZoneTool>[] = [
   {
     value: "shape",
     label: "Shape",
-    hint: "press three or more corners, then press the first one again to close",
+    hint: "press three or more corners, then press the first one again to close; press a finished zone to select it",
     icon: PentagonIcon,
   },
 ];
@@ -254,6 +255,8 @@ export function EditorToolBar({
   onZoneToolChange,
   canCloseZone,
   onCloseZone,
+  canRemoveZone,
+  onRemoveZone,
   brush,
   onBrushChange,
   className,
@@ -276,6 +279,9 @@ export function EditorToolBar({
   /** The shape in flight has enough corners for Done to close it. */
   canCloseZone: boolean;
   onCloseZone: () => void;
+  /** A finished zone is selected for Remove to take. */
+  canRemoveZone: boolean;
+  onRemoveZone: () => void;
   brush: number;
   onBrushChange: (brush: number) => void;
   className?: string;
@@ -383,6 +389,17 @@ export function EditorToolBar({
               icon={CheckIcon}
               disabled={!canCloseZone}
               onClick={onCloseZone}
+            />
+            {/* Remove is the zone's only edit: a mis-drawn shape is redrawn,
+              * not reshaped. Delete and Backspace do the same from the
+              * keyboard; this is the button a finger has. */}
+            <ToolButton
+              label="Remove"
+              hint={canRemoveZone ? "remove the selected zone" : "press a zone with Shape armed to select it"}
+              icon={Trash2Icon}
+              tone="caution"
+              disabled={!canRemoveZone}
+              onClick={onRemoveZone}
             />
           </>
         )}

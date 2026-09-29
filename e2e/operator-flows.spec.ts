@@ -1520,10 +1520,11 @@ test.describe("the floor plan editor's draw bar", () => {
     // Forbidden zone: Shape and Done, and until Shape is armed the map dims
     // behind a line that asks for it. Done has nothing to close yet.
     await choose(page, "Forbidden zone");
-    await expect.poll(() => toolNames(page)).toEqual(["Pan", "Shape", "Done"]);
+    await expect.poll(() => toolNames(page)).toEqual(["Pan", "Shape", "Done", "Remove"]);
     const hint = page.getByRole("status").filter({ hasText: "Select the shape to work with" });
     await expect(hint).toBeVisible();
     await expect(page.getByRole("button", { name: "Done" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Remove" })).toBeDisabled();
     await page.getByRole("button", { name: "Shape" }).click();
     await expect(hint).toHaveCount(0);
 
@@ -1598,8 +1599,30 @@ test.describe("the floor plan editor's draw bar", () => {
     await done.click();
     await expect(zones).toHaveAttribute("data-zones", "3");
 
+    // A press inside a finished zone, with nothing in flight, selects it for
+    // Remove; the Delete key takes the next one; a press on bare map with a
+    // zone selected is a corner, not a second selection.
+    const remove = page.getByRole("button", { name: "Remove" });
+    const inside = { x: mid.x, y: mid.y - 10 };
+    await expect(remove).toBeDisabled();
+    await page.mouse.click(inside.x, inside.y);
+    await expect(remove).toBeEnabled();
+    await remove.click();
+    await expect(zones).toHaveAttribute("data-zones", "2");
+    await expect(remove).toBeDisabled();
+    await page.mouse.click(inside.x, inside.y);
+    await expect(remove).toBeEnabled();
+    await page.keyboard.press("Delete");
+    await expect(zones).toHaveAttribute("data-zones", "1");
+    await page.mouse.click(inside.x, inside.y);
+    await expect(remove).toBeEnabled();
+    await page.mouse.click(mid.x + 120, mid.y + 100);
+    await expect(remove).toBeDisabled();
+    await expect(done).toBeDisabled();
+    await page.keyboard.press("Escape");
+
     // Escape drops a shape in flight and keeps the choice; a second Escape
-    // puts the choice down. The finished zones survive both.
+    // puts the choice down. The finished zone survives both.
     await page.mouse.click(corners[0].x, corners[0].y);
     await page.mouse.click(corners[1].x, corners[1].y);
     await page.keyboard.press("Escape");
@@ -1608,7 +1631,7 @@ test.describe("the floor plan editor's draw bar", () => {
     await page.keyboard.press("Escape");
     await expect(drawList(page)).toContainText("No type");
     await expect.poll(() => toolNames(page)).toEqual(["Pan"]);
-    await expect(zones).toHaveAttribute("data-zones", "3");
+    await expect(zones).toHaveAttribute("data-zones", "1");
     expect(errors, "the page logged errors").toEqual([]);
   });
 

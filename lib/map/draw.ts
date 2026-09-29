@@ -474,29 +474,38 @@ function zonePath(view: View, meta: MapMetadata, points: readonly ZonePoint[]): 
  * solid fill because the operator has to see the doorway they are fencing off
  * through it. `warn`, because a zone is the one mark on this canvas that
  * forbids.
+ *
+ * The selected zone is the same shape, heavier: a thicker edge and a denser
+ * wash, the way a selected marker gets emphasis rather than a second hue. It
+ * is drawn last so its edge is never under a neighbour's.
  */
 export function drawZones(
   ctx: CanvasRenderingContext2D,
   view: View,
   meta: MapMetadata,
   zones: readonly ZonePolygon[],
+  selectedId: string | null,
   palette: Palette,
 ): void {
   if (zones.length === 0) return;
   ctx.save();
   ctx.lineJoin = "round";
   ctx.setLineDash([]);
-  for (const zone of zones) {
+  const ordered = selectedId
+    ? [...zones.filter((zone) => zone.id !== selectedId), ...zones.filter((zone) => zone.id === selectedId)]
+    : zones;
+  for (const zone of ordered) {
+    const selected = zone.id === selectedId;
     const path = zonePath(view, meta, zone.points);
     ctx.strokeStyle = MARKER_HALO;
-    ctx.lineWidth = 3.5;
+    ctx.lineWidth = selected ? 5 : 3.5;
     ctx.stroke(path);
     ctx.fillStyle = palette.warn;
-    ctx.globalAlpha = 0.22;
+    ctx.globalAlpha = selected ? 0.38 : 0.22;
     ctx.fill(path);
     ctx.globalAlpha = 1;
     ctx.strokeStyle = palette.warn;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = selected ? 3 : 1.5;
     ctx.stroke(path);
   }
   ctx.restore();
