@@ -30,6 +30,26 @@ export const DRAG_DEADZONE_PX = 10;
  */
 export const ZOOM_STEP_FACTOR = Math.SQRT2;
 
+/** How far one pixel of wheel travel zooms, as an exponent; see wheelZoomFactor. */
+const ZOOM_PER_PX = 0.0015;
+/** One wheel "line" (Firefox's deltaMode 1) in px. */
+const WHEEL_LINE_PX = 16;
+
+/**
+ * How much a wheel event zooms the view it landed on, on both map surfaces.
+ *
+ * deltaMode 1 is lines (Firefox) and 2 is pages; a raw deltaY would zoom ~16x
+ * per notch there, so each unit is turned into pixels first — a page being
+ * the height of the surface, which the caller passes. Exponential rather than
+ * 1 + k·delta so zoom is multiplicative: N notches up then N down returns to
+ * the same scale, which is what makes a wheel feel like a dial and not a
+ * spring.
+ */
+export function wheelZoomFactor(deltaY: number, deltaMode: number, pageHeight: number): number {
+  const unit = deltaMode === 1 ? WHEEL_LINE_PX : deltaMode === 2 ? pageHeight : 1;
+  return Math.exp(-deltaY * unit * ZOOM_PER_PX);
+}
+
 /** Whether a pointer that went from one screen point to another dragged. */
 export function isDrag(fromX: number, fromY: number, toX: number, toY: number): boolean {
   return Math.hypot(toX - fromX, toY - fromY) >= DRAG_DEADZONE_PX;
