@@ -164,7 +164,8 @@ lib/
                 (requests only — mirrored validation rules live with their domain)
   ros/          WebSocket clients + frame decoders (telemetry, point cloud, teleop)
   map/          gridmap maths: view transforms, patches, session, vertex helpers,
-                name rule, the 2D drawing (draw.ts), the editor's vocabulary and
+                name rule, the 2D drawing (draw.ts), the editor's vocabulary,
+                the forbidden zone rules (zone.ts: corner count, close-on-first) and
                 the task editor's floor plan preview (preview.ts: fit, markers,
                 hit test), and the gesture rules both map surfaces share
                 (gesture.ts: press intent, drag deadzone, heading, band)
@@ -454,7 +455,8 @@ it is run in, so it does not belong to any one of them.
   rather than demoted — do not reintroduce them, and do not put one in an
   error string because it would help you debug. The house words are: **floor
   plan** (not gridmap / 2D grid / occupancy grid), **scan** (not point cloud /
-  "the cloud"), **waypoint** (not vertex / stop), **channel** (not topic),
+  "the cloud"), **waypoint** (not vertex / stop), **forbidden zone** (not
+  polygon / no-go area), **channel** (not topic),
   **recording** (not bag), **clip** for a video saved out of the camera window,
   **Mapping / Navigation** for the robot's MANUAL / AUTO modes, and **job** for
   a dispatched task. Backend sentences are still rendered verbatim; they are
