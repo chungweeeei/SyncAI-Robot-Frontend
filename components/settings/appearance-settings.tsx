@@ -45,7 +45,7 @@ export function AppearanceSettings() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <PaletteIcon className="size-4 text-muted-foreground" />
-          Appearance & General
+          Preferences
         </CardTitle>
         <CardDescription>
           Customize how the console looks and behaves.
