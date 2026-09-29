@@ -1173,6 +1173,58 @@ test.describe("the task console", () => {
     // has no reason to name a zone: the schedule's and the browser's agree.
     test.use({ timezoneId: "Asia/Taipei" });
 
+    /**
+     * The robot's schedule list trails a write by a second or two. This
+     * answers the first two reads after the write with the list as it was,
+     * which is the race the single re-read used to lose: a new schedule was
+     * missing until someone pressed Refresh.
+     */
+    test("shows a new schedule without a Refresh while the list catches up", async ({
+      page,
+    }) => {
+      const template = "22222222-2222-2222-2222-222222222222";
+      const created = {
+        id: "weekday-patrol",
+        trigger: { cron: "0 9 * * 1,2,3,4,5", timezone: "Asia/Taipei" },
+        paused: false,
+        next_run_times: ["2099-01-01T01:00:00Z"],
+        task_template_id: template,
+        task_template_name: "Morning round",
+      };
+      let registered = false;
+      let staleReads = 0;
+      await mockBackend(page);
+      await page.route("**/api/v1/**", (route) => {
+        const request = route.request();
+        const path = new URL(request.url()).pathname;
+        if (request.method() === "POST" && path.endsWith("/schedule")) registered = true;
+        if (request.method() !== "GET" || path !== "/api/v1/schedules") {
+          return route.fallback();
+        }
+        if (registered && staleReads < 2) {
+          staleReads++;
+          return route.fulfill({ json: [] });
+        }
+        return route.fulfill({ json: registered ? [created] : [] });
+      });
+      await page.goto("/tasks");
+      await expect(page.getByText("No schedules are registered on this robot.")).toBeVisible();
+
+      await page.getByRole("button", { name: 'Schedule "Morning round"' }).click();
+      await page.getByPlaceholder("robot01-daily-patrol").fill("weekday-patrol");
+      await page.getByRole("button", { name: "Weekdays" }).click();
+      await page.getByRole("button", { name: "Create schedule" }).click();
+
+      const row = page.getByRole("listitem").filter({ hasText: "weekday-patrol" });
+      await expect(row.getByText("Weekdays at 09:00 · Asia/Taipei")).toBeVisible();
+      await expect(row.getByText("2099-01-01 09:00", { exact: true })).toBeVisible();
+      expect(staleReads).toBe(2);
+      // The job's own chip reads the same list, so it catches up with it.
+      await expect(
+        page.getByRole("button", { name: /^Show the schedules for "Morning round"/ }),
+      ).toHaveText("Weekdays at 09:00 · Asia/Taipei");
+    });
+
     test("lists registered schedules in words", async ({
       page,
     }) => {

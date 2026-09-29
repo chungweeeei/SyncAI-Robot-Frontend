@@ -1,7 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import { writeState } from "@/lib/api/mutation-state";
 import { queryKeys } from "@/lib/api/query-keys";
@@ -26,10 +31,54 @@ export type SchedulesStatus = "loading" | "ok" | "error";
  * next `GET /api/v1/schedules` still reports `paused: false` — Temporal's
  * describe lags the patch by a second or two. An immediate refresh therefore
  * shows the row exactly as it was, and the operator concludes the button did
- * nothing. Create and delete do *not* have this lag (a created schedule is in the
- * next list, a deleted one is gone), which is why only these two settle.
+ * nothing. Create waits for the list too, but through `settleSchedules`
+ * below, which can tell when the write has arrived.
  */
 const PAUSE_SETTLE_MS = 2000;
+
+/** How often, and how many times, `settleSchedules` re-reads the list. */
+const SETTLE_STEP_MS = 500;
+const SETTLE_ATTEMPTS = 10;
+
+/**
+ * Re-read the list after a write until it shows that write, then hand it to
+ * the cache.
+ *
+ * The list comes from Temporal's visibility store, which is a second or two
+ * behind a create or an edit. A single refresh after either therefore raced
+ * it: a new schedule was missing until the next read, which is a day away
+ * when nothing else is due. So
+ * the first read goes out at once and the reads repeat until `shows` says the
+ * write is there. A read that does not yet show it never reaches the cache.
+ * Past the last attempt, the list is taken as it is: it is still the
+ * backend's word, and the operator's Refresh stays the escape hatch.
+ *
+ * Outside any component on purpose, so the reads still land after the form
+ * that made the write has closed.
+ */
+async function settleSchedules(
+  queryClient: QueryClient,
+  shows: (list: ScheduleState[]) => boolean,
+): Promise<void> {
+  for (let attempt = 1; attempt <= SETTLE_ATTEMPTS; attempt++) {
+    let list: ScheduleState[];
+    try {
+      list = await listSchedules();
+    } catch {
+      // The query's own read reports the failure; it is not this loop's to show.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.schedules });
+      return;
+    }
+    if (shows(list) || attempt === SETTLE_ATTEMPTS) {
+      // A read already in flight started before the write settled; landing
+      // after this one, it would put the old list back.
+      await queryClient.cancelQueries({ queryKey: queryKeys.schedules });
+      queryClient.setQueryData(queryKeys.schedules, list);
+      return;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, SETTLE_STEP_MS));
+  }
+}
 
 export interface UseSchedules {
   schedules: ScheduleState[];
@@ -241,18 +290,21 @@ export interface ScheduleTaskTemplateVariables {
  * A separate hook from useSchedules' `create`, because it is a different path
  * on purpose: it re-resolves server-side, records the provenance in the
  * schedule memo (so the row can later be told it has gone stale), and refuses
- * an unattended run against another map or a deleted vertex. The list is
- * re-read on success like every other schedule write. On a refusal the
- * template library is re-read too — the reason is a `vertex_status` or a
- * `map_matches_active` the rows may be showing stale.
+ * an unattended run against another map or a deleted vertex. On success the
+ * list is re-read until the new schedule is in it (settleSchedules), so its
+ * row appears without a Refresh. On a refusal the template library is re-read
+ * too — the reason is a `vertex_status` or a `map_matches_active` the rows may
+ * be showing stale.
  */
 export function useScheduleTaskTemplate() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ templateId, scheduleId, trigger }: ScheduleTaskTemplateVariables) =>
       scheduleTaskTemplate(templateId, scheduleId, trigger),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.schedules });
+    onSuccess: (_result, { scheduleId }) => {
+      void settleSchedules(queryClient, (list) =>
+        list.some((entry) => entry.id === scheduleId),
+      );
     },
     onError: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.taskTemplates });
