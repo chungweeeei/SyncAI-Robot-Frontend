@@ -202,6 +202,8 @@ export interface BackendOverrides {
   taskStates?: Record<string, Record<string, unknown>>;
   /** The floor plan every map's /image answers with; see floorPlanPng. */
   gridImage?: Buffer;
+  /** GET /robot/restart's record before any press; `idle` by default. */
+  restart?: Record<string, unknown>;
 }
 
 /**
@@ -250,6 +252,13 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   const taskHistoryPageSize = over.taskHistoryPageSize ?? 20;
   const taskStates = over.taskStates ?? {};
   const gridImage = over.gridImage ?? PNG_1PX;
+  // The backend's record of the latest restart; the POST below moves it on.
+  let restart: Record<string, unknown> = over.restart ?? {
+    status: "idle",
+    message: "",
+    started_at: null,
+    finished_at: null,
+  };
 
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
@@ -266,6 +275,9 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       return state
         ? json(route, state)
         : json(route, { detail: "The robot has not published a state frame yet." }, 404);
+    }
+    if (path === "/api/v1/robot/restart" && method === "GET") {
+      return json(route, restart);
     }
     if (path === "/api/v1/active_tasks") {
       return json(route, { tasks: activeTasks, as_of: "2026-09-18T09:45:00Z" });
@@ -367,13 +379,20 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       entry.trigger = (parseBody(request.postData()) as { trigger: unknown }).trigger;
       return json(route, { id, message: `Schedule ${id} trigger has been updated.` });
     }
-    if (path === "/api/v1/robot/restart") {
-      // The rare answer a restart gets through before the backend goes down.
-      // A test that needs the usual one (no answer) or a refusal routes it.
+    if (path === "/api/v1/robot/restart" && method === "POST") {
+      // Dispatched, the usual answer: the robot reports back only once the
+      // rebuild is over, and that lands on the GET below. A test that needs
+      // the rebuild to end, or the press refused, routes it itself.
+      restart = {
+        status: "restarting",
+        message: "",
+        started_at: "2026-09-18T09:45:00Z",
+        finished_at: null,
+      };
       return json(route, {
         restarting: true,
         message:
-          "Restarting the live mode. The console will lose this API while the stack rebuilds; poll robot state.",
+          "Restarting the live mode; poll GET /api/v1/robot/restart for the outcome.",
       });
     }
     if (method === "DELETE") return route.fulfill({ status: 204, body: "" });
