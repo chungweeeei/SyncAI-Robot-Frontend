@@ -367,6 +367,15 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       entry.trigger = (parseBody(request.postData()) as { trigger: unknown }).trigger;
       return json(route, { id, message: `Schedule ${id} trigger has been updated.` });
     }
+    if (path === "/api/v1/robot/restart") {
+      // The rare answer a restart gets through before the backend goes down.
+      // A test that needs the usual one (no answer) or a refusal routes it.
+      return json(route, {
+        restarting: true,
+        message:
+          "Restarting the live mode. The console will lose this API while the stack rebuilds; poll robot state.",
+      });
+    }
     if (method === "DELETE") return route.fulfill({ status: 204, body: "" });
 
     return json(route, { message: "ok" });
