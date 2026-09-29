@@ -16,11 +16,12 @@ import {
   listSchedules,
   pauseSchedule,
   resumeSchedule,
+  updateScheduleTrigger,
   type ScheduleState,
   type ScheduleTrigger,
 } from "@/lib/api/schedule";
 import { scheduleTaskTemplate } from "@/lib/api/task-template";
-import { nextScheduleRefetchMs } from "@/lib/task/schedule";
+import { nextScheduleRefetchMs, sameTrigger } from "@/lib/task/schedule";
 
 export type SchedulesStatus = "loading" | "ok" | "error";
 
@@ -31,8 +32,8 @@ export type SchedulesStatus = "loading" | "ok" | "error";
  * next `GET /api/v1/schedules` still reports `paused: false` — Temporal's
  * describe lags the patch by a second or two. An immediate refresh therefore
  * shows the row exactly as it was, and the operator concludes the button did
- * nothing. Create waits for the list too, but through `settleSchedules`
- * below, which can tell when the write has arrived.
+ * nothing. Create and a trigger edit wait for the list too, but through
+ * `settleSchedules` below, which can tell when the write has arrived.
  */
 const PAUSE_SETTLE_MS = 2000;
 
@@ -47,10 +48,11 @@ const SETTLE_ATTEMPTS = 10;
  * The list comes from Temporal's visibility store, which is a second or two
  * behind a create or an edit. A single refresh after either therefore raced
  * it: a new schedule was missing until the next read, which is a day away
- * when nothing else is due. So
+ * when nothing else is due, and an edited row read back its old trigger. So
  * the first read goes out at once and the reads repeat until `shows` says the
- * write is there. A read that does not yet show it never reaches the cache.
- * Past the last attempt, the list is taken as it is: it is still the
+ * write is there. A read that does not yet show it never reaches the cache —
+ * that is what keeps an edited row from flipping back to its old rule
+ * mid-wait. Past the last attempt, the list is taken as it is: it is still the
  * backend's word, and the operator's Refresh stays the escape hatch.
  *
  * Outside any component on purpose, so the reads still land after the form
@@ -308,6 +310,53 @@ export function useScheduleTaskTemplate() {
     },
     onError: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.taskTemplates });
+    },
+  });
+}
+
+export interface UpdateScheduleTriggerVariables {
+  id: string;
+  trigger: ScheduleTrigger;
+}
+
+/**
+ * PATCH /api/v1/schedules/{id} — change when a registered schedule fires.
+ *
+ * Its own mutation rather than a verb on useSchedules, like
+ * useScheduleTaskTemplate: the edit form shows its own refusal under its own
+ * fields, and a failure here should not become the list's error line.
+ *
+ * The row is patched in the cache on success, the same way pause flips it:
+ * the write already returned 200, so the new trigger is a fact. Its
+ * `next_run_times` is cleared rather than kept — those were computed from the
+ * rule just replaced, and "—" is honest where a stale time would not be. Then
+ * the list is re-read until it carries the new trigger (settleSchedules), which
+ * is what brings the next run in, without a read of the old rule ever
+ * overwriting the patch. A row that is gone by then counts as settled: someone
+ * deleted it, and the list should say so. The expanded row's describe carries
+ * the trigger too, so it is dropped. A failure re-reads at once: a 404 is a
+ * schedule someone else deleted, and the row should go rather than sit beside
+ * the error.
+ */
+export function useUpdateScheduleTrigger() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, trigger }: UpdateScheduleTriggerVariables) =>
+      updateScheduleTrigger(id, trigger),
+    onSuccess: (_result, { id, trigger }) => {
+      queryClient.setQueryData<ScheduleState[]>(queryKeys.schedules, (current) =>
+        current?.map((entry) =>
+          entry.id === id ? { ...entry, trigger, next_run_times: [] } : entry,
+        ),
+      );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.schedule(id) });
+      void settleSchedules(queryClient, (list) => {
+        const row = list.find((entry) => entry.id === id);
+        return !row || sameTrigger(row.trigger, trigger);
+      });
+    },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.schedules });
     },
   });
 }

@@ -5,6 +5,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   PauseIcon,
+  PencilIcon,
   PlayIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -15,6 +16,7 @@ import {
   ScheduleSourceChip,
   ScheduleSteps,
 } from "@/components/tasks/schedule-steps";
+import { ScheduleTriggerForm } from "@/components/tasks/schedule-trigger-form";
 import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";
 import type { SchedulesStatus } from "@/hooks/use-schedules";
 import type { ScheduleState } from "@/lib/api/schedule";
@@ -127,6 +129,7 @@ function ScheduleRow({
   highlighted: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
+  const [editing, setEditing] = React.useState(false);
   const timezone = useBrowserTimeZone();
 
   /**
@@ -198,6 +201,14 @@ function ScheduleRow({
 
         <div className="flex shrink-0 items-center gap-0.5">
           <IconButton
+            label={editing ? "Close the schedule editor" : "Edit schedule"}
+            disabled={busy}
+            className={editing ? "bg-signal-cmd/12 text-signal-cmd" : undefined}
+            onClick={() => setEditing((v) => !v)}
+          >
+            <PencilIcon className="size-3.5" aria-hidden />
+          </IconButton>
+          <IconButton
             label={schedule.paused ? "Resume schedule" : "Pause schedule"}
             disabled={busy}
             onClick={() =>
@@ -245,6 +256,12 @@ function ScheduleRow({
           tone={nextReadout ? "live" : "neutral"}
         />
       </div>
+
+      {editing && (
+        <div className="pl-7">
+          <ScheduleTriggerForm schedule={schedule} onDone={() => setEditing(false)} />
+        </div>
+      )}
 
       {/* Mounted only while expanded, which is what defers the per-schedule
        * describe RPC to a deliberate gesture. Unmounting on collapse also means
