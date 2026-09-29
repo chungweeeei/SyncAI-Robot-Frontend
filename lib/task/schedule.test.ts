@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ScheduleState } from "@/lib/api/schedule";
 import {
+  DEFAULT_FORM_SEED,
   MAX_REFETCH_MS,
   OVERDUE_REFETCH_MS,
   RUN_REFETCH_SLACK_MS,
@@ -13,7 +14,9 @@ import {
   fromCron,
   nextScheduleRefetchMs,
   nextTimedRun,
+  sameTrigger,
   scheduleChipSummary,
+  scheduleFormSeed,
   scheduleDrift,
   toCron,
   upcomingRun,
@@ -393,5 +396,99 @@ describe("scheduleChipSummary", () => {
       label: "2 schedules · all paused",
       tone: "caution",
     });
+  });
+});
+
+/**
+ * The edit form opens on the registered rule. The rule it has to keep: what it
+ * opens on is what the schedule does, so Save with nothing touched would send
+ * the trigger back unchanged — and a trigger it could not have written opens
+ * on the defaults rather than on a near miss that Save would register.
+ */
+describe("scheduleFormSeed", () => {
+  it("opens a preset day set as that preset, not as a custom pick", () => {
+    expect(scheduleFormSeed({ cron: "0 9 * * *" })).toMatchObject({
+      repeat: "daily",
+      time: "09:00",
+    });
+    expect(scheduleFormSeed({ cron: "30 10 * * 1,2,3,4,5" })).toMatchObject({
+      repeat: "weekdays",
+      time: "10:30",
+    });
+    // A range spells the same set, and fromCron already reads it.
+    expect(scheduleFormSeed({ cron: "0 18 * * 1-5" }).repeat).toBe("weekdays");
+    expect(scheduleFormSeed({ cron: "5 7 * * 0,6" })).toMatchObject({
+      repeat: "weekends",
+      time: "07:05",
+    });
+  });
+
+  it("opens any other day set as custom, with exactly those days", () => {
+    expect(scheduleFormSeed({ cron: "15 22 * * 1,3,5" })).toMatchObject({
+      repeat: "custom",
+      time: "22:15",
+      customDays: [1, 3, 5],
+    });
+  });
+
+  it("opens an interval in the largest whole unit", () => {
+    expect(scheduleFormSeed({ interval_seconds: 7200 })).toMatchObject({
+      repeat: "interval",
+      amountText: "2",
+      unit: "hours",
+    });
+    expect(scheduleFormSeed({ interval_seconds: 1800 })).toMatchObject({
+      repeat: "interval",
+      amountText: "30",
+      unit: "minutes",
+    });
+  });
+
+  it("round-trips every rule the form can write back to the same cron", () => {
+    for (const days of [ALL_DAYS, [1, 2, 3, 4, 5], [0, 6], [2, 4]]) {
+      const cron = toCron({ hour: 6, minute: 40, days });
+      const seed = scheduleFormSeed({ cron });
+      const [hour, minute] = seed.time.split(":").map(Number);
+      const seededDays =
+        seed.repeat === "custom" ? seed.customDays : fromCron(cron)!.days;
+      expect(toCron({ hour, minute, days: seededDays })).toBe(cron);
+    }
+  });
+
+  it("opens a rule it could not have written on the defaults", () => {
+    expect(scheduleFormSeed({ cron: "*/5 * * * *" })).toEqual(DEFAULT_FORM_SEED);
+    expect(scheduleFormSeed({ cron: "0 9 1 * *" })).toEqual(DEFAULT_FORM_SEED);
+    expect(scheduleFormSeed({ interval_seconds: 90 })).toEqual(DEFAULT_FORM_SEED);
+    expect(scheduleFormSeed({ cron: null, interval_seconds: null })).toEqual(
+      DEFAULT_FORM_SEED,
+    );
+  });
+});
+
+describe("sameTrigger", () => {
+  it("counts a zone change as a change", () => {
+    expect(
+      sameTrigger(
+        { cron: "0 9 * * *", timezone: "Asia/Taipei" },
+        { cron: "0 9 * * *", timezone: "Asia/Taipei" },
+      ),
+    ).toBe(true);
+    expect(
+      sameTrigger(
+        { cron: "0 9 * * *", timezone: "Asia/Taipei" },
+        { cron: "0 9 * * *", timezone: "Europe/Berlin" },
+      ),
+    ).toBe(false);
+  });
+
+  it("reads the backend's explicit nulls as absent", () => {
+    // The response spells an interval schedule {cron: null, timezone: null}.
+    expect(
+      sameTrigger(
+        { cron: null, interval_seconds: 1800, timezone: null },
+        { interval_seconds: 1800 },
+      ),
+    ).toBe(true);
+    expect(sameTrigger({ interval_seconds: 1800 }, { cron: "0 9 * * *" })).toBe(false);
   });
 });

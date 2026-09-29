@@ -1173,6 +1173,152 @@ test.describe("the task console", () => {
     // has no reason to name a zone: the schedule's and the browser's agree.
     test.use({ timezoneId: "Asia/Taipei" });
 
+    test("edits a schedule's time in place, and keeps its name", async ({
+      page,
+    }) => {
+      // Changing a time used to be a delete and a re-create, which lost the
+      // name and a pause. The edit is a PATCH of the trigger alone, asserted
+      // here because a build that did the old dance would pass on screen.
+      const writes = await mockBackend(page, {
+        schedules: [
+          {
+            id: "nightly",
+            trigger: { cron: "0 21 * * *", timezone: "Asia/Taipei" },
+            paused: true,
+            next_run_times: [],
+          },
+        ],
+      });
+      await page.goto("/tasks");
+
+      await page.getByRole("button", { name: "Edit schedule" }).click();
+      await expect(page.getByText("Edit nightly")).toBeVisible();
+      // Opens on the registered rule, with nothing to send until it changes;
+      // a schedule has no rename, so the name is not asked for.
+      await expect(page.getByRole("button", { name: "Daily" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await expect(page.getByLabel("Time")).toHaveValue("21:00");
+      await expect(page.getByPlaceholder("robot01-daily-patrol")).toHaveCount(0);
+      const save = page.getByRole("button", { name: "Save schedule" });
+      await expect(save).toBeDisabled();
+
+      await page.getByRole("button", { name: "Weekdays" }).click();
+      await page.getByLabel("Time").fill("10:30");
+      await save.click();
+
+      await expect.poll(() => writes.length).toBe(1);
+      expect(writes[0]).toEqual({
+        method: "PATCH",
+        path: "/api/v1/schedules/nightly",
+        body: { trigger: { cron: "30 10 * * 1,2,3,4,5", timezone: "Asia/Taipei" } },
+      });
+      await expect(page.getByText("Edit nightly")).toHaveCount(0);
+      await expect(page.getByText("Weekdays at 10:30 · Asia/Taipei")).toBeVisible();
+      // Still the same schedule, still paused.
+      await expect(page.getByText("nightly", { exact: true })).toBeVisible();
+      await expect(page.getByText("Paused", { exact: true })).toBeVisible();
+    });
+
+    /**
+     * The robot's schedule list trails a write by a second or two. These
+     * answer the first two reads after the write with the list as it was,
+     * which is the race the single re-read used to lose: a new schedule was
+     * missing until someone pressed Refresh.
+     */
+    test("shows a new schedule without a Refresh while the list catches up", async ({
+      page,
+    }) => {
+      const template = "22222222-2222-2222-2222-222222222222";
+      const created = {
+        id: "weekday-patrol",
+        trigger: { cron: "0 9 * * 1,2,3,4,5", timezone: "Asia/Taipei" },
+        paused: false,
+        next_run_times: ["2099-01-01T01:00:00Z"],
+        task_template_id: template,
+        task_template_name: "Morning round",
+      };
+      let registered = false;
+      let staleReads = 0;
+      await mockBackend(page);
+      await page.route("**/api/v1/**", (route) => {
+        const request = route.request();
+        const path = new URL(request.url()).pathname;
+        if (request.method() === "POST" && path.endsWith("/schedule")) registered = true;
+        if (request.method() !== "GET" || path !== "/api/v1/schedules") {
+          return route.fallback();
+        }
+        if (registered && staleReads < 2) {
+          staleReads++;
+          return route.fulfill({ json: [] });
+        }
+        return route.fulfill({ json: registered ? [created] : [] });
+      });
+      await page.goto("/tasks");
+      await expect(page.getByText("No schedules are registered on this robot.")).toBeVisible();
+
+      await page.getByRole("button", { name: 'Schedule "Morning round"' }).click();
+      await page.getByPlaceholder("robot01-daily-patrol").fill("weekday-patrol");
+      await page.getByRole("button", { name: "Weekdays" }).click();
+      await page.getByRole("button", { name: "Create schedule" }).click();
+
+      const row = page.getByRole("listitem").filter({ hasText: "weekday-patrol" });
+      await expect(row.getByText("Weekdays at 09:00 · Asia/Taipei")).toBeVisible();
+      await expect(row.getByText("2099-01-01 09:00", { exact: true })).toBeVisible();
+      expect(staleReads).toBe(2);
+      // The job's own chip reads the same list, so it catches up with it.
+      await expect(
+        page.getByRole("button", { name: /^Show the schedules for "Morning round"/ }),
+      ).toHaveText("Weekdays at 09:00 · Asia/Taipei");
+    });
+
+    test("keeps an edited row on its new time while the list catches up", async ({
+      page,
+    }) => {
+      const before = {
+        id: "nightly",
+        trigger: { cron: "0 21 * * *", timezone: "Asia/Taipei" },
+        paused: false,
+        next_run_times: ["2098-12-31T13:00:00Z"],
+      };
+      const after = {
+        ...before,
+        trigger: { cron: "30 10 * * *", timezone: "Asia/Taipei" },
+        next_run_times: ["2099-01-01T02:30:00Z"],
+      };
+      let patched = false;
+      let staleReads = 0;
+      // A copy: the fake applies the PATCH to the row it holds, and the stale
+      // reads below must still answer the rule as it was.
+      await mockBackend(page, { schedules: [{ ...before }] });
+      await page.route("**/api/v1/**", (route) => {
+        const request = route.request();
+        const path = new URL(request.url()).pathname;
+        if (request.method() === "PATCH") patched = true;
+        if (request.method() !== "GET" || path !== "/api/v1/schedules") {
+          return route.fallback();
+        }
+        if (patched && staleReads < 2) {
+          staleReads++;
+          return route.fulfill({ json: [before] });
+        }
+        return route.fulfill({ json: [patched ? after : before] });
+      });
+      await page.goto("/tasks");
+
+      await page.getByRole("button", { name: "Edit schedule" }).click();
+      await page.getByLabel("Time").fill("10:30");
+      await page.getByRole("button", { name: "Save schedule" }).click();
+
+      // The new rule at once, and the next run it implies once the list has it.
+      await expect(page.getByText("Daily at 10:30 · Asia/Taipei")).toBeVisible();
+      await expect(page.getByText("2099-01-01 10:30", { exact: true })).toBeVisible();
+      expect(staleReads).toBe(2);
+      // The stale reads never reached the row.
+      await expect(page.getByText("Daily at 21:00 · Asia/Taipei")).toHaveCount(0);
+    });
+
     test("lists registered schedules in words", async ({
       page,
     }) => {
@@ -1921,5 +2067,47 @@ test.describe("the job history when the robot cannot answer", () => {
 
     await expect(page.getByText("List task history failed")).toBeVisible();
     await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  });
+});
+
+test.describe("a schedule edit the robot refuses", () => {
+  // No console-error guard here: the browser logs the 404 itself, which is
+  // exactly the response under test.
+  test("keeps the edit open with the backend's sentence when it is refused", async ({
+    page,
+  }) => {
+    await mockBackend(page, {
+      schedules: [
+        {
+          id: "nightly",
+          trigger: { interval_seconds: 1800 },
+          paused: false,
+          next_run_times: [],
+        },
+      ],
+    });
+    const refusal = "Schedule nightly not found";
+    await page.route("**/api/v1/schedules/nightly", (route) =>
+      route.request().method() === "PATCH"
+        ? route.fulfill({
+            status: 404,
+            contentType: "application/json",
+            body: JSON.stringify({ detail: refusal }),
+          })
+        : route.fallback(),
+    );
+    await page.goto("/tasks");
+
+    await page.getByRole("button", { name: "Edit schedule" }).click();
+    // An interval opens as one, in the unit it reads best in.
+    await expect(page.getByLabel("Every")).toHaveValue("30");
+    await page.getByLabel("Every").fill("2");
+    await page.getByRole("button", { name: "hours" }).click();
+    await page.getByRole("button", { name: "Save schedule" }).click();
+
+    // Under the form's own fields, not the list's error line.
+    const row = page.getByRole("listitem").filter({ hasText: "Edit nightly" });
+    await expect(row.getByRole("alert")).toHaveText(refusal);
+    await expect(row.getByRole("button", { name: "Save schedule" })).toBeVisible();
   });
 });

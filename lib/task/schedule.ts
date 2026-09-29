@@ -115,6 +115,92 @@ export function fromCron(cron: string): TimeOfDay | null {
   return { hour, minute, days };
 }
 
+/** The form's Repeat picker: three one-click day sets, a free pick, an interval. */
+export type ScheduleRepeat = "daily" | "weekdays" | "weekends" | "custom" | "interval";
+
+export type IntervalUnit = "minutes" | "hours";
+
+/** What the schedule form's fields start at, as the fields hold them. */
+export interface ScheduleFormSeed {
+  repeat: ScheduleRepeat;
+  /** `HH:MM`, what `<input type="time">` holds. */
+  time: string;
+  /** Only read under "custom". */
+  customDays: readonly number[];
+  amountText: string;
+  unit: IntervalUnit;
+}
+
+/**
+ * A new schedule's fields. Custom is seeded with the weekdays because a custom
+ * pick is almost always "weekdays, minus one" rather than a build-up from
+ * nothing.
+ */
+export const DEFAULT_FORM_SEED: ScheduleFormSeed = {
+  repeat: "daily",
+  time: "09:00",
+  customDays: WEEKDAY_DAYS,
+  amountText: "30",
+  unit: "minutes",
+};
+
+function sameDays(a: readonly number[], b: readonly number[]): boolean {
+  const left = sortedUniqueDays(a);
+  const right = sortedUniqueDays(b);
+  return left.length === right.length && left.every((day, index) => day === right[index]);
+}
+
+/**
+ * The form's fields for editing a registered trigger, so it opens on the rule
+ * the row describes rather than on a blank one.
+ *
+ * A day set that is one of the presets opens as that preset, not as a Custom
+ * pick of the same days, because that is how the operator made it. A trigger
+ * the form could not have written — a cron outside `fromCron`'s vocabulary, an
+ * interval that is not whole minutes — opens on the defaults: approximating it
+ * would put a rule on screen the schedule does not follow, and one press of
+ * Save would make it the rule.
+ */
+export function scheduleFormSeed(trigger: ScheduleTrigger): ScheduleFormSeed {
+  if (trigger.cron) {
+    const timed = fromCron(trigger.cron);
+    if (!timed) return DEFAULT_FORM_SEED;
+    const time = `${pad(timed.hour)}:${pad(timed.minute)}`;
+    const preset: ScheduleRepeat | null = sameDays(timed.days, DAILY_DAYS)
+      ? "daily"
+      : sameDays(timed.days, WEEKDAY_DAYS)
+        ? "weekdays"
+        : sameDays(timed.days, WEEKEND_DAYS)
+          ? "weekends"
+          : null;
+    return preset
+      ? { ...DEFAULT_FORM_SEED, repeat: preset, time }
+      : { ...DEFAULT_FORM_SEED, repeat: "custom", time, customDays: timed.days };
+  }
+  const seconds = trigger.interval_seconds;
+  if (!seconds || seconds <= 0) return DEFAULT_FORM_SEED;
+  if (seconds % 3600 === 0) {
+    return { ...DEFAULT_FORM_SEED, repeat: "interval", amountText: String(seconds / 3600), unit: "hours" };
+  }
+  if (seconds % 60 === 0) {
+    return { ...DEFAULT_FORM_SEED, repeat: "interval", amountText: String(seconds / 60), unit: "minutes" };
+  }
+  return DEFAULT_FORM_SEED;
+}
+
+/**
+ * Whether two triggers fire at the same moments, so an edit that changes
+ * nothing is not sent. The zone counts: 09:00 in Taipei is not 09:00 in
+ * Berlin, and re-registering a schedule in this browser's zone is a real
+ * change even when the fields read the same.
+ */
+export function sameTrigger(a: ScheduleTrigger, b: ScheduleTrigger): boolean {
+  if (a.cron || b.cron) {
+    return a.cron === b.cron && (a.timezone || null) === (b.timezone || null);
+  }
+  return (a.interval_seconds ?? null) === (b.interval_seconds ?? null);
+}
+
 /**
  * The zone this browser keeps time in, e.g. `Asia/Taipei`; empty when it
  * cannot be known (server render, or a runtime without Intl).
