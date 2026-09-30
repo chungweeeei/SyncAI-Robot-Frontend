@@ -274,10 +274,12 @@ function EditorSurface({
    */
   const [zoneDraftAnchor, setZoneDraftAnchor] = React.useState<ZoneAnchor | null>(null);
   /**
-   * The zone Remove would take, and whose corners drag. One at most: a band
-   * over several is not worth a Select tool of its own here.
+   * The zones Remove would take, and whose corners drag. Several, by
+   * Shift-click (or a tap, on a phone), so a cluster of mis-drawn zones
+   * goes in one press; a band over them is not worth a Select tool of its
+   * own here.
    */
-  const [selectedZoneId, setSelectedZoneId] = React.useState<string | null>(null);
+  const [selectedZoneIds, setSelectedZoneIds] = React.useState<string[]>([]);
 
   /**
    * The robot's pose, when it is a pose on the map open here.
@@ -342,7 +344,7 @@ function EditorSurface({
       // other mode offers Remove.
       setZoneDraft([]);
       setZoneDraftAnchor(null);
-      setSelectedZoneId(null);
+      setSelectedZoneIds([]);
     },
     [clearVertexEdit],
   );
@@ -372,7 +374,7 @@ function EditorSurface({
     if (next === "pan") {
       setZoneDraft([]);
       setZoneDraftAnchor(null);
-      setSelectedZoneId(null);
+      setSelectedZoneIds([]);
     }
   }, []);
 
@@ -384,7 +386,7 @@ function EditorSurface({
    */
   const addZonePoint = React.useCallback(
     (point: ZonePoint) => {
-      if (!zoneDraftAnchor) setSelectedZoneId(null);
+      if (!zoneDraftAnchor) setSelectedZoneIds([]);
       setZoneDraft((draft) => [...draft, point]);
     },
     [zoneDraftAnchor],
@@ -406,7 +408,7 @@ function EditorSurface({
       if (!point) return;
       setZoneDraft([...zoneDraft, point]);
       setZoneDraftAnchor({ zoneId: corner.zoneId, index: corner.index, position: zoneDraft.length });
-      setSelectedZoneId(corner.zoneId);
+      setSelectedZoneIds([corner.zoneId]);
     },
     [zones, zoneDraft],
   );
@@ -431,7 +433,7 @@ function EditorSurface({
       );
       setZoneDraft([]);
       setZoneDraftAnchor(null);
-      setSelectedZoneId(anchor.zoneId);
+      setSelectedZoneIds([anchor.zoneId]);
     },
     [zones, zoneDraft, zoneDraftAnchor],
   );
@@ -456,21 +458,33 @@ function EditorSurface({
     );
   }, []);
 
-  const pickZone = React.useCallback((id: string | null) => setSelectedZoneId(id), []);
+  /**
+   * A click inside a zone: it becomes the selection, or with Shift held (a
+   * tap, on a phone) it toggles in and out of the selection so several can
+   * be taken in one Remove — the vertex layer's Shift-click, for the same
+   * reason.
+   */
+  const pickZone = React.useCallback((id: string, additive: boolean) => {
+    setSelectedZoneIds((current) => {
+      if (!additive) return [id];
+      return current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id];
+    });
+  }, []);
 
   /**
-   * Remove the selected zone. A shape anchored to it goes with it: one of
-   * its corners was that zone's, and there is nothing left to merge into.
+   * Remove the selected zones. A shape anchored to one of them goes with
+   * it: one of its corners was that zone's, and there is nothing left to
+   * merge into.
    */
   const removeZone = React.useCallback(() => {
-    if (!selectedZoneId) return;
-    setZones((current) => current.filter((zone) => zone.id !== selectedZoneId));
-    setSelectedZoneId(null);
-    if (zoneDraftAnchor?.zoneId === selectedZoneId) {
+    if (selectedZoneIds.length === 0) return;
+    setZones((current) => current.filter((zone) => !selectedZoneIds.includes(zone.id)));
+    setSelectedZoneIds([]);
+    if (zoneDraftAnchor && selectedZoneIds.includes(zoneDraftAnchor.zoneId)) {
       setZoneDraft([]);
       setZoneDraftAnchor(null);
     }
-  }, [selectedZoneId, zoneDraftAnchor]);
+  }, [selectedZoneIds, zoneDraftAnchor]);
 
   const dropZoneDraft = React.useCallback(() => {
     setZoneDraft([]);
@@ -762,8 +776,8 @@ function EditorSurface({
           dropZoneDraft();
           return;
         }
-        if (selectedZoneId) {
-          setSelectedZoneId(null);
+        if (selectedZoneIds.length) {
+          setSelectedZoneIds([]);
           return;
         }
         // Puts the Draw choice down as well, which drops a staged draft and
@@ -787,7 +801,7 @@ function EditorSurface({
         return;
       }
       // Below the guard for the same reason: Backspace in a field is editing.
-      if ((event.key === "Delete" || event.key === "Backspace") && selectedZoneId) {
+      if ((event.key === "Delete" || event.key === "Backspace") && selectedZoneIds.length) {
         event.preventDefault();
         removeZone();
         return;
@@ -837,7 +851,7 @@ function EditorSurface({
     };
     // Re-subscribing on every corner is harmless: the listeners are on window
     // and capture nothing that a pointer gesture in flight depends on.
-  }, [undo, redo, fit, chooseDraw, zoneDraft, dropZoneDraft, canClose, closeZone, selectedZoneId, removeZone]);
+  }, [undo, redo, fit, chooseDraw, zoneDraft, dropZoneDraft, canClose, closeZone, selectedZoneIds, removeZone]);
 
   /**
    * Covers reload and tab close only. The App Router has no navigation blocker, so
@@ -928,7 +942,7 @@ function EditorSurface({
         onZoneMerge={mergeZoneDraft}
         onZoneClose={closeZone}
         onZoneCornerMove={moveZoneCorner}
-        selectedZoneId={selectedZoneId}
+        selectedZoneIds={selectedZoneIds}
         onZonePick={pickZone}
       />
 
@@ -970,7 +984,7 @@ function EditorSurface({
             onZoneToolChange={chooseZoneTool}
             canCloseZone={canClose}
             onCloseZone={closeZone}
-            canRemoveZone={selectedZoneId !== null}
+            selectedZones={selectedZoneIds.length}
             onRemoveZone={removeZone}
             brush={brush}
             onBrushChange={setBrush}

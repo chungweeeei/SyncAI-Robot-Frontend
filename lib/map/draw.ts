@@ -13,7 +13,12 @@ import { stampLine } from "@/lib/map/grid";
 import type { CellProbe, DrawState, Gesture } from "@/lib/map/editor";
 import type { GridSession } from "@/lib/map/session";
 import { vertexGlyph } from "@/lib/map/vertex";
-import { canCloseZone, type ZoneCornerRef, type ZonePoint } from "@/lib/map/zone";
+import {
+  canCloseZone,
+  type ZoneCornerRef,
+  type ZonePoint,
+  type ZonePolygon,
+} from "@/lib/map/zone";
 import { SIGNAL, cssHex } from "@/lib/theme/signal";
 import {
   gridToScreen,
@@ -475,9 +480,10 @@ function zonePath(view: View, meta: MapMetadata, points: readonly ZonePoint[]): 
  * through it. `warn`, because a zone is the one mark on this canvas that
  * forbids.
  *
- * The selected zone is the same shape, heavier: a thicker edge and a denser
- * wash, the way a selected marker gets emphasis rather than a second hue. It
- * is drawn last so its edge is never under a neighbour's.
+ * A selected zone is the same shape, heavier: a thicker edge and a denser
+ * wash, the way a selected marker gets emphasis rather than a second hue.
+ * The selected ones are drawn last so their edges are never under a
+ * neighbour's.
  *
  * Corner handles are drawn where a press on one would do something: on
  * every zone while Shape is armed and no shape is attached yet (a handle is
@@ -485,7 +491,7 @@ function zonePath(view: View, meta: MapMetadata, points: readonly ZonePoint[]): 
  * attaches the shape to the zone), on the zone a shape in flight is
  * anchored to (its other corners are where that shape can end — filled once
  * it has a corner of its own, the way a draft's first corner fills once it
- * can close), and on the selected zone always.
+ * can close), and on the selected zones always.
  * A handle under the pointer, or one being dragged, swells the way a draft
  * corner does, and a corner mid-drag is drawn where the pointer has carried
  * it rather than where the shell still has it.
@@ -499,8 +505,9 @@ export function drawZones(
   props: DrawState,
   palette: Palette,
 ): void {
-  const { zones, selectedZoneId: selectedId, zoneDraftAnchor: anchor } = props;
+  const { zones, selectedZoneIds, zoneDraftAnchor: anchor } = props;
   if (zones.length === 0) return;
+  const isSelected = (zone: ZonePolygon) => selectedZoneIds.includes(zone.id);
   const dragging = gesture?.kind === "point" && gesture.corner?.zoneId ? gesture.corner : null;
   const held = dragging ?? (hoverCorner?.zoneId ? hoverCorner : null);
   const armed = props.mode === "zone" && props.zoneTool === "shape" && !props.spacePan;
@@ -509,11 +516,11 @@ export function drawZones(
   ctx.save();
   ctx.lineJoin = "round";
   ctx.setLineDash([]);
-  const ordered = selectedId
-    ? [...zones.filter((zone) => zone.id !== selectedId), ...zones.filter((zone) => zone.id === selectedId)]
+  const ordered = selectedZoneIds.length
+    ? [...zones.filter((zone) => !isSelected(zone)), ...zones.filter(isSelected)]
     : zones;
   for (const zone of ordered) {
-    const selected = zone.id === selectedId;
+    const selected = isSelected(zone);
     const points =
       dragging && dragging.zoneId === zone.id
         ? zone.points.map((point, index) => (index === dragging.index ? dragging.at : point))

@@ -67,6 +67,7 @@ describe("classifyZonePress", () => {
     anchored: false,
     corner: null,
     onZone: false,
+    additive: false,
     onHandle: false,
     ...over,
   });
@@ -119,6 +120,13 @@ describe("classifyZonePress", () => {
   it("never closes an anchored shape on its own first corner", () => {
     // Its first corner is the zone's; only a corner of the zone ends it.
     expect(classifyZonePress(press({ count: 4, anchored: true, corner: 0 }))).toBe("ignore");
+  });
+
+  it("keeps a Shift press for the selection: a zone joins it, bare map starts nothing", () => {
+    expect(classifyZonePress(press({ count: 0, onZone: true, additive: true }))).toBe("select");
+    expect(classifyZonePress(press({ count: 0, additive: true }))).toBe("ignore");
+    // Once a corner is down Shift means nothing; the press is the next corner.
+    expect(classifyZonePress(press({ count: 1, additive: true }))).toBe("add");
   });
 
   it("selects a finished zone only while no shape is in flight", () => {

@@ -123,6 +123,11 @@ export interface ZonePressInput {
   /** The press landed inside a finished zone. */
   onZone: boolean;
   /**
+   * Shift was held, or the press is a finger: the press is about the
+   * selection, adding to it or taking from it, and never a first corner.
+   */
+  additive: boolean;
+  /**
    * The press landed on a finished zone's corner handle — any zone's until
    * the shape is anchored, then its own zone's, the anchor corner excepted
    * (that one is a `corner` of the shape).
@@ -145,7 +150,10 @@ export interface ZonePressInput {
  * is in flight: once a corner is down every press is the next corner, so a
  * shape can still be drawn across a zone that is already there. What cannot
  * be done is *starting* one inside a zone — the inside is already forbidden,
- * so nothing is lost.
+ * so nothing is lost. With Shift held (or under a finger, which has no
+ * Shift) the press adds the zone to the selection instead of replacing it,
+ * and a miss onto bare map keeps the selection rather than starting a
+ * shape: an operator holding Shift is choosing zones, not drawing one.
  *
  * A finished zone's corner is where a zone grows from. A click on one
  * anchors the shape there — as its first corner, or as the next one of a
@@ -158,8 +166,12 @@ export interface ZonePressInput {
  * not offered.
  */
 export function classifyZonePress(input: ZonePressInput): ZonePressVerdict {
-  const { count, anchored, corner, onZone, onHandle } = input;
-  if (count === 0) return onHandle ? "anchor" : onZone ? "select" : "add";
+  const { count, anchored, corner, onZone, additive, onHandle } = input;
+  if (count === 0) {
+    if (onHandle) return "anchor";
+    if (onZone) return "select";
+    return additive ? "ignore" : "add";
+  }
   if (corner !== null) {
     return corner === 0 && !anchored && count >= MIN_ZONE_POINTS ? "close" : "ignore";
   }

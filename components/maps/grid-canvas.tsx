@@ -202,12 +202,14 @@ export interface GridCanvasProps {
    */
   onZoneCornerMove: (corner: ZoneCornerRef, point: ZonePoint) => void;
   /** Highlighted, and what Remove takes. Drawn heavier than the rest. */
-  selectedZoneId: string | null;
+  selectedZoneIds: readonly string[];
   /**
-   * A click inside a finished zone with no shape in flight, or on bare map
-   * with one selected (null). Fired on release, like every other click here.
+   * A click inside a finished zone with no shape in flight. `additive` when
+   * Shift was held or the press was a finger: the zone joins the selection
+   * (or leaves it) rather than replacing it. Fired on release, like every
+   * other click here.
    */
-  onZonePick: (id: string | null) => void;
+  onZonePick: (id: string, additive: boolean) => void;
 
   className?: string;
 }
@@ -431,7 +433,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     props.zones,
     props.zoneDraft,
     props.zoneDraftAnchor,
-    props.selectedZoneId,
+    props.selectedZoneIds,
     // Once a second at most, and only when the robot has actually moved — the
     // hook memoises the pose on its values, so a parked robot costs no frames.
     props.robotPose,
@@ -749,11 +751,16 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       const under = zoneDraft.length === 0 ? zoneAt(zones, point) : null;
       const corner = cornerUnder(view, cx, cy, touch);
       const anchored = zoneDraftAnchor !== null;
+      // A finger has no Shift, so a tap adds to the selection the way the
+      // vertex layer's does; a tap on bare map with a corner down is still
+      // the next corner, since Shift means nothing once a shape is in flight.
+      const additive = event.shiftKey || touch;
       const verdict = classifyZonePress({
         count: zoneDraft.length,
         anchored,
         corner: corner && corner.zoneId === null ? corner.index : null,
         onZone: under !== null,
+        additive,
         onHandle: corner !== null && corner.zoneId !== null,
       });
 
@@ -774,7 +781,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
         !(zoneDraft.length > 0 && corner.zoneId !== null);
       let click: Extract<Gesture, { kind: "point" }>["click"] = { kind: "none" };
       if (verdict === "close") click = { kind: "close" };
-      else if (verdict === "select" && under) click = { kind: "select", id: under.id };
+      else if (verdict === "select" && under) click = { kind: "select", id: under.id, additive };
       else if (verdict === "add") click = { kind: "add", point };
       else if (verdict === "anchor" && corner) click = { kind: "anchor", corner };
       else if (verdict === "merge" && corner) click = { kind: "merge", corner };
@@ -861,7 +868,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
    * then, for an anchored shape, the other corners of its zone, which are
    * where it can end. Otherwise — nothing in flight, or a shape not yet
    * attached — every finished zone's corners are offered, the selected
-   * zone's first so its handle wins where two zones share a corner.
+   * zones' first so their handles win where two zones share a corner.
    */
   const cornerUnder = (
     view: View,
@@ -869,7 +876,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     cy: number,
     touch: boolean,
   ): ZoneCornerRef | null => {
-    const { zoneDraft, zoneDraftAnchor, zones, selectedZoneId } = propsRef.current;
+    const { zoneDraft, zoneDraftAnchor, zones, selectedZoneIds } = propsRef.current;
     const radius = touch ? VERTEX_HIT_RADIUS_TOUCH : VERTEX_HIT_RADIUS;
     const hit = (points: readonly ZonePoint[]) =>
       cornerAt(
@@ -888,10 +895,10 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
         ? null
         : { zoneId: zoneDraftAnchor.zoneId, index: target };
     }
-    const ordered = selectedZoneId
+    const ordered = selectedZoneIds.length
       ? [
-          ...zones.filter((zone) => zone.id === selectedZoneId),
-          ...zones.filter((zone) => zone.id !== selectedZoneId),
+          ...zones.filter((zone) => selectedZoneIds.includes(zone.id)),
+          ...zones.filter((zone) => !selectedZoneIds.includes(zone.id)),
         ]
       : zones;
     for (const zone of ordered) {
@@ -1106,7 +1113,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
         const { click } = gesture;
         if (click.kind === "add") propsRef.current.onZonePoint(click.point);
         else if (click.kind === "close") propsRef.current.onZoneClose();
-        else if (click.kind === "select") propsRef.current.onZonePick(click.id);
+        else if (click.kind === "select") propsRef.current.onZonePick(click.id, click.additive);
         else if (click.kind === "anchor") propsRef.current.onZoneAnchor(click.corner);
         else if (click.kind === "merge") propsRef.current.onZoneMerge(click.corner);
       }

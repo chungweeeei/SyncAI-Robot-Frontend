@@ -209,7 +209,8 @@ export type Gesture =
       click:
         | { kind: "add"; point: ZonePoint }
         | { kind: "close" }
-        | { kind: "select"; id: string }
+        /** Select this zone — added to the selection when `additive`. */
+        | { kind: "select"; id: string; additive: boolean }
         /** Attach the shape to this finished zone's corner, or end it there. */
         | { kind: "anchor"; corner: ZoneCornerRef }
         | { kind: "merge"; corner: ZoneCornerRef }
@@ -250,6 +251,6 @@ export interface DrawState {
    * corners is where it ends (see mergeIntoZone in lib/map/zone.ts).
    */
   zoneDraftAnchor: ZoneAnchor | null;
-  /** The finished zone the operator pressed, the one Remove would take. */
-  selectedZoneId: string | null;
+  /** The finished zones the operator pressed, the ones Remove would take. */
+  selectedZoneIds: readonly string[];
 }
