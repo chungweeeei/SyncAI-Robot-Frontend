@@ -37,12 +37,13 @@ import {
   warnedUnknownJoints,
 } from "@/lib/scene/robot-model";
 import { THEMES } from "@/lib/scene/theme";
+import { createZoneLayer } from "@/lib/scene/zone-layer";
 import {
   createVertexLayer,
   type VertexLayer,
 } from "@/lib/scene/vertex-layer";
 import { headingDegrees, isDrag } from "@/lib/map/gesture";
-import type { MapVertex } from "@/lib/types/map";
+import type { MapVertex, ZonePolygon } from "@/lib/types/map";
 import type {
   MapMetadata,
   PlanarPose,
@@ -141,6 +142,14 @@ interface PointCloudCanvasProps {
   vertices?: MapVertex[];
   /** Hide the vertex layer without unmounting the canvas. Defaults to true. */
   showVertices?: boolean;
+  /**
+   * The active map's forbidden zones, as saved, drawn as a red wash on the
+   * floor. Draw-only: drawing and removing them is the floor plan editor's,
+   * and nothing here reacts to a press on one.
+   */
+  zones?: ZonePolygon[];
+  /** Hide the zone layer without unmounting the canvas. Defaults to true. */
+  showZones?: boolean;
   /**
    * Fired when a stored vertex is tapped: one pointer, pressed and released
    * inside the drag deadzone, with no pick mode armed. It used to take a
@@ -249,6 +258,8 @@ export function PointCloudCanvas({
   showPath = true,
   vertices,
   showVertices = true,
+  zones,
+  showZones = true,
   onVertexActivate,
   movingVertex = null,
   cameraMode = "move",
@@ -1090,6 +1101,28 @@ export function PointCloudCanvas({
     movingIdRef.current = movingVertex?.id ?? null;
     vertexLayerRef.current?.setMoving(movingIdRef.current);
   }, [movingVertex]);
+
+  // ---- Forbidden zones ---------------------------------------------------
+  // The path band's shape below, and the vertex layer's: built wholesale,
+  // removed and disposed by this effect's own cleanup, and listing the
+  // scene-rebuild deps so a rebuild re-adds it to the new scene. Nothing
+  // reaches into it after it is built, so unlike the vertex layer it needs
+  // no ref.
+  React.useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx || !showZones || !zones?.length) return;
+
+    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
+    const layer = createZoneLayer(zones, theme);
+    ctx.scene.add(layer.group);
+
+    return () => {
+      // `ctx.scene` may already be the discarded scene here; the remove is
+      // harmless either way and the dispose is what matters.
+      ctx.scene.remove(layer.group);
+      layer.dispose();
+    };
+  }, [zones, showZones, meta, mapImageUrl, resolvedTheme]);
 
   // ---- Planned path band ------------------------------------------------
   // Same shape as the vertex layer above — built wholesale, removed and disposed

@@ -3,7 +3,8 @@
 // The shared signal hues come from lib/theme/signal.ts rather than being
 // transcribed again; what is written out below is what this scene adds — the
 // ground, the two draft tints, the vertex family and the route — none of which
-// is a console surface with a CSS token behind it.
+// is a console surface with a CSS token behind it. The forbidden zones' hue is
+// a signal one, and so is not written out.
 
 import { SIGNAL } from "@/lib/theme/signal";
 
@@ -59,6 +60,12 @@ export interface Theme {
    * the eye off the pose that was actually commanded.
    */
   path: number;
+  /**
+   * Forbidden zones. `signal-warn`, the hue the floor plan editor draws them
+   * in (lib/map/draw.ts): a zone is the one mark on this floor that says
+   * "not here", and it has to be the same mark on both maps.
+   */
+  zone: number;
 }
 
 // Scene colours track the console surfaces so the viewport reads as a recessed
@@ -78,6 +85,7 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     vertex: 0x173845,
     vertexHover: SIGNAL.light.cmd,
     path: 0x2b86a8,
+    zone: SIGNAL.light.warn,
   },
   dark: {
     background: SIGNAL.dark.background,
@@ -91,5 +99,6 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     vertex: 0x2b5f77,
     vertexHover: SIGNAL.dark.cmd,
     path: 0x3aa8cc,
+    zone: SIGNAL.dark.warn,
   },
 };

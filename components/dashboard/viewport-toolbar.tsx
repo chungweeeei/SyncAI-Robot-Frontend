@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import {
+  BanIcon,
   CrosshairIcon,
   FocusIcon,
   Grid2x2Icon,
@@ -239,7 +240,7 @@ export function MapToolbar({
 }
 
 export interface LayerOption {
-  kind: "scan" | "waypoints" | "path";
+  kind: "scan" | "waypoints" | "path" | "zones";
   label: string;
   on: boolean;
   /** On, but still downloading; the viewport shows nothing yet. */
@@ -251,5 +252,8 @@ const LAYER_ICONS = {
   scan: ScanLineIcon,
   waypoints: MapPinIcon,
   path: RouteIcon,
+  // The Draw list's sign for a forbidden zone, so the toggle names the same
+  // thing the editor drew.
+  zones: BanIcon,
 } as const;
 
