@@ -159,3 +159,28 @@ export const MapVertexSchema: z.ZodType<MapVertex> = z.object({
   y: z.number(),
   theta: z.number(),
 });
+
+/**
+ * A corner of a forbidden zone — the router's `ZonePoint`. Map frame, metres,
+ * like a vertex's position; the editor snaps it to a cell centre, which is
+ * the cell the backend's rasteriser floors it onto.
+ */
+export interface ZonePoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * A closed polygon the robot must stay out of — `KeepoutZoneResponse`.
+ * Points in drawing order, not closed (the first is not repeated). The id is
+ * the console's own: the backend keeps whatever it was sent.
+ */
+export interface ZonePolygon {
+  id: string;
+  points: ZonePoint[];
+}
+
+export const ZonePolygonSchema: z.ZodType<ZonePolygon> = z.object({
+  id: z.string(),
+  points: z.array(z.object({ x: z.number(), y: z.number() })),
+});

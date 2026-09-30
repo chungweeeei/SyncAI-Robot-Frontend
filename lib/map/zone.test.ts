@@ -9,6 +9,9 @@ import {
   newZoneId,
   pointInPolygon,
   reshapeZone,
+  restoreZones,
+  sameZones,
+  withoutZones,
   zoneAt,
   type ZonePoint,
   type ZonePressInput,
@@ -272,7 +275,71 @@ describe("mergeIntoZone", () => {
 });
 
 describe("newZoneId", () => {
-  it("never repeats within a session", () => {
-    expect(newZoneId()).not.toBe(newZoneId());
+  const zone = (id: string) => ({ id, points: [] });
+
+  it("steps over every id already on the map, including ones a past session made", () => {
+    // The robot keeps an id as sent and refuses a list that repeats one, so
+    // an id loaded from it must never be handed out again.
+    const taken = [zone("zone-1"), zone("zone-2"), zone("zone-4")];
+    const id = newZoneId(taken);
+    expect(taken.map((entry) => entry.id)).not.toContain(id);
+  });
+
+  it("does not collide with ids that are not its own pattern", () => {
+    const taken = [zone("a1b2c3"), zone("zone-3")];
+    expect(["a1b2c3", "zone-3"]).not.toContain(newZoneId(taken));
+  });
+
+  it("gives successive zones distinct ids", () => {
+    const first = zone(newZoneId([]));
+    expect(newZoneId([first])).not.toBe(first.id);
+  });
+});
+
+describe("sameZones", () => {
+  const square = (id: string, x = 0) => ({
+    id,
+    points: [
+      { x, y: 0 },
+      { x: x + 1, y: 0 },
+      { x: x + 1, y: 1 },
+    ],
+  });
+
+  it("is true of equal content in fresh objects, so a no-op edit leaves nothing to save", () => {
+    expect(sameZones([square("a")], [square("a")])).toBe(true);
+  });
+
+  it("is false once a corner moves, a zone goes, or the order changes", () => {
+    expect(sameZones([square("a")], [square("a", 0.05)])).toBe(false);
+    expect(sameZones([square("a"), square("b")], [square("a")])).toBe(false);
+    expect(sameZones([square("a"), square("b")], [square("b"), square("a")])).toBe(false);
+  });
+});
+
+describe("withoutZones and restoreZones", () => {
+  const zone = (id: string) => ({ id, points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }] });
+  const saved = [zone("a"), zone("b"), zone("c")];
+
+  it("sends the robot the saved list minus the removed zones, and nothing unsaved", () => {
+    // "d" was drawn after the last Save: it is on screen but must not be
+    // written by a remove, which is not a save.
+    const onScreen = [...saved, zone("d")];
+    expect(withoutZones(onScreen, ["b"]).kept.map((z) => z.id)).toEqual(["a", "c", "d"]);
+    expect(withoutZones(saved, ["b"]).kept.map((z) => z.id)).toEqual(["a", "c"]);
+  });
+
+  it("has nothing to send when every removed zone was never saved", () => {
+    expect(withoutZones(saved, ["d"]).removed).toEqual([]);
+  });
+
+  it("puts a refused remove back in order, so a clean editor stays clean", () => {
+    const { kept, removed } = withoutZones(saved, ["a", "c"]);
+    expect(sameZones(restoreZones(kept, removed), saved)).toBe(true);
+  });
+
+  it("does not double a zone that is already back", () => {
+    const { removed } = withoutZones(saved, ["b"]);
+    expect(restoreZones(saved, removed)).toHaveLength(3);
   });
 });

@@ -1,28 +1,18 @@
 /**
- * Forbidden zones: what one is, and the rules for drawing one on the floor
- * plan editor.
+ * Forbidden zones: the rules for drawing one on the floor plan editor.
  *
- * The types live here rather than in lib/types/map.ts because no backend
- * endpoint exists for them yet — a zone is drawn in the editor, held in its
- * state and lost on reload. When the endpoint arrives the wire type moves to
- * lib/types/ beside MapVertex and this module keeps the rules, which is the
- * split every other map thing already has.
+ * What a zone *is* — ZonePoint and ZonePolygon — is the backend's shape and
+ * lives in lib/types/map.ts beside MapVertex; it is re-exported here so the
+ * editor can take the rules and the words from one place. This module keeps
+ * the rules, which is the split every other map thing already has.
  *
  * Pure, and no Path2D: the drawing is lib/map/draw.ts's, so these rules can
  * be tested without a canvas.
  */
 
-/** A corner of a zone, in the map frame (metres), like a vertex's position. */
-export interface ZonePoint {
-  x: number;
-  y: number;
-}
+import type { ZonePoint, ZonePolygon } from "@/lib/types/map";
 
-/** A closed polygon the robot must stay out of. Points in drawing order. */
-export interface ZonePolygon {
-  id: string;
-  points: ZonePoint[];
-}
+export type { ZonePoint, ZonePolygon };
 
 /**
  * A corner the pointer can pick up and move: one of the shape in flight
@@ -297,15 +287,86 @@ export function zoneAt(zones: readonly ZonePolygon[], at: ZonePoint): ZonePolygo
 }
 
 /**
- * A fresh id for a zone this editor drew.
+ * A fresh id for a zone this editor drew, distinct from every zone in `taken`.
  *
- * A counter rather than crypto.randomUUID(): the console is served over plain
- * http on the robot's LAN, where that function does not exist (the same reason
- * lib/task/step.ts makes its own ids). The ids only have to be distinct within
- * one editor session — nothing stores them yet.
+ * Not crypto.randomUUID(): the console is served over plain http on the
+ * robot's LAN, where that function does not exist (the same reason
+ * lib/task/step.ts makes its own ids). And not a bare session counter, which
+ * it used to be while nothing stored a zone: the zones loaded from the robot
+ * carry ids an earlier session handed out, the backend keeps an id as it was
+ * sent, and refuses a list in which one appears twice — so the next id has to
+ * step over every id already on the map, not only over this session's.
  */
-let nextZoneId = 0;
-export function newZoneId(): string {
-  nextZoneId += 1;
-  return `zone-${nextZoneId}`;
+export function newZoneId(taken: readonly ZonePolygon[]): string {
+  const used = new Set(taken.map((zone) => zone.id));
+  let n = taken.length + 1;
+  while (used.has(`zone-${n}`)) n += 1;
+  return `zone-${n}`;
+}
+
+/**
+ * Whether two zone lists would save as the same thing: same zones, same
+ * order, same corners. What the editor's zone half of `dirty` is measured
+ * with, against the list last loaded or saved — by value rather than by
+ * identity, so a corner dragged away and back, or a click that selected a
+ * zone without moving it, does not light Save for a write that changes
+ * nothing on the robot.
+ */
+export function sameZones(a: readonly ZonePolygon[], b: readonly ZonePolygon[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  return a.every((zone, i) => {
+    const other = b[i];
+    return (
+      zone.id === other.id &&
+      zone.points.length === other.points.length &&
+      zone.points.every((point, j) => point.x === other.points[j].x && point.y === other.points[j].y)
+    );
+  });
+}
+
+/** A zone taken out of a list, with where it stood, so it can be put back. */
+export interface RemovedZone {
+  zone: ZonePolygon;
+  index: number;
+}
+
+/**
+ * `list` without the zones whose ids are in `ids`, and those zones with
+ * their positions. Remove applies this twice: to the zones on screen, and to
+ * the list last saved, which is what goes to the robot — so a remove deletes
+ * those zones there and nothing else, and zones drawn or reshaped since the
+ * last Save stay unsaved rather than riding along.
+ */
+export function withoutZones(
+  list: readonly ZonePolygon[],
+  ids: readonly string[],
+): { kept: ZonePolygon[]; removed: RemovedZone[] } {
+  const kept: ZonePolygon[] = [];
+  const removed: RemovedZone[] = [];
+  list.forEach((zone, index) => {
+    if (ids.includes(zone.id)) removed.push({ zone, index });
+    else kept.push(zone);
+  });
+  return { kept, removed };
+}
+
+/**
+ * Put zones a refused remove took off the screen back where they stood.
+ *
+ * Back at their old positions, not appended, because the Save dot compares
+ * lists in order (sameZones): a refused remove on a clean editor has to
+ * leave it clean. A zone already back in the list — the operator drew over
+ * the gap under the same id, which cannot happen today — is not doubled.
+ */
+export function restoreZones(
+  list: readonly ZonePolygon[],
+  removed: readonly RemovedZone[],
+): ZonePolygon[] {
+  const next = [...list];
+  for (const { zone, index } of [...removed].sort((a, b) => a.index - b.index)) {
+    if (next.some((entry) => entry.id === zone.id)) continue;
+    next.splice(Math.min(index, next.length), 0, zone);
+  }
+  return next;
 }
