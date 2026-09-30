@@ -1642,6 +1642,70 @@ test.describe("the floor plan editor's draw bar", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
+  test("selects several zones with Shift and removes them together", async ({ page }) => {
+    // Three overlapping zones, each with a spot only it covers. Shift-click
+    // adds to the selection and toggles out again; a Shift-click on bare map
+    // keeps the selection instead of starting a shape; Remove takes every
+    // selected zone at once. The count is read off data-zones, and which
+    // zones went is read back through which spots still select.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    const canvas = page.locator("canvas");
+    await canvas.waitFor();
+    const zones = page.locator("[data-zones]");
+    const done = page.getByRole("button", { name: "Done" });
+    const remove = page.getByRole("button", { name: "Remove" });
+    const shiftClick = async (at: { x: number; y: number }) => {
+      await page.keyboard.down("Shift");
+      await page.mouse.click(at.x, at.y);
+      await page.keyboard.up("Shift");
+    };
+
+    await choose(page, "Forbidden zone");
+    await page.getByRole("button", { name: "Shape" }).click();
+    const box = (await canvas.boundingBox())!;
+    const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const triangle = (dx: number) => [
+      { x: mid.x - 60 + dx, y: mid.y - 40 },
+      { x: mid.x + 60 + dx, y: mid.y - 40 },
+      { x: mid.x + dx, y: mid.y + 50 },
+    ];
+    for (const dx of [0, 30, -30]) {
+      const corners = triangle(dx);
+      for (const corner of [...corners, corners[0]]) await page.mouse.click(corner.x, corner.y);
+    }
+    await expect(zones).toHaveAttribute("data-zones", "3");
+    // A spot only the zone shifted that way covers.
+    const only = (dx: number) => ({ x: mid.x + dx * 2.5, y: mid.y - 30 });
+    const bare = { x: mid.x, y: mid.y + 120 };
+
+    // Third and second selected; the second toggled out again; Remove takes
+    // only the third.
+    await page.mouse.click(only(-30).x, only(-30).y);
+    await expect(remove).toBeEnabled();
+    await shiftClick(only(30));
+    await shiftClick(bare);
+    await expect(remove).toBeEnabled();
+    await expect(done).toBeDisabled();
+    await shiftClick(only(30));
+    await remove.click();
+    await expect(zones).toHaveAttribute("data-zones", "2");
+    await page.mouse.click(only(-30).x, only(-30).y);
+    await expect(remove).toBeDisabled();
+    await page.keyboard.press("Escape");
+
+    // Both remaining, together, from the keyboard.
+    await page.mouse.click(only(30).x, only(30).y);
+    await shiftClick({ x: mid.x - 50, y: mid.y - 35 });
+    await expect(remove).toBeEnabled();
+    await page.keyboard.press("Delete");
+    await expect(zones).toHaveAttribute("data-zones", "0");
+    await expect(remove).toBeDisabled();
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
   test("moves a corner of the shape in flight by dragging it, without panning", async ({ page }) => {
     // The canvas exposes no corner positions, so the move is proved through
     // the one rule that depends on where a corner is: the first corner is
