@@ -204,6 +204,8 @@ export interface BackendOverrides {
   gridImage?: Buffer;
   /** GET /robot/restart's record before any press; `idle` by default. */
   restart?: Record<string, unknown>;
+  /** Forbidden zones by map name, as GET .../keepout lists them; none by default. */
+  keepout?: Record<string, Record<string, unknown>[]>;
 }
 
 /**
@@ -252,6 +254,9 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   const taskHistoryPageSize = over.taskHistoryPageSize ?? 20;
   const taskStates = over.taskStates ?? {};
   const gridImage = over.gridImage ?? PNG_1PX;
+  // Copied, because the PUT below replaces a map's list the way the robot's
+  // would, and a test's fixture object must not change under it.
+  const keepout: Record<string, Record<string, unknown>[]> = { ...over.keepout };
   // The backend's record of the latest restart; the POST below moves it on.
   let restart: Record<string, unknown> = over.restart ?? {
     status: "idle",
@@ -326,6 +331,12 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         vertices.filter((entry) => entry.map_name === name),
       );
     }
+    const keepoutMatch = /^\/api\/v1\/maps\/([^/]+)\/keepout$/.exec(path);
+    if (keepoutMatch && method === "GET") {
+      const name = decodeURIComponent(keepoutMatch[1]);
+      const map = maps.find((entry) => entry.name === name);
+      return json(route, { name, zones: keepout[name] ?? [], active: map?.active === true });
+    }
     if (path === "/api/v1/recordings" && method === "GET") {
       return json(route, { recordings });
     }
@@ -355,6 +366,26 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       // Kept, so a later GET lists it the way the robot's would.
       vertices.push(...stored);
       return json(route, stored);
+    }
+    if (keepoutMatch && method === "PUT") {
+      // The whole list replaces the old one, and the running planner reloads
+      // it only when this is the map it is on — the two answers the save
+      // note tells apart.
+      const name = decodeURIComponent(keepoutMatch[1]);
+      const map = maps.find((entry) => entry.name === name);
+      const active = map?.active === true;
+      const zones = (parseBody(request.postData()) as { zones: Record<string, unknown>[] }).zones;
+      keepout[name] = zones;
+      const count = `${zones.length} forbidden zone${zones.length === 1 ? "" : "s"}`;
+      return json(route, {
+        name,
+        zones,
+        active,
+        reloaded: active,
+        message: active
+          ? `Saved ${count} for '${name}' and reloaded the keepout filter.`
+          : `Saved ${count} for '${name}'.`,
+      });
     }
     if (path === "/api/v1/recordings/stop") {
       return json(route, {

@@ -308,6 +308,51 @@ test.describe("the dashboard's map scan layer", () => {
   });
 });
 
+test.describe("the dashboard's forbidden zone layer", () => {
+  const toggle = (page: Page) => page.getByRole("button", { name: /^Forbidden zones/ });
+  const zone = {
+    id: "zone-1",
+    points: [
+      { x: -1, y: -1 },
+      { x: 1, y: -1 },
+      { x: 0, y: 1 },
+    ],
+  };
+
+  test("reads the running map's zones and draws them, on by default", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, { keepout: { [MAP_NAME]: [zone] } });
+    const reads: string[] = [];
+    page.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (pathname.endsWith("/keepout")) reads.push(pathname);
+    });
+    await page.goto("/");
+    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+
+    // The zones of the map the robot is on, not of whichever map was edited.
+    await expect.poll(() => reads).toEqual([`/api/v1/maps/${MAP_NAME}/keepout`]);
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "false");
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("is not offered for a map with no zones", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page);
+    await page.goto("/");
+    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+
+    // The positive control: the layer strip is up, with the stops' toggle.
+    await expect(page.getByRole("button", { name: /^Waypoints/ })).toBeVisible();
+    await expect(toggle(page)).toHaveCount(0);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+});
+
 test.describe("adding a waypoint from the dashboard", () => {
   const verticesPath = `/api/v1/maps/${MAP_NAME}/vertices`;
 
@@ -1926,6 +1971,230 @@ test.describe("the floor plan editor's draw bar", () => {
     expect([...saved!].filter((byte) => byte === 205)).toEqual([]);
     await expect(save).toBeDisabled();
     expect(errors, "the page logged errors").toEqual([]);
+  });
+});
+
+test.describe("the floor plan editor's forbidden zones on the robot", () => {
+  const choose = async (page: Page, name: string) => {
+    await page.getByRole("combobox", { name: "Draw" }).click();
+    await page.getByRole("option", { name, exact: true }).click();
+  };
+  // Near the map's lower-left corner, well away from the middle of the
+  // canvas where the tests draw, so a new shape cannot anchor to it.
+  const saved = {
+    id: "zone-1",
+    points: [
+      { x: -11.5, y: -7.0 },
+      { x: -10.5, y: -7.0 },
+      { x: -11.0, y: -6.0 },
+    ],
+  };
+
+  test("opens with the map's saved zones, and Save sends a new one beside them", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, {
+      gridImage: floorPlanPng(400, 300, 254),
+      keepout: { [MAP_NAME]: [saved] },
+    });
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    const canvas = page.locator("canvas");
+    await canvas.waitFor();
+    const zones = page.locator("[data-zones]");
+    const save = page.getByRole("button", { name: "Save" });
+
+    // What the robot holds is on screen, and is not itself a change.
+    await expect(zones).toHaveAttribute("data-zones", "1");
+    await expect(save).toBeDisabled();
+
+    await choose(page, "Forbidden zone");
+    await page.getByRole("button", { name: "Shape" }).click();
+    const box = (await canvas.boundingBox())!;
+    const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const corners = [
+      { x: mid.x - 60, y: mid.y - 40 },
+      { x: mid.x + 60, y: mid.y - 40 },
+      { x: mid.x, y: mid.y + 50 },
+    ];
+    for (const corner of corners) await page.mouse.click(corner.x, corner.y);
+    await page.mouse.click(corners[0].x, corners[0].y);
+    await expect(zones).toHaveAttribute("data-zones", "2");
+    await expect(save).toBeEnabled();
+
+    await save.click();
+    await expect(page.getByRole("status").filter({ hasText: "Forbidden zones saved · in force now" })).toBeVisible();
+    await expect(save).toBeDisabled();
+
+    // The whole list, the saved zone first and untouched, the new one under
+    // an id of its own — the robot refuses a list that repeats one.
+    const puts = writes.filter((w) => w.method === "PUT");
+    expect(puts.map((w) => w.path)).toEqual([`/api/v1/maps/${MAP_NAME}/keepout`]);
+    const body = puts[0].body as { zones: { id: string; points: { x: number; y: number }[] }[] };
+    expect(body.zones).toHaveLength(2);
+    expect(body.zones[0]).toEqual(saved);
+    expect(body.zones[1].id).not.toBe(saved.id);
+    expect(body.zones[1].points).toHaveLength(3);
+    // Nothing painted, so nothing of the floor plan went with it.
+    expect(writes.filter((w) => w.path.endsWith("/grid"))).toEqual([]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  /**
+   * The saved zone's middle on screen. The editor opens fitted, so this is
+   * the canvas's own map-to-screen rule: the 400 x 300 floor plan scaled to
+   * the shorter side and centred.
+   */
+  const savedZoneMiddle = async (page: Page) => {
+    const box = (await page.locator("canvas").boundingBox())!;
+    const scale = Math.min(box.width / 400, box.height / 300);
+    const left = box.x + (box.width - 400 * scale) / 2;
+    const top = box.y + (box.height - 300 * scale) / 2;
+    const px = (-11.0 - -12.3) / 0.05;
+    const py = 300 - (-6.6 - -7.8) / 0.05;
+    return { x: left + px * scale, y: top + py * scale };
+  };
+
+  const drawTriangle = async (page: Page) => {
+    const box = (await page.locator("canvas").boundingBox())!;
+    const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const corners = [
+      { x: mid.x - 60, y: mid.y - 40 },
+      { x: mid.x + 60, y: mid.y - 40 },
+      { x: mid.x, y: mid.y + 50 },
+    ];
+    for (const corner of corners) await page.mouse.click(corner.x, corner.y);
+    await page.mouse.click(corners[0].x, corners[0].y);
+  };
+
+  test("Remove takes a zone off the robot at once, and leaves unsaved ones for Save", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, {
+      gridImage: floorPlanPng(400, 300, 254),
+      keepout: { [MAP_NAME]: [saved] },
+      // Not the map the robot is on: written, but nothing to reload.
+      maps: [mapSummary({ active: false })],
+    });
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    await page.locator("canvas").waitFor();
+    const zones = page.locator("[data-zones]");
+    const save = page.getByRole("button", { name: "Save" });
+    const keepoutPuts = () => writes.filter((w) => w.path.endsWith("/keepout")).map((w) => w.body);
+    await expect(zones).toHaveAttribute("data-zones", "1");
+
+    await choose(page, "Forbidden zone");
+    await page.getByRole("button", { name: "Shape" }).click();
+    // A new zone, not saved yet: Save lights, nothing is sent.
+    await drawTriangle(page);
+    await expect(zones).toHaveAttribute("data-zones", "2");
+    await expect(save).toBeEnabled();
+    expect(keepoutPuts()).toEqual([]);
+
+    // Remove the saved one. It goes without a Save, and what went is the
+    // saved list minus that zone — the unsaved one did not ride along.
+    const middle = await savedZoneMiddle(page);
+    await page.mouse.click(middle.x, middle.y);
+    await page.getByRole("button", { name: "Remove" }).click();
+    await expect(zones).toHaveAttribute("data-zones", "1");
+    await expect(page.getByRole("status").filter({ hasText: /^Removed/ })).toBeVisible();
+    await expect.poll(keepoutPuts).toEqual([{ zones: [] }]);
+    await expect(save).toBeEnabled();
+
+    // Save then writes the one still waiting.
+    await save.click();
+    await expect.poll(() => keepoutPuts().length).toBe(2);
+    const last = keepoutPuts()[1] as { zones: { id: string }[] };
+    expect(last.zones).toHaveLength(1);
+    expect(last.zones[0].id).not.toBe(saved.id);
+    await expect(save).toBeDisabled();
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("removing a zone the robot never had sends nothing", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    await page.locator("canvas").waitFor();
+    const zones = page.locator("[data-zones]");
+
+    await choose(page, "Forbidden zone");
+    await page.getByRole("button", { name: "Shape" }).click();
+    await drawTriangle(page);
+    await expect(zones).toHaveAttribute("data-zones", "1");
+    // Inside the triangle, below its top edge.
+    const box = (await page.locator("canvas").boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2 - 20);
+    await page.getByRole("button", { name: "Remove" }).click();
+    await expect(zones).toHaveAttribute("data-zones", "0");
+    // Back where it opened: nothing to save, nothing was sent.
+    await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(writes.filter((w) => w.path.endsWith("/keepout"))).toEqual([]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  // No console-error guard here: the browser logs the 409 itself, which is
+  // exactly the response under test.
+  test("puts a zone back when the robot refuses to remove it", async ({ page }) => {
+    await mockBackend(page, {
+      gridImage: floorPlanPng(400, 300, 254),
+      keepout: { [MAP_NAME]: [saved] },
+    });
+    const refusal = "A floor plan rebuild is running; save the forbidden zones once it has finished.";
+    await page.route(/\/api\/v1\/maps\/[^/]+\/keepout$/, (route) =>
+      route.request().method() === "PUT"
+        ? route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({ detail: refusal, code: "conversion_running" }),
+          })
+        : route.fallback(),
+    );
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    await page.locator("canvas").waitFor();
+    const zones = page.locator("[data-zones]");
+    await expect(zones).toHaveAttribute("data-zones", "1");
+
+    await choose(page, "Forbidden zone");
+    await page.getByRole("button", { name: "Shape" }).click();
+    const middle = await savedZoneMiddle(page);
+    await page.mouse.click(middle.x, middle.y);
+    await page.getByRole("button", { name: "Remove" }).click();
+
+    // The planner still keeps to it, so the map shows it again, clean.
+    const alert = page.getByRole("alert").filter({ hasText: "Forbidden zone not removed" });
+    await expect(alert).toContainText(refusal);
+    await expect(zones).toHaveAttribute("data-zones", "1");
+    await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  // No console-error guard here: the browser logs the 502 itself, which is
+  // exactly the response under test.
+  test("locks the zones, and leaves the floor plan editable, when they cannot be read", async ({ page }) => {
+    const writes = await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+    await page.route(/\/api\/v1\/maps\/[^/]+\/keepout$/, (route) =>
+      route.fulfill({
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "The map's forbidden zones could not be read." }),
+      }),
+    );
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    await page.locator("canvas").waitFor();
+
+    const alert = page.getByRole("alert").filter({ hasText: "Forbidden zones could not be loaded" });
+    // The backend's own sentence under the headline, verbatim.
+    await expect(alert).toContainText("The map's forbidden zones could not be read.");
+    await page.getByRole("combobox", { name: "Draw" }).click();
+    await expect(page.getByRole("option", { name: "Forbidden zone", exact: true })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    // The positive control: the rest of the list still works.
+    await page.getByRole("option", { name: "Wall", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Brush" })).toBeVisible();
+    // And no save can go out with an empty list in place of the unread one.
+    expect(writes.filter((w) => w.path.endsWith("/keepout"))).toEqual([]);
   });
 });
 
