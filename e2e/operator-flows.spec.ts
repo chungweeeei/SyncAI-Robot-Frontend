@@ -1421,7 +1421,7 @@ test.describe("the manual drive panel", () => {
     await expect(speed).toHaveAttribute("aria-valuetext", "100 percent of full speed");
     await expect(page.getByText("100%", { exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: "Arm manual drive input" }).click();
+    await page.getByRole("switch", { name: "Arm manual drive input" }).click();
     await expect(page.getByText("Streaming to robot · 10 Hz")).toBeVisible();
 
     // Forward and turn together, at full.
