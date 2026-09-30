@@ -7,7 +7,7 @@
 // machine; this owns the words it is written in.
 
 import { FREE, OCCUPIED, UNKNOWN, type Cell, type GridValue } from "@/lib/map/grid";
-import type { ZonePoint, ZonePolygon } from "@/lib/map/zone";
+import type { ZoneAnchor, ZoneCornerRef, ZonePoint, ZonePolygon } from "@/lib/map/zone";
 import type { MapVertex } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
@@ -187,11 +187,14 @@ export type Gesture =
       theta: number;
     }
   /**
-   * A press with Shape armed. It moves the map like `pan` while the pointer
-   * travels, and a release that never left the deadzone is a click, which is
-   * what adds a corner, closes the shape or selects a zone — the same
-   * click/drag split `pan.pick` makes, as a kind of its own because it never
-   * picks a waypoint and `pan` must not learn a second nullable payload.
+   * A press with Shape armed. A release that never left the deadzone is a
+   * click, which is what adds a corner, closes the shape or selects a zone —
+   * the same click/drag split `pan.pick` makes, as a kind of its own because
+   * it never picks a waypoint and `pan` must not learn a second nullable
+   * payload. What the drag does depends on where the press landed: on bare
+   * map it moves the map like `pan`; on a corner of the shape in flight, or
+   * a handle of the selected finished zone, it moves that corner, so a
+   * shape can be adjusted while it is drawn and after.
    */
   | {
       kind: "point";
@@ -206,7 +209,18 @@ export type Gesture =
       click:
         | { kind: "add"; point: ZonePoint }
         | { kind: "close" }
-        | { kind: "select"; id: string };
+        | { kind: "select"; id: string }
+        /** Attach the shape to this finished zone's corner, or end it there. */
+        | { kind: "anchor"; corner: ZoneCornerRef }
+        | { kind: "merge"; corner: ZoneCornerRef }
+        | { kind: "none" };
+      /**
+       * The corner the press landed on, and where the drag has carried it so
+       * far. Held here rather than pushed to the shell on every move, for
+       * `vertex.theta`'s reason: the draw path reads it at pointer rate and
+       * the shell hears about it once, on release.
+       */
+      corner: (ZoneCornerRef & { at: ZonePoint }) | null;
     };
 
 /**
@@ -230,6 +244,12 @@ export interface DrawState {
   zones: readonly ZonePolygon[];
   /** The corners of the shape in flight, oldest first. */
   zoneDraft: readonly ZonePoint[];
+  /**
+   * The finished zone's corner the shape in flight is attached to, when it
+   * is: one of its corners is then that zone's, and another of that zone's
+   * corners is where it ends (see mergeIntoZone in lib/map/zone.ts).
+   */
+  zoneDraftAnchor: ZoneAnchor | null;
   /** The finished zone the operator pressed, the one Remove would take. */
   selectedZoneId: string | null;
 }

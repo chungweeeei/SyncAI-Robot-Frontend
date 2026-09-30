@@ -45,7 +45,15 @@ import {
 import { blitGrid, blitGridRect } from "@/lib/map/render";
 import type { GridPatch } from "@/lib/map/patch";
 import type { GridSession } from "@/lib/map/session";
-import { classifyZonePress, zoneAt, type ZonePoint, type ZonePolygon } from "@/lib/map/zone";
+import {
+  classifyZonePress,
+  cornerAt,
+  zoneAt,
+  type ZoneAnchor,
+  type ZoneCornerRef,
+  type ZonePoint,
+  type ZonePolygon,
+} from "@/lib/map/zone";
 import {
   CELL_GRID_MIN_SCALE,
   cellAt,
@@ -170,10 +178,29 @@ export interface GridCanvasProps {
    * corner still follows the pointer through hoverRef, with no React involved.
    */
   zoneDraft: readonly ZonePoint[];
+  /** The finished zone's corner the shape in flight is attached to, if any. */
+  zoneDraftAnchor: ZoneAnchor | null;
   /** A click with Shape armed, on bare map: one more corner. */
   onZonePoint: (point: ZonePoint) => void;
+  /**
+   * A click on a finished zone's corner while the shape is not yet attached
+   * to one: attach it there — as its first corner, or as its next.
+   */
+  onZoneAnchor: (corner: ZoneCornerRef) => void;
+  /**
+   * A click on another corner of the anchored zone: the shape's own corners
+   * replace that zone's edge between the two (mergeIntoZone).
+   */
+  onZoneMerge: (corner: ZoneCornerRef) => void;
   /** A click on the first corner once there are three: close the shape. */
   onZoneClose: () => void;
+  /**
+   * A drag from a corner — of the shape in flight, or a handle of the
+   * selected finished zone — on release: that corner now sits at `point`.
+   * Once per gesture, like onVertexGesture — the corner follows the pointer
+   * through the gesture ref, with no React involved.
+   */
+  onZoneCornerMove: (corner: ZoneCornerRef, point: ZonePoint) => void;
   /** Highlighted, and what Remove takes. Drawn heavier than the rest. */
   selectedZoneId: string | null;
   /**
@@ -230,6 +257,13 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     cy: number;
   } | null>(null);
   const hoverRef = React.useRef<CellProbe | null>(null);
+  /**
+   * The corner under the pointer, with Shape armed and nothing in flight: a
+   * draft corner, or a handle of the selected zone. A ref beside hoverRef
+   * and for its reason: it changes at pointer rate and only the draw path
+   * and the cursor read it.
+   */
+  const hoverCornerRef = React.useRef<ZoneCornerRef | null>(null);
   const rafRef = React.useRef(0);
   const drawRef = React.useRef<(() => void) | null>(null);
   const publishedHoverRef = React.useRef<string>("");
@@ -325,8 +359,25 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     // Above the grid and the stroke preview, so a zone's wash tints the cells
     // it covers; below the robot and the markers, because a stop or a robot
     // standing inside a zone is exactly what the operator is looking for.
-    drawZones(ctx, view, session.meta, current.zones, current.selectedZoneId, palette);
-    drawZoneDraft(ctx, view, session.meta, gestureRef.current, hoverRef.current, current, palette);
+    drawZones(
+      ctx,
+      view,
+      session.meta,
+      gestureRef.current,
+      hoverCornerRef.current,
+      current,
+      palette,
+    );
+    drawZoneDraft(
+      ctx,
+      view,
+      session.meta,
+      gestureRef.current,
+      hoverRef.current,
+      hoverCornerRef.current,
+      current,
+      palette,
+    );
     // Under the vertex layer: the markers are what this screen edits, and a stop
     // placed where the robot is standing must not disappear beneath it.
     if (current.robotPose) {
@@ -379,6 +430,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     // when it lands.
     props.zones,
     props.zoneDraft,
+    props.zoneDraftAnchor,
     props.selectedZoneId,
     // Once a second at most, and only when the robot has actually moved — the
     // hook memoises the pose on its values, so a parked robot costs no frames.
@@ -685,7 +737,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     }
 
     if (intent === "point") {
-      const { zoneDraft, zones } = propsRef.current;
+      const { zoneDraft, zoneDraftAnchor, zones } = propsRef.current;
       // Only a press on the grid adds a corner or picks a zone; a press in
       // the letterbox margin means nothing, as it does for a stroke and a
       // waypoint. Cell centre, for the aim branch's reason: the corner is a
@@ -695,22 +747,37 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       const { wx, wy } = gridToWorld(cell.col + 0.5, cell.row + 0.5, session.meta);
       const point = { x: wx, y: wy };
       const under = zoneDraft.length === 0 ? zoneAt(zones, point) : null;
-      const firstAt = zoneDraft.length
-        ? vertexScreen(view, session.meta, zoneDraft[0].x, zoneDraft[0].y)
-        : null;
+      const corner = cornerUnder(view, cx, cy, touch);
+      const anchored = zoneDraftAnchor !== null;
       const verdict = classifyZonePress({
         count: zoneDraft.length,
-        firstAt,
-        press: { cx, cy },
-        radius: touch ? VERTEX_HIT_RADIUS_TOUCH : VERTEX_HIT_RADIUS,
+        anchored,
+        corner: corner && corner.zoneId === null ? corner.index : null,
         onZone: under !== null,
+        onHandle: corner !== null && corner.zoneId !== null,
       });
-      if (verdict === "ignore") return;
 
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
       // Nothing is done yet: the release decides whether this was a click
-      // or a drag (a pan), the way `pan.pick` is resolved.
+      // or a drag, the way `pan.pick` is resolved. A drag pans the map, or
+      // moves the corner the press landed on. The corner anchors at its
+      // *stored* position until the pointer leaves the deadzone, for the aim
+      // branch's reason: a click within the slop must not nudge it. Two
+      // corners never drag: the shape's copy of the zone's corner, which is
+      // the zone's own and would leave the shape behind, and a finished
+      // zone's while a shape is in flight, where a click attaches or ends
+      // the shape and a drag would be a different verb on the same dot.
+      const draggable =
+        corner !== null &&
+        !(corner.zoneId === null && corner.index === zoneDraftAnchor?.position) &&
+        !(zoneDraft.length > 0 && corner.zoneId !== null);
+      let click: Extract<Gesture, { kind: "point" }>["click"] = { kind: "none" };
+      if (verdict === "close") click = { kind: "close" };
+      else if (verdict === "select" && under) click = { kind: "select", id: under.id };
+      else if (verdict === "add") click = { kind: "add", point };
+      else if (verdict === "anchor" && corner) click = { kind: "anchor", corner };
+      else if (verdict === "merge" && corner) click = { kind: "merge", corner };
       gestureRef.current = {
         kind: "point",
         pointerId: event.pointerId,
@@ -718,12 +785,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
         oy: cy,
         cx,
         cy,
-        click:
-          verdict === "close"
-            ? { kind: "close" }
-            : verdict === "select" && under
-              ? { kind: "select", id: under.id }
-              : { kind: "add", point },
+        click,
+        corner: draggable ? { ...corner, at: cornerPoint(corner) } : null,
       };
       return;
     }
@@ -776,10 +839,80 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
   };
 
   /** Held on the container itself; see the note in handlePointerDown. */
-  const setPanCursor = (grabbing: boolean) => {
+  const setPanCursor = (grabbing: boolean) => setCursor(grabbing ? "grabbing" : null);
+
+  /**
+   * The same inline style, for the other cursor the className cannot carry:
+   * `move` over a draft corner and while one is dragged, which comes and
+   * goes at pointer rate and would otherwise re-render the shell on every
+   * mouse move.
+   */
+  const setCursor = (cursor: "grabbing" | "move" | "pointer" | null) => {
     const container = containerRef.current;
-    if (container) container.style.cursor = grabbing ? "grabbing" : "";
+    if (container) container.style.cursor = cursor ?? "";
   };
+
+  /**
+   * The corner under a screen point, hit-tested the way a marker is
+   * (vertexAt): in screen pixels, with a finger's wider slop.
+   *
+   * Which corners are offered follows what a press on one would do (see
+   * classifyZonePress). With a shape in flight its own corners come first;
+   * then, for an anchored shape, the other corners of its zone, which are
+   * where it can end. Otherwise — nothing in flight, or a shape not yet
+   * attached — every finished zone's corners are offered, the selected
+   * zone's first so its handle wins where two zones share a corner.
+   */
+  const cornerUnder = (
+    view: View,
+    cx: number,
+    cy: number,
+    touch: boolean,
+  ): ZoneCornerRef | null => {
+    const { zoneDraft, zoneDraftAnchor, zones, selectedZoneId } = propsRef.current;
+    const radius = touch ? VERTEX_HIT_RADIUS_TOUCH : VERTEX_HIT_RADIUS;
+    const hit = (points: readonly ZonePoint[]) =>
+      cornerAt(
+        points.map((corner) => vertexScreen(view, session.meta, corner.x, corner.y)),
+        { cx, cy },
+        radius,
+      );
+    if (zoneDraft.length) {
+      const index = hit(zoneDraft);
+      if (index !== null) return { zoneId: null, index };
+    }
+    if (zoneDraftAnchor) {
+      const zone = zones.find((entry) => entry.id === zoneDraftAnchor.zoneId);
+      const target = zone ? hit(zone.points) : null;
+      return target === null || target === zoneDraftAnchor.index
+        ? null
+        : { zoneId: zoneDraftAnchor.zoneId, index: target };
+    }
+    const ordered = selectedZoneId
+      ? [
+          ...zones.filter((zone) => zone.id === selectedZoneId),
+          ...zones.filter((zone) => zone.id !== selectedZoneId),
+        ]
+      : zones;
+    for (const zone of ordered) {
+      const index = hit(zone.points);
+      if (index !== null) return { zoneId: zone.id, index };
+    }
+    return null;
+  };
+
+  /** Where a corner is stored, so a press anchors there and not at the slop. */
+  const cornerPoint = (corner: ZoneCornerRef): ZonePoint => {
+    const { zoneDraft, zones } = propsRef.current;
+    const points =
+      corner.zoneId === null
+        ? zoneDraft
+        : (zones.find((zone) => zone.id === corner.zoneId)?.points ?? []);
+    return points[corner.index];
+  };
+
+  const sameCorner = (a: ZoneCornerRef | null, b: ZoneCornerRef | null) =>
+    a === b || (a !== null && b !== null && a.zoneId === b.zoneId && a.index === b.index);
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const view = viewRef.current;
@@ -821,6 +954,38 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     hoverRef.current = probeAt(cellAt(view, session.grid, cx, cy));
 
     if (!gesture) {
+      // With Shape armed, a corner under the pointer swells and the cursor
+      // says it can be moved. Read here rather than in draw() because the
+      // hit-test wants the pointer itself, and draw() only has the cell.
+      const { mode, zoneTool, spacePan, zoneDraft, zoneDraftAnchor } = propsRef.current;
+      const armed = mode === "zone" && zoneTool === "shape" && !spacePan;
+      let corner = armed ? cornerUnder(view, cx, cy, event.pointerType === "touch") : null;
+      // The shape's copy of the zone's corner is the zone's and does nothing.
+      if (corner && corner.zoneId === null && corner.index === zoneDraftAnchor?.position) {
+        corner = null;
+      }
+      if (!sameCorner(corner, hoverCornerRef.current)) {
+        hoverCornerRef.current = corner;
+        // A merge target is clicked, not dragged; every other corner drags.
+        const target = corner !== null && corner.zoneId !== null && zoneDraft.length > 0;
+        setCursor(corner === null ? null : target ? "pointer" : "move");
+      }
+      requestDraw();
+      return;
+    }
+
+    if (gesture.kind === "point" && gesture.corner) {
+      // A drag from a corner carries the corner, not the map. It snaps to
+      // the cell centre under the pointer, as a click does, and clamps to
+      // the grid so a corner cannot be dragged off the floor plan.
+      if (isDrag(gesture.ox, gesture.oy, cx, cy)) {
+        const cell = clampedCell(view, cx, cy);
+        const { wx, wy } = gridToWorld(cell.col + 0.5, cell.row + 0.5, session.meta);
+        gesture.corner.at = { x: wx, y: wy };
+        setCursor("move");
+      }
+      gesture.cx = cx;
+      gesture.cy = cy;
       requestDraw();
       return;
     }
@@ -926,15 +1091,24 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     }
 
     if (gesture.kind === "point") {
-      setPanCursor(false);
-      // A click adds the corner or closes the shape; a drag was a pan and
-      // adds nothing. Nothing in the cell buffer moved either way, so no
+      setCursor(null);
+      hoverCornerRef.current = null;
+      // A click adds the corner, closes the shape or selects a zone; a drag
+      // was a pan and adds nothing, or carried a corner, which the shell now
+      // hears about. Nothing in the cell buffer moved either way, so no
       // patch is committed — the vertex branch's reasoning.
-      if (!isDrag(gesture.ox, gesture.oy, gesture.cx, gesture.cy)) {
+      if (isDrag(gesture.ox, gesture.oy, gesture.cx, gesture.cy)) {
+        if (gesture.corner) {
+          const { zoneId, index, at } = gesture.corner;
+          propsRef.current.onZoneCornerMove({ zoneId, index }, at);
+        }
+      } else {
         const { click } = gesture;
         if (click.kind === "add") propsRef.current.onZonePoint(click.point);
         else if (click.kind === "close") propsRef.current.onZoneClose();
-        else propsRef.current.onZonePick(click.id);
+        else if (click.kind === "select") propsRef.current.onZonePick(click.id);
+        else if (click.kind === "anchor") propsRef.current.onZoneAnchor(click.corner);
+        else if (click.kind === "merge") propsRef.current.onZoneMerge(click.corner);
       }
       requestDraw();
       return;
@@ -1036,6 +1210,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       onPointerLeave={() => {
         if (gestureRef.current) return;
         hoverRef.current = null;
+        hoverCornerRef.current = null;
+        setCursor(null);
         requestDraw();
       }}
     >

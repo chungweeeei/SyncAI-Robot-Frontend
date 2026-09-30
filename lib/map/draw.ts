@@ -13,7 +13,7 @@ import { stampLine } from "@/lib/map/grid";
 import type { CellProbe, DrawState, Gesture } from "@/lib/map/editor";
 import type { GridSession } from "@/lib/map/session";
 import { vertexGlyph } from "@/lib/map/vertex";
-import { canCloseZone, type ZonePoint, type ZonePolygon } from "@/lib/map/zone";
+import { canCloseZone, type ZoneCornerRef, type ZonePoint } from "@/lib/map/zone";
 import { SIGNAL, cssHex } from "@/lib/theme/signal";
 import {
   gridToScreen,
@@ -478,16 +478,34 @@ function zonePath(view: View, meta: MapMetadata, points: readonly ZonePoint[]): 
  * The selected zone is the same shape, heavier: a thicker edge and a denser
  * wash, the way a selected marker gets emphasis rather than a second hue. It
  * is drawn last so its edge is never under a neighbour's.
+ *
+ * Corner handles are drawn where a press on one would do something: on
+ * every zone while Shape is armed and no shape is attached yet (a handle is
+ * where a drag moves the corner, with nothing in flight, and where a click
+ * attaches the shape to the zone), on the zone a shape in flight is
+ * anchored to (its other corners are where that shape can end — filled once
+ * it has a corner of its own, the way a draft's first corner fills once it
+ * can close), and on the selected zone always.
+ * A handle under the pointer, or one being dragged, swells the way a draft
+ * corner does, and a corner mid-drag is drawn where the pointer has carried
+ * it rather than where the shell still has it.
  */
 export function drawZones(
   ctx: CanvasRenderingContext2D,
   view: View,
   meta: MapMetadata,
-  zones: readonly ZonePolygon[],
-  selectedId: string | null,
+  gesture: Gesture | null,
+  hoverCorner: ZoneCornerRef | null,
+  props: DrawState,
   palette: Palette,
 ): void {
+  const { zones, selectedZoneId: selectedId, zoneDraftAnchor: anchor } = props;
   if (zones.length === 0) return;
+  const dragging = gesture?.kind === "point" && gesture.corner?.zoneId ? gesture.corner : null;
+  const held = dragging ?? (hoverCorner?.zoneId ? hoverCorner : null);
+  const armed = props.mode === "zone" && props.zoneTool === "shape" && !props.spacePan;
+  const canMerge = anchor !== null && props.zoneDraft.length >= 2;
+
   ctx.save();
   ctx.lineJoin = "round";
   ctx.setLineDash([]);
@@ -496,7 +514,11 @@ export function drawZones(
     : zones;
   for (const zone of ordered) {
     const selected = zone.id === selectedId;
-    const path = zonePath(view, meta, zone.points);
+    const points =
+      dragging && dragging.zoneId === zone.id
+        ? zone.points.map((point, index) => (index === dragging.index ? dragging.at : point))
+        : zone.points;
+    const path = zonePath(view, meta, points);
     ctx.strokeStyle = MARKER_HALO;
     ctx.lineWidth = selected ? 5 : 3.5;
     ctx.stroke(path);
@@ -507,6 +529,25 @@ export function drawZones(
     ctx.strokeStyle = palette.warn;
     ctx.lineWidth = selected ? 3 : 1.5;
     ctx.stroke(path);
+
+    const anchoredHere = anchor !== null && anchor.zoneId === zone.id;
+    if (!selected && !(armed && anchor === null) && !anchoredHere) continue;
+    points.forEach((point, index) => {
+      const { cx, cy } = vertexScreen(view, meta, point.x, point.y);
+      const swell = held && held.zoneId === zone.id && held.index === index ? 2.5 : 0;
+      const target = anchoredHere && canMerge && index !== anchor.index;
+      ctx.beginPath();
+      ctx.arc(cx, cy, VERTEX_DOT_RADIUS + (target ? 1.5 : 0) + swell, 0, Math.PI * 2);
+      ctx.fillStyle = MARKER_HALO;
+      ctx.fill();
+      ctx.strokeStyle = palette.warn;
+      ctx.lineWidth = target ? 2.5 : 1.5;
+      ctx.stroke();
+      if (target) {
+        ctx.fillStyle = palette.warn;
+        ctx.fill();
+      }
+    });
   }
   ctx.restore();
 }
@@ -523,6 +564,12 @@ export function drawZones(
  * the shape (see classifyZonePress). That is the only cue the operator gets
  * that the shape can close now, and it lights at the moment it becomes true
  * rather than being explained anywhere.
+ *
+ * A corner under the pointer, or one being dragged, is drawn larger: the dots
+ * stay on screen so a corner can be picked back up and moved, and the swell
+ * is what says the pointer has found one. `hoverCorner` is the canvas's
+ * hit-test of the pointer itself, not of `hover`'s cell, because at high zoom
+ * a cell is wider than the dot's slop.
  */
 export function drawZoneDraft(
   ctx: CanvasRenderingContext2D,
@@ -530,11 +577,22 @@ export function drawZoneDraft(
   meta: MapMetadata,
   gesture: Gesture | null,
   hover: CellProbe | null,
+  hoverCorner: ZoneCornerRef | null,
   props: DrawState,
   palette: Palette,
 ): void {
-  const corners = props.zoneDraft;
-  if (corners.length === 0) return;
+  if (props.zoneDraft.length === 0) return;
+  // A corner mid-drag is drawn where the pointer has carried it, not where
+  // the shell still has it: the shell hears about the move on release. Only
+  // the draft's own (zoneId null); a finished zone's handle is drawZones's.
+  const dragging =
+    gesture?.kind === "point" && gesture.corner && gesture.corner.zoneId === null
+      ? gesture.corner
+      : null;
+  const hovered = hoverCorner && hoverCorner.zoneId === null ? hoverCorner.index : null;
+  const corners = dragging
+    ? props.zoneDraft.map((point, index) => (index === dragging.index ? dragging.at : point))
+    : props.zoneDraft;
   const at = corners.map((point) => vertexScreen(view, meta, point.x, point.y));
 
   ctx.save();
@@ -542,11 +600,22 @@ export function drawZoneDraft(
   ctx.lineCap = "round";
 
   // The rubber edge follows the hovered cell, on the same terms as the brush
-  // ring: never mid-pan, because the map is moving under a pointer that is
-  // not choosing a corner.
+  // ring: never mid-pan or mid-drag, because the pointer is moving the map or
+  // a corner rather than choosing the next one. Nor over a corner of its
+  // own, where a click adds nothing, so an edge to it would promise one.
+  // Over a finished zone's handle it snaps to the handle instead, which is
+  // where the click would attach or end the shape.
   const armed = props.mode === "zone" && props.zoneTool === "shape" && !props.spacePan;
-  const panning = gesture?.kind === "pan" || gesture?.kind === "point";
-  const head = armed && hover && !panning ? gridToScreen(view, hover.col + 0.5, hover.row + 0.5) : null;
+  const busy = gesture?.kind === "pan" || gesture?.kind === "point";
+  const handle =
+    hoverCorner && hoverCorner.zoneId !== null
+      ? props.zones.find((zone) => zone.id === hoverCorner.zoneId)?.points[hoverCorner.index]
+      : null;
+  let head: { cx: number; cy: number } | null = null;
+  if (armed && !busy) {
+    if (handle) head = vertexScreen(view, meta, handle.x, handle.y);
+    else if (hover && hovered === null) head = gridToScreen(view, hover.col + 0.5, hover.row + 0.5);
+  }
 
   const edges = new Path2D();
   at.forEach(({ cx, cy }, index) => {
@@ -564,11 +633,14 @@ export function drawZoneDraft(
   ctx.stroke(edges);
   ctx.setLineDash([]);
 
-  const closable = canCloseZone(corners);
+  // An anchored shape's first corner is the zone's, and never what closes it.
+  const closable = props.zoneDraftAnchor === null && canCloseZone(corners);
+  const held = dragging ? dragging.index : armed && !busy ? hovered : null;
   at.forEach(({ cx, cy }, index) => {
     const emphasis = index === 0 && closable;
+    const swell = index === held ? 2.5 : 0;
     ctx.beginPath();
-    ctx.arc(cx, cy, emphasis ? VERTEX_DOT_RADIUS + 1.5 : VERTEX_DOT_RADIUS, 0, Math.PI * 2);
+    ctx.arc(cx, cy, (emphasis ? VERTEX_DOT_RADIUS + 1.5 : VERTEX_DOT_RADIUS) + swell, 0, Math.PI * 2);
     ctx.fillStyle = MARKER_HALO;
     ctx.fill();
     ctx.strokeStyle = palette.cmd;

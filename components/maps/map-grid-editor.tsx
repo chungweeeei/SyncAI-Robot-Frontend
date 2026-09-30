@@ -42,7 +42,15 @@ import {
 } from "@/lib/map/patch";
 import type { GridSession } from "@/lib/map/session";
 import { DEFAULT_VERTEX_TYPE } from "@/lib/map/vertex";
-import { canCloseZone, newZoneId, type ZonePoint, type ZonePolygon } from "@/lib/map/zone";
+import {
+  canCloseZone,
+  mergeIntoZone,
+  newZoneId,
+  type ZoneAnchor,
+  type ZoneCornerRef,
+  type ZonePoint,
+  type ZonePolygon,
+} from "@/lib/map/zone";
 import type { VertexType } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
@@ -259,8 +267,15 @@ function EditorSurface({
   const [zones, setZones] = React.useState<ZonePolygon[]>([]);
   const [zoneDraft, setZoneDraft] = React.useState<ZonePoint[]>([]);
   /**
-   * The zone Remove would take. One at most: a zone's only edit is removal,
-   * and a band over several is not worth a Select tool of its own here.
+   * The finished zone's corner the shape in flight is attached to, when it
+   * is. Beside the draft rather than folded into it because the draft then
+   * holds a *copy* of the zone's corner, and what the merge needs is which
+   * corner — the copy would go stale the moment that corner was dragged.
+   */
+  const [zoneDraftAnchor, setZoneDraftAnchor] = React.useState<ZoneAnchor | null>(null);
+  /**
+   * The zone Remove would take, and whose corners drag. One at most: a band
+   * over several is not worth a Select tool of its own here.
    */
   const [selectedZoneId, setSelectedZoneId] = React.useState<string | null>(null);
 
@@ -326,6 +341,7 @@ function EditorSurface({
       // drawn in every mode like the vertices, but none stays selected — no
       // other mode offers Remove.
       setZoneDraft([]);
+      setZoneDraftAnchor(null);
       setSelectedZoneId(null);
     },
     [clearVertexEdit],
@@ -355,6 +371,7 @@ function EditorSurface({
     setZoneTool(next);
     if (next === "pan") {
       setZoneDraft([]);
+      setZoneDraftAnchor(null);
       setSelectedZoneId(null);
     }
   }, []);
@@ -362,22 +379,110 @@ function EditorSurface({
   /**
    * A corner on bare map also drops the selection: the operator has moved on
    * to drawing, and a zone left lit would keep offering a Remove for the
-   * wrong shape.
+   * wrong shape. Not for an anchored shape, whose zone stays lit because it
+   * is the shape's own — the corners go into it.
    */
-  const addZonePoint = React.useCallback((point: ZonePoint) => {
-    setSelectedZoneId(null);
-    setZoneDraft((draft) => [...draft, point]);
+  const addZonePoint = React.useCallback(
+    (point: ZonePoint) => {
+      if (!zoneDraftAnchor) setSelectedZoneId(null);
+      setZoneDraft((draft) => [...draft, point]);
+    },
+    [zoneDraftAnchor],
+  );
+
+  /**
+   * Attach the shape in flight to a finished zone's corner — starting it
+   * there, or reaching the zone with a shape begun on bare map. A copy of
+   * the zone's corner joins the draft, so the shape visibly runs through
+   * it, and the zone is selected so the operator sees which one the shape
+   * will go into. Reads the draft from the closure for its length,
+   * closeZone's reason: no nested updaters, StrictMode runs them twice.
+   */
+  const anchorZoneDraft = React.useCallback(
+    (corner: ZoneCornerRef) => {
+      if (corner.zoneId === null) return;
+      const zone = zones.find((entry) => entry.id === corner.zoneId);
+      const point = zone?.points[corner.index];
+      if (!point) return;
+      setZoneDraft([...zoneDraft, point]);
+      setZoneDraftAnchor({ zoneId: corner.zoneId, index: corner.index, position: zoneDraft.length });
+      setSelectedZoneId(corner.zoneId);
+    },
+    [zones, zoneDraft],
+  );
+
+  /**
+   * End an anchored shape on another corner of its zone: the shape's own
+   * corners replace the zone's edge between the two (mergeIntoZone says
+   * which corners and which edge). The zone stays selected, so the result
+   * is the lit shape and Remove still has it. Reads the draft from the
+   * closure, closeZone's reason.
+   */
+  const mergeZoneDraft = React.useCallback(
+    (corner: ZoneCornerRef) => {
+      const anchor = zoneDraftAnchor;
+      if (!anchor || corner.zoneId !== anchor.zoneId) return;
+      const zone = zones.find((entry) => entry.id === anchor.zoneId);
+      if (!zone) return;
+      const merged = mergeIntoZone(zone.points, zoneDraft, anchor, corner.index);
+      if (!merged) return;
+      setZones((current) =>
+        current.map((entry) => (entry.id === anchor.zoneId ? { ...entry, points: merged } : entry)),
+      );
+      setZoneDraft([]);
+      setZoneDraftAnchor(null);
+      setSelectedZoneId(anchor.zoneId);
+    },
+    [zones, zoneDraft, zoneDraftAnchor],
+  );
+
+  /**
+   * A corner was dragged: it now sits at `point`. Of the shape in flight
+   * (`zoneId` null) or of a finished zone. Out of range is a no-op rather
+   * than an append, because the index came from the polygon the canvas was
+   * drawn with and a Done or Remove pressed mid-drag could have taken it
+   * since. Like every other zone edit, none of this feeds `dirty`; see the
+   * note on the zone-layer state above.
+   */
+  const moveZoneCorner = React.useCallback(({ zoneId, index }: ZoneCornerRef, point: ZonePoint) => {
+    const moved = (points: ZonePoint[]) =>
+      index < points.length ? points.map((corner, i) => (i === index ? point : corner)) : points;
+    if (zoneId === null) {
+      setZoneDraft(moved);
+      return;
+    }
+    setZones((current) =>
+      current.map((zone) => (zone.id === zoneId ? { ...zone, points: moved(zone.points) } : zone)),
+    );
   }, []);
 
   const pickZone = React.useCallback((id: string | null) => setSelectedZoneId(id), []);
 
+  /**
+   * Remove the selected zone. A shape anchored to it goes with it: one of
+   * its corners was that zone's, and there is nothing left to merge into.
+   */
   const removeZone = React.useCallback(() => {
     if (!selectedZoneId) return;
     setZones((current) => current.filter((zone) => zone.id !== selectedZoneId));
     setSelectedZoneId(null);
-  }, [selectedZoneId]);
+    if (zoneDraftAnchor?.zoneId === selectedZoneId) {
+      setZoneDraft([]);
+      setZoneDraftAnchor(null);
+    }
+  }, [selectedZoneId, zoneDraftAnchor]);
 
-  const dropZoneDraft = React.useCallback(() => setZoneDraft([]), []);
+  const dropZoneDraft = React.useCallback(() => {
+    setZoneDraft([]);
+    setZoneDraftAnchor(null);
+  }, []);
+
+  /**
+   * Done and Enter close a shape into a zone of its own, which an anchored
+   * shape is not: one of its corners is a zone's, and only another corner
+   * of that zone ends it.
+   */
+  const canClose = zoneDraftAnchor === null && canCloseZone(zoneDraft);
 
   /**
    * Close the shape in flight into a zone.
@@ -389,10 +494,10 @@ function EditorSurface({
    * updater twice, and the zone would be added twice.
    */
   const closeZone = React.useCallback(() => {
-    if (!canCloseZone(zoneDraft)) return;
+    if (!canClose) return;
     setZones((current) => [...current, { id: newZoneId(), points: zoneDraft }]);
     setZoneDraft([]);
-  }, [zoneDraft]);
+  }, [canClose, zoneDraft]);
 
   /**
    * Put a Draw choice down on the map, or pick it up again (`null`).
@@ -676,7 +781,7 @@ function EditorSurface({
       // Below the typing guard, unlike Escape: Enter in the waypoint form is
       // the form's submit, and a shape can only be in flight in zone mode,
       // where no form is mounted.
-      if (event.key === "Enter" && canCloseZone(zoneDraft)) {
+      if (event.key === "Enter" && canClose) {
         event.preventDefault();
         closeZone();
         return;
@@ -732,7 +837,7 @@ function EditorSurface({
     };
     // Re-subscribing on every corner is harmless: the listeners are on window
     // and capture nothing that a pointer gesture in flight depends on.
-  }, [undo, redo, fit, chooseDraw, zoneDraft, dropZoneDraft, closeZone, selectedZoneId, removeZone]);
+  }, [undo, redo, fit, chooseDraw, zoneDraft, dropZoneDraft, canClose, closeZone, selectedZoneId, removeZone]);
 
   /**
    * Covers reload and tab close only. The App Router has no navigation blocker, so
@@ -817,8 +922,12 @@ function EditorSurface({
         zoneTool={zoneTool}
         zones={zones}
         zoneDraft={zoneDraft}
+        zoneDraftAnchor={zoneDraftAnchor}
         onZonePoint={addZonePoint}
+        onZoneAnchor={anchorZoneDraft}
+        onZoneMerge={mergeZoneDraft}
         onZoneClose={closeZone}
+        onZoneCornerMove={moveZoneCorner}
         selectedZoneId={selectedZoneId}
         onZonePick={pickZone}
       />
@@ -828,15 +937,10 @@ function EditorSurface({
         * Pointer-transparent, so right-, middle- and Space-drag still pan the
         * dimmed map. Grey rather than a theme surface because the grid never
         * follows the theme (see lib/map/draw.ts), and the wash has to read
-        * the same over white free space in both. The hint sits outside the
-        * aria-hidden wash so its status role is heard. */}
+        * the same over white free space in both. The hint it asks with sits
+        * under the Editor strip, below. */}
       {zoneUnarmed && (
-        <>
-          <div aria-hidden className="pointer-events-none absolute inset-0 bg-black/25" />
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <ArmedHint tone="cmd">Select the shape to work with</ArmedHint>
-          </div>
-        </>
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-black/25" />
       )}
 
       {/* One row across the top, as on the dashboard: Editor at the left, Draw
@@ -864,7 +968,7 @@ function EditorSurface({
             onVertexToolChange={chooseVertexTool}
             zoneTool={zoneTool}
             onZoneToolChange={chooseZoneTool}
-            canCloseZone={canCloseZone(zoneDraft)}
+            canCloseZone={canClose}
             onCloseZone={closeZone}
             canRemoveZone={selectedZoneId !== null}
             onRemoveZone={removeZone}
@@ -894,7 +998,15 @@ function EditorSurface({
           * keeping across the toggle, `vertexType`, lives up here for exactly
           * that reason. */}
         <div className="flex min-h-0 items-start justify-between gap-2">
-          <SaveNote save={save} className="pointer-events-auto max-w-72" />
+          {/* The zone hint sits under the strip that holds Shape, the tool it
+            * asks for, rather than in the middle of the dimmed map: the eye
+            * goes from the line to the button without crossing the canvas,
+            * and the map stays clear for the shape about to be drawn. Outside
+            * the aria-hidden wash so its status role is heard. */}
+          <div className="flex flex-col items-start gap-2">
+            {zoneUnarmed && <ArmedHint tone="cmd">Select the shape to work with</ArmedHint>}
+            <SaveNote save={save} className="pointer-events-auto max-w-72" />
+          </div>
           {mode === "vertex" && (
             <VertexPanel
               className="pointer-events-auto ml-auto max-h-full min-h-0 overflow-y-auto max-sm:absolute max-sm:inset-x-0 max-sm:bottom-0 max-sm:max-h-[45%] max-sm:w-auto"
