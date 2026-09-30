@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { GripHorizontalIcon, JoystickIcon } from "lucide-react";
+import { GripHorizontalIcon } from "lucide-react";
 
 import { overlayPanel } from "@/components/console/instrument";
 import { panelFloor } from "@/components/console/strip-disclosure";
 import { Thumbstick } from "@/components/dashboard/thumbstick";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { useJoystick } from "@/hooks/use-joystick";
 import { useTeleopSender } from "@/hooks/use-teleop-sender";
 import {
@@ -116,10 +117,11 @@ export function ManualControl({ className }: { className?: string }) {
   } | null>(null);
 
   const onGrab = (event: React.PointerEvent<HTMLElement>) => {
-    // The arm button lives inside the header; a press on it is a press on it.
-    // The grip is a button too, but it is the header's own, so a press on it
-    // is a drag (camera-window's rule).
-    const button = (event.target as HTMLElement).closest("button");
+    // The arm switch lives inside the header; a press on it is a press on it.
+    // It is a span with role="switch", not a button (the primitive's default),
+    // so it is named here beside the buttons. The grip is a button too, but
+    // it is the header's own, so a press on it is a drag (camera-window's rule).
+    const button = (event.target as HTMLElement).closest("button, [role='switch']");
     if (dragRef.current || (button && !button.hasAttribute("data-move-handle"))) return;
     const panel = panelRef.current;
     if (!panel) return;
@@ -190,7 +192,7 @@ export function ManualControl({ className }: { className?: string }) {
         onLostPointerCapture={onRelease}
         onDoubleClick={() => setOffset({ x: 0, y: 0 })}
         title="Drag to move · tap the grip to reset"
-        className="mb-3 flex h-4 cursor-grab touch-none items-center justify-between gap-2 select-none active:cursor-grabbing pointer-coarse:h-10"
+        className="mb-3 flex h-5 cursor-grab touch-none items-center justify-between gap-2 select-none active:cursor-grabbing pointer-coarse:h-10"
       >
         <h2 className="instrument-label flex items-center gap-1.5 text-muted-foreground">
           {/* The grip is the affordance — a bare label row does not announce
@@ -210,31 +212,24 @@ export function ManualControl({ className }: { className?: string }) {
           </button>
           Manual drive
         </h2>
-        {/* Pressed = listening, in the cmd hue like every other operator
-          * choice (LayerToggle, pick modes). Icon-only, and a joystick rather
-          * than a gamepad or a power glyph: the gamepad would promise
-          * controller support this panel does not have, and this button powers
-          * the sticks below it, not a system — the glyph is the thing it
-          * switches. The title and aria-label carry the words. */}
-        <button
-          type="button"
-          aria-pressed={armed}
+        {/* On = listening. A switch rather than a pressed toggle, because
+          * this is an on/off state the panel stays in, not a one-shot pick
+          * mode; and green, `signal-live`, rather than the cmd hue the pick
+          * modes light in — on request, and it reads as "input is live",
+          * which is what it is. The Translate / Rotate readout below still
+          * goes cmd while armed: that is the value being commanded. The
+          * title and aria-label carry the words. */}
+        <Switch
+          checked={armed}
+          onCheckedChange={setArmed}
           aria-label="Arm manual drive input"
-          onClick={() => setArmed((v) => !v)}
           title={
             armed
               ? "Stop capturing pointer and keyboard input"
               : "Capture pointer and keyboard (WS / QE / AD) input"
           }
-          className={cn(
-            "flex size-5 items-center justify-center rounded-sm border transition-colors pointer-coarse:size-10",
-            armed
-              ? "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd"
-              : "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground",
-          )}
-        >
-          <JoystickIcon aria-hidden className="size-3" />
-        </button>
+          className="data-checked:bg-signal-live"
+        />
       </header>
       <div className="flex items-start justify-center gap-4">
         <LabeledStick caption="Translate">

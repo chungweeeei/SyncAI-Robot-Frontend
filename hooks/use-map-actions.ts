@@ -10,9 +10,10 @@ import {
   renameMap,
   saveMapGrid,
 } from "@/lib/api/map";
+import { saveKeepout } from "@/lib/api/keepout";
 import { queryKeys } from "@/lib/api/query-keys";
 import type { MapGrid } from "@/lib/map/grid";
-import type { GridRecipe } from "@/lib/types/map";
+import type { GridRecipe, ZonePolygon } from "@/lib/types/map";
 
 /*
  * The writes against one map, one hook each, wrapping TanStack's useMutation.
@@ -46,6 +47,8 @@ export function useRenameMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapVertices(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(from) });
+      // The zones moved with the directory; the new name reads them afresh.
+      queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(from) });
       // The catalogue now lists the map under its new name; the refetch is
       // what replaces its card with one keyed on that name.
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
@@ -65,6 +68,7 @@ export function useDeleteMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapVertices(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(name) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(name) });
       // The catalogue no longer lists the map; the refetch is what unmounts
       // its card. Templates need nothing: the backend refuses the delete while
       // any template is still bound (409 `template_bound`).
@@ -92,6 +96,11 @@ export function useActivateMap() {
       // `map_matches_active` flipped on every template: the ones scoped to the
       // new map are now dispatchable and the old map's are not.
       void queryClient.invalidateQueries({ queryKey: queryKeys.taskTemplates });
+      // The keepout answer carries `active` too, and it moved with the switch.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.mapKeepout(name) });
+      if (result.previous) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.mapKeepout(result.previous) });
+      }
     },
   });
 }
@@ -151,6 +160,31 @@ export function useSaveMapGrid() {
     onSuccess: (_result, { name }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       void queryClient.invalidateQueries({ queryKey: queryKeys.mapImage(name) });
+    },
+  });
+}
+
+/**
+ * PUT /api/v1/maps/{name}/keepout — the map's forbidden zones, whole.
+ *
+ * The answer *is* the next value of the zone read, so it is written into
+ * the cache rather than refetched. The catalogue is marked stale because
+ * the save writes files into the map's directory, which moves the
+ * `modified_at` its card shows. Neither raster is touched: the zones are a
+ * file of their own, and the floor plan and the scan do not include them.
+ */
+export function useSaveMapKeepout() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, zones }: { name: string; zones: readonly ZonePolygon[] }) =>
+      saveKeepout(name, zones),
+    onSuccess: (result, { name }) => {
+      queryClient.setQueryData(queryKeys.mapKeepout(name), {
+        name: result.name,
+        zones: result.zones,
+        active: result.active,
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
     },
   });
 }

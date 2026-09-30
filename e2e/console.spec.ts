@@ -39,8 +39,8 @@ test.describe("the console shell", () => {
 
     await toggle.click();
     await expect(page.getByRole("heading", { name: "Manual drive" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Arm manual drive input" })).toHaveAttribute(
-      "aria-pressed",
+    await expect(page.getByRole("switch", { name: "Arm manual drive input" })).toHaveAttribute(
+      "aria-checked",
       "false",
     );
 

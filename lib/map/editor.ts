@@ -7,6 +7,7 @@
 // machine; this owns the words it is written in.
 
 import { FREE, OCCUPIED, UNKNOWN, type Cell, type GridValue } from "@/lib/map/grid";
+import type { ZoneAnchor, ZoneCornerRef, ZonePoint, ZonePolygon } from "@/lib/map/zone";
 import type { MapVertex } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
@@ -25,19 +26,32 @@ export type EditTool = "brush" | "line" | "rect" | "pan";
 export type VertexTool = "pan" | "place" | "select";
 
 /**
+ * What a press means with a forbidden zone chosen: the third tool axis, for
+ * VertexTool's reason — it shares only Pan with the other two, and a separate
+ * state is what lets every Draw choice land on its own resting Pan.
+ *
+ * Shape is the only tool that draws: a press adds a corner, and the shape
+ * closes on its first corner (see lib/map/zone.ts). A Line tool — an open
+ * barrier the robot must not cross — was deliberately left out of this
+ * version, so the axis is two members and not three.
+ */
+export type ZoneTool = "pan" | "shape";
+
+/**
  * What a press on the canvas means.
  *
  * "grid" paints cells; "vertex" places and aims map vertices and never touches
- * the cell buffer. The two share one canvas rather than getting one each
- * because lib/map/view.ts's rule is that there is exactly one view transform
- * and every handler reads the same one — a second layer would have to be handed
+ * the cell buffer; "zone" collects the corners of a forbidden zone and touches
+ * neither. All three share one canvas rather than getting one each because
+ * lib/map/view.ts's rule is that there is exactly one view transform and every
+ * handler reads the same one — a second layer would have to be handed
  * `viewRef`, which is the one thing GridCanvas does not expose.
  */
-export type EditMode = "grid" | "vertex";
+export type EditMode = "grid" | "vertex" | "zone";
 
 /**
  * What the operator has chosen to put on the floor plan: one of the three cell
- * values, or waypoints.
+ * values, waypoints, or a forbidden zone.
  *
  * The editor's first choice, and the one the rest of its toolbar follows from.
  * It folds together two controls that used to be separate — a Grid / Waypoints
@@ -51,20 +65,27 @@ export type EditMode = "grid" | "vertex";
  * reasoning as DEFAULT_TOOL, one step further — an operator who opened a map
  * to look at it cannot mark it by accident.
  */
-export type DrawKind = "wall" | "floor" | "unknown" | "waypoint";
+export type DrawKind = "wall" | "floor" | "unknown" | "waypoint" | "zone";
+
+/** The kinds that paint cells — the ones with a byte and a swatch. */
+export type PaintKind = Exclude<DrawKind, "waypoint" | "zone">;
 
 /** The byte each paint kind writes. Wall is an obstacle, Floor is free space. */
-const DRAW_VALUE: Record<Exclude<DrawKind, "waypoint">, GridValue> = {
+const DRAW_VALUE: Record<PaintKind, GridValue> = {
   wall: OCCUPIED,
   floor: FREE,
   unknown: UNKNOWN,
 };
 
+export function isPaintKind(kind: DrawKind | null): kind is PaintKind {
+  return kind !== null && kind in DRAW_VALUE;
+}
+
 /**
  * The editor state a Draw choice puts the canvas in.
  *
- * `value` is present only for a paint kind; for waypoints and for nothing the
- * current paint byte is left alone, so picking Wall again later finds the
+ * `value` is present only for a paint kind; for waypoints, zones and nothing
+ * the current paint byte is left alone, so picking Wall again later finds the
  * brush size and tool the operator left. `panOnly` is the resting state's rule:
  * with nothing chosen, Pan is the only tool there is.
  */
@@ -74,6 +95,7 @@ export function editStateOf(kind: DrawKind | null): {
   panOnly: boolean;
 } {
   if (kind === "waypoint") return { mode: "vertex", panOnly: false };
+  if (kind === "zone") return { mode: "zone", panOnly: false };
   if (kind === null) return { mode: "grid", panOnly: true };
   return { mode: "grid", value: DRAW_VALUE[kind], panOnly: false };
 }
@@ -84,7 +106,7 @@ export function editStateOf(kind: DrawKind | null): {
  * lib/map/render.ts), so the swatch is the byte itself and cannot drift from
  * what a stroke will look like.
  */
-export function drawSwatch(kind: Exclude<DrawKind, "waypoint">): string {
+export function drawSwatch(kind: PaintKind): string {
   const byte = DRAW_VALUE[kind];
   return `rgb(${byte} ${byte} ${byte})`;
 }
@@ -163,6 +185,43 @@ export type Gesture =
       cx: number;
       cy: number;
       theta: number;
+    }
+  /**
+   * A press with Shape armed. A release that never left the deadzone is a
+   * click, which is what adds a corner, closes the shape or selects a zone —
+   * the same click/drag split `pan.pick` makes, as a kind of its own because
+   * it never picks a waypoint and `pan` must not learn a second nullable
+   * payload. What the drag does depends on where the press landed: on bare
+   * map it moves the map like `pan`; on a corner of the shape in flight, or
+   * a handle of the selected finished zone, it moves that corner, so a
+   * shape can be adjusted while it is drawn and after.
+   */
+  | {
+      kind: "point";
+      pointerId: number;
+      /** Press point, so release can tell a drag from a click. */
+      ox: number;
+      oy: number;
+      /** Last point, for the pan delta. */
+      cx: number;
+      cy: number;
+      /** What the click does, decided at the press (classifyZonePress). */
+      click:
+        | { kind: "add"; point: ZonePoint }
+        | { kind: "close" }
+        /** Select this zone — added to the selection when `additive`. */
+        | { kind: "select"; id: string; additive: boolean }
+        /** Attach the shape to this finished zone's corner, or end it there. */
+        | { kind: "anchor"; corner: ZoneCornerRef }
+        | { kind: "merge"; corner: ZoneCornerRef }
+        | { kind: "none" };
+      /**
+       * The corner the press landed on, and where the drag has carried it so
+       * far. Held here rather than pushed to the shell on every move, for
+       * `vertex.theta`'s reason: the draw path reads it at pointer rate and
+       * the shell hears about it once, on release.
+       */
+      corner: (ZoneCornerRef & { at: ZonePoint }) | null;
     };
 
 /**
@@ -181,4 +240,17 @@ export interface DrawState {
   vertices: MapVertex[];
   draft: PlanarPose | null;
   selectedIds: readonly string[];
+  zoneTool: ZoneTool;
+  /** Finished zones, drawn in every mode like the vertices. */
+  zones: readonly ZonePolygon[];
+  /** The corners of the shape in flight, oldest first. */
+  zoneDraft: readonly ZonePoint[];
+  /**
+   * The finished zone's corner the shape in flight is attached to, when it
+   * is: one of its corners is then that zone's, and another of that zone's
+   * corners is where it ends (see mergeIntoZone in lib/map/zone.ts).
+   */
+  zoneDraftAnchor: ZoneAnchor | null;
+  /** The finished zones the operator pressed, the ones Remove would take. */
+  selectedZoneIds: readonly string[];
 }

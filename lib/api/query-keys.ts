@@ -46,6 +46,16 @@ export const queryKeys = {
   /** GET /api/v1/maps/<name>/vertices — one map's stops, keyed by map name. */
   mapVertices: (name: string) => ["map-vertices", name] as const,
   /**
+   * GET /api/v1/maps/<name>/keepout — one map's forbidden zones, as saved.
+   *
+   * Shared by the floor plan editor and the dashboard, the way `mapVertices`
+   * is. The editor seeds its zone layer from it once and never while
+   * editing: a refetch landing mid-edit must not put back zones the operator
+   * just removed. A save or a Remove writes its answer here, so a reopened
+   * editor, and the dashboard, start from what the robot holds.
+   */
+  mapKeepout: (name: string) => ["map-keepout", name] as const,
+  /**
    * GET /api/v1/maps/<name>/image, decoded for drawing — the floor plan under
    * the task editor's waypoint preview. One entry per map version, shared by
    * every expanded MOVE row, so ten open rows cost one request and one decode.

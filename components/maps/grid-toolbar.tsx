@@ -1,16 +1,20 @@
 "use client";
 
 import {
+  BanIcon,
   BrushIcon,
+  CheckIcon,
   HandIcon,
   MapPinIcon,
   MapPinPlusIcon,
   MaximizeIcon,
+  PentagonIcon,
   Redo2Icon,
   SaveIcon,
   SlashIcon,
   SquareDashedMousePointerIcon,
   SquareIcon,
+  Trash2Icon,
   Undo2Icon,
   ZoomInIcon,
   ZoomOutIcon,
@@ -33,7 +37,15 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { BRUSH_SIZES } from "@/lib/map/grid";
-import { drawSwatch, type DrawKind, type EditTool, type VertexTool } from "@/lib/map/editor";
+import {
+  drawSwatch,
+  isPaintKind,
+  type DrawKind,
+  type EditTool,
+  type PaintKind,
+  type VertexTool,
+  type ZoneTool,
+} from "@/lib/map/editor";
 
 /*
  * The floor plan editor's controls, as two strips along the top of the canvas —
@@ -45,8 +57,8 @@ import { drawSwatch, type DrawKind, type EditTool, type VertexTool } from "@/lib
  * Save. Every choice was a labelled row of the same weight.
  *
  * Right, **Draw**: the one choice that decides what a press on the map means —
- * nothing (where the editor opens), Wall, Floor, Unknown or Waypoint — as a
- * list, beside the zoom at the outer edge. Left, **Editor**: everything that
+ * nothing (where the editor opens), Wall, Floor, Unknown, Waypoint or Forbidden
+ * zone — as a list, beside the zoom at the outer edge. Left, **Editor**: everything that
  * acts on the work — fit the view, history, Save — and then the tools the Draw
  * choice allows, led by Pan, which is always there.
  *
@@ -109,11 +121,26 @@ const VERTEX_TOOLS: readonly ToolOption<VertexTool>[] = [
 ];
 
 /**
+ * Zone mode's. A pentagon rather than Rect's square, because the shape is
+ * whatever the operator's corners make it, and a square would promise the
+ * one thing this tool does not draw.
+ */
+const ZONE_TOOLS: readonly ToolOption<ZoneTool>[] = [
+  { value: "pan", label: "Pan", hint: "drag the map", icon: HandIcon },
+  {
+    value: "shape",
+    label: "Shape",
+    hint: "press three or more corners, then press the first one again to close; press a finished zone to select it",
+    icon: PentagonIcon,
+  },
+];
+
+/**
  * A paint kind's glyph: a square of the grey its cells are drawn in, so the
  * button shows the result rather than a metaphor for it. Bordered, because
  * Floor is near-white and would vanish on the light panel without one.
  */
-function swatchIcon(kind: Exclude<DrawKind, "waypoint">): ToolIcon {
+function swatchIcon(kind: PaintKind): ToolIcon {
   function Swatch({ className }: { className?: string }) {
     return (
       <span
@@ -135,6 +162,9 @@ const DRAW_KINDS: readonly {
   { value: "floor", label: "Floor", icon: swatchIcon("floor") },
   { value: "unknown", label: "Unknown", icon: swatchIcon("unknown") },
   { value: "waypoint", label: "Waypoint", icon: MapPinIcon },
+  // The "not here" sign: what the zone means, since its shape is the
+  // operator's to draw.
+  { value: "zone", label: "Forbidden zone", icon: BanIcon },
 ];
 
 const SIZE_ITEMS = BRUSH_SIZES.map((size) => ({
@@ -159,27 +189,63 @@ export type SaveState =
   | { kind: "failed"; message: string };
 
 /**
+ * What a save wrote: the floor plan's cells, or the map's forbidden zones.
+ * One Save button writes whichever of the two has changes, and each reports
+ * in a note of its own, because either can land while the other fails.
+ */
+export type SaveSubject = "grid" | "zones" | "zonesRemoved";
+
+const SAVE_COPY: Record<
+  SaveSubject,
+  { failed: string; reloaded: string; saved: string; stale: string }
+> = {
+  grid: {
+    failed: "Not saved",
+    reloaded: "Saved · map reloaded",
+    saved: "Saved",
+    stale: "Saved to disk — the robot is still using the old map.",
+  },
+  zones: {
+    failed: "Forbidden zones not saved",
+    reloaded: "Forbidden zones saved · in force now",
+    saved: "Forbidden zones saved",
+    stale: "Forbidden zones saved — the robot is still keeping to the old ones.",
+  },
+  // A Remove writes at once, so it reports on its own words: "saved" would
+  // read as if the other unsaved edits had gone with it.
+  zonesRemoved: {
+    failed: "Forbidden zone not removed",
+    reloaded: "Removed · in force now",
+    saved: "Removed",
+    stale: "Removed — the robot is still keeping to the old zones.",
+  },
+};
+
+/**
  * `active` is what keeps this from crying wolf: `reloaded: false` covers both
  * "this isn't the map the stack is running, so of course nothing reloaded"
  * (benign, and shouting at it teaches operators to ignore the shout) and "it IS
- * the running map and load_map failed" (the case this whole surface exists for).
+ * the running map and the reload failed" (the case this whole surface exists
+ * for). The zones answer in the same two fields for the same two cases.
  */
 function saveNote(
   save: SaveState,
+  subject: SaveSubject,
 ): { tone: Tone; headline: string; detail?: string; alert: boolean } | null {
+  const copy = SAVE_COPY[subject];
   if (save.kind === "failed") {
-    return { tone: "warn", headline: "Not saved", detail: save.message, alert: true };
+    return { tone: "warn", headline: copy.failed, detail: save.message, alert: true };
   }
   if (save.kind !== "saved") return null;
   if (save.reloaded) {
-    return { tone: "live", headline: "Saved · map reloaded", alert: false };
+    return { tone: "live", headline: copy.reloaded, alert: false };
   }
   if (!save.active) {
-    return { tone: "neutral", headline: "Saved", detail: save.message, alert: false };
+    return { tone: "neutral", headline: copy.saved, detail: save.message, alert: false };
   }
   return {
     tone: "caution",
-    headline: "Saved to disk — the robot is still using the old map.",
+    headline: copy.stale,
     detail: save.message,
     alert: false,
   };
@@ -214,13 +280,21 @@ export function EditorToolBar({
   onUndo,
   onRedo,
   dirty,
-  save,
+  saving,
   onSave,
   drawKind,
   tool,
   onToolChange,
   vertexTool,
   onVertexToolChange,
+  zoneTool,
+  onZoneToolChange,
+  canCloseZone,
+  onCloseZone,
+  selectedZones,
+  zoneWriting,
+  removingZones,
+  onRemoveZone,
   brush,
   onBrushChange,
   className,
@@ -230,23 +304,41 @@ export function EditorToolBar({
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  /** Anything unsaved: cells, zones, or both. */
   dirty: boolean;
-  save: SaveState;
+  /** A write of either half is in flight. */
+  saving: boolean;
   onSave: () => void;
   drawKind: DrawKind | null;
   tool: EditTool;
   onToolChange: (tool: EditTool) => void;
   vertexTool: VertexTool;
   onVertexToolChange: (tool: VertexTool) => void;
+  zoneTool: ZoneTool;
+  onZoneToolChange: (tool: ZoneTool) => void;
+  /** The shape in flight has enough corners for Done to close it. */
+  canCloseZone: boolean;
+  onCloseZone: () => void;
+  /** How many finished zones are selected for Remove to take. */
+  selectedZones: number;
+  /** A zone write — Save's or Remove's — is in flight; Remove waits for it. */
+  zoneWriting: boolean;
+  /** The write in flight is a Remove, which is what the spinner is for. */
+  removingZones: boolean;
+  onRemoveZone: () => void;
   brush: number;
   onBrushChange: (brush: number) => void;
   className?: string;
 }) {
-  const painting = drawKind !== null && drawKind !== "waypoint";
+  const painting = isPaintKind(drawKind);
   const sized = painting && (tool === "brush" || tool === "line");
-  const saving = save.kind === "saving";
   const panPressed =
-    drawKind === null || (drawKind === "waypoint" ? vertexTool === "pan" : tool === "pan");
+    drawKind === null ||
+    (drawKind === "waypoint"
+      ? vertexTool === "pan"
+      : drawKind === "zone"
+        ? zoneTool === "pan"
+        : tool === "pan");
 
   return (
     <ToolStrip label="Editor" compact className={className}>
@@ -291,6 +383,7 @@ export function EditorToolBar({
           pressed={panPressed}
           onClick={() => {
             if (drawKind === "waypoint") onVertexToolChange("pan");
+            else if (drawKind === "zone") onZoneToolChange("pan");
             else onToolChange("pan");
           }}
         />
@@ -316,6 +409,50 @@ export function EditorToolBar({
               onClick={() => onVertexToolChange(option.value)}
             />
           ))}
+        {drawKind === "zone" && (
+          <>
+            {ZONE_TOOLS.filter((option) => option.value !== "pan").map((option) => (
+              <ToolButton
+                key={option.value}
+                label={option.label}
+                hint={option.hint}
+                icon={option.icon}
+                pressed={zoneTool === option.value}
+                onClick={() => onZoneToolChange(option.value)}
+              />
+            ))}
+            {/* The one one-shot action in the Tool group, unlike Fit and
+              * Save at the strip's head: it belongs to the shape in flight,
+              * so it sits beside the tool that makes one. It is also how a
+              * finger, which has no Enter key, closes a shape whose first
+              * corner has ended up under a panel. */}
+            <ToolButton
+              label="Done"
+              hint={canCloseZone ? "close the shape" : "needs three corners first"}
+              icon={CheckIcon}
+              disabled={!canCloseZone}
+              onClick={onCloseZone}
+            />
+            {/* Takes every selected zone at once, off the robot too, with no
+              * Save needed. Delete and Backspace do the same from the
+              * keyboard; this is the button a finger has. */}
+            <ToolButton
+              label="Remove"
+              hint={
+                selectedZones === 0
+                  ? "press a zone with Shape armed to select it, Shift-press to select more"
+                  : selectedZones === 1
+                    ? "remove the selected zone from the robot"
+                    : `remove the ${selectedZones} selected zones from the robot`
+              }
+              icon={Trash2Icon}
+              tone="caution"
+              busy={removingZones}
+              disabled={selectedZones === 0 || zoneWriting}
+              onClick={onRemoveZone}
+            />
+          </>
+        )}
       </ToolGroup>
 
       {/* Cells, not pixels — the number is the count of cells across, which is
@@ -372,7 +509,7 @@ export function EditorToolBar({
 /**
  * The right strip: what a press puts on the map, and the zoom.
  *
- * A list rather than a row of buttons because it is one choice among five and
+ * A list rather than a row of buttons because it is one choice among six and
  * changed rarely compared with the tools, so it can cost a click to open;
  * "No type" is an item of its own, so putting the choice down is as visible as
  * picking one (Escape does the same). Each item wears the mark the left strip
@@ -381,12 +518,19 @@ export function EditorToolBar({
 export function EditorDrawBar({
   drawKind,
   onDrawKindChange,
+  zonesLocked = false,
   onZoomIn,
   onZoomOut,
   className,
 }: {
   drawKind: DrawKind | null;
   onDrawKindChange: (kind: DrawKind | null) => void;
+  /**
+   * The map's saved zones could not be read, so Forbidden zone is offered
+   * but not choosable: a zone drawn now would be saved as the map's whole
+   * list and erase the ones the robot already holds.
+   */
+  zonesLocked?: boolean;
   onZoomIn: () => void;
   onZoomOut: () => void;
   className?: string;
@@ -409,12 +553,21 @@ export function EditorDrawBar({
         >
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>
+        {/* A dropdown, not a native-style menu: the primitive's default
+          * lines the chosen item up over the trigger, so with Waypoint or
+          * Forbidden zone chosen the list grew *upward*, off the top of the
+          * map. This strip sits at the top edge, so the list always fits
+          * below and the choice reads top-down like the list it came from. */}
+        <SelectContent alignItemWithTrigger={false}>
           <SelectItem value={NONE}>
             <span className="text-muted-foreground">No type</span>
           </SelectItem>
           {DRAW_KINDS.map((kind) => (
-            <SelectItem key={kind.value} value={kind.value}>
+            <SelectItem
+              key={kind.value}
+              value={kind.value}
+              disabled={zonesLocked && kind.value === "zone"}
+            >
               <kind.icon className="size-3.5" />
               {kind.label}
             </SelectItem>
@@ -438,8 +591,16 @@ export function EditorDrawBar({
  * What the last save did, under the right strip — in place and until the
  * buffer moves on, for the reason SaveState gives.
  */
-export function SaveNote({ save, className }: { save: SaveState; className?: string }) {
-  const note = saveNote(save);
+export function SaveNote({
+  save,
+  subject = "grid",
+  className,
+}: {
+  save: SaveState;
+  subject?: SaveSubject;
+  className?: string;
+}) {
+  const note = saveNote(save, subject);
   if (!note) return null;
   return (
     <p

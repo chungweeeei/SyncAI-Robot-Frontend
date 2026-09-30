@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { ArmedHint } from "@/components/console/armed-hint";
 import { overlayPanel } from "@/components/console/instrument";
 import { GoalControl } from "@/components/dashboard/goal-control";
 import { InitialPoseControl } from "@/components/dashboard/initial-pose-control";
@@ -20,6 +21,7 @@ import {
 import { useActiveMapVertices } from "@/hooks/use-active-map-vertices";
 import { useGoalTask } from "@/hooks/use-goal-task";
 import { useInitialPose } from "@/hooks/use-initial-pose";
+import { useMapKeepout } from "@/hooks/use-map-keepout";
 import { useMapPointCloud } from "@/hooks/use-map-point-cloud";
 import { useActiveMap } from "@/hooks/use-maps";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
@@ -94,6 +96,14 @@ export function PointCloudView({
   // that say what the map is *for*, while the cloud is hundreds of thousands of
   // points shown only when someone is checking the localizer.
   const [showVertices, setShowVertices] = React.useState(true);
+  // The zones the planner keeps out of, drawn on the floor so a route that
+  // swings wide, or a goal that is refused, has its reason on screen. On by
+  // default for the vertices' reason: a few marks that say what the map is
+  // for. A failed read draws none and offers no toggle, which is the same
+  // face as a map with none — the editor is where a failure is said, since
+  // it is where it would cost an edit.
+  const [showZones, setShowZones] = React.useState(true);
+  const { zones } = useMapKeepout(activeMap?.name ?? null);
   // Asked for only while the layer is on and the map has a scan to give, so
   // turning the layer on is what starts the download. The catalogue's own
   // flag gates it: a map with nothing on disk would only earn a refusal.
@@ -302,6 +312,14 @@ export function PointCloudView({
       onToggle: () => setShowVertices((v) => !v),
     });
   }
+  if (zones && zones.length > 0) {
+    layers.push({
+      kind: "zones",
+      label: "Forbidden zones",
+      on: showZones,
+      onToggle: () => setShowZones((v) => !v),
+    });
+  }
   if (path !== undefined && path.points.length > 0) {
     layers.push({
       kind: "path",
@@ -322,6 +340,8 @@ export function PointCloudView({
         showPath={showPath}
         vertices={vertices}
         showVertices={showVertices}
+        zones={zones ?? undefined}
+        showZones={showZones}
         onVertexActivate={setAskedVertex}
         movingVertex={
           pick?.mode === "vertex" ? pick.vertex : (savingVertex ?? null)
@@ -457,33 +477,5 @@ export function PointCloudView({
         * operator park the panel there when the near-field returns are not in
         * the way. */}
     </div>
-  );
-}
-
-/**
- * The armed pose tool's next step, as a line of its own. `role="status"` so a
- * screen reader hears the instruction when the tool arms, which is when the
- * worded button it replaces used to change its name.
- */
-function ArmedHint({
-  tone,
-  children,
-}: {
-  tone: "cmd" | "caution";
-  children: React.ReactNode;
-}) {
-  return (
-    <p
-      role="status"
-      className={cn(
-        overlayPanel,
-        "instrument-label px-2 py-1.5",
-        tone === "cmd"
-          ? "border-signal-cmd/50 text-signal-cmd"
-          : "border-signal-caution/50 text-signal-caution",
-      )}
-    >
-      {children}
-    </p>
   );
 }

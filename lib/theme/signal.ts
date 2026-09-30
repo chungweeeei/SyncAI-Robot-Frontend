@@ -40,6 +40,11 @@ interface SignalTokens {
   caution: number;
   /** `--signal-live`: measured, happening now. */
   live: number;
+  /**
+   * `--signal-warn`: faulted — or forbidden. The one hue that says "not
+   * here", which is what the floor plan editor's zones are drawn in.
+   */
+  warn: number;
 }
 
 export const SIGNAL: Record<ThemeMode, SignalTokens> = {
@@ -49,6 +54,7 @@ export const SIGNAL: Record<ThemeMode, SignalTokens> = {
     cmd: 0x0a6d94,
     caution: 0x93600e,
     live: 0x12784a,
+    warn: 0xc02f34,
   },
   dark: {
     background: 0x0b1014,
@@ -56,6 +62,7 @@ export const SIGNAL: Record<ThemeMode, SignalTokens> = {
     cmd: 0x45c8f0,
     caution: 0xf0b23c,
     live: 0x4fd98d,
+    warn: 0xf4595e,
   },
 };
 
