@@ -1588,14 +1588,20 @@ test.describe("the floor plan editor's draw bar", () => {
     await expect(zones).toHaveAttribute("data-zones", "1");
     await expect(done).toBeDisabled();
 
+    // The next shapes are drawn 30 px to either side: a finished zone's
+    // corner is where a shape *anchored to it* starts (see the growing test
+    // below), so a second shape on the same corners would join the first
+    // rather than stand beside it. All three still overlap at `inside`.
+    const shifted = (dx: number) => corners.map((corner) => ({ x: corner.x + dx, y: corner.y }));
+
     // Enter closes the next one.
-    for (const corner of corners) await page.mouse.click(corner.x, corner.y);
+    for (const corner of shifted(30)) await page.mouse.click(corner.x, corner.y);
     await expect(done).toBeEnabled();
     await page.keyboard.press("Enter");
     await expect(zones).toHaveAttribute("data-zones", "2");
 
     // Done closes the one after that.
-    for (const corner of corners) await page.mouse.click(corner.x, corner.y);
+    for (const corner of shifted(-30)) await page.mouse.click(corner.x, corner.y);
     await done.click();
     await expect(zones).toHaveAttribute("data-zones", "3");
 
@@ -1622,9 +1628,10 @@ test.describe("the floor plan editor's draw bar", () => {
     await page.keyboard.press("Escape");
 
     // Escape drops a shape in flight and keeps the choice; a second Escape
-    // puts the choice down. The finished zone survives both.
-    await page.mouse.click(corners[0].x, corners[0].y);
-    await page.mouse.click(corners[1].x, corners[1].y);
+    // puts the choice down. The finished zone survives both. Off the
+    // remaining zone's corners, so this is a shape of its own.
+    await page.mouse.click(shifted(30)[0].x, shifted(30)[0].y);
+    await page.mouse.click(shifted(30)[1].x, shifted(30)[1].y);
     await page.keyboard.press("Escape");
     await expect(drawList(page)).toContainText("Forbidden zone");
     await expect(page.getByRole("button", { name: "Shape" })).toHaveAttribute("aria-pressed", "true");
@@ -1632,6 +1639,173 @@ test.describe("the floor plan editor's draw bar", () => {
     await expect(drawList(page)).toContainText("No type");
     await expect.poll(() => toolNames(page)).toEqual(["Pan"]);
     await expect(zones).toHaveAttribute("data-zones", "1");
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("moves a corner of the shape in flight by dragging it, without panning", async ({ page }) => {
+    // The canvas exposes no corner positions, so the move is proved through
+    // the one rule that depends on where a corner is: the first corner is
+    // where a click closes the shape. Drag it 80 px left, and a click at the
+    // old spot is a fourth corner while a click at the new one closes. A pan
+    // would put the first corner in the same place, so the Cell readout under
+    // a fixed screen point is checked before and after: the map did not move.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    const canvas = page.locator("canvas");
+    await canvas.waitFor();
+    const zones = page.locator("[data-zones]");
+    const done = page.getByRole("button", { name: "Done" });
+    const cellReadout = page.getByText("Cell", { exact: true }).locator("..");
+    const cellUnder = async (at: { x: number; y: number }) => {
+      await page.mouse.move(at.x, at.y);
+      let text = "";
+      await expect
+        .poll(async () => {
+          text = ((await cellReadout.textContent()) ?? "").replace("Cell", "").trim();
+          return text;
+        })
+        .not.toBe("—");
+      return text;
+    };
+
+    await choose(page, "Forbidden zone");
+    await page.getByRole("button", { name: "Shape" }).click();
+
+    const box = (await canvas.boundingBox())!;
+    const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const corners = [
+      { x: mid.x - 60, y: mid.y - 40 },
+      { x: mid.x + 60, y: mid.y - 40 },
+      { x: mid.x, y: mid.y + 50 },
+    ];
+    for (const corner of corners) await page.mouse.click(corner.x, corner.y);
+    await expect(done).toBeEnabled();
+    const probe = { x: mid.x + 100, y: mid.y + 90 };
+    const before = await cellUnder(probe);
+
+    // Beyond the deadzone, so it is a move and not the click that closes.
+    const moved = { x: corners[0].x - 80, y: corners[0].y };
+    await page.mouse.move(corners[0].x, corners[0].y);
+    await page.mouse.down();
+    await page.mouse.move(moved.x, moved.y, { steps: 6 });
+    await page.mouse.up();
+    await expect(zones).toHaveAttribute("data-zones", "0");
+    await expect(done).toBeEnabled();
+    expect(await cellUnder(probe), "the drag panned the map").toBe(before);
+
+    // The old spot is bare map now: a click there is a corner, not a close.
+    await page.mouse.click(corners[0].x, corners[0].y);
+    await expect(zones).toHaveAttribute("data-zones", "0");
+    await expect(done).toBeEnabled();
+    // The new spot is the first corner: a click there closes.
+    await page.mouse.click(moved.x, moved.y);
+    await expect(zones).toHaveAttribute("data-zones", "1");
+    await expect(done).toBeDisabled();
+
+    // A finished zone is reshaped the same way once selected. The zone is
+    // now the quadrilateral moved, B, C, A(old); a point just inside its top
+    // edge selects it. Drag corner B 200 px down so that point falls outside
+    // — inside now reads as a first corner (Remove goes off, and Escape
+    // drops it) rather than a selection, which is how the move is proved
+    // without the canvas exposing a coordinate.
+    const remove = page.getByRole("button", { name: "Remove" });
+    const inside = { x: corners[1].x - 20, y: corners[1].y + 6 };
+    await page.mouse.click(inside.x, inside.y);
+    await expect(remove).toBeEnabled();
+    await page.mouse.move(corners[1].x, corners[1].y);
+    await page.mouse.down();
+    await page.mouse.move(corners[1].x, corners[1].y + 200, { steps: 6 });
+    await page.mouse.up();
+    await expect(remove).toBeEnabled();
+    await expect(zones).toHaveAttribute("data-zones", "1");
+    expect(await cellUnder(probe), "the handle drag panned the map").toBe(before);
+    await page.mouse.click(inside.x, inside.y);
+    await expect(remove).toBeDisabled();
+    await expect(done).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await expect(zones).toHaveAttribute("data-zones", "1");
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("grows a finished zone from one of its corners to another", async ({ page }) => {
+    // A square, then a bump drawn off its right edge: start on corner B, two
+    // corners out to the right, end on corner C. The zone count stays at one
+    // and a point in the bump, which was bare map before (a click there was
+    // a corner), is inside the zone after (a click there selects it).
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    const canvas = page.locator("canvas");
+    await canvas.waitFor();
+    const zones = page.locator("[data-zones]");
+    const done = page.getByRole("button", { name: "Done" });
+    const remove = page.getByRole("button", { name: "Remove" });
+
+    await choose(page, "Forbidden zone");
+    await page.getByRole("button", { name: "Shape" }).click();
+
+    const box = (await canvas.boundingBox())!;
+    const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const a = { x: mid.x - 80, y: mid.y - 60 };
+    const b = { x: mid.x + 40, y: mid.y - 60 };
+    const c = { x: mid.x + 40, y: mid.y + 60 };
+    const d = { x: mid.x - 80, y: mid.y + 60 };
+    for (const corner of [a, b, c, d, a]) await page.mouse.click(corner.x, corner.y);
+    await expect(zones).toHaveAttribute("data-zones", "1");
+
+    // The bump's interior is bare map: a click is a corner, and Escape drops it.
+    const bump = { x: mid.x + 100, y: mid.y };
+    await page.mouse.click(bump.x, bump.y);
+    await expect(remove).toBeDisabled();
+    await page.keyboard.press("Escape");
+
+    // Start on B: the zone lights (it is the one the shape goes into), and
+    // Done stays off throughout — an anchored shape is not a zone of its own.
+    await page.mouse.click(b.x, b.y);
+    await expect(remove).toBeEnabled();
+    await expect(zones).toHaveAttribute("data-zones", "1");
+    await page.mouse.click(mid.x + 140, mid.y - 40);
+    await page.mouse.click(mid.x + 140, mid.y + 40);
+    await expect(done).toBeDisabled();
+    // End on C: still one zone, still selected.
+    await page.mouse.click(c.x, c.y);
+    await expect(zones).toHaveAttribute("data-zones", "1");
+    await expect(remove).toBeEnabled();
+
+    // Put the selection down, then prove the shape: the bump is inside now,
+    // and so is the square's own middle.
+    await page.keyboard.press("Escape");
+    await expect(remove).toBeDisabled();
+    await page.mouse.click(bump.x, bump.y);
+    await expect(remove).toBeEnabled();
+    await expect(done).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await page.mouse.click(mid.x - 20, mid.y);
+    await expect(remove).toBeEnabled();
+
+    // The other way round: a shape begun on bare map off the left edge that
+    // reaches the zone. Two corners out to the left, then D attaches it and
+    // A ends it; the left bump is inside afterwards, and it is still one zone.
+    const leftBump = { x: mid.x - 110, y: mid.y };
+    await page.keyboard.press("Escape");
+    await page.mouse.click(leftBump.x, leftBump.y);
+    await expect(remove).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await page.mouse.click(mid.x - 140, mid.y + 40);
+    await page.mouse.click(mid.x - 140, mid.y - 40);
+    await expect(remove).toBeDisabled();
+    await page.mouse.click(d.x, d.y);
+    await expect(remove).toBeEnabled();
+    await expect(done).toBeDisabled();
+    await page.mouse.click(a.x, a.y);
+    await expect(zones).toHaveAttribute("data-zones", "1");
+    await page.keyboard.press("Escape");
+    await expect(remove).toBeDisabled();
+    await page.mouse.click(leftBump.x, leftBump.y);
+    await expect(remove).toBeEnabled();
     expect(errors, "the page logged errors").toEqual([]);
   });
 
