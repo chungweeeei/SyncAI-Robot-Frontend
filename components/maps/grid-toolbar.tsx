@@ -496,7 +496,12 @@ export function EditorDrawBar({
         >
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>
+        {/* A dropdown, not a native-style menu: the primitive's default
+          * lines the chosen item up over the trigger, so with Waypoint or
+          * Forbidden zone chosen the list grew *upward*, off the top of the
+          * map. This strip sits at the top edge, so the list always fits
+          * below and the choice reads top-down like the list it came from. */}
+        <SelectContent alignItemWithTrigger={false}>
           <SelectItem value={NONE}>
             <span className="text-muted-foreground">No type</span>
           </SelectItem>
