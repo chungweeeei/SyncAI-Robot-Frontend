@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { ArmedHint } from "@/components/console/armed-hint";
+import { TONE_TEXT, overlayPanel } from "@/components/console/instrument";
 import {
   GridCanvas,
 } from "@/components/maps/grid-canvas";
@@ -24,8 +25,9 @@ import {
   type SaveState,
 } from "@/components/maps/grid-toolbar";
 import { VertexPanel } from "@/components/maps/vertex-panel";
-import { useSaveMapGrid } from "@/hooks/use-map-actions";
+import { useSaveMapGrid, useSaveMapKeepout } from "@/hooks/use-map-actions";
 import { useMapGrid } from "@/hooks/use-map-grid";
+import { useMapKeepout } from "@/hooks/use-map-keepout";
 import { useMapVertices, type UseMapVertices } from "@/hooks/use-map-vertices";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import type { VertexChanges } from "@/lib/api/vertex";
@@ -46,6 +48,9 @@ import {
   canCloseZone,
   mergeIntoZone,
   newZoneId,
+  restoreZones,
+  sameZones,
+  withoutZones,
   type ZoneAnchor,
   type ZoneCornerRef,
   type ZonePoint,
@@ -53,6 +58,7 @@ import {
 } from "@/lib/map/zone";
 import type { VertexType } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
+import { cn } from "@/lib/utils";
 
 const DEFAULT_BRUSH = 7;
 
@@ -136,6 +142,13 @@ export function MapGridEditor({
    * edit thrown away — by something that has nothing to do with it.
    */
   const vertices = useMapVertices(name);
+  /**
+   * The zones too, and for the same reason: they belong to the map. Read
+   * here and handed down as the surface's starting list, so a remount on a
+   * grid reload starts from what the robot holds — which, after a save, the
+   * save itself wrote into the cache.
+   */
+  const keepout = useMapKeepout(name);
 
   if (status === "error") {
     return (
@@ -148,7 +161,10 @@ export function MapGridEditor({
     );
   }
 
-  if (!session) {
+  // Held until the zones answer, not only the grid: a surface that opened
+  // with none and took the answer later would have to merge it into edits
+  // already made. A failed read does not hold it — see `initialZones`.
+  if (!session || keepout.status === "loading") {
     return (
       <p className="instrument-label flex h-full items-center justify-center text-muted-foreground">
         Loading {name}…
@@ -161,6 +177,8 @@ export function MapGridEditor({
       key={session.id}
       session={session}
       vertices={vertices}
+      initialZones={keepout.zones}
+      zonesError={keepout.error}
       initialMode={initialMode}
       onDirtyChange={onDirtyChange}
     />
@@ -178,11 +196,21 @@ export function MapGridEditor({
 function EditorSurface({
   session,
   vertices,
+  initialZones,
+  zonesError,
   initialMode,
   onDirtyChange,
 }: {
   session: GridSession;
   vertices: UseMapVertices;
+  /**
+   * The map's zones as saved, or null when they could not be read. Null
+   * locks the zone layer rather than starting it empty: a save is the whole
+   * list, so drawing on top of "unknown" and saving would erase every zone
+   * the robot holds. The floor plan stays editable either way.
+   */
+  initialZones: ZonePolygon[] | null;
+  zonesError: string | null;
   initialMode: EditMode;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -257,14 +285,36 @@ function EditorSurface({
   const [focus, setFocus] = React.useState<{ x: number; y: number } | null>(null);
 
   /*
-   * Zone-layer state. Like the vertex layer's, none of it feeds `dirty`: the
-   * Unsaved chip and the back-button guard describe the gridmap only. Unlike
-   * the vertex layer's, none of it reaches the backend either — there is no
-   * zone endpoint yet, so a zone drawn here lives until the page is left and
-   * no longer. That is said here so nobody adds a "save your zones" prompt
-   * for state that has nowhere to go.
+   * Zone-layer state. Unlike the vertex layer's, it is not written through:
+   * the endpoint takes the map's whole list, and the planner reloads on
+   * every write, so a PUT per dragged corner would reload it dozens of times
+   * for one reshape. The zones wait for Save instead, beside the cells, and
+   * so they feed the Save dot and the back-button guard through `zonesDirty`
+   * — measured against `savedZones`, the list as last loaded or saved.
+   *
+   * Only finished zones are saved. A shape in flight is not a zone yet, and
+   * Save leaves it in flight.
    */
-  const [zones, setZones] = React.useState<ZonePolygon[]>([]);
+  const zonesLocked = initialZones === null;
+  const [zones, setZones] = React.useState<ZonePolygon[]>(initialZones ?? []);
+  const [savedZones, setSavedZones] = React.useState<ZonePolygon[]>(initialZones ?? []);
+  const zonesDirty = !zonesLocked && !sameZones(zones, savedZones);
+  /**
+   * What the last zone save did — the grid's `save`, for the other half.
+   * Kept apart because the two writes are separate requests and either can
+   * fail while the other lands.
+   */
+  const [zoneSave, setZoneSave] = React.useState<SaveState>({ kind: "idle" });
+  /** Which press `zoneSave` reports on: Save, or a Remove, which writes at once. */
+  const [zoneAction, setZoneAction] = React.useState<"save" | "remove">("save");
+  /**
+   * One zone write at a time. Save and Remove each send a whole list the
+   * other did not see, so whichever landed second would undo the first.
+   */
+  const zoneWriting = zoneSave.kind === "saving";
+  // `mutate` alone, for the reason given at useSaveMapGrid below. Up here
+  // because Remove writes too.
+  const { mutate: saveZones } = useSaveMapKeepout();
   const [zoneDraft, setZoneDraft] = React.useState<ZonePoint[]>([]);
   /**
    * The finished zone's corner the shape in flight is attached to, when it
@@ -472,19 +522,55 @@ function EditorSurface({
   }, []);
 
   /**
-   * Remove the selected zones. A shape anchored to one of them goes with
-   * it: one of its corners was that zone's, and there is nothing left to
-   * merge into.
+   * Remove the selected zones — on screen, and on the robot at once, without
+   * waiting for Save. A shape anchored to one of them goes with it: one of
+   * its corners was that zone's, and there is nothing left to merge into.
+   *
+   * What goes to the robot is the list *last saved* minus these zones, not
+   * the list on screen: a remove deletes and nothing else, so a zone drawn
+   * or reshaped since the last Save stays unsaved for Save to write. The
+   * endpoint only takes whole lists, and that subtraction is what makes a
+   * whole list delete one zone. A selection of zones never saved sends
+   * nothing — the robot has no such zone to lose.
+   *
+   * Taken off the screen before the answer, since the robot may take many
+   * seconds to reload; put back where they stood if it refuses, so the map
+   * never shows a zone as gone that the planner still keeps to.
    */
   const removeZone = React.useCallback(() => {
-    if (selectedZoneIds.length === 0) return;
-    setZones((current) => current.filter((zone) => !selectedZoneIds.includes(zone.id)));
+    if (selectedZoneIds.length === 0 || zoneWriting) return;
+    const ids = selectedZoneIds;
+    const { removed } = withoutZones(zones, ids);
+    setZones((current) => withoutZones(current, ids).kept);
     setSelectedZoneIds([]);
-    if (zoneDraftAnchor && selectedZoneIds.includes(zoneDraftAnchor.zoneId)) {
+    if (zoneDraftAnchor && ids.includes(zoneDraftAnchor.zoneId)) {
       setZoneDraft([]);
       setZoneDraftAnchor(null);
     }
-  }, [selectedZoneIds, zoneDraftAnchor]);
+
+    const remote = withoutZones(savedZones, ids);
+    if (remote.removed.length === 0) return;
+    setZoneAction("remove");
+    setZoneSave({ kind: "saving" });
+    saveZones(
+      { name: session.name, zones: remote.kept },
+      {
+        onSuccess: (result) => {
+          setSavedZones((current) => withoutZones(current, ids).kept);
+          setZoneSave({
+            kind: "saved",
+            active: result.active,
+            reloaded: result.reloaded,
+            message: result.message,
+          });
+        },
+        onError: (cause) => {
+          setZones((current) => restoreZones(current, removed));
+          setZoneSave({ kind: "failed", message: cause.message });
+        },
+      },
+    );
+  }, [selectedZoneIds, zoneWriting, zones, zoneDraftAnchor, savedZones, saveZones, session.name]);
 
   const dropZoneDraft = React.useCallback(() => {
     setZoneDraft([]);
@@ -509,7 +595,7 @@ function EditorSurface({
    */
   const closeZone = React.useCallback(() => {
     if (!canClose) return;
-    setZones((current) => [...current, { id: newZoneId(), points: zoneDraft }]);
+    setZones((current) => [...current, { id: newZoneId(current), points: zoneDraft }]);
     setZoneDraft([]);
   }, [canClose, zoneDraft]);
 
@@ -664,9 +750,12 @@ function EditorSurface({
     clearVertexEdit();
   }, [selectedIds, removeVertex, clearVertexEdit]);
 
+  /** Anything Save would write: cells, zones, or both. */
+  const anyDirty = dirty || zonesDirty;
+
   React.useEffect(() => {
-    onDirtyChange?.(dirty);
-  }, [dirty, onDirtyChange]);
+    onDirtyChange?.(anyDirty);
+  }, [anyDirty, onDirtyChange]);
 
   const commitPatch = React.useCallback((patch: GridPatch) => {
     pushPatch(historyRef.current, patch);
@@ -712,7 +801,12 @@ function EditorSurface({
   const { mutate: saveGrid } = useSaveMapGrid();
 
   /**
-   * Write the buffer back, and report what the running stack made of it.
+   * Write back whatever changed — the buffer, the zones, or both — and report
+   * what the running stack made of each.
+   *
+   * Two requests, sent side by side rather than one after the other: they
+   * write different files and reload different things on the robot, so
+   * neither's outcome says anything about the other's, and each has a note.
    *
    * The grid is not refetched afterwards, deliberately (useSaveMapGrid says
    * why): the local buffer *is* what was written, byte for byte. The outcome
@@ -721,6 +815,32 @@ function EditorSurface({
    * `sent`, and a stroke painted since has to put it back to idle.
    */
   const onSave = React.useCallback(() => {
+    if (zonesDirty) {
+      // The list as of the press. What reaches disk is this snapshot, so it
+      // is what `savedZones` becomes — a corner dragged while the request is
+      // in flight is still unsaved afterwards, by comparison rather than by
+      // a revision counter, since the zones are values and not a buffer.
+      const sent = zones;
+      setZoneAction("save");
+      setZoneSave({ kind: "saving" });
+      saveZones(
+        { name: session.name, zones: sent },
+        {
+          onSuccess: (result) => {
+            setSavedZones(sent);
+            setZoneSave({
+              kind: "saved",
+              active: result.active,
+              reloaded: result.reloaded,
+              message: result.message,
+            });
+          },
+          onError: (cause) => setZoneSave({ kind: "failed", message: cause.message }),
+        },
+      );
+    }
+    if (!dirty) return;
+
     const sent = revisionRef.current;
     setSaveState({ kind: "saving" });
 
@@ -744,7 +864,7 @@ function EditorSurface({
         },
       },
     );
-  }, [saveGrid, session]);
+  }, [dirty, saveGrid, saveZones, session, zones, zonesDirty]);
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -859,11 +979,11 @@ function EditorSurface({
    * asks for confirmation itself.
    */
   React.useEffect(() => {
-    if (!dirty) return;
+    if (!anyDirty) return;
     const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty]);
+  }, [anyDirty]);
 
   /**
    * Forbidden zone chosen, no tool armed yet: the map dims and asks. The
@@ -972,8 +1092,8 @@ function EditorSurface({
             canRedo={canRedo}
             onUndo={undo}
             onRedo={redo}
-            dirty={dirty}
-            save={save}
+            dirty={anyDirty}
+            saving={save.kind === "saving" || zoneWriting}
             onSave={onSave}
             drawKind={drawKind}
             tool={tool}
@@ -985,6 +1105,8 @@ function EditorSurface({
             canCloseZone={canClose}
             onCloseZone={closeZone}
             selectedZones={selectedZoneIds.length}
+            zoneWriting={zoneWriting}
+            removingZones={zoneWriting && zoneAction === "remove"}
             onRemoveZone={removeZone}
             brush={brush}
             onBrushChange={setBrush}
@@ -993,6 +1115,7 @@ function EditorSurface({
             className="pointer-events-auto"
             drawKind={drawKind}
             onDrawKindChange={chooseDraw}
+            zonesLocked={zonesLocked}
             onZoomIn={zoomIn}
             onZoomOut={zoomOut}
           />
@@ -1020,6 +1143,25 @@ function EditorSurface({
           <div className="flex flex-col items-start gap-2">
             {zoneUnarmed && <ArmedHint tone="cmd">Select the shape to work with</ArmedHint>}
             <SaveNote save={save} className="pointer-events-auto max-w-72" />
+            {/* A save's note only while it is still true of the zones on
+              * screen: a zone edited since "Saved" is unsaved again, and the
+              * grid's note goes idle on the next stroke for the same reason.
+              * A remove's note is about the zones it took, which later edits
+              * do not change, and a failure stays until the next attempt,
+              * since both are still true. */}
+            {(zoneAction === "remove" || zoneSave.kind === "failed" || !zonesDirty) && (
+              <SaveNote
+                save={zoneSave}
+                subject={zoneAction === "remove" ? "zonesRemoved" : "zones"}
+                className="pointer-events-auto max-w-72"
+              />
+            )}
+            {zonesLocked && (
+              <p role="alert" className={cn(overlayPanel, "pointer-events-auto max-w-72 px-2 py-1.5 text-[11px] leading-tight", TONE_TEXT.warn)}>
+                Forbidden zones could not be loaded, so they cannot be edited here.
+                {zonesError && <span className="mt-0.5 block text-muted-foreground">{zonesError}</span>}
+              </p>
+            )}
           </div>
           {mode === "vertex" && (
             <VertexPanel

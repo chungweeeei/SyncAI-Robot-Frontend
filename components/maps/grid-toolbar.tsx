@@ -189,27 +189,63 @@ export type SaveState =
   | { kind: "failed"; message: string };
 
 /**
+ * What a save wrote: the floor plan's cells, or the map's forbidden zones.
+ * One Save button writes whichever of the two has changes, and each reports
+ * in a note of its own, because either can land while the other fails.
+ */
+export type SaveSubject = "grid" | "zones" | "zonesRemoved";
+
+const SAVE_COPY: Record<
+  SaveSubject,
+  { failed: string; reloaded: string; saved: string; stale: string }
+> = {
+  grid: {
+    failed: "Not saved",
+    reloaded: "Saved · map reloaded",
+    saved: "Saved",
+    stale: "Saved to disk — the robot is still using the old map.",
+  },
+  zones: {
+    failed: "Forbidden zones not saved",
+    reloaded: "Forbidden zones saved · in force now",
+    saved: "Forbidden zones saved",
+    stale: "Forbidden zones saved — the robot is still keeping to the old ones.",
+  },
+  // A Remove writes at once, so it reports on its own words: "saved" would
+  // read as if the other unsaved edits had gone with it.
+  zonesRemoved: {
+    failed: "Forbidden zone not removed",
+    reloaded: "Removed · in force now",
+    saved: "Removed",
+    stale: "Removed — the robot is still keeping to the old zones.",
+  },
+};
+
+/**
  * `active` is what keeps this from crying wolf: `reloaded: false` covers both
  * "this isn't the map the stack is running, so of course nothing reloaded"
  * (benign, and shouting at it teaches operators to ignore the shout) and "it IS
- * the running map and load_map failed" (the case this whole surface exists for).
+ * the running map and the reload failed" (the case this whole surface exists
+ * for). The zones answer in the same two fields for the same two cases.
  */
 function saveNote(
   save: SaveState,
+  subject: SaveSubject,
 ): { tone: Tone; headline: string; detail?: string; alert: boolean } | null {
+  const copy = SAVE_COPY[subject];
   if (save.kind === "failed") {
-    return { tone: "warn", headline: "Not saved", detail: save.message, alert: true };
+    return { tone: "warn", headline: copy.failed, detail: save.message, alert: true };
   }
   if (save.kind !== "saved") return null;
   if (save.reloaded) {
-    return { tone: "live", headline: "Saved · map reloaded", alert: false };
+    return { tone: "live", headline: copy.reloaded, alert: false };
   }
   if (!save.active) {
-    return { tone: "neutral", headline: "Saved", detail: save.message, alert: false };
+    return { tone: "neutral", headline: copy.saved, detail: save.message, alert: false };
   }
   return {
     tone: "caution",
-    headline: "Saved to disk — the robot is still using the old map.",
+    headline: copy.stale,
     detail: save.message,
     alert: false,
   };
@@ -244,7 +280,7 @@ export function EditorToolBar({
   onUndo,
   onRedo,
   dirty,
-  save,
+  saving,
   onSave,
   drawKind,
   tool,
@@ -256,6 +292,8 @@ export function EditorToolBar({
   canCloseZone,
   onCloseZone,
   selectedZones,
+  zoneWriting,
+  removingZones,
   onRemoveZone,
   brush,
   onBrushChange,
@@ -266,8 +304,10 @@ export function EditorToolBar({
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  /** Anything unsaved: cells, zones, or both. */
   dirty: boolean;
-  save: SaveState;
+  /** A write of either half is in flight. */
+  saving: boolean;
   onSave: () => void;
   drawKind: DrawKind | null;
   tool: EditTool;
@@ -281,6 +321,10 @@ export function EditorToolBar({
   onCloseZone: () => void;
   /** How many finished zones are selected for Remove to take. */
   selectedZones: number;
+  /** A zone write — Save's or Remove's — is in flight; Remove waits for it. */
+  zoneWriting: boolean;
+  /** The write in flight is a Remove, which is what the spinner is for. */
+  removingZones: boolean;
   onRemoveZone: () => void;
   brush: number;
   onBrushChange: (brush: number) => void;
@@ -288,7 +332,6 @@ export function EditorToolBar({
 }) {
   const painting = isPaintKind(drawKind);
   const sized = painting && (tool === "brush" || tool === "line");
-  const saving = save.kind === "saving";
   const panPressed =
     drawKind === null ||
     (drawKind === "waypoint"
@@ -390,20 +433,22 @@ export function EditorToolBar({
               disabled={!canCloseZone}
               onClick={onCloseZone}
             />
-            {/* Takes every selected zone at once. Delete and Backspace do the
-              * same from the keyboard; this is the button a finger has. */}
+            {/* Takes every selected zone at once, off the robot too, with no
+              * Save needed. Delete and Backspace do the same from the
+              * keyboard; this is the button a finger has. */}
             <ToolButton
               label="Remove"
               hint={
                 selectedZones === 0
                   ? "press a zone with Shape armed to select it, Shift-press to select more"
                   : selectedZones === 1
-                    ? "remove the selected zone"
-                    : `remove the ${selectedZones} selected zones`
+                    ? "remove the selected zone from the robot"
+                    : `remove the ${selectedZones} selected zones from the robot`
               }
               icon={Trash2Icon}
               tone="caution"
-              disabled={selectedZones === 0}
+              busy={removingZones}
+              disabled={selectedZones === 0 || zoneWriting}
               onClick={onRemoveZone}
             />
           </>
@@ -473,12 +518,19 @@ export function EditorToolBar({
 export function EditorDrawBar({
   drawKind,
   onDrawKindChange,
+  zonesLocked = false,
   onZoomIn,
   onZoomOut,
   className,
 }: {
   drawKind: DrawKind | null;
   onDrawKindChange: (kind: DrawKind | null) => void;
+  /**
+   * The map's saved zones could not be read, so Forbidden zone is offered
+   * but not choosable: a zone drawn now would be saved as the map's whole
+   * list and erase the ones the robot already holds.
+   */
+  zonesLocked?: boolean;
   onZoomIn: () => void;
   onZoomOut: () => void;
   className?: string;
@@ -511,7 +563,11 @@ export function EditorDrawBar({
             <span className="text-muted-foreground">No type</span>
           </SelectItem>
           {DRAW_KINDS.map((kind) => (
-            <SelectItem key={kind.value} value={kind.value}>
+            <SelectItem
+              key={kind.value}
+              value={kind.value}
+              disabled={zonesLocked && kind.value === "zone"}
+            >
               <kind.icon className="size-3.5" />
               {kind.label}
             </SelectItem>
@@ -535,8 +591,16 @@ export function EditorDrawBar({
  * What the last save did, under the right strip — in place and until the
  * buffer moves on, for the reason SaveState gives.
  */
-export function SaveNote({ save, className }: { save: SaveState; className?: string }) {
-  const note = saveNote(save);
+export function SaveNote({
+  save,
+  subject = "grid",
+  className,
+}: {
+  save: SaveState;
+  subject?: SaveSubject;
+  className?: string;
+}) {
+  const note = saveNote(save, subject);
   if (!note) return null;
   return (
     <p
