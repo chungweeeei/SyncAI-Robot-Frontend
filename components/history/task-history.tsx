@@ -3,38 +3,20 @@
 import * as React from "react";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 
-import { Segmented } from "@/components/console/instrument";
+import { HistoryDashboard } from "@/components/history/history-dashboard";
+import { HistoryFilters } from "@/components/history/history-filters";
 import { HistoryRow } from "@/components/history/history-row";
+import { Notice } from "@/components/history/notice";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";
+import { useHistoryFilter } from "@/hooks/use-history-filter";
+import { useSchedules } from "@/hooks/use-schedules";
 import { useTaskHistory, type UseTaskHistory } from "@/hooks/use-task-history";
-import type { TaskHistoryStatus } from "@/lib/api/task";
+import { useTaskHistoryStats } from "@/hooks/use-task-history-stats";
+import { useTaskTemplates } from "@/hooks/use-task-templates";
+import { DEFAULT_HISTORY_FILTER, historyNameOptions } from "@/lib/task/history";
 import { cn } from "@/lib/utils";
-
-type StatusFilter = TaskHistoryStatus | "ALL";
-
-const STATUS_OPTIONS: readonly { value: StatusFilter; label: string }[] = [
-  { value: "ALL", label: "All" },
-  { value: "COMPLETED", label: "Completed" },
-  { value: "FAILED", label: "Failed" },
-  { value: "CANCELED", label: "Canceled" },
-];
-
-/** Same panel shape /recordings and /maps use when there is nothing to list. */
-function Notice({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-md border border-hairline bg-panel p-4">
-      <p className="instrument-label text-muted-foreground">{label}</p>
-      <div className="mt-2 text-sm">{children}</div>
-    </div>
-  );
-}
 
 function LoadingList() {
   return (
@@ -53,36 +35,70 @@ function LoadingList() {
 }
 
 /**
- * Finished jobs on this robot, newest first, filtered by how they ended.
+ * Finished jobs on this robot: how the ones in the window ended, counted, and
+ * then listed newest first.
  *
- * One filter, on purpose. There used to be a time range beside it, but the
- * robot keeps finished jobs for about a day, so "last 24 hours" and "all" were
- * the same list and the control was only something to read past.
+ * One filter row scopes both. The counts and the list are read under the
+ * same wire filter, from the same anchored window, which is the only way the
+ * numbers above can be true of the rows below. The window is the first
+ * control because, now that the robot keeps jobs for longer than a day, it
+ * is the one every reader reaches for.
+ *
+ * The Name picker's choices come from the template library and the schedule
+ * list — the two places a name can be given to a job — which means this
+ * screen mounts useSchedules and its one derived refetch at the next run;
+ * that is the hook's normal cost and no more than /tasks pays.
  */
 export function TaskHistory() {
-  const [status, setStatus] = React.useState<StatusFilter>("ALL");
-  const history = useTaskHistory(status === "ALL" ? null : status);
+  const { filter, query, setFilter } = useHistoryFilter();
+  const stats = useTaskHistoryStats(query);
+  const history = useTaskHistory(query);
+  const { templates } = useTaskTemplates();
+  const { schedules } = useSchedules();
+  const timeZone = useBrowserTimeZone();
+
+  const names = React.useMemo(
+    () =>
+      historyNameOptions(
+        templates.map((template) => template.name),
+        schedules.map((schedule) => schedule.task_template_name),
+        filter.name,
+      ),
+    [templates, schedules, filter.name],
+  );
+
+  const narrowed =
+    filter.status !== "ALL" || filter.kind !== null || filter.name !== null;
 
   return (
     <div className="space-y-3">
-      <Segmented
-        label="Outcome"
-        value={status}
-        options={STATUS_OPTIONS}
-        onChange={setStatus}
+      <HistoryFilters
+        filter={filter}
+        onChange={setFilter}
+        names={names}
+        timeZone={timeZone}
       />
 
-      <HistoryList history={history} filtered={status !== "ALL"} />
+      <HistoryDashboard stats={stats} />
+
+      <HistoryList
+        history={history}
+        narrowed={narrowed}
+        clear={() => setFilter(DEFAULT_HISTORY_FILTER)}
+      />
     </div>
   );
 }
 
 function HistoryList({
   history,
-  filtered,
+  narrowed,
+  clear,
 }: {
   history: UseTaskHistory;
-  filtered: boolean;
+  /** True when something besides the window narrows the list. */
+  narrowed: boolean;
+  clear: () => void;
 }) {
   if (history.status === "loading") return <LoadingList />;
 
@@ -106,9 +122,22 @@ function HistoryList({
   if (!history.entries.length && history.page === 1) {
     return (
       <Notice label="No jobs">
-        {filtered
-          ? "No finished job on this robot ended this way."
-          : "No finished job is kept on this robot. Jobs appear here once they end."}
+        {narrowed ? (
+          <>
+            <p>No finished job on this robot matches these filters.</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-3"
+              onClick={clear}
+            >
+              Clear filters
+            </Button>
+          </>
+        ) : (
+          "No finished job in this window. Jobs appear here once they end."
+        )}
       </Notice>
     );
   }

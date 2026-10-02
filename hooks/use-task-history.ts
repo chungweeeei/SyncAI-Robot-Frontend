@@ -7,8 +7,9 @@ import { queryKeys } from "@/lib/api/query-keys";
 import {
   fetchTaskHistory,
   type TaskHistoryEntry,
-  type TaskHistoryStatus,
+  type TaskHistoryFilterQuery,
 } from "@/lib/api/task";
+import { historyQueryKey } from "@/lib/task/history";
 
 /**
  * Rows per page. Half the backend's default of 20: with the rows expandable, ten
@@ -43,8 +44,12 @@ export interface UseTaskHistory {
  * The backend only pages forward, so going back is done here: `tokens[i]` is
  * the cursor that reaches page i + 1, and stepping back is reading an earlier
  * cursor again — usually straight from the cache. The stack belongs to one
- * filter, and a different filter starts a fresh one at page one, because the
- * backend's cursor is only valid under the filter it was issued with.
+ * filter set — outcome, window, kind and name — and a different one starts a
+ * fresh stack at page one, because the backend's cursor is only valid under
+ * the filter it was issued with. The window's anchored `since` is part of
+ * that set, so the caller must hold it still across page turns (see
+ * useHistoryFilter); a `since` that moved with the clock would start every
+ * page over.
  *
  * No poll. The list only changes when a run finishes, and the one place in the
  * console that sees every run finish — whoever started it — is the active-task
@@ -52,27 +57,29 @@ export interface UseTaskHistory {
  * (see useActiveTasks). Polling here as well would spend a request every few
  * seconds to learn what that poll already knows.
  */
-export function useTaskHistory(status: TaskHistoryStatus | null): UseTaskHistory {
+export function useTaskHistory(filter: TaskHistoryFilterQuery): UseTaskHistory {
+  const filterKey = historyQueryKey(filter);
+
   const [cursor, setCursor] = React.useState<{
-    status: TaskHistoryStatus | null;
+    filterKey: string;
     tokens: (string | null)[];
-  }>({ status, tokens: [null] });
+  }>({ filterKey, tokens: [null] });
 
   // Derived rather than reset in an effect: a stack left over from another
   // filter is simply not this filter's, so the first render after a change
   // already asks for page one instead of sending a foreign cursor.
   const tokens = React.useMemo(
-    () => (cursor.status === status ? cursor.tokens : [null]),
-    [cursor, status],
+    () => (cursor.filterKey === filterKey ? cursor.tokens : [null]),
+    [cursor, filterKey],
   );
   const pageToken = tokens[tokens.length - 1];
 
   const { data, isPending, isError, error, isPlaceholderData, refetch } = useQuery({
-    queryKey: queryKeys.taskHistoryPage(status, pageToken),
+    queryKey: queryKeys.taskHistoryPage(filterKey, pageToken),
     queryFn: ({ signal }) =>
       fetchTaskHistory(
         {
-          status: status ?? undefined,
+          ...filter,
           pageToken: pageToken ?? undefined,
           pageSize: HISTORY_PAGE_SIZE,
         },
@@ -81,7 +88,7 @@ export function useTaskHistory(status: TaskHistoryStatus | null): UseTaskHistory
     // Only across pages of the same filter. Holding another filter's rows on
     // screen under a new filter would show jobs the filter excludes.
     placeholderData: (previous, previousQuery) =>
-      previousQuery?.queryKey[1] === (status ?? "all")
+      previousQuery?.queryKey[2] === filterKey
         ? keepPreviousData(previous)
         : undefined,
   });
@@ -90,13 +97,13 @@ export function useTaskHistory(status: TaskHistoryStatus | null): UseTaskHistory
 
   const next = React.useCallback(() => {
     if (!nextToken) return;
-    setCursor({ status, tokens: [...tokens, nextToken] });
-  }, [nextToken, status, tokens]);
+    setCursor({ filterKey, tokens: [...tokens, nextToken] });
+  }, [nextToken, filterKey, tokens]);
 
   const prev = React.useCallback(() => {
     if (tokens.length < 2) return;
-    setCursor({ status, tokens: tokens.slice(0, -1) });
-  }, [status, tokens]);
+    setCursor({ filterKey, tokens: tokens.slice(0, -1) });
+  }, [filterKey, tokens]);
 
   const refresh = React.useCallback(() => {
     void refetch();

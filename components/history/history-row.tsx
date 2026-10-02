@@ -116,12 +116,17 @@ function RunSteps({ id }: { id: string }) {
 }
 
 /**
- * Who started the job, under its id. The id is the row's title because it is
- * what the job is called everywhere else — the running banner on /tasks, a
- * support conversation — so the history has to answer to the same name.
+ * What the job was and who started it, under its id. The id stays the row's
+ * title because it is what the job is called everywhere else — the running
+ * banner on /tasks, a support conversation — so the history has to answer to
+ * the same name; the template's name, when the job had one, leads the line
+ * under it because that is what an operator is looking for.
  */
 function sourceLabel(entry: TaskHistoryEntry): string {
-  return entry.schedule_id ? `Scheduled · ${entry.schedule_id}` : "Started directly";
+  const source = entry.schedule_id
+    ? `Scheduled · ${entry.schedule_id}`
+    : "Started directly";
+  return entry.name ? `${entry.name} · ${source}` : source;
 }
 
 export function HistoryRow({ entry }: { entry: TaskHistoryEntry }) {

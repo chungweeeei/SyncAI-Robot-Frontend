@@ -27,20 +27,32 @@ export const queryKeys = {
    */
   task: (id: string) => ["task", id] as const,
   /**
-   * GET /api/v1/task_history — the root every filtered history list sits
-   * under, so one invalidation refreshes whichever filter is on screen. Its own
+   * GET /api/v1/task_history — the root every filtered history list *and* the
+   * dashboard's counts sit under, so the one invalidation in useActiveTasks
+   * refreshes whichever filter is on screen, list and numbers alike. Its own
    * root rather than `["task", …]`: a per-run readback must not be swept up
    * each time a run finishes, and history must not be swept up by the tracker.
    */
   taskHistory: ["task-history"] as const,
   /**
    * One page of one filtered history list, addressed by the cursor that
-   * reaches it (null for the first). The status is part of the key because the
-   * backend's token is only valid under the filter it was issued with, so a
-   * filter change has to start again from page one — a new key does that.
+   * reaches it (null for the first). `filterKey` is historyQueryKey() of the
+   * whole filter — outcome, window, kind, name — because the backend's token
+   * is only valid under the exact filter it was issued with, so any change
+   * has to start again from page one, and a new key does that. The window's
+   * `since` is in it too, which is why useHistoryFilter anchors the window
+   * once per gesture rather than on every render.
    */
-  taskHistoryPage: (status: string | null, pageToken: string | null) =>
-    ["task-history", status ?? "all", pageToken ?? "first"] as const,
+  taskHistoryPage: (filterKey: string, pageToken: string | null) =>
+    ["task-history", "page", filterKey, pageToken ?? "first"] as const,
+  /**
+   * GET /api/v1/task_history/stats under the same filter — the counts above
+   * the list. Its own branch beside the pages, so turning a page never
+   * re-counts and a re-count never re-reads a page; the literal segment is
+   * what keeps the two families from ever sharing a key.
+   */
+  taskHistoryStats: (filterKey: string) =>
+    ["task-history", "stats", filterKey] as const,
   /** GET /api/v1/maps — the catalogue, read by every screen that needs the active map. */
   maps: ["maps"] as const,
   /** GET /api/v1/maps/<name>/vertices — one map's stops, keyed by map name. */
