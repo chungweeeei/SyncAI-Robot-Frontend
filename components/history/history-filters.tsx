@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { RotateCcwIcon } from "lucide-react";
 
-import { Segmented } from "@/components/console/instrument";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -13,29 +14,23 @@ import {
 } from "@/components/ui/select";
 import type { TaskHistoryKind } from "@/lib/api/task";
 import {
+  DEFAULT_HISTORY_FILTER,
   HISTORY_KINDS,
   TIME_RANGE_PRESETS,
   customRangeSeed,
+  isDefaultHistoryFilter,
   isoToLocalInput,
   kindLabel,
   localInputToIso,
   type HistoryFilter,
-  type HistoryStatusFilter,
   type TimeRangePreset,
 } from "@/lib/task/history";
 
-type RangeChoice = TimeRangePreset | "custom";
+type TimeChoice = TimeRangePreset | "custom";
 
-const RANGE_OPTIONS: readonly { value: RangeChoice; label: string }[] = [
+const TIME_ITEMS: readonly { value: TimeChoice; label: string }[] = [
   ...TIME_RANGE_PRESETS.map(({ value, label }) => ({ value, label })),
-  { value: "custom", label: "Custom" },
-];
-
-const STATUS_OPTIONS: readonly { value: HistoryStatusFilter; label: string }[] = [
-  { value: "ALL", label: "All" },
-  { value: "COMPLETED", label: "Completed" },
-  { value: "FAILED", label: "Failed" },
-  { value: "CANCELED", label: "Canceled" },
+  { value: "custom", label: "Custom range…" },
 ];
 
 /**
@@ -50,6 +45,53 @@ const KIND_ITEMS: readonly { value: string; label: string }[] = [
   ...HISTORY_KINDS.map((kind) => ({ value: kind, label: kindLabel(kind) })),
 ];
 
+/** One labelled picker of the toolbar; the three read the same so the row reads as one control. */
+function Picker({
+  label,
+  items,
+  value,
+  placeholder,
+  disabled = false,
+  onPick,
+}: {
+  label: string;
+  items: readonly { value: string; label: string }[];
+  value: string;
+  placeholder: string;
+  disabled?: boolean;
+  onPick: (value: string) => void;
+}) {
+  const id = React.useId();
+  return (
+    <div className="flex items-center gap-1.5">
+      <label htmlFor={id} className="instrument-label text-muted-foreground">
+        {label}
+      </label>
+      <Select
+        // `items` is what makes SelectValue render the label; without it the
+        // trigger shows the raw value.
+        items={items}
+        value={value}
+        disabled={disabled}
+        onValueChange={(next) => {
+          if (next !== null) onPick(next);
+        }}
+      >
+        <SelectTrigger id={id} size="sm" className="h-7 min-w-32 rounded-sm text-[12px] pointer-coarse:h-10">
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>
+          {items.map((item) => (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 export interface HistoryFiltersProps {
   filter: HistoryFilter;
   onChange: (next: HistoryFilter) => void;
@@ -60,32 +102,36 @@ export interface HistoryFiltersProps {
 }
 
 /**
- * The one row that scopes everything under it: the counts and the list read
- * the same filter, so the numbers are always about the rows.
+ * The toolbar that scopes everything under it: the counts and the list read
+ * the same window, kind and name, so the numbers are always about the rows.
  *
- * Window first, because it is the control every reader reaches for; then the
- * outcome, which was the screen's only filter before; then kind and name as
- * pickers rather than more segments, because four segments twice already fill
- * a phone's row. Picking Custom seeds the two bounds from the window that was
- * on screen, so the inputs are never blank; a bound that is not yet a time
- * leaves the filter alone, so a half-typed field never reaches the backend.
+ * Three pickers of one shape, window first because it is the control every
+ * reader reaches for, and a Reset that only appears once something is
+ * narrowed — so a plain screen has nothing to clear and says so by having no
+ * button. The outcome is not here: it is picked on the dashboard's tiles,
+ * where the number for each outcome already is.
+ *
+ * A custom range gets its own line under the toolbar rather than a slot in
+ * it: two date fields are wider than any picker, and in the row they pushed
+ * the other controls onto a second line on every desktop and a fifth on a
+ * phone. Picking it seeds the bounds from the window that was on screen, so
+ * the fields are never blank; a bound that is not yet a time leaves the
+ * filter alone, so a half-typed field never reaches the backend.
  */
 export function HistoryFilters({ filter, onChange, names, timeZone }: HistoryFiltersProps) {
-  const kindId = React.useId();
-  const nameId = React.useId();
   const fromId = React.useId();
   const toId = React.useId();
 
   // Narrowed once: null while a preset is picked, the two bounds otherwise.
   const custom = "preset" in filter.range ? null : filter.range;
-  const rangeValue: RangeChoice = "preset" in filter.range ? filter.range.preset : "custom";
+  const timeValue: TimeChoice = "preset" in filter.range ? filter.range.preset : "custom";
 
-  const pickRange = (choice: RangeChoice) => {
+  const pickTime = (choice: string) => {
     if (choice === "custom") {
       if (custom) return;
       onChange({ ...filter, range: customRangeSeed(filter.range, Date.now()) });
     } else {
-      onChange({ ...filter, range: { preset: choice } });
+      onChange({ ...filter, range: { preset: choice as TimeRangePreset } });
     }
   };
 
@@ -104,20 +150,53 @@ export function HistoryFilters({ filter, onChange, names, timeZone }: HistoryFil
   ];
 
   return (
-    <div
-      role="group"
-      aria-label="History filters"
-      className="flex flex-wrap items-end gap-x-4 gap-y-2"
-    >
-      <Segmented
-        label="Time range"
-        value={rangeValue}
-        options={RANGE_OPTIONS}
-        onChange={pickRange}
-      />
+    <div className="space-y-2">
+      <div
+        role="group"
+        aria-label="History filters"
+        className="flex flex-wrap items-center gap-x-4 gap-y-2"
+      >
+        <Picker
+          label="Time"
+          items={TIME_ITEMS}
+          value={timeValue}
+          placeholder="Last 24 h"
+          onPick={pickTime}
+        />
+        <Picker
+          label="Kind"
+          items={KIND_ITEMS}
+          value={filter.kind ?? ANY}
+          placeholder="All kinds"
+          onPick={(next) =>
+            onChange({ ...filter, kind: next ? (next as TaskHistoryKind) : null })
+          }
+        />
+        <Picker
+          label="Name"
+          items={nameItems}
+          value={filter.name ?? ANY}
+          placeholder={names.length ? "All names" : "No saved jobs"}
+          disabled={!names.length}
+          onPick={(next) => onChange({ ...filter, name: next ? next : null })}
+        />
+
+        {!isDefaultHistoryFilter(filter) && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 rounded-sm pointer-coarse:h-10"
+            onClick={() => onChange(DEFAULT_HISTORY_FILTER)}
+          >
+            <RotateCcwIcon aria-hidden />
+            Reset
+          </Button>
+        )}
+      </div>
 
       {custom && (
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-wrap items-end gap-x-3 gap-y-2 rounded-sm border border-hairline bg-panel px-3 py-2">
           <label htmlFor={fromId} className="flex flex-col gap-1">
             <span className="instrument-label text-muted-foreground">From</span>
             <Input
@@ -126,7 +205,7 @@ export function HistoryFilters({ filter, onChange, names, timeZone }: HistoryFil
               value={isoToLocalInput(custom.from)}
               max={isoToLocalInput(custom.to)}
               onChange={(event) => setBound("from", event.target.value)}
-              className="h-6 w-auto rounded-sm text-[12px] md:text-[12px]"
+              className="h-7 w-auto rounded-sm text-[12px] md:text-[12px] pointer-coarse:h-10"
             />
           </label>
           <label htmlFor={toId} className="flex flex-col gap-1">
@@ -137,73 +216,19 @@ export function HistoryFilters({ filter, onChange, names, timeZone }: HistoryFil
               value={isoToLocalInput(custom.to)}
               min={isoToLocalInput(custom.from)}
               onChange={(event) => setBound("to", event.target.value)}
-              className="h-6 w-auto rounded-sm text-[12px] md:text-[12px]"
+              className="h-7 w-auto rounded-sm text-[12px] md:text-[12px] pointer-coarse:h-10"
             />
           </label>
           {/* Which clock the two fields are in: the operator's, which the
             * server render cannot know, so the caption only appears once the
             * browser has said. */}
           {timeZone && (
-            <span className="pb-1 text-[11px] leading-tight text-muted-foreground">
-              {timeZone}
+            <span className="pb-1.5 text-[11px] leading-tight text-muted-foreground">
+              Times in {timeZone}
             </span>
           )}
         </div>
       )}
-
-      <Segmented
-        label="Outcome"
-        value={filter.status}
-        options={STATUS_OPTIONS}
-        onChange={(status) => onChange({ ...filter, status })}
-      />
-
-      <div className="flex items-center gap-1.5">
-        <label htmlFor={kindId} className="instrument-label text-muted-foreground">
-          Kind
-        </label>
-        <Select
-          items={KIND_ITEMS}
-          value={filter.kind ?? ANY}
-          onValueChange={(next) =>
-            onChange({ ...filter, kind: next ? (next as TaskHistoryKind) : null })
-          }
-        >
-          <SelectTrigger id={kindId} size="sm" className="h-6 min-w-32 rounded-sm text-[12px]">
-            <SelectValue placeholder="All kinds" />
-          </SelectTrigger>
-          <SelectContent>
-            {KIND_ITEMS.map((item) => (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex items-center gap-1.5">
-        <label htmlFor={nameId} className="instrument-label text-muted-foreground">
-          Name
-        </label>
-        <Select
-          items={nameItems}
-          value={filter.name ?? ANY}
-          disabled={!names.length}
-          onValueChange={(next) => onChange({ ...filter, name: next ? next : null })}
-        >
-          <SelectTrigger id={nameId} size="sm" className="h-6 min-w-36 rounded-sm text-[12px]">
-            <SelectValue placeholder={names.length ? "All names" : "No saved jobs"} />
-          </SelectTrigger>
-          <SelectContent>
-            {nameItems.map((item) => (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
     </div>
   );
 }

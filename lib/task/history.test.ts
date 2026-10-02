@@ -5,9 +5,11 @@ import {
   DEFAULT_HISTORY_FILTER,
   chartRows,
   customRangeSeed,
+  describeRun,
   formatPercent,
   historyNameOptions,
   historyQueryKey,
+  isDefaultHistoryFilter,
   isoToLocalInput,
   kindLabel,
   localInputToIso,
@@ -16,6 +18,7 @@ import {
   runSeconds,
   serializeHistoryFilter,
   toHistoryQuery,
+  toHistoryStatsQuery,
   type HistoryFilter,
 } from "@/lib/task/history";
 
@@ -87,6 +90,69 @@ describe("toHistoryQuery", () => {
       kind: "schedule",
       name: "Morning round",
     });
+  });
+});
+
+describe("toHistoryStatsQuery", () => {
+  it("counts the whole window whatever outcome is picked, so the tiles stay pickable", () => {
+    const filter: HistoryFilter = { ...DEFAULT_HISTORY_FILTER, status: "FAILED", kind: "goal" };
+    const stats = toHistoryStatsQuery(filter, now);
+    expect(stats.status).toBeUndefined();
+    expect(stats.kind).toBe("goal");
+    expect(stats.since).toBe(toHistoryQuery(filter, now).since);
+  });
+});
+
+describe("isDefaultHistoryFilter", () => {
+  it("is true only for what a plain address shows", () => {
+    expect(isDefaultHistoryFilter(DEFAULT_HISTORY_FILTER)).toBe(true);
+    expect(isDefaultHistoryFilter({ ...DEFAULT_HISTORY_FILTER, status: "FAILED" })).toBe(false);
+    expect(isDefaultHistoryFilter({ ...DEFAULT_HISTORY_FILTER, range: { preset: "1h" } })).toBe(
+      false,
+    );
+  });
+});
+
+describe("describeRun", () => {
+  const run = (over: Partial<Parameters<typeof describeRun>[0]>) => ({
+    id: "robot01-task-1758000000-1",
+    kind: "task",
+    name: null,
+    schedule_id: null,
+    ...over,
+  });
+
+  it("calls a job by its template's name first", () => {
+    expect(describeRun(run({ name: "Morning round" }))).toEqual({
+      title: "Morning round",
+      detail: "Task · Started directly",
+    });
+    expect(
+      describeRun(run({ name: "Night watch", kind: "schedule", schedule_id: "nightly" })),
+    ).toEqual({ title: "Night watch", detail: "Scheduled · nightly" });
+  });
+
+  it("falls back to the kind, in the operator's words", () => {
+    expect(describeRun(run({ kind: "goal" }))).toEqual({
+      title: "Navigation goal",
+      detail: "Started directly",
+    });
+    expect(describeRun(run({ kind: "liedown" })).title).toBe("Lie down");
+  });
+
+  it("names a nameless scheduled run by its schedule", () => {
+    expect(describeRun(run({ kind: "schedule", schedule_id: "nightly" }))).toEqual({
+      title: "nightly",
+      detail: "Scheduled",
+    });
+  });
+
+  it("shows the id only for a run nothing labelled", () => {
+    expect(describeRun(run({ kind: null }))).toEqual({
+      title: "robot01-task-1758000000-1",
+      detail: "Started directly",
+    });
+    expect(describeRun(run({ kind: "warp" })).title).toBe("robot01-task-1758000000-1");
   });
 });
 
@@ -272,7 +338,7 @@ describe("chartRows", () => {
       count({ kind: null, total: 2, canceled: 2 }),
       count({ kind: "liedown", total: 1, completed: 1 }),
     ]);
-    expect(rows.map((row) => row.label)).toEqual(["Other", "Lie"]);
+    expect(rows.map((row) => row.label)).toEqual(["Other", "Lie down"]);
     expect(rows[0].key).toBe("other");
   });
 });

@@ -470,10 +470,13 @@ it is run in, so it does not belong to any one of them.
   **Mapping / Navigation** for the robot's MANUAL / AUTO modes, **job** for
   a dispatched task, and **success rate** for completed over finished on the
   history dashboard. A job's *kind* is shown as **Navigation goal / Stand /
-  Lie / Task / Scheduled** (`kindLabel` in `lib/task/history.ts`); the wire
-  words `goal / standup / liedown / task / schedule` stay in code and in the
-  id. Backend sentences are still rendered verbatim; they are written for
-  operators too.
+  Lie down / Task / Scheduled** (`kindLabel` in `lib/task/history.ts`); the
+  wire words `goal / standup / liedown / task / schedule` stay in code and in
+  the id. A history row is titled by its template's name, else its kind, and
+  by the job id only when nothing labelled it (`describeRun`): the id is what
+  the orchestrator calls a run, not what an operator does, so it lives in the
+  row's expanded detail. Backend sentences are still rendered verbatim; they
+  are written for operators too.
 - **A clip is not a recording.** A recording is the robot's bag, on the robot's
   disk, started and stopped over REST; a clip is a video of the camera window's
   picture, written by the browser onto the operator's own machine and never

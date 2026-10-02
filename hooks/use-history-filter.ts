@@ -8,6 +8,7 @@ import {
   parseHistoryFilter,
   serializeHistoryFilter,
   toHistoryQuery,
+  toHistoryStatsQuery,
   type HistoryFilter,
 } from "@/lib/task/history";
 
@@ -15,11 +16,13 @@ export interface UseHistoryFilter {
   /** The filter as the operator set it — the address bar's reading. */
   filter: HistoryFilter;
   /**
-   * The wire filter both history reads take: the same filter with its preset
+   * The wire filter the list reads under: the same filter with its preset
    * resolved to a `since`, against an anchor taken when the filter was last
    * set rather than at every render.
    */
   query: TaskHistoryFilterQuery;
+  /** The wire filter the dashboard counts under — the same window, never the outcome (see toHistoryStatsQuery). */
+  statsQuery: TaskHistoryFilterQuery;
   setFilter: (next: HistoryFilter) => void;
 }
 
@@ -69,6 +72,10 @@ export function useHistoryFilter(): UseHistoryFilter {
   );
 
   const query = React.useMemo(() => toHistoryQuery(filter, anchorMs), [filter, anchorMs]);
+  const statsQuery = React.useMemo(
+    () => toHistoryStatsQuery(filter, anchorMs),
+    [filter, anchorMs],
+  );
 
-  return { filter, query, setFilter };
+  return { filter, query, statsQuery, setFilter };
 }

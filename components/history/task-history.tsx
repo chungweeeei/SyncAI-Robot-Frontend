@@ -38,11 +38,11 @@ function LoadingList() {
  * Finished jobs on this robot: how the ones in the window ended, counted, and
  * then listed newest first.
  *
- * One filter row scopes both. The counts and the list are read under the
- * same wire filter, from the same anchored window, which is the only way the
- * numbers above can be true of the rows below. The window is the first
- * control because, now that the robot keeps jobs for longer than a day, it
- * is the one every reader reaches for.
+ * One toolbar scopes both. The counts and the list are read under the same
+ * window, kind and name, from the same anchored window, which is the only way
+ * the numbers above can be true of the rows below. The outcome is the one
+ * field the two reads differ on: it is picked on the dashboard's own tiles
+ * and narrows only the list, so the tiles keep showing what there is to pick.
  *
  * The Name picker's choices come from the template library and the schedule
  * list — the two places a name can be given to a job — which means this
@@ -50,8 +50,8 @@ function LoadingList() {
  * that is the hook's normal cost and no more than /tasks pays.
  */
 export function TaskHistory() {
-  const { filter, query, setFilter } = useHistoryFilter();
-  const stats = useTaskHistoryStats(query);
+  const { filter, query, statsQuery, setFilter } = useHistoryFilter();
+  const stats = useTaskHistoryStats(statsQuery);
   const history = useTaskHistory(query);
   const { templates } = useTaskTemplates();
   const { schedules } = useSchedules();
@@ -79,7 +79,11 @@ export function TaskHistory() {
         timeZone={timeZone}
       />
 
-      <HistoryDashboard stats={stats} />
+      <HistoryDashboard
+        stats={stats}
+        outcome={filter.status}
+        onOutcome={(status) => setFilter({ ...filter, status })}
+      />
 
       <HistoryList
         history={history}

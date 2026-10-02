@@ -80,10 +80,12 @@ export const HISTORY_KINDS: readonly TaskHistoryKind[] = [
   "schedule",
 ];
 
+// The posture words are the dashboard's own buttons' ("Stand", "Lie down"),
+// so a job reads the same here as where it was pressed.
 const KIND_LABEL: Record<TaskHistoryKind, string> = {
   goal: "Navigation goal",
   standup: "Stand",
-  liedown: "Lie",
+  liedown: "Lie down",
   task: "Task",
   schedule: "Scheduled",
 };
@@ -128,7 +130,7 @@ export function resolveTimeRange(
   return { since: range.from, until: range.to };
 }
 
-/** The wire filter for one screen filter — what both history reads are keyed and fetched by. */
+/** The wire filter the list reads under — every field the operator set. */
 export function toHistoryQuery(filter: HistoryFilter, nowMs: number): TaskHistoryFilterQuery {
   const { since, until } = resolveTimeRange(filter.range, nowMs);
   return {
@@ -138,6 +140,70 @@ export function toHistoryQuery(filter: HistoryFilter, nowMs: number): TaskHistor
     kind: filter.kind ?? undefined,
     name: filter.name ?? undefined,
   };
+}
+
+/**
+ * The wire filter the dashboard counts under: the same window, kind and
+ * name, but never the outcome. The outcome is picked *on* the dashboard —
+ * its tiles are the control — so the counts have to stay the whole picture
+ * of the window, or picking "Failed" would zero the three other tiles and
+ * leave nothing to pick back from. Only the list narrows by outcome.
+ */
+export function toHistoryStatsQuery(
+  filter: HistoryFilter,
+  nowMs: number,
+): TaskHistoryFilterQuery {
+  return toHistoryQuery({ ...filter, status: "ALL" }, nowMs);
+}
+
+/** True when nothing is narrowed — what a plain `/history` shows, and what Reset returns to. */
+export function isDefaultHistoryFilter(filter: HistoryFilter): boolean {
+  return serializeHistoryFilter(filter).toString() === "";
+}
+
+/** The two lines a history row shows for a run. */
+export interface RunDescription {
+  /** What the operator calls the job: its template's name, its kind, or — for a run nothing labelled — its id. */
+  title: string;
+  /** Where it came from, under the title. */
+  detail: string;
+}
+
+/**
+ * How a finished run is named on screen.
+ *
+ * The template name first, because that is what the operator gave the job;
+ * the kind when there is no name (a dragged goal, a posture button); and the
+ * id only for a run nothing labelled — dispatched by the MCP server, curl, or
+ * a build older than the ledger — because then the id is all there is. The
+ * id itself stays in the row's expanded detail for whoever has to find the
+ * run in the orchestrator's own log.
+ */
+export function describeRun(entry: {
+  id: string;
+  kind: string | null;
+  name: string | null;
+  schedule_id: string | null;
+}): RunDescription {
+  const scheduled = entry.schedule_id !== null;
+  const source = scheduled ? `Scheduled · ${entry.schedule_id}` : "Started directly";
+  if (entry.name) {
+    return {
+      title: entry.name,
+      // A scheduled run's source already says what kind it is.
+      detail:
+        scheduled || !isHistoryKind(entry.kind)
+          ? source
+          : `${kindLabel(entry.kind)} · ${source}`,
+    };
+  }
+  if (scheduled) {
+    return { title: entry.schedule_id as string, detail: "Scheduled" };
+  }
+  if (isHistoryKind(entry.kind)) {
+    return { title: kindLabel(entry.kind), detail: source };
+  }
+  return { title: entry.id, detail: source };
 }
 
 /**

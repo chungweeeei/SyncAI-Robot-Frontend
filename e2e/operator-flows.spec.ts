@@ -2606,10 +2606,20 @@ test.describe("the job history", () => {
       }),
     ]);
 
-  test("lists each job by id, with who started it and how long it took", async ({
+  test("lists each job by its name or kind, with who started it and how long it took", async ({
     page,
   }) => {
-    await mockBackend(page, { taskHistory: finished });
+    await mockBackend(page, {
+      taskHistory: finished,
+      // Opened below; without a body the detail is a 404 the console logs.
+      taskStates: {
+        "robot01-task-1758000000-1": {
+          id: "robot01-task-1758000000-1",
+          status: "COMPLETED",
+          steps: [{ id: "1-move", status: "COMPLETED", error_msg: "" }],
+        },
+      },
+    });
     const listed = page.waitForRequest(
       (request) => new URL(request.url()).pathname === "/api/v1/task_history",
     );
@@ -2622,15 +2632,22 @@ test.describe("the job history", () => {
     expect(params.get("since")).toBe("2026-09-17T10:00:00.000Z");
     expect(params.get("until")).toBeNull();
 
-    await expect(page.getByText("robot01-task-1758000000-1")).toBeVisible();
-    await expect(page.getByText("Started directly")).toBeVisible();
-    // The template a scheduled job ran leads its line.
-    await expect(page.getByText("Morning round · Scheduled · nightly")).toBeVisible();
+    // A job with no template name is called by its kind; a scheduled one by
+    // the template it ran. The id is not the title any more.
+    await expect(
+      page.getByRole("button", { name: /^COMPLETED Task Started directly/ }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /^FAILED Morning round Scheduled · nightly/ })).toBeVisible();
+    await expect(page.getByText("robot01-task-1758000000-1")).toBeHidden();
     // 09:40:00 → 09:44:12, measured between the backend's own timestamps.
     await expect(page.getByText("4:12", { exact: true })).toBeVisible();
     await expect(page.getByText("12:30", { exact: true })).toBeVisible();
     // Everything fits on one page, so there is nothing to page through.
     await expect(page.getByRole("navigation", { name: "History pages" })).toBeHidden();
+
+    // The id is still there for whoever needs it: on expand.
+    await page.getByRole("button", { name: /^COMPLETED Task Started directly/ }).click();
+    await expect(page.getByText("robot01-task-1758000000-1", { exact: true })).toBeVisible();
   });
 
   test("counts the jobs the robot reports, per outcome and per kind", async ({
@@ -2641,13 +2658,17 @@ test.describe("the job history", () => {
 
     const dashboard = page.getByRole("region", { name: "Over this window" });
     await expect(dashboard).toBeVisible();
-    const tile = (label: string) =>
-      dashboard.locator("dt", { hasText: label }).locator("xpath=following-sibling::dd[1]");
-    await expect(tile("Finished")).toHaveText("2");
-    await expect(tile("Completed")).toHaveText("1");
-    await expect(tile("Failed")).toHaveText("1");
-    await expect(tile("Canceled")).toHaveText("0");
-    await expect(tile("Success rate")).toHaveText("50 %");
+    // Each tile is named by its label and its number, and is the control for
+    // that outcome; Finished is the one lit on a plain screen.
+    const outcome = dashboard.getByRole("group", { name: "Outcome" });
+    await expect(outcome.getByRole("button", { name: "Finished 2" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(outcome.getByRole("button", { name: "Completed 1" })).toBeVisible();
+    await expect(outcome.getByRole("button", { name: "Failed 1" })).toBeVisible();
+    await expect(outcome.getByRole("button", { name: "Canceled 0" })).toBeVisible();
+    await expect(dashboard.getByText("50 %")).toBeVisible();
 
     // One bar per kind, with the operator's words for it and never the id's.
     // One job each, so the tie is broken by label.
@@ -2656,27 +2677,40 @@ test.describe("the job history", () => {
     await expect(dashboard.getByText(/standup|liedown/)).toHaveCount(0);
   });
 
-  test("asks the robot for failed jobs only when that filter is picked", async ({
+  test("lists only failed jobs when the Failed tile is pressed, without changing the counts", async ({
     page,
   }) => {
     await mockBackend(page, { taskHistory: finished });
     await page.goto("/history");
     await expect(page.getByText("Started directly")).toBeVisible();
 
-    // Both reads, and the window survives an outcome change.
-    const filtered = historyReads(
-      page,
-      (params) => params.get("status") === "FAILED" && params.get("since") !== null,
-    );
-    await page.getByRole("button", { name: "Failed", exact: true }).click();
+    // The list re-reads with the outcome, and the window survives it.
+    const filtered = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return (
+        url.pathname === "/api/v1/task_history" &&
+        url.searchParams.get("status") === "FAILED" &&
+        url.searchParams.get("since") !== null
+      );
+    });
+    const outcome = page.getByRole("group", { name: "Outcome" });
+    await outcome.getByRole("button", { name: "Failed 1" }).click();
     await filtered;
 
-    await expect(page.getByText("Morning round · Scheduled · nightly")).toBeVisible();
+    await expect(page.getByText("Scheduled · nightly")).toBeVisible();
     await expect(page.getByText("Started directly")).toBeHidden();
-    const dashboard = page.getByRole("region", { name: "Over this window" });
-    await expect(
-      dashboard.locator("dt", { hasText: "Finished" }).locator("xpath=following-sibling::dd[1]"),
-    ).toHaveText("1");
+    await expect(page.getByText("Only failed jobs are listed below.")).toBeVisible();
+    // The tiles are what the operator picks from, so they keep counting the
+    // whole window: Finished still says 2, and is no longer the lit one.
+    await expect(outcome.getByRole("button", { name: "Finished 2" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    await expect(outcome.getByRole("button", { name: "Failed 1" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page).toHaveURL(/status=FAILED/);
   });
 
   test("asks for the last six hours when that preset is picked, and says so in the address", async ({
@@ -2691,13 +2725,16 @@ test.describe("the job history", () => {
       (params) =>
         params.get("since") === "2026-09-18T04:00:00.000Z" && params.get("until") === null,
     );
-    await page.getByRole("button", { name: "Last 6 h" }).click();
+    await page.getByRole("combobox", { name: "Time" }).click();
+    await page.getByRole("option", { name: "Last 6 h" }).click();
     await narrowed;
 
     await expect(page).toHaveURL(/\/history\?range=6h$/);
     // The scheduled job closed at 01:12, outside the six hours.
     await expect(page.getByText("Started directly")).toBeVisible();
-    await expect(page.getByText("Morning round · Scheduled · nightly")).toBeHidden();
+    await expect(page.getByText("Scheduled · nightly")).toBeHidden();
+    // Something is narrowed now, so there is something to reset.
+    await expect(page.getByRole("button", { name: "Reset" })).toBeVisible();
   });
 
   test("narrows both the counts and the list to one template's jobs", async ({
@@ -2714,10 +2751,8 @@ test.describe("the job history", () => {
 
     await expect(page).toHaveURL(/name=Morning\+round/);
     await expect(page.getByText("Started directly")).toBeHidden();
-    const dashboard = page.getByRole("region", { name: "Over this window" });
-    await expect(
-      dashboard.locator("dt", { hasText: "Finished" }).locator("xpath=following-sibling::dd[1]"),
-    ).toHaveText("1");
+    const outcome = page.getByRole("group", { name: "Outcome" });
+    await expect(outcome.getByRole("button", { name: "Finished 1" })).toBeVisible();
   });
 
   test("narrows to scheduled jobs by kind, in the operator's words", async ({
@@ -2734,29 +2769,41 @@ test.describe("the job history", () => {
 
     await expect(page).toHaveURL(/kind=schedule/);
     await expect(page.getByText("Started directly")).toBeHidden();
-    await expect(page.getByText("Morning round · Scheduled · nightly")).toBeVisible();
+    await expect(page.getByText("Scheduled · nightly")).toBeVisible();
   });
 
   test("reads a filter back from the address bar", async ({ page }) => {
     await mockBackend(page, { taskHistory: finished });
-    const read = historyReads(
-      page,
-      (params) =>
-        params.get("status") === "FAILED" &&
-        params.get("kind") === "schedule" &&
-        params.get("since") === "2026-09-18T04:00:00.000Z",
-    );
+    // The outcome reaches the list only; the counts are read without it.
+    const read = Promise.all([
+      page.waitForRequest((request) => {
+        const url = new URL(request.url());
+        return (
+          url.pathname === "/api/v1/task_history" &&
+          url.searchParams.get("status") === "FAILED" &&
+          url.searchParams.get("kind") === "schedule" &&
+          url.searchParams.get("since") === "2026-09-18T04:00:00.000Z"
+        );
+      }),
+      page.waitForRequest((request) => {
+        const url = new URL(request.url());
+        return (
+          url.pathname === "/api/v1/task_history/stats" &&
+          url.searchParams.get("status") === null &&
+          url.searchParams.get("kind") === "schedule" &&
+          url.searchParams.get("since") === "2026-09-18T04:00:00.000Z"
+        );
+      }),
+    ]);
     await page.goto("/history?status=FAILED&range=6h&kind=schedule");
     await read;
 
-    await expect(page.getByRole("button", { name: "Failed", exact: true })).toHaveAttribute(
+    const outcome = page.getByRole("group", { name: "Outcome" });
+    await expect(outcome.getByRole("button", { name: /^Failed/ })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
-    await expect(page.getByRole("button", { name: "Last 6 h" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(page.getByRole("combobox", { name: "Time" })).toContainText("Last 6 h");
     await expect(page.getByRole("combobox", { name: "Kind" })).toContainText("Scheduled");
   });
 
@@ -2765,7 +2812,8 @@ test.describe("the job history", () => {
     await page.goto("/history");
     await expect(page.getByText("Started directly")).toBeVisible();
 
-    await page.getByRole("button", { name: "Custom" }).click();
+    await page.getByRole("combobox", { name: "Time" }).click();
+    await page.getByRole("option", { name: "Custom range…" }).click();
     // Seeded from the window that was on screen, so the fields are never blank.
     await expect(page).toHaveURL(/range=custom&from=2026-09-17T10%3A00%3A00.000Z&to=2026-09-18T10%3A00%3A00.000Z/);
 
@@ -2782,7 +2830,7 @@ test.describe("the job history", () => {
 
     // The scheduled job closed at 01:12, before the range.
     await expect(page.getByText("Started directly")).toBeVisible();
-    await expect(page.getByText("Morning round · Scheduled · nightly")).toBeHidden();
+    await expect(page.getByText("Scheduled · nightly")).toBeHidden();
   });
 
   test("says so when the window holds no finished job", async ({ page }) => {
@@ -2856,12 +2904,15 @@ test.describe("the job history", () => {
         `/api/v1/tasks/${encodeURIComponent("nightly-2026-09-18T01:00:00Z")}`,
       ),
     );
-    await page.getByText("nightly-2026-09-18T01:00:00Z").click();
+    await page.getByText("Morning round").click();
     await described;
 
-    await expect(
-      page.getByRole("button", { name: /nightly-2026-09-18T01:00:00Z/ }),
-    ).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("button", { name: /Morning round/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    // The id, once, in the detail.
+    await expect(page.getByText("nightly-2026-09-18T01:00:00Z")).toBeVisible();
     await expect(page.getByText("2-move")).toBeVisible();
     await expect(page.getByText("Goal is blocked.")).toBeVisible();
   });
