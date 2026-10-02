@@ -150,9 +150,9 @@ components/
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
                 and the /tasks/editor page (step composer, name, save, delete)
-  history/      finished-job dashboard and list: the filter row (kept in the
-                URL), the counts and per-kind bars, cursor paging, per-run
-                step detail
+  history/      finished-job dashboard and list: the filter toolbar (kept in
+                the URL), the counts and the outcome bar, cursor paging,
+                per-run step detail
   settings/     appearance and Wi-Fi
   webrtc/       WHIP/WHEP bench (unlisted developer route — see deviations)
   ui/           shadcn primitives (lint-ignored)

@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { TaskHistoryKindCount } from "@/lib/api/task";
 import {
   DEFAULT_HISTORY_FILTER,
-  chartRows,
   customRangeSeed,
   describeRun,
   formatPercent,
@@ -13,6 +11,7 @@ import {
   isoToLocalInput,
   kindLabel,
   localInputToIso,
+  outcomeSegments,
   parseHistoryFilter,
   resolveTimeRange,
   runSeconds,
@@ -290,56 +289,21 @@ describe("formatPercent", () => {
   });
 });
 
-describe("chartRows", () => {
-  const count = (over: Partial<TaskHistoryKindCount>): TaskHistoryKindCount => ({
-    kind: "task",
-    total: 0,
-    completed: 0,
-    failed: 0,
-    canceled: 0,
-    ...over,
+describe("outcomeSegments", () => {
+  it("draws only the outcomes that happened, with shares that add up to the whole", () => {
+    const segments = outcomeSegments({
+      total: 4,
+      by_status: { COMPLETED: 3, FAILED: 0, CANCELED: 1 },
+    });
+    expect(segments.map((s) => s.status)).toEqual(["COMPLETED", "CANCELED"]);
+    expect(segments.reduce((sum, s) => sum + s.pct, 0)).toBe(100);
+    expect(segments[0].pct).toBe(75);
   });
 
-  it("orders rows by how many jobs they count", () => {
-    const rows = chartRows([
-      count({ kind: "task", total: 2, completed: 2 }),
-      count({ kind: "goal", total: 5, completed: 4, failed: 1 }),
-      count({ kind: "schedule", total: 3, canceled: 3 }),
-    ]);
-    expect(rows.map((row) => row.key)).toEqual(["goal", "schedule", "task"]);
-  });
-
-  it("the longest row is the full width and the others are its share", () => {
-    const rows = chartRows([
-      count({ kind: "goal", total: 4, completed: 4 }),
-      count({ kind: "task", total: 1, completed: 1 }),
-    ]);
-    expect(rows[0].widthPct).toBe(100);
-    expect(rows[1].widthPct).toBe(25);
-  });
-
-  it("leaves out a kind with nothing in the window rather than drawing an empty row", () => {
-    const rows = chartRows([
-      count({ kind: "goal", total: 1, completed: 1 }),
-      count({ kind: "standup" }),
-    ]);
-    expect(rows.map((row) => row.key)).toEqual(["goal"]);
-  });
-
-  it("draws only the outcomes that happened, with shares that add up to the row", () => {
-    const [row] = chartRows([count({ kind: "goal", total: 4, completed: 3, canceled: 1 })]);
-    expect(row.segments.map((s) => s.status)).toEqual(["COMPLETED", "CANCELED"]);
-    expect(row.segments.reduce((sum, s) => sum + s.pct, 0)).toBe(100);
-    expect(row.segments[0].pct).toBe(75);
-  });
-
-  it("labels the row of runs recorded without a kind, and never with a wire word", () => {
-    const rows = chartRows([
-      count({ kind: null, total: 2, canceled: 2 }),
-      count({ kind: "liedown", total: 1, completed: 1 }),
-    ]);
-    expect(rows.map((row) => row.label)).toEqual(["Other", "Lie down"]);
-    expect(rows[0].key).toBe("other");
+  it("is nothing, not three empty segments, when nothing finished", () => {
+    expect(
+      outcomeSegments({ total: 0, by_status: { COMPLETED: 0, FAILED: 0, CANCELED: 0 } }),
+    ).toEqual([]);
   });
 });
 

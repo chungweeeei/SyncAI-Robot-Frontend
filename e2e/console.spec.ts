@@ -110,7 +110,7 @@ test.describe("the console shell", () => {
     );
 
     await page.getByRole("link", { name: "History" }).click();
-    await expect(page.getByRole("group", { name: "Outcome" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "History filters" })).toBeVisible();
   });
 
   test("names every viewport icon, and says what an armed tool wants next", async ({

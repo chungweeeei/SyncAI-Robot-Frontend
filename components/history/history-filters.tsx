@@ -23,6 +23,7 @@ import {
   kindLabel,
   localInputToIso,
   type HistoryFilter,
+  type HistoryStatusFilter,
   type TimeRangePreset,
 } from "@/lib/task/history";
 
@@ -43,6 +44,13 @@ const ANY = "";
 const KIND_ITEMS: readonly { value: string; label: string }[] = [
   { value: ANY, label: "All kinds" },
   ...HISTORY_KINDS.map((kind) => ({ value: kind, label: kindLabel(kind) })),
+];
+
+const OUTCOME_ITEMS: readonly { value: HistoryStatusFilter; label: string }[] = [
+  { value: "ALL", label: "All outcomes" },
+  { value: "COMPLETED", label: "Completed" },
+  { value: "FAILED", label: "Failed" },
+  { value: "CANCELED", label: "Canceled" },
 ];
 
 /** One labelled picker of the toolbar; the three read the same so the row reads as one control. */
@@ -105,11 +113,12 @@ export interface HistoryFiltersProps {
  * The toolbar that scopes everything under it: the counts and the list read
  * the same window, kind and name, so the numbers are always about the rows.
  *
- * Three pickers of one shape, window first because it is the control every
+ * Four pickers of one shape, window first because it is the control every
  * reader reaches for, and a Reset that only appears once something is
  * narrowed — so a plain screen has nothing to clear and says so by having no
- * button. The outcome is not here: it is picked on the dashboard's tiles,
- * where the number for each outcome already is.
+ * button. The outcome is the one picker that scopes the list alone: the
+ * dashboard is how the window's jobs ended, whichever of them are listed
+ * (see toHistoryStatsQuery).
  *
  * A custom range gets its own line under the toolbar rather than a slot in
  * it: two date fields are wider than any picker, and in the row they pushed
@@ -162,6 +171,13 @@ export function HistoryFilters({ filter, onChange, names, timeZone }: HistoryFil
           value={timeValue}
           placeholder="Last 24 h"
           onPick={pickTime}
+        />
+        <Picker
+          label="Outcome"
+          items={OUTCOME_ITEMS}
+          value={filter.status}
+          placeholder="All outcomes"
+          onPick={(next) => onChange({ ...filter, status: next as HistoryStatusFilter })}
         />
         <Picker
           label="Kind"

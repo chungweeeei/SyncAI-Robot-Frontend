@@ -41,8 +41,8 @@ function LoadingList() {
  * One toolbar scopes both. The counts and the list are read under the same
  * window, kind and name, from the same anchored window, which is the only way
  * the numbers above can be true of the rows below. The outcome is the one
- * field the two reads differ on: it is picked on the dashboard's own tiles
- * and narrows only the list, so the tiles keep showing what there is to pick.
+ * field the two reads differ on: it narrows only the list, so the dashboard
+ * stays how the window's jobs ended rather than a tautology about the rows.
  *
  * The Name picker's choices come from the template library and the schedule
  * list — the two places a name can be given to a job — which means this
@@ -79,11 +79,7 @@ export function TaskHistory() {
         timeZone={timeZone}
       />
 
-      <HistoryDashboard
-        stats={stats}
-        outcome={filter.status}
-        onOutcome={(status) => setFilter({ ...filter, status })}
-      />
+      <HistoryDashboard stats={stats} outcome={filter.status} />
 
       <HistoryList
         history={history}

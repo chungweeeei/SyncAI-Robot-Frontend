@@ -7,7 +7,7 @@
 import type {
   TaskHistoryFilterQuery,
   TaskHistoryKind,
-  TaskHistoryKindCount,
+  TaskHistoryStats,
   TaskHistoryStatus,
 } from "@/lib/api/task";
 
@@ -144,10 +144,11 @@ export function toHistoryQuery(filter: HistoryFilter, nowMs: number): TaskHistor
 
 /**
  * The wire filter the dashboard counts under: the same window, kind and
- * name, but never the outcome. The outcome is picked *on* the dashboard —
- * its tiles are the control — so the counts have to stay the whole picture
- * of the window, or picking "Failed" would zero the three other tiles and
- * leave nothing to pick back from. Only the list narrows by outcome.
+ * name, but never the outcome. The dashboard is how the jobs in the window
+ * ended; counting it under one outcome would zero the other three tiles and
+ * make the success rate 0 % or 100 % by construction, which is not a reading.
+ * The outcome narrows only the list, and the dashboard says so under its
+ * tiles.
  */
 export function toHistoryStatsQuery(
   filter: HistoryFilter,
@@ -352,57 +353,27 @@ export function formatPercent(ratio: number): string {
   return `${Math.round(ratio * 100)} %`;
 }
 
-export interface HistoryChartSegment {
+export interface OutcomeSegment {
   status: TaskHistoryStatus;
   count: number;
-  /** Share of this row, 0–100. */
+  /** Share of everything finished, 0–100. */
   pct: number;
 }
 
-export interface HistoryChartRow {
-  /** The row's identity for React — the wire kind, or "other" for the null row. */
-  key: string;
-  label: string;
-  total: number;
-  /**
-   * Share of the longest row, 0–100: bar length reads as magnitude across
-   * rows, which is the one thing a stacked bar is for.
-   */
-  widthPct: number;
-  /** Only the outcomes that happened, in Completed / Failed / Canceled order. */
-  segments: HistoryChartSegment[];
-}
-
 /**
- * The dashboard's bars from the backend's per-kind counts: busiest kind first,
- * a kind with nothing in the window left out rather than drawn as an empty
- * row, and a segment only for an outcome that occurred — a zero-width fill is
- * not nothing, it is a 2 px gap claiming a category.
+ * The dashboard's one bar: everything finished in the window, split by how
+ * it ended, in Completed / Failed / Canceled order. A segment only for an
+ * outcome that occurred — a zero-width fill is not nothing, it is a 2 px gap
+ * claiming a category — and nothing at all when nothing finished.
  */
-export function chartRows(byKind: readonly TaskHistoryKindCount[]): HistoryChartRow[] {
-  const rows = byKind.filter((row) => row.total > 0);
-  const longest = rows.reduce((max, row) => Math.max(max, row.total), 0);
-  return rows
-    .map((row) => ({
-      key: row.kind ?? "other",
-      label: kindLabel(row.kind),
-      total: row.total,
-      widthPct: longest ? (row.total / longest) * 100 : 0,
-      segments: (
-        [
-          ["COMPLETED", row.completed],
-          ["FAILED", row.failed],
-          ["CANCELED", row.canceled],
-        ] as const
-      )
-        .filter(([, count]) => count > 0)
-        .map(([status, count]) => ({
-          status,
-          count,
-          pct: (count / row.total) * 100,
-        })),
-    }))
-    .sort((a, b) => b.total - a.total || a.label.localeCompare(b.label));
+export function outcomeSegments(
+  stats: Pick<TaskHistoryStats, "total" | "by_status">,
+): OutcomeSegment[] {
+  if (stats.total <= 0) return [];
+  return (["COMPLETED", "FAILED", "CANCELED"] as const)
+    .map((status) => ({ status, count: stats.by_status[status] }))
+    .filter(({ count }) => count > 0)
+    .map(({ status, count }) => ({ status, count, pct: (count / stats.total) * 100 }));
 }
 
 /**

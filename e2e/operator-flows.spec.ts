@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   MAP_NAME,
@@ -2593,6 +2593,10 @@ test.describe("the job history", () => {
     }),
   ];
 
+  /** A dashboard tile's number, by its label. */
+  const tile = (dashboard: Locator, label: string) =>
+    dashboard.locator("dt", { hasText: label }).locator("xpath=following-sibling::dd[1]");
+
   /** The two reads one filter makes, as the fake saw them. */
   const historyReads = (page: Page, match: (params: URLSearchParams) => boolean) =>
     Promise.all([
@@ -2658,26 +2662,16 @@ test.describe("the job history", () => {
 
     const dashboard = page.getByRole("region", { name: "Over this window" });
     await expect(dashboard).toBeVisible();
-    // Each tile is named by its label and its number, and is the control for
-    // that outcome; Finished is the one lit on a plain screen.
-    const outcome = dashboard.getByRole("group", { name: "Outcome" });
-    await expect(outcome.getByRole("button", { name: "Finished 2" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    await expect(outcome.getByRole("button", { name: "Completed 1" })).toBeVisible();
-    await expect(outcome.getByRole("button", { name: "Failed 1" })).toBeVisible();
-    await expect(outcome.getByRole("button", { name: "Canceled 0" })).toBeVisible();
-    await expect(dashboard.getByText("50 %")).toBeVisible();
-
-    // One bar per kind, with the operator's words for it and never the id's.
-    // One job each, so the tie is broken by label.
-    const table = dashboard.getByRole("table", { name: "Finished jobs by kind and outcome" });
-    await expect(table.getByRole("rowheader")).toHaveText(["Scheduled", "Task"]);
-    await expect(dashboard.getByText(/standup|liedown/)).toHaveCount(0);
+    await expect(tile(dashboard, "Finished")).toHaveText("2");
+    await expect(tile(dashboard, "Completed")).toHaveText("1");
+    await expect(tile(dashboard, "Failed")).toHaveText("1");
+    await expect(tile(dashboard, "Canceled")).toHaveText("0");
+    await expect(tile(dashboard, "Success rate")).toHaveText("50 %");
+    // The one bar lists every outcome on hover, zero included.
+    await expect(dashboard.getByTitle("Completed 1 · Failed 1 · Canceled 0")).toBeAttached();
   });
 
-  test("lists only failed jobs when the Failed tile is pressed, without changing the counts", async ({
+  test("lists only failed jobs when that outcome is picked, without changing the counts", async ({
     page,
   }) => {
     await mockBackend(page, { taskHistory: finished });
@@ -2693,23 +2687,18 @@ test.describe("the job history", () => {
         url.searchParams.get("since") !== null
       );
     });
-    const outcome = page.getByRole("group", { name: "Outcome" });
-    await outcome.getByRole("button", { name: "Failed 1" }).click();
+    await page.getByRole("combobox", { name: "Outcome" }).click();
+    await page.getByRole("option", { name: "Failed" }).click();
     await filtered;
 
     await expect(page.getByText("Scheduled · nightly")).toBeVisible();
     await expect(page.getByText("Started directly")).toBeHidden();
-    await expect(page.getByText("Only failed jobs are listed below.")).toBeVisible();
-    // The tiles are what the operator picks from, so they keep counting the
-    // whole window: Finished still says 2, and is no longer the lit one.
-    await expect(outcome.getByRole("button", { name: "Finished 2" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-    await expect(outcome.getByRole("button", { name: "Failed 1" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(page.getByText(/Only failed jobs are listed below/)).toBeVisible();
+    // The dashboard is how the window's jobs ended, whichever are listed:
+    // Finished still says 2 and the rate is still 50 %, not 0 %.
+    const dashboard = page.getByRole("region", { name: "Over this window" });
+    await expect(tile(dashboard, "Finished")).toHaveText("2");
+    await expect(tile(dashboard, "Success rate")).toHaveText("50 %");
     await expect(page).toHaveURL(/status=FAILED/);
   });
 
@@ -2751,8 +2740,8 @@ test.describe("the job history", () => {
 
     await expect(page).toHaveURL(/name=Morning\+round/);
     await expect(page.getByText("Started directly")).toBeHidden();
-    const outcome = page.getByRole("group", { name: "Outcome" });
-    await expect(outcome.getByRole("button", { name: "Finished 1" })).toBeVisible();
+    const dashboard = page.getByRole("region", { name: "Over this window" });
+    await expect(tile(dashboard, "Finished")).toHaveText("1");
   });
 
   test("narrows to scheduled jobs by kind, in the operator's words", async ({
@@ -2798,11 +2787,7 @@ test.describe("the job history", () => {
     await page.goto("/history?status=FAILED&range=6h&kind=schedule");
     await read;
 
-    const outcome = page.getByRole("group", { name: "Outcome" });
-    await expect(outcome.getByRole("button", { name: /^Failed/ })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(page.getByRole("combobox", { name: "Outcome" })).toContainText("Failed");
     await expect(page.getByRole("combobox", { name: "Time" })).toContainText("Last 6 h");
     await expect(page.getByRole("combobox", { name: "Kind" })).toContainText("Scheduled");
   });
