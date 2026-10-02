@@ -158,9 +158,9 @@ components/
   ui/           shadcn primitives (lint-ignored)
 hooks/          one hook per backend interaction; the only place components get data.
                 A few talk to no backend at all (use-joystick, use-step-drafts,
-                use-task-draft, use-camera-clip, use-browser-time-zone): React
-                glue over a lib/ module or a browser API, never a second home
-                for the logic itself
+                use-task-draft, use-camera-clip, use-browser-time-zone,
+                use-history-filter): React glue over a lib/ module or a browser
+                API, never a second home for the logic itself
 lib/
   api/          typed fetchers per backend router, config.ts, http.ts, query-keys.ts
                 (requests only — mirrored validation rules live with their domain)

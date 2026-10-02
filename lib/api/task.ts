@@ -18,7 +18,8 @@
 // started while nobody was watching. `fetchTaskHistory` is the **finished**
 // ones. Neither is stored by the backend — both are pages of Temporal's
 // visibility index — so history reaches back only as far as the namespace's
-// retention (a day by default) and a run older than that is simply gone.
+// retention (a day on a fresh install; the backend README says how to lengthen
+// it) and a run older than that is simply gone.
 
 import { z } from "zod";
 
