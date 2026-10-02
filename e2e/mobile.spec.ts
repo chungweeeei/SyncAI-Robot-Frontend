@@ -221,8 +221,10 @@ test.describe("the console on a phone", () => {
     await touch("touchStart", [finger(cx, cy, 1)]);
     await touch("touchEnd", []);
     await expect.poll(() => dispatches.length).toBe(1);
-    const body = dispatches[0] as { steps: { type: string }[] };
+    const body = dispatches[0] as { kind: string; steps: { type: string }[] };
     expect(body.steps[0].type).toBe("MOVE");
+    // And it says what it is, which is what the history counts it as.
+    expect(body.kind).toBe("goal");
   });
 
   test("lays the floor plan editor's panels out without one covering the other", async ({

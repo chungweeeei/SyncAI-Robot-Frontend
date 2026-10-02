@@ -179,7 +179,61 @@ export function taskHistoryEntry(over: Record<string, unknown> = {}) {
     closed_at: "2026-09-18T09:44:12Z",
     source: "DIRECT",
     schedule_id: null,
+    kind: "task",
+    name: null,
     ...over,
+  };
+}
+
+/**
+ * The finished runs a history read's filter names, the way the backend
+ * applies it: outcome, kind and name are exact matches, and the two bounds
+ * are on the close time. Shared by the page and the stats routes so the
+ * counts above the list can never disagree with the rows in it.
+ */
+function historyRows(
+  rows: Record<string, unknown>[],
+  params: URLSearchParams,
+): Record<string, unknown>[] {
+  const status = params.get("status");
+  const kind = params.get("kind");
+  const name = params.get("name");
+  const since = params.get("since");
+  const until = params.get("until");
+  return rows.filter((row) => {
+    if (status && row.status !== status) return false;
+    if (kind && row.kind !== kind) return false;
+    if (name && row.name !== name) return false;
+    const closed = typeof row.closed_at === "string" ? Date.parse(row.closed_at) : NaN;
+    if (since && !(closed >= Date.parse(since))) return false;
+    if (until && !(closed <= Date.parse(until))) return false;
+    return true;
+  });
+}
+
+const HISTORY_KINDS = ["goal", "standup", "liedown", "task", "schedule"] as const;
+
+/** GET /task_history/stats, counted from the same rows the page serves. */
+function historyStats(rows: Record<string, unknown>[], params: URLSearchParams) {
+  const count = (subset: Record<string, unknown>[]) => ({
+    total: subset.length,
+    completed: subset.filter((row) => row.status === "COMPLETED").length,
+    failed: subset.filter((row) => row.status === "FAILED").length,
+    canceled: subset.filter((row) => row.status === "CANCELED").length,
+  });
+  const matched = historyRows(rows, params);
+  const all = count(matched);
+  const kind = params.get("kind");
+  const kinds: (string | null)[] = kind ? [kind] : [...HISTORY_KINDS, null];
+  return {
+    as_of: "2026-09-18T10:00:00Z",
+    total: all.total,
+    by_status: { COMPLETED: all.completed, FAILED: all.failed, CANCELED: all.canceled },
+    success_rate: all.total ? all.completed / all.total : null,
+    by_kind: kinds.map((k) => ({
+      kind: k,
+      ...count(matched.filter((row) => (row.kind ?? null) === k)),
+    })),
   };
 }
 
@@ -287,20 +341,27 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     if (path === "/api/v1/active_tasks") {
       return json(route, { tasks: activeTasks, as_of: "2026-09-18T09:45:00Z" });
     }
+    if (path === "/api/v1/task_history/stats") {
+      return json(route, historyStats(taskHistory, url.searchParams));
+    }
     if (path === "/api/v1/task_history") {
-      // Filters and a cursor the way the backend applies them: status is an
-      // exact match, and the token is only meaningful to the fake that issued
+      // Filters and a cursor the way the backend applies them (see
+      // historyRows); the token is only meaningful to the fake that issued
       // it — here, the offset of the next page's first row.
-      const status = url.searchParams.get("status");
-      const rows = status
-        ? taskHistory.filter((row) => row.status === status)
-        : taskHistory;
+      const rows = historyRows(taskHistory, url.searchParams);
       const offset = Number(url.searchParams.get("page_token") ?? 0);
       const end = offset + taskHistoryPageSize;
       return json(route, {
         tasks: rows.slice(offset, end),
         next_page_token: end < rows.length ? String(end) : null,
       });
+    }
+    if (path === "/api/v1/tasks" && method === "POST") {
+      // The ack the console parses: its id is what the tracker then polls.
+      // Without this the catch-all's `{ message }` fails the ack schema, and a
+      // dispatch test would be testing a parse error.
+      const body = parseBody(request.postData()) as { id?: string } | null;
+      return json(route, { id: body?.id ?? "robot01-task-0-0", status: "PENDING", message: "ok" });
     }
     const taskMatch = /^\/api\/v1\/tasks\/([^/]+)$/.exec(path);
     if (taskMatch && method === "GET") {
