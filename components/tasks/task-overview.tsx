@@ -127,7 +127,9 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
     // Deliberately does NOT load the template into the editor: that would
     // silently discard whatever the operator was authoring, which is the same
     // class of data loss the draft exists to prevent.
-    void dispatch.send(toDispatchSteps(template.steps));
+    // The name rides along so the history can count this template's jobs
+    // apart from everything else dispatched from this screen.
+    void dispatch.send(toDispatchSteps(template.steps), template.name);
   };
 
   return (

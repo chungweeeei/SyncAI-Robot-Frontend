@@ -150,15 +150,17 @@ components/
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
                 and the /tasks/editor page (step composer, name, save, delete)
-  history/      finished-job list: filters, cursor paging, per-run step detail
+  history/      finished-job dashboard and list: the filter toolbar (kept in
+                the URL), the counts and the outcome bar, cursor paging,
+                per-run step detail
   settings/     appearance and Wi-Fi
   webrtc/       WHIP/WHEP bench (unlisted developer route — see deviations)
   ui/           shadcn primitives (lint-ignored)
 hooks/          one hook per backend interaction; the only place components get data.
                 A few talk to no backend at all (use-joystick, use-step-drafts,
-                use-task-draft, use-camera-clip, use-browser-time-zone): React
-                glue over a lib/ module or a browser API, never a second home
-                for the logic itself
+                use-task-draft, use-camera-clip, use-browser-time-zone,
+                use-history-filter): React glue over a lib/ module or a browser
+                API, never a second home for the logic itself
 lib/
   api/          typed fetchers per backend router, config.ts, http.ts, query-keys.ts
                 (requests only — mirrored validation rules live with their domain)
@@ -325,7 +327,10 @@ touch one, prefer moving it toward the rule.
   while `grid_status === "converting"`, `useRecordings` while a bag is live).
   Two console-wide polls are mounted once in `app/layout.tsx`:
   `RobotStateProvider` (1 Hz) and `ActiveTaskProvider` (2 s). Pages read those
-  providers; they do not start their own `robotState` poll.
+  providers; they do not start their own `robotState` poll. The history screen
+  polls nothing: `taskHistory` is the prefix of both its page keys and its
+  stats keys, so the one invalidation the active-task poll fires when a run
+  finishes refreshes the list and the dashboard's counts together.
 - **A knowable moment beats a poll.** When the data itself says when it will
   next change, derive the interval from it rather than choosing one: the
   schedule list costs a Temporal list RPC plus a memo decode per row, so it is
@@ -462,9 +467,16 @@ it is run in, so it does not belong to any one of them.
   "the cloud"), **waypoint** (not vertex / stop), **forbidden zone** (not
   polygon / no-go area), **channel** (not topic),
   **recording** (not bag), **clip** for a video saved out of the camera window,
-  **Mapping / Navigation** for the robot's MANUAL / AUTO modes, and **job** for
-  a dispatched task. Backend sentences are still rendered verbatim; they are
-  written for operators too.
+  **Mapping / Navigation** for the robot's MANUAL / AUTO modes, **job** for
+  a dispatched task, and **success rate** for completed over finished on the
+  history dashboard. A job's *kind* is shown as **Navigation goal / Stand /
+  Lie down / Task / Scheduled** (`kindLabel` in `lib/task/history.ts`); the
+  wire words `goal / standup / liedown / task / schedule` stay in code and in
+  the id. A history row is titled by its template's name, else its kind, and
+  by the job id only when nothing labelled it (`describeRun`): the id is what
+  the orchestrator calls a run, not what an operator does, so it lives in the
+  row's expanded detail. Backend sentences are still rendered verbatim; they
+  are written for operators too.
 - **A clip is not a recording.** A recording is the robot's bag, on the robot's
   disk, started and stopped over REST; a clip is a video of the camera window's
   picture, written by the browser onto the operator's own machine and never

@@ -9,7 +9,7 @@ import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";
 import { useTaskRun } from "@/hooks/use-task-run";
 import type { TaskHistoryEntry } from "@/lib/api/task";
 import { formatDuration } from "@/lib/recording/format";
-import { runSeconds } from "@/lib/task/history";
+import { describeRun, runSeconds } from "@/lib/task/history";
 import { formatLocalRunTime, formatUtcRunTime } from "@/lib/task/schedule";
 import { cn } from "@/lib/utils";
 
@@ -115,40 +115,45 @@ function RunSteps({ id }: { id: string }) {
   );
 }
 
-/**
- * Who started the job, under its id. The id is the row's title because it is
- * what the job is called everywhere else — the running banner on /tasks, a
- * support conversation — so the history has to answer to the same name.
- */
-function sourceLabel(entry: TaskHistoryEntry): string {
-  return entry.schedule_id ? `Scheduled · ${entry.schedule_id}` : "Started directly";
-}
-
 export function HistoryRow({ entry }: { entry: TaskHistoryEntry }) {
   const [open, setOpen] = React.useState(false);
   const panelId = React.useId();
   const finished = useFinishedReadout(entry.closed_at);
   const seconds = runSeconds(entry.started_at, entry.closed_at);
+  // The template's name, the kind, or — for a run nothing labelled — the id;
+  // see describeRun. The id itself is in the detail below, for whoever has
+  // to find the run in the orchestrator's own log.
+  const { title, detail } = describeRun(entry);
+  const titledById = title === entry.id;
 
   return (
     <li>
       {/* The whole row is the disclosure, so there is no small target to hunt
-        * for. Its name is its visible text — id, status, source, times — which is
-        * also what a screen-reader user needs to pick the row out. */}
+        * for. Its name is its visible text — status, title, source, times —
+        * which is also what a screen-reader user needs to pick the row out. */}
       <button
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
+        title={entry.id}
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-elevated/60"
       >
         <TaskStatusChip status={entry.status} />
         <span className="min-w-0 flex-1">
-          <span className="readout block truncate text-sm font-medium">
-            {entry.id}
+          <span
+            className={cn(
+              "block text-sm font-medium",
+              // An id is a readout and truncates — its tail is a sequence
+              // number nobody reads; a name is words and wraps, because on
+              // a phone the times beside it leave "Morni…" otherwise.
+              titledById ? "readout truncate" : "break-words",
+            )}
+          >
+            {title}
           </span>
           <span className="mt-0.5 block text-[11px] leading-tight text-muted-foreground">
-            {sourceLabel(entry)}
+            {detail}
           </span>
         </span>
 
@@ -177,7 +182,16 @@ export function HistoryRow({ entry }: { entry: TaskHistoryEntry }) {
       </button>
 
       {open && (
-        <div id={panelId} className="px-4 pb-3">
+        <div id={panelId} className="space-y-2 px-4 pb-3">
+          {/* The id, once, where an engineer looks for it: it is what the
+            * orchestrator's log and a support conversation call the run. Not
+            * repeated when the title already is the id. */}
+          {!titledById && (
+            <div className="flex items-baseline gap-2">
+              <span className="instrument-label shrink-0 text-muted-foreground">Job id</span>
+              <span className="readout min-w-0 truncate text-[12px]">{entry.id}</span>
+            </div>
+          )}
           <RunSteps id={entry.id} />
         </div>
       )}
