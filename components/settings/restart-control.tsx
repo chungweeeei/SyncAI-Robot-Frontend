@@ -93,8 +93,10 @@ export function RestartControl() {
         }}
       >
         <RotateCcwIcon data-icon="inline-start" />
-        {/* One name throughout: the hint below is what says it is under way. */}
-        Restart robot
+        {/* One word, the same one the dialog confirms with; the heading beside
+          * it already says it is the robot, and the hint below says when it
+          * is under way. */}
+        Restart
       </Button>
       {/* Always in the tree, so a screen reader hears the outcome land. */}
       <p

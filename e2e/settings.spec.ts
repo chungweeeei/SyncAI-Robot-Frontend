@@ -26,8 +26,10 @@ test.describe("restarting the robot from Settings", () => {
     ).toEqual([]);
   });
 
+  // By its place in the page header: the dialog's confirm button carries the
+  // same word, and is portalled outside <main>.
   const restartButton = (page: Page) =>
-    page.getByRole("button", { name: "Restart robot" });
+    page.locator("main header").getByRole("button", { name: "Restart", exact: true });
 
   /**
    * Answer GET /robot/restart with `record` once it is set, standing in for
