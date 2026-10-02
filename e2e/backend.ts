@@ -211,29 +211,16 @@ function historyRows(
   });
 }
 
-const HISTORY_KINDS = ["goal", "standup", "liedown", "task", "schedule"] as const;
-
 /** GET /task_history/stats, counted from the same rows the page serves. */
 function historyStats(rows: Record<string, unknown>[], params: URLSearchParams) {
-  const count = (subset: Record<string, unknown>[]) => ({
-    total: subset.length,
-    completed: subset.filter((row) => row.status === "COMPLETED").length,
-    failed: subset.filter((row) => row.status === "FAILED").length,
-    canceled: subset.filter((row) => row.status === "CANCELED").length,
-  });
   const matched = historyRows(rows, params);
-  const all = count(matched);
-  const kind = params.get("kind");
-  const kinds: (string | null)[] = kind ? [kind] : [...HISTORY_KINDS, null];
+  const by = (status: string) => matched.filter((row) => row.status === status).length;
+  const completed = by("COMPLETED");
   return {
     as_of: "2026-09-18T10:00:00Z",
-    total: all.total,
-    by_status: { COMPLETED: all.completed, FAILED: all.failed, CANCELED: all.canceled },
-    success_rate: all.total ? all.completed / all.total : null,
-    by_kind: kinds.map((k) => ({
-      kind: k,
-      ...count(matched.filter((row) => (row.kind ?? null) === k)),
-    })),
+    total: matched.length,
+    by_status: { COMPLETED: completed, FAILED: by("FAILED"), CANCELED: by("CANCELED") },
+    success_rate: matched.length ? completed / matched.length : null,
   };
 }
 

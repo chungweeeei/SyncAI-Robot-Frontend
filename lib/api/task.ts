@@ -496,16 +496,6 @@ export function fetchTaskHistory(
   );
 }
 
-/** One row of `TaskHistoryStats.by_kind`: a kind's finished runs, by outcome. */
-export interface TaskHistoryKindCount {
-  /** A `TaskHistoryKind`, or null for runs that carry none (see `TaskHistoryEntry.kind`). */
-  kind: string | null;
-  total: number;
-  completed: number;
-  failed: number;
-  canceled: number;
-}
-
 /**
  * `TaskHistoryStatsResponse`, verbatim: the finished runs matching a filter,
  * counted rather than listed. Counted by Temporal itself, so the numbers are
@@ -518,11 +508,6 @@ export interface TaskHistoryStats {
   by_status: Record<TaskHistoryStatus, number>;
   /** Completed over total, or null when nothing finished — never a 0 that claims failure. */
   success_rate: number | null;
-  /**
-   * The five kinds in the backend's fixed order plus a `kind: null` row for
-   * runs recorded without one; exactly one row when the filter names a kind.
-   */
-  by_kind: TaskHistoryKindCount[];
 }
 
 const TaskHistoryStatsSchema: z.ZodType<TaskHistoryStats> = z.object({
@@ -534,15 +519,6 @@ const TaskHistoryStatsSchema: z.ZodType<TaskHistoryStats> = z.object({
     CANCELED: z.number(),
   }),
   success_rate: z.number().nullable(),
-  by_kind: z.array(
-    z.object({
-      kind: z.string().nullable(),
-      total: z.number(),
-      completed: z.number(),
-      failed: z.number(),
-      canceled: z.number(),
-    }),
-  ),
 });
 
 /** The counts the history dashboard shows, over the same filter the list reads. */
