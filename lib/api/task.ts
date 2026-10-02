@@ -193,6 +193,32 @@ export const TaskStepRequestSchema: z.ZodType<TaskStepRequest> = z.union([
 let submitSeq = 0;
 
 /**
+ * How a job was started, as this console dispatches it. It shapes the id's
+ * second segment and, since the history dashboard, travels on the request too:
+ * the backend records it on the run so finished jobs can be counted and
+ * filtered by it. "schedule" is the fifth value a *finished* run can carry,
+ * stamped by the backend on every run a schedule starts — a direct dispatch
+ * may not claim it, which is why it is not in this union.
+ */
+export type TaskKind = "goal" | "standup" | "liedown" | "task";
+
+/** The history filter's vocabulary: every kind a finished run can carry. */
+export type TaskHistoryKind = TaskKind | "schedule";
+
+/**
+ * `TaskRequest`, verbatim. `kind` and `name` are what the history reads back as
+ * a run's provenance; `name` is the template a dispatch came from, which is the
+ * one thing about a run the id cannot say.
+ */
+interface TaskRequest {
+  id: string;
+  timestamp: number;
+  kind: TaskKind;
+  name: string | null;
+  steps: readonly TaskStepRequest[];
+}
+
+/**
  * A fresh task identity. `kind` only shapes the id — the step's `type` is what
  * the workflow dispatches on. The `timestamp` field is required by `TaskRequest`
  * and read by nothing, so it reuses the value the id was built from and the two
@@ -200,7 +226,7 @@ let submitSeq = 0;
  */
 function newTaskIdentity(
   robotId: string,
-  kind: string,
+  kind: TaskKind,
 ): { id: string; timestamp: number } {
   const timestamp = Math.floor(Date.now() / 1000);
   submitSeq += 1;
@@ -209,13 +235,15 @@ function newTaskIdentity(
 
 async function postTask(
   robotId: string,
-  kind: string,
+  kind: TaskKind,
   steps: readonly TaskStepRequest[],
+  name: string | null = null,
 ): Promise<string> {
   const { id, timestamp } = newTaskIdentity(robotId, kind);
+  const body: TaskRequest = { id, timestamp, kind, name, steps };
   const ack = await requestJson<TaskAckResponse>(apiUrl("/api/v1/tasks"), {
     method: "POST",
-    body: JSON.stringify({ id, timestamp, steps }),
+    body: JSON.stringify(body),
     schema: TaskAckResponseSchema,
   });
   return ack.id;
@@ -232,12 +260,19 @@ export function sendMoveTask(robotId: string, goal: GoalPose): Promise<string> {
   ]);
 }
 
+// An explicit table rather than `toLowerCase()`: the kind is typed on the wire
+// now, and a lowercased string is not a `TaskKind` the compiler can check.
+const POSTURE_KIND: Record<Posture, TaskKind> = {
+  STANDUP: "standup",
+  LIEDOWN: "liedown",
+};
+
 /** Submit a one-step posture task (STANDUP / LIEDOWN). */
 export function sendPostureTask(
   robotId: string,
   posture: Posture,
 ): Promise<string> {
-  const kind = posture.toLowerCase();
+  const kind = POSTURE_KIND[posture];
   return postTask(robotId, kind, [{ id: kind, type: posture }]);
 }
 
@@ -246,12 +281,17 @@ export function sendPostureTask(
  * tracker. The steps arrive already in wire shape — see lib/task/step.ts, which
  * owns the draft model and the conversion, so this client never has to know what
  * a half-typed coordinate field looks like.
+ *
+ * `name` is the template the steps were loaded from, when they were: it is
+ * recorded on the run and is what lets the history count one template's jobs
+ * apart from everything else dispatched as a "task".
  */
 export function submitTask(
   robotId: string,
   steps: readonly TaskStepRequest[],
+  name: string | null = null,
 ): Promise<string> {
-  return postTask(robotId, "task", steps);
+  return postTask(robotId, "task", steps, name);
 }
 
 export function fetchTaskState(
@@ -355,14 +395,24 @@ export interface TaskHistoryEntry {
   source: TaskSource;
   /** Set only when `source` is "SCHEDULE". */
   schedule_id: string | null;
+  /**
+   * How the run was started (see `TaskHistoryKind`), or null for one dispatched
+   * before the backend recorded it, or by a caller that did not say. A string
+   * rather than the union so a kind this build does not know is a row with an
+   * unfamiliar label, not a parse failure that blanks the page.
+   */
+  kind: string | null;
+  /** The template the run was dispatched from, or null when there was none. */
+  name: string | null;
 }
 
 export interface TaskHistoryResponse {
   /** Newest close first; the backend offers no other order. */
   tasks: TaskHistoryEntry[];
   /**
-   * Opaque cursor for the next page, null on the last one. Only valid with the
-   * same `status` it was issued under — see queryKeys.taskHistoryPage.
+   * Opaque cursor for the next page, null on the last one. Only valid under
+   * the same filter set it was issued with — status, window, kind and name —
+   * see queryKeys.taskHistoryPage.
    */
   next_page_token: string | null;
 }
@@ -377,16 +427,47 @@ const TaskHistoryResponseSchema: z.ZodType<TaskHistoryResponse> = z.object({
       closed_at: z.string().nullable(),
       source: z.enum(["DIRECT", "SCHEDULE"]),
       schedule_id: z.string().nullable(),
+      kind: z.string().nullable(),
+      name: z.string().nullable(),
     }),
   ),
   next_page_token: z.string().nullable(),
 });
 
-export interface TaskHistoryQuery {
+/**
+ * The filter half of a history read, shared by the page and the stats reads so
+ * the two can never describe different sets of runs.
+ */
+export interface TaskHistoryFilterQuery {
   /** Only runs that finished this way; omitted for all three. */
   status?: TaskHistoryStatus;
+  /** ISO 8601 UTC bounds on the close time; either may be omitted. */
+  since?: string;
+  until?: string;
+  kind?: TaskHistoryKind;
+  /** Exact template name. */
+  name?: string;
+}
+
+export interface TaskHistoryQuery extends TaskHistoryFilterQuery {
   pageToken?: string;
   pageSize?: number;
+}
+
+function historyFilterParams({
+  status,
+  since,
+  until,
+  kind,
+  name,
+}: TaskHistoryFilterQuery): URLSearchParams {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (since) params.set("since", since);
+  if (until) params.set("until", until);
+  if (kind) params.set("kind", kind);
+  if (name) params.set("name", name);
+  return params;
 }
 
 /**
@@ -397,20 +478,81 @@ export interface TaskHistoryQuery {
  * the token it was handed and back with the ones it kept — never jump to
  * "page 3 of 7".
  *
- * The backend's `since` bound is not exposed. With history kept for about a
- * day, a time-range filter was a second control that changed almost nothing.
+ * `since` / `until` bound the close time. The dashboard's counts
+ * (`fetchTaskHistoryStats`) take the same filter through the same helper,
+ * which is what keeps the numbers above the list true of the rows in it.
  */
 export function fetchTaskHistory(
-  { status, pageToken, pageSize }: TaskHistoryQuery,
+  { pageToken, pageSize, ...filter }: TaskHistoryQuery,
   signal?: AbortSignal,
 ): Promise<TaskHistoryResponse> {
-  const params = new URLSearchParams();
+  const params = historyFilterParams(filter);
   if (pageSize !== undefined) params.set("page_size", String(pageSize));
   if (pageToken) params.set("page_token", pageToken);
-  if (status) params.set("status", status);
   const query = params.toString();
   return requestJson<TaskHistoryResponse>(
     apiUrl(`/api/v1/task_history${query ? `?${query}` : ""}`),
     { signal, schema: TaskHistoryResponseSchema },
+  );
+}
+
+/** One row of `TaskHistoryStats.by_kind`: a kind's finished runs, by outcome. */
+export interface TaskHistoryKindCount {
+  /** A `TaskHistoryKind`, or null for runs that carry none (see `TaskHistoryEntry.kind`). */
+  kind: string | null;
+  total: number;
+  completed: number;
+  failed: number;
+  canceled: number;
+}
+
+/**
+ * `TaskHistoryStatsResponse`, verbatim: the finished runs matching a filter,
+ * counted rather than listed. Counted by Temporal itself, so the numbers are
+ * exact however many pages the list would take.
+ */
+export interface TaskHistoryStats {
+  /** When the backend counted, ISO 8601 UTC. */
+  as_of: string;
+  total: number;
+  by_status: Record<TaskHistoryStatus, number>;
+  /** Completed over total, or null when nothing finished — never a 0 that claims failure. */
+  success_rate: number | null;
+  /**
+   * The five kinds in the backend's fixed order plus a `kind: null` row for
+   * runs recorded without one; exactly one row when the filter names a kind.
+   */
+  by_kind: TaskHistoryKindCount[];
+}
+
+const TaskHistoryStatsSchema: z.ZodType<TaskHistoryStats> = z.object({
+  as_of: z.string(),
+  total: z.number(),
+  by_status: z.object({
+    COMPLETED: z.number(),
+    FAILED: z.number(),
+    CANCELED: z.number(),
+  }),
+  success_rate: z.number().nullable(),
+  by_kind: z.array(
+    z.object({
+      kind: z.string().nullable(),
+      total: z.number(),
+      completed: z.number(),
+      failed: z.number(),
+      canceled: z.number(),
+    }),
+  ),
+});
+
+/** The counts the history dashboard shows, over the same filter the list reads. */
+export function fetchTaskHistoryStats(
+  filter: TaskHistoryFilterQuery,
+  signal?: AbortSignal,
+): Promise<TaskHistoryStats> {
+  const query = historyFilterParams(filter).toString();
+  return requestJson<TaskHistoryStats>(
+    apiUrl(`/api/v1/task_history/stats${query ? `?${query}` : ""}`),
+    { signal, schema: TaskHistoryStatsSchema },
   );
 }

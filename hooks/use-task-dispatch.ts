@@ -33,7 +33,12 @@ export interface TaskDispatch {
    * an unattended run in the banner above the library.
    */
   taskId: string | null;
-  send: (steps: readonly TaskStepRequest[]) => Promise<void>;
+  /**
+   * `name` is the template the steps were loaded from, when they were. It is
+   * recorded on the run so the history can tell one template's jobs apart;
+   * the composer's own steps send none.
+   */
+  send: (steps: readonly TaskStepRequest[], name?: string | null) => Promise<void>;
   cancel: () => Promise<void>;
   clear: () => void;
 }
@@ -70,10 +75,12 @@ export function useTaskDispatch(robotId: string | null): TaskDispatch {
     mutationFn: ({
       robot,
       requests,
+      name,
     }: {
       robot: string;
       requests: readonly TaskStepRequest[];
-    }) => submitTask(robot, requests),
+      name: string | null;
+    }) => submitTask(robot, requests, name),
     // Before the request, not after it: this is the one place that knows a new
     // task is starting, so the previous task's per-step readback goes now
     // instead of lingering under the new one's rows.
@@ -91,10 +98,10 @@ export function useTaskDispatch(robotId: string | null): TaskDispatch {
   const { mutateAsync: cancelAsync, reset: resetCancel } = cancelRun;
 
   const send = React.useCallback(
-    async (requests: readonly TaskStepRequest[]) => {
+    async (requests: readonly TaskStepRequest[], name: string | null = null) => {
       if (!robotId || !requests.length) return;
       resetCancel();
-      await submitAsync({ robot: robotId, requests }).catch(ignore);
+      await submitAsync({ robot: robotId, requests, name }).catch(ignore);
     },
     [robotId, submitAsync, resetCancel],
   );
