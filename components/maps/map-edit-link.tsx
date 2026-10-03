@@ -6,6 +6,8 @@ import { PencilIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
 
+const LOCKED_REASON =
+  "The robot is working in this map right now, so it cannot be edited. Switch it to another map first.";
 const NO_GRID_REASON =
   "This map has no floor plan to edit yet. Rebuild one from the card first.";
 const CONVERTING_REASON =
@@ -33,22 +35,33 @@ const CORNER =
  * change" as an X is for "remove", so a label would only repeat it; the name
  * survives as the tooltip and the accessible name.
  *
- * Greyed for a map with no floor plan — the editor would open onto a guard
- * screen — and mid-conversion, when the grid on disk is about to be replaced
- * and cells saved now would land on a map with different extents. A map
- * whose re-conversion *failed* keeps its editor: the grid it serves is the
- * archived one, which is a real grid and the only one it has. A look-alike
- * span rather than a disabled link, for the reason the other tiles give —
- * the tooltip is the point, and `disabled` would swallow it.
+ * Greyed on the map in use, like Rename and Delete beside it: a floor plan
+ * saved under the running stack is a change the planner picks up at once,
+ * and the card's answer to that is the same as for the other two — switch
+ * the robot to another map first. Also greyed for a map with no floor plan
+ * (the editor would open onto a guard screen) and mid-conversion, when the
+ * grid on disk is about to be replaced and cells saved now would land on a
+ * map with different extents. A map whose re-conversion *failed* keeps its
+ * editor: the grid it serves is the archived one, which is a real grid and
+ * the only one it has. A look-alike span rather than a disabled link, for
+ * the reason the other tiles give — the tooltip is the point, and
+ * `disabled` would swallow it.
  */
 export function MapEditLink({ map }: { map: MapSummary }) {
+  const locked = map.active;
   const converting = map.grid_status === "converting";
 
-  if (!map.grid || converting) {
+  if (locked || !map.grid || converting) {
     return (
       <span
         aria-disabled="true"
-        title={converting ? CONVERTING_REASON : NO_GRID_REASON}
+        title={
+          locked
+            ? LOCKED_REASON
+            : converting
+              ? CONVERTING_REASON
+              : NO_GRID_REASON
+        }
         className={cn(
           CORNER,
           "cursor-not-allowed text-muted-foreground opacity-40",

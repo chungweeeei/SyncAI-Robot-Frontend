@@ -125,6 +125,9 @@ test.describe("the map library", () => {
     await expect(
       page.getByRole("button", { name: `Rename ${MAP_NAME}` }),
     ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: `Edit ${MAP_NAME}` }),
+    ).toHaveCount(0);
   });
 
   test("puts a delete behind a dialog that names what goes with it", async ({
