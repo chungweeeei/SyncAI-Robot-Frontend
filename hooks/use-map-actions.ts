@@ -7,11 +7,15 @@ import {
   ConvertConflictError,
   convertMapGrid,
   deleteMap,
+  exportMap,
+  importMap,
   renameMap,
   saveMapGrid,
 } from "@/lib/api/map";
 import { saveKeepout } from "@/lib/api/keepout";
 import { queryKeys } from "@/lib/api/query-keys";
+import { downloadBlob } from "@/lib/download";
+import { exportFilename } from "@/lib/map/archive";
 import type { MapGrid } from "@/lib/map/grid";
 import type { GridRecipe, ZonePolygon } from "@/lib/types/map";
 
@@ -185,6 +189,54 @@ export function useSaveMapKeepout() {
         active: result.active,
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
+    },
+  });
+}
+
+/**
+ * GET /api/v1/maps/{name}/export, then hand the archive to the operator's
+ * machine.
+ *
+ * A read wrapped in useMutation rather than useQuery: the archive is built for
+ * one click and is never the cached state of anything, and what the control
+ * wants from it is exactly a mutation's surface — `isPending` while the robot
+ * zips tens of megabytes, and the 409 sentence when the floor plan is still
+ * being rebuilt. The download is the hook-level consequence, not the per-call
+ * one, so a card that re-rendered away mid-transfer still delivers the file.
+ */
+export function useExportMap() {
+  return useMutation({
+    mutationFn: ({ name }: { name: string }) => exportMap(name),
+    onSuccess: (archive, { name }) => downloadBlob(archive, exportFilename(name)),
+  });
+}
+
+export interface ImportMapVariables {
+  archive: Blob;
+  /** Overrides the name inside the archive; undefined keeps it. */
+  name?: string;
+}
+
+/** POST /api/v1/maps/import. */
+export function useImportMap() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ archive, name }: ImportMapVariables) => importMap(archive, name),
+    onSuccess: (result) => {
+      // Keyed by the answer's `name`, not the variable: the archive's manifest
+      // names the map when the operator left the field empty. When the import
+      // replaced a map every file and every vertex under that name is new, so
+      // the per-map entries are stale rather than merely old; when it did not,
+      // there is nothing under the name to drop and this is a no-op.
+      queryClient.removeQueries({ queryKey: queryKeys.mapVertices(result.name) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapImage(result.name) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(result.name) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(result.name) });
+      // The catalogue has a new (or rewritten) row; the refetch mounts its card.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
+      // Not `taskTemplates`: the backend refuses to replace a map any template
+      // still targets (409 `template_bound`), so a success never changes what
+      // a template resolves to.
     },
   });
 }
