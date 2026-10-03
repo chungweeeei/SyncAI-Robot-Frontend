@@ -34,7 +34,11 @@ const PNG_1PX = Buffer.from(
  * so a test that strokes or pinches after zooming was touching nothing.
  * Hand this to `gridImage` for those.
  */
-export function floorPlanPng(width: number, height: number, byte: number): Buffer {
+export function floorPlanPng(
+  width: number,
+  height: number,
+  byte: number,
+): Buffer {
   const chunk = (type: string, data: Buffer) => {
     const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
     const length = Buffer.alloc(4);
@@ -63,7 +67,8 @@ function crc32(data: Buffer): number {
   let crc = 0xffffffff;
   for (const byte of data) {
     crc ^= byte;
-    for (let i = 0; i < 8; i += 1) crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
+    for (let i = 0; i < 8; i += 1)
+      crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
@@ -204,7 +209,8 @@ function historyRows(
     if (status && row.status !== status) return false;
     if (kind && row.kind !== kind) return false;
     if (name && row.name !== name) return false;
-    const closed = typeof row.closed_at === "string" ? Date.parse(row.closed_at) : NaN;
+    const closed =
+      typeof row.closed_at === "string" ? Date.parse(row.closed_at) : NaN;
     if (since && !(closed >= Date.parse(since))) return false;
     if (until && !(closed <= Date.parse(until))) return false;
     return true;
@@ -212,14 +218,22 @@ function historyRows(
 }
 
 /** GET /task_history/stats, counted from the same rows the page serves. */
-function historyStats(rows: Record<string, unknown>[], params: URLSearchParams) {
+function historyStats(
+  rows: Record<string, unknown>[],
+  params: URLSearchParams,
+) {
   const matched = historyRows(rows, params);
-  const by = (status: string) => matched.filter((row) => row.status === status).length;
+  const by = (status: string) =>
+    matched.filter((row) => row.status === status).length;
   const completed = by("COMPLETED");
   return {
     as_of: "2026-09-18T10:00:00Z",
     total: matched.length,
-    by_status: { COMPLETED: completed, FAILED: by("FAILED"), CANCELED: by("CANCELED") },
+    by_status: {
+      COMPLETED: completed,
+      FAILED: by("FAILED"),
+      CANCELED: by("CANCELED"),
+    },
     success_rate: matched.length ? completed / matched.length : null,
   };
 }
@@ -297,7 +311,9 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   const gridImage = over.gridImage ?? PNG_1PX;
   // Copied, because the PUT below replaces a map's list the way the robot's
   // would, and a test's fixture object must not change under it.
-  const keepout: Record<string, Record<string, unknown>[]> = { ...over.keepout };
+  const keepout: Record<string, Record<string, unknown>[]> = {
+    ...over.keepout,
+  };
   // The backend's record of the latest restart; the POST below moves it on.
   let restart: Record<string, unknown> = over.restart ?? {
     status: "idle",
@@ -320,7 +336,11 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     if (path === "/api/v1/robot/state") {
       return state
         ? json(route, state)
-        : json(route, { detail: "The robot has not published a state frame yet." }, 404);
+        : json(
+            route,
+            { detail: "The robot has not published a state frame yet." },
+            404,
+          );
     }
     if (path === "/api/v1/robot/restart" && method === "GET") {
       return json(route, restart);
@@ -348,7 +368,11 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       // Without this the catch-all's `{ message }` fails the ack schema, and a
       // dispatch test would be testing a parse error.
       const body = parseBody(request.postData()) as { id?: string } | null;
-      return json(route, { id: body?.id ?? "robot01-task-0-0", status: "PENDING", message: "ok" });
+      return json(route, {
+        id: body?.id ?? "robot01-task-0-0",
+        status: "PENDING",
+        message: "ok",
+      });
     }
     const taskMatch = /^\/api\/v1\/tasks\/([^/]+)$/.exec(path);
     if (taskMatch && method === "GET") {
@@ -383,7 +407,11 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     if (keepoutMatch && method === "GET") {
       const name = decodeURIComponent(keepoutMatch[1]);
       const map = maps.find((entry) => entry.name === name);
-      return json(route, { name, zones: keepout[name] ?? [], active: map?.active === true });
+      return json(route, {
+        name,
+        zones: keepout[name] ?? [],
+        active: map?.active === true,
+      });
     }
     if (path === "/api/v1/recordings" && method === "GET") {
       return json(route, { recordings });
@@ -422,7 +450,9 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       const name = decodeURIComponent(keepoutMatch[1]);
       const map = maps.find((entry) => entry.name === name);
       const active = map?.active === true;
-      const zones = (parseBody(request.postData()) as { zones: Record<string, unknown>[] }).zones;
+      const zones = (
+        parseBody(request.postData()) as { zones: Record<string, unknown>[] }
+      ).zones;
       keepout[name] = zones;
       const count = `${zones.length} forbidden zone${zones.length === 1 ? "" : "s"}`;
       return json(route, {
@@ -454,9 +484,37 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       // put it back on the row mid-assertion.
       const id = decodeURIComponent(scheduleMatch[1]);
       const entry = schedules.find((row) => row.id === id);
-      if (!entry) return json(route, { detail: `Schedule ${id} not found` }, 404);
-      entry.trigger = (parseBody(request.postData()) as { trigger: unknown }).trigger;
-      return json(route, { id, message: `Schedule ${id} trigger has been updated.` });
+      if (!entry)
+        return json(route, { detail: `Schedule ${id} not found` }, 404);
+      entry.trigger = (
+        parseBody(request.postData()) as { trigger: unknown }
+      ).trigger;
+      return json(route, {
+        id,
+        message: `Schedule ${id} trigger has been updated.`,
+      });
+    }
+    if (path === "/api/v1/maps/import" && method === "POST") {
+      // Lands in the catalogue the way the robot's would, so the refetch the
+      // hook fires mounts a card for it. `name` is the console's override;
+      // without one the robot reads the archive's manifest, which this fake
+      // cannot, so it stands in a fixed name.
+      const name = url.searchParams.get("name") ?? "imported";
+      const replaced = maps.some((entry) => entry.name === name);
+      if (!replaced) maps.push(mapSummary({ active: false, name }));
+      return json(
+        route,
+        {
+          name,
+          replaced,
+          files: 7,
+          bytes: 24_117_248,
+          vertices_created: 2,
+          vertices_deleted: 0,
+          message: `${replaced ? "Replaced" : "Imported"} '${name}': 7 files and 2 vertices.`,
+        },
+        201,
+      );
     }
     if (path === "/api/v1/robot/restart" && method === "POST") {
       // Dispatched, the usual answer: the robot reports back only once the
@@ -485,6 +543,15 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   // the ones that mean something.
   await page.route(/\/api\/v1\/maps\/[^/]+\/(image|thumbnail)$/, (route) =>
     route.fulfill({ status: 200, contentType: "image/png", body: gridImage }),
+  );
+  await page.route(/\/api\/v1\/maps\/[^/]+\/export$/, (route) =>
+    // The console never opens the archive; a few bytes under the right media
+    // type is all the download path needs to hand to the operator's disk.
+    route.fulfill({
+      status: 200,
+      contentType: "application/zip",
+      body: Buffer.from("PK\x05\x06", "latin1"),
+    }),
   );
   await page.route(/\/api\/v1\/maps\/[^/]+\/pointcloud$/, (route) =>
     // The wire format is [u32 count][f32 xyz…]; zero points is four zero bytes.

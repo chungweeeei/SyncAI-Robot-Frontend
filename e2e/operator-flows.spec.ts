@@ -27,11 +27,15 @@ test.describe("the recorder", () => {
     await mockBackend(page, { activeRecording: null });
     await page.goto("/recordings");
 
-    await expect(page.getByRole("button", { name: /start recording/i })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /start recording/i }),
+    ).toBeVisible();
     await expect(page.getByRole("button", { name: "Stop" })).toHaveCount(0);
   });
 
-  test("shows the live face and the robot's own elapsed clock", async ({ page }) => {
+  test("shows the live face and the robot's own elapsed clock", async ({
+    page,
+  }) => {
     await mockBackend(page, {
       activeRecording: {
         name: "rec_live",
@@ -79,7 +83,9 @@ test.describe("the recorder", () => {
     expect(body.compression).toBe(true);
   });
 
-  test("refuses the reserved name before a request goes out", async ({ page }) => {
+  test("refuses the reserved name before a request goes out", async ({
+    page,
+  }) => {
     // "active" is the status route's own path; a directory called that could
     // never be read back, and the backend refuses it too.
     const writes = await mockBackend(page, { activeRecording: null });
@@ -147,7 +153,9 @@ test.describe("the map library", () => {
     expect(writes.filter((w) => w.method === "DELETE")).toHaveLength(0);
   });
 
-  test("sends the delete only after the dialog is confirmed", async ({ page }) => {
+  test("sends the delete only after the dialog is confirmed", async ({
+    page,
+  }) => {
     const writes = await mockBackend(page, {
       maps: [
         mapSummary({ active: true, name: "in-use" }),
@@ -166,6 +174,97 @@ test.describe("the map library", () => {
       .poll(() => writes.filter((w) => w.method === "DELETE"))
       .toHaveLength(1);
     expect(writes[0].path).toBe("/api/v1/maps/old-site");
+  });
+
+  test("exports a map as a zip named after it", async ({ page }) => {
+    await mockBackend(page, {
+      maps: [
+        mapSummary({ active: true, name: "in-use" }),
+        mapSummary({ active: false, name: "old-site" }),
+      ],
+    });
+    await page.goto("/maps");
+
+    // The file is named by the console, not read off the response: the
+    // backend's Content-Disposition is not CORS-exposed, so a test that only
+    // watched the request would pass a build that saved "download" or "blob".
+    const requested = page.waitForRequest(
+      /\/api\/v1\/maps\/old-site\/export\?format=zip$/,
+    );
+    const downloaded = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export old-site" }).click();
+
+    expect((await requested).method()).toBe("GET");
+    expect((await downloaded).suggestedFilename()).toBe("old-site.zip");
+  });
+
+  test("imports an archive under the name on the file", async ({ page }) => {
+    const writes = await mockBackend(page, {
+      maps: [mapSummary({ active: true, name: "in-use" })],
+    });
+    await page.goto("/maps");
+
+    await page.getByLabel("Map archive").setInputFiles({
+      name: "site-b.zip",
+      mimeType: "application/zip",
+      buffer: Buffer.from("PK\x05\x06", "latin1"),
+    });
+
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toBeVisible();
+    // Pre-filled from the filename, which is what an export is called.
+    await expect(dialog.getByLabel("Save as")).toHaveValue("site-b");
+
+    const sent = page.waitForRequest(
+      (request) =>
+        request.method() === "POST" &&
+        request.url().includes("/api/v1/maps/import"),
+    );
+    await dialog.getByRole("button", { name: "Import" }).click();
+
+    // The body is the archive itself, not a multipart form — the backend has
+    // no parser for one — and the name travels in the query.
+    const request = await sent;
+    expect(new URL(request.url()).searchParams.get("name")).toBe("site-b");
+    expect(request.headers()["content-type"]).toBe("application/octet-stream");
+    // Polled: the request event this test awaited fires as the request is
+    // issued, and the route handler that logs it is not ordered before it.
+    await expect
+      .poll(() => writes.filter((w) => w.method === "POST"))
+      .toHaveLength(1);
+
+    // The backend's sentence above the grid, and the refetch mounts the card.
+    await expect(
+      page.getByRole("status").filter({ hasText: "Imported 'site-b'" }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "site-b" })).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+  });
+
+  test("warns before an import that would replace a map", async ({ page }) => {
+    const writes = await mockBackend(page, {
+      maps: [
+        mapSummary({ active: true, name: "in-use" }),
+        mapSummary({ active: false, name: "old-site" }),
+      ],
+    });
+    await page.goto("/maps");
+
+    await page.getByLabel("Map archive").setInputFiles({
+      name: "old-site.zip",
+      mimeType: "application/zip",
+      buffer: Buffer.from("PK\x05\x06", "latin1"),
+    });
+
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText("replaces it and its waypoints");
+    // The confirm names the consequence; "Import" would read as additive.
+    await expect(dialog.getByRole("button", { name: "Replace" })).toBeVisible();
+
+    // Backing out sends nothing.
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(writes.filter((w) => w.method === "POST")).toHaveLength(0);
   });
 
   test("explains a conversion that failed instead of showing a hole", async ({
@@ -209,7 +308,9 @@ test.describe("the dashboard's map scan layer", () => {
       if (pathname.endsWith("/pointcloud")) scanReads.push(pathname);
     });
     await page.goto("/");
-    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Map viewport" }),
+    ).toBeVisible();
 
     // Hundreds of thousands of points: a weak client pays for them only when
     // someone asks to see them.
@@ -233,14 +334,18 @@ test.describe("the dashboard's map scan layer", () => {
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { maps: [mapSummary({ has_pointcloud: false })] });
     await page.goto("/");
-    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Map viewport" }),
+    ).toBeVisible();
 
     await expect(page.getByRole("button", { name: "Top down" })).toBeVisible();
     await expect(toggle(page)).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("keeps the scan it has through a floor plan rebuild", async ({ page }) => {
+  test("keeps the scan it has through a floor plan rebuild", async ({
+    page,
+  }) => {
     // A rebuild rewrites the floor plan, which moves the catalogue's
     // modified_at, and leaves map.pcd alone. The scan is hundreds of thousands
     // of points, so a new directory time must not cost a second download.
@@ -257,13 +362,19 @@ test.describe("the dashboard's map scan layer", () => {
     });
     const visitMapsAndReturn = async () => {
       await page.getByRole("link", { name: "Maps" }).click();
-      await expect(page.getByRole("heading", { name: "Maps", level: 1 })).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "Maps", level: 1 }),
+      ).toBeVisible();
       await page.getByRole("link", { name: "Dashboard" }).click();
-      await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+      await expect(
+        page.getByRole("region", { name: "Map viewport" }),
+      ).toBeVisible();
     };
 
     await page.goto("/");
-    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Map viewport" }),
+    ).toBeVisible();
     await expect(page.getByText("robot01").first()).toBeVisible();
     await toggle(page).click();
     await expect.poll(() => scanReads).toEqual([scanPath]);
@@ -299,7 +410,9 @@ test.describe("the dashboard's map scan layer", () => {
     await page.goto("/");
 
     await toggle(page).click();
-    const alert = page.getByRole("alert").filter({ hasText: "has no saved scan" });
+    const alert = page
+      .getByRole("alert")
+      .filter({ hasText: "has no saved scan" });
     await expect(alert).toHaveText(`Map '${MAP_NAME}' has no saved scan`);
 
     // Turning the layer off is what dismisses it.
@@ -309,7 +422,8 @@ test.describe("the dashboard's map scan layer", () => {
 });
 
 test.describe("the dashboard's forbidden zone layer", () => {
-  const toggle = (page: Page) => page.getByRole("button", { name: /^Forbidden zones/ });
+  const toggle = (page: Page) =>
+    page.getByRole("button", { name: /^Forbidden zones/ });
   const zone = {
     id: "zone-1",
     points: [
@@ -319,7 +433,9 @@ test.describe("the dashboard's forbidden zone layer", () => {
     ],
   };
 
-  test("reads the running map's zones and draws them, on by default", async ({ page }) => {
+  test("reads the running map's zones and draws them, on by default", async ({
+    page,
+  }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { keepout: { [MAP_NAME]: [zone] } });
@@ -329,10 +445,14 @@ test.describe("the dashboard's forbidden zone layer", () => {
       if (pathname.endsWith("/keepout")) reads.push(pathname);
     });
     await page.goto("/");
-    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Map viewport" }),
+    ).toBeVisible();
 
     // The zones of the map the robot is on, not of whichever map was edited.
-    await expect.poll(() => reads).toEqual([`/api/v1/maps/${MAP_NAME}/keepout`]);
+    await expect
+      .poll(() => reads)
+      .toEqual([`/api/v1/maps/${MAP_NAME}/keepout`]);
     await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
     await toggle(page).click();
     await expect(toggle(page)).toHaveAttribute("aria-pressed", "false");
@@ -344,10 +464,14 @@ test.describe("the dashboard's forbidden zone layer", () => {
     failOnConsoleErrors(page, errors);
     await mockBackend(page);
     await page.goto("/");
-    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Map viewport" }),
+    ).toBeVisible();
 
     // The positive control: the layer strip is up, with the stops' toggle.
-    await expect(page.getByRole("button", { name: /^Waypoints/ })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^Waypoints/ }),
+    ).toBeVisible();
     await expect(toggle(page)).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
@@ -402,7 +526,13 @@ test.describe("adding a waypoint from the dashboard", () => {
       .toHaveLength(1);
     const write = writes.find((w) => w.path === verticesPath)!;
     expect(write.method).toBe("POST");
-    const body = write.body as { name: string; type: string; x: number; y: number; theta: number }[];
+    const body = write.body as {
+      name: string;
+      type: string;
+      x: number;
+      y: number;
+      theta: number;
+    }[];
     expect(body).toHaveLength(1);
     expect(body[0].name).toBe("shelf-b");
     expect(body[0].type).toBe("WAITING");
@@ -414,10 +544,9 @@ test.describe("adding a waypoint from the dashboard", () => {
     // The echoed row closed the dialog: the create parsed and was spliced in.
     await expect(dialog).toHaveCount(0);
     // And the tool disarmed on release, so a stray click cannot place another.
-    await expect(page.getByRole("button", { name: "Add waypoint" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
+    await expect(
+      page.getByRole("button", { name: "Add waypoint" }),
+    ).toHaveAttribute("aria-pressed", "false");
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -448,7 +577,12 @@ test.describe("adding a waypoint from the dashboard", () => {
       y: number;
       theta: number;
     }[];
-    expect(body[0]).toMatchObject({ name: "where-it-stands", x: 1.25, y: -3.5, theta: 90 });
+    expect(body[0]).toMatchObject({
+      name: "where-it-stands",
+      x: 1.25,
+      y: -3.5,
+      theta: 90,
+    });
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -477,7 +611,9 @@ test.describe("adding a waypoint from the dashboard", () => {
         ? route.fulfill({
             status: 409,
             contentType: "application/json",
-            body: JSON.stringify({ detail: 'A waypoint named "dock" already exists' }),
+            body: JSON.stringify({
+              detail: 'A waypoint named "dock" already exists',
+            }),
           })
         : route.fallback(),
     );
@@ -499,9 +635,13 @@ test.describe("adding a waypoint from the dashboard", () => {
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { maps: [] });
     await page.goto("/");
-    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Map viewport" }),
+    ).toBeVisible();
 
-    await expect(page.getByRole("button", { name: "Add waypoint" })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Add waypoint" }),
+    ).toBeDisabled();
     // The camera buttons do not need a map.
     await expect(page.getByRole("button", { name: "Recenter" })).toBeEnabled();
     expect(errors, "the page logged errors").toEqual([]);
@@ -526,20 +666,25 @@ test.describe("tapping a stop on the dashboard", () => {
     const box = (await region.boundingBox())!;
     const tanHalfFov = Math.tan(Math.PI / 6);
     const height =
-      Math.max(7.5 / tanHalfFov, 10 / (tanHalfFov * (box.width / box.height))) * 1.08;
+      Math.max(7.5 / tanHalfFov, 10 / (tanHalfFov * (box.width / box.height))) *
+      1.08;
     const pxPerM = box.height / (2 * height * tanHalfFov);
     const x = box.x + box.width / 2 + (stop.x - -2.3) * pxPerM;
     const y = box.y + box.height / 2 - (stop.y - -0.3) * pxPerM;
     // Polled: the camera eases into the overhead view over a few frames.
     await expect(async () => {
       await page.mouse.click(x, y);
-      await expect(page.getByRole("alertdialog", { name: `Move to ${stop.name}` })).toBeVisible({
+      await expect(
+        page.getByRole("alertdialog", { name: `Move to ${stop.name}` }),
+      ).toBeVisible({
         timeout: 500,
       });
     }).toPass();
   };
 
-  test("deletes the stop once the operator confirms, and closes", async ({ page }) => {
+  test("deletes the stop once the operator confirms, and closes", async ({
+    page,
+  }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page);
@@ -553,11 +698,15 @@ test.describe("tapping a stop on the dashboard", () => {
     await page.getByRole("button", { name: "Delete" }).click();
 
     await expect
-      .poll(() => writes.filter((w) => w.method === "DELETE").map((w) => w.path))
+      .poll(() =>
+        writes.filter((w) => w.method === "DELETE").map((w) => w.path),
+      )
       .toEqual([stopPath]);
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
     // The layer toggle goes with the last stop: nothing left to hide.
-    await expect(page.getByRole("button", { name: "Waypoints" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Waypoints" })).toHaveCount(
+      0,
+    );
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -571,7 +720,9 @@ test.describe("tapping a stop on the dashboard", () => {
     page.once("dialog", (confirm) => void confirm.dismiss());
     await page.getByRole("button", { name: "Delete" }).click();
 
-    await expect(page.getByRole("alertdialog", { name: `Move to ${stop.name}` })).toBeVisible();
+    await expect(
+      page.getByRole("alertdialog", { name: `Move to ${stop.name}` }),
+    ).toBeVisible();
     expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
     expect(errors, "the page logged errors").toEqual([]);
   });
@@ -592,8 +743,12 @@ test.describe("words and names on the operator's screens", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("says a recording is compressed without naming the format", async ({ page }) => {
-    await mockBackend(page, { recordings: [recording({ compression: "zstd" })] });
+  test("says a recording is compressed without naming the format", async ({
+    page,
+  }) => {
+    await mockBackend(page, {
+      recordings: [recording({ compression: "zstd" })],
+    });
     await page.goto("/recordings");
 
     await expect(page.getByText("Compressed", { exact: true })).toBeVisible();
@@ -628,7 +783,9 @@ test.describe("words and names on the operator's screens", () => {
     await expect(header.getByText("wh1", { exact: true })).toBeVisible();
   });
 
-  test("names a motor the leg grid does not place by where it is", async ({ page }) => {
+  test("names a motor the leg grid does not place by where it is", async ({
+    page,
+  }) => {
     // The driver's joint list can gain or rename a joint. Its reading is still
     // shown, but by a place on the robot, never by the driver's identifier.
     await mockBackend(page, {
@@ -643,17 +800,25 @@ test.describe("words and names on the operator's screens", () => {
     await page.goto("/");
 
     const telemetry = page.getByRole("complementary", { name: "Telemetry" });
-    await expect(telemetry.getByText("FL Ankle", { exact: true })).toBeVisible();
-    await expect(telemetry.getByText("Other motor 1", { exact: true })).toBeVisible();
+    await expect(
+      telemetry.getByText("FL Ankle", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      telemetry.getByText("Other motor 1", { exact: true }),
+    ).toBeVisible();
     await expect(telemetry.getByText(/_joint|waist_motor/)).toHaveCount(0);
   });
 
-  test("names the settings pickers by the labels beside them", async ({ page }) => {
+  test("names the settings pickers by the labels beside them", async ({
+    page,
+  }) => {
     await mockBackend(page);
     await page.goto("/settings");
 
     await expect(page.getByRole("combobox", { name: "Theme" })).toBeVisible();
-    await expect(page.getByRole("combobox", { name: "Language" })).toBeVisible();
+    await expect(
+      page.getByRole("combobox", { name: "Language" }),
+    ).toBeVisible();
   });
 
   test("names the waypoint field and the editor in the operator's words", async ({
@@ -666,7 +831,10 @@ test.describe("words and names on the operator's screens", () => {
 
     await page.getByRole("button", { name: "Place" }).click();
     const canvas = (await page.locator("canvas").boundingBox())!;
-    await page.mouse.click(canvas.x + canvas.width / 2, canvas.y + canvas.height / 2);
+    await page.mouse.click(
+      canvas.x + canvas.width / 2,
+      canvas.y + canvas.height / 2,
+    );
     // Focused on arrival, and reachable by its name rather than a placeholder
     // that disappears the moment something is typed.
     await expect(page.getByRole("textbox", { name: "Name" })).toBeFocused();
@@ -681,7 +849,9 @@ test.describe("words and names on the operator's screens", () => {
     await page.goto(`/maps/${MAP_NAME}/edit`);
 
     await expect(
-      page.getByText(`"${MAP_NAME}" has no floor plan yet. Build one from the map's card`),
+      page.getByText(
+        `"${MAP_NAME}" has no floor plan yet. Build one from the map's card`,
+      ),
     ).toBeVisible();
   });
 });
@@ -764,14 +934,21 @@ test.describe("the task console", () => {
     const writes = await mockBackend(page, {
       schedules: [
         linked("half-hourly", false),
-        { id: "other", trigger: { interval_seconds: 3600 }, paused: false, next_run_times: [] },
+        {
+          id: "other",
+          trigger: { interval_seconds: 3600 },
+          paused: false,
+          next_run_times: [],
+        },
         linked("weekend", true),
         linked("holiday", true),
       ],
     });
     await page.goto("/tasks");
 
-    const chip = page.getByRole("button", { name: /^Show the schedules for "Morning round"/ });
+    const chip = page.getByRole("button", {
+      name: /^Show the schedules for "Morning round"/,
+    });
     await expect(chip).toHaveText("3 schedules · 2 paused");
     await chip.click();
 
@@ -788,7 +965,9 @@ test.describe("the task console", () => {
     expect(writes).toEqual([]);
   });
 
-  test("lists another map's jobs, marked and not runnable", async ({ page }) => {
+  test("lists another map's jobs, marked and not runnable", async ({
+    page,
+  }) => {
     // A job for a map the robot is not on is still the operator's work: it is
     // listed and can be opened, but its coordinates are in another frame, so
     // the two buttons that would move the robot are held.
@@ -806,11 +985,15 @@ test.describe("the task console", () => {
     await page.goto("/tasks");
 
     await expect(page.getByText("Second floor")).toBeVisible();
-    await expect(page.getByText("Saved for wh1; the robot has dp2f loaded.")).toBeVisible();
+    await expect(
+      page.getByText("Saved for wh1; the robot has dp2f loaded."),
+    ).toBeVisible();
     await expect(
       page.getByRole("button", { name: 'Dispatch "Second floor" now' }),
     ).toBeDisabled();
-    await expect(page.getByRole("button", { name: 'Schedule "Second floor"' })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: 'Schedule "Second floor"' }),
+    ).toBeDisabled();
     await expect(
       page.getByRole("button", { name: 'Load "Second floor" into the editor' }),
     ).toBeEnabled();
@@ -837,16 +1020,22 @@ test.describe("the task console", () => {
     await page.getByTitle("Say a line on the robot speaker (TTS).").click();
     await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
 
-    await page.getByRole("link", { name: "Add waypoints on the floor plan" }).click();
+    await page
+      .getByRole("link", { name: "Add waypoints on the floor plan" })
+      .click();
     await expect(page).toHaveURL(/\/maps\/dp2f\/edit\?mode=vertex&from=tasks$/);
     // Opened with Waypoint chosen to draw, not with nothing chosen as the
     // editor otherwise opens.
-    await expect(page.getByRole("combobox", { name: "Draw" })).toContainText("Waypoint");
+    await expect(page.getByRole("combobox", { name: "Draw" })).toContainText(
+      "Waypoint",
+    );
 
     await page.getByRole("button", { name: "Back to tasks" }).click();
     await expect(page).toHaveURL(/\/tasks\/editor$/);
     const asLeft = async () => {
-      await expect(page.getByRole("heading", { name: "Morning round" })).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "Morning round" }),
+      ).toBeVisible();
       await expect(page.getByText(/^dock · \(/)).toBeVisible();
       await expect(page.getByText("\u201cArrived\u201d")).toBeVisible();
     };
@@ -868,7 +1057,9 @@ test.describe("the task console", () => {
     await page.getByRole("button", { name: "Create task" }).click();
     await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
     await page.reload();
-    await expect(page.getByRole("heading", { name: "Morning round" })).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: "Morning round" }),
+    ).toHaveCount(0);
     await expect(page.getByText(/^dock · \(/)).toHaveCount(0);
   });
 
@@ -894,7 +1085,10 @@ test.describe("the task console", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(
-          taskTemplate({ id: method === "POST" ? created : loaded, name: body.name }),
+          taskTemplate({
+            id: method === "POST" ? created : loaded,
+            name: body.name,
+          }),
         ),
       });
     });
@@ -904,9 +1098,9 @@ test.describe("the task console", () => {
       .getByRole("button", { name: 'Load "Morning round" into the editor' })
       .click();
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect.poll(() => writes).toEqual([
-      { method: "PUT", path: `/api/v1/task_templates/${loaded}` },
-    ]);
+    await expect
+      .poll(() => writes)
+      .toEqual([{ method: "PUT", path: `/api/v1/task_templates/${loaded}` }]);
 
     // A fresh job: created once, then updated. The loaded one is still in
     // the draft, so Create task asks first.
@@ -923,14 +1117,20 @@ test.describe("the task console", () => {
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { name: "greeting" })).toBeVisible();
     await save.click();
-    await expect.poll(() => writes.slice(1)).toEqual([
-      { method: "POST", path: "/api/v1/task_templates" },
-      { method: "PUT", path: `/api/v1/task_templates/${created}` },
-    ]);
+    await expect
+      .poll(() => writes.slice(1))
+      .toEqual([
+        { method: "POST", path: "/api/v1/task_templates" },
+        { method: "PUT", path: `/api/v1/task_templates/${created}` },
+      ]);
     // Nothing in the editor runs the robot any more.
     await expect(page.getByRole("button", { name: "Dispatch" })).toHaveCount(0);
-    await expect(page.getByRole("radiogroup", { name: "When to run" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Create schedule" })).toHaveCount(0);
+    await expect(
+      page.getByRole("radiogroup", { name: "When to run" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Create schedule" }),
+    ).toHaveCount(0);
   });
 
   test("renames a saved job by name alone, and backs out without a write", async ({
@@ -965,7 +1165,9 @@ test.describe("the task console", () => {
     await expect(field).toHaveValue("Morning round");
     await field.fill("Evening round");
     await page.keyboard.press("Escape");
-    await expect(page.getByRole("heading", { name: "Morning round" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Morning round" }),
+    ).toBeVisible();
     // Back on the button that opened it.
     await expect(rename).toBeFocused();
     expect(puts).toEqual([]);
@@ -973,11 +1175,15 @@ test.describe("the task console", () => {
     await rename.click();
     await field.fill("Evening round");
     await page.keyboard.press("Enter");
-    await expect(page.getByRole("heading", { name: "Evening round" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Evening round" }),
+    ).toBeVisible();
     expect(puts).toEqual([{ name: "Evening round" }]);
   });
 
-  test("deletes the loaded job only once confirmed, and leaves", async ({ page }) => {
+  test("deletes the loaded job only once confirmed, and leaves", async ({
+    page,
+  }) => {
     // Delete sits beside Save, so a dismissed confirm must send nothing; and
     // the confirm names the schedules that will outlive the job, since each
     // keeps its own copy of the steps.
@@ -996,7 +1202,9 @@ test.describe("the task console", () => {
     await page.goto("/tasks/editor");
     // A new job has nothing to delete.
     await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Delete", exact: true }),
+    ).toHaveCount(0);
 
     await page.goto("/tasks");
     await page
@@ -1019,9 +1227,9 @@ test.describe("the task console", () => {
     page.once("dialog", (dialog) => void dialog.accept());
     await remove.click();
     await expect(page).toHaveURL(/\/tasks$/);
-    expect(writes.filter((w) => w.method === "DELETE").map((w) => w.path)).toEqual([
-      `/api/v1/task_templates/${template}`,
-    ]);
+    expect(
+      writes.filter((w) => w.method === "DELETE").map((w) => w.path),
+    ).toEqual([`/api/v1/task_templates/${template}`]);
     // The draft went with it: the editor opens empty.
     await page.goto("/tasks/editor");
     await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
@@ -1042,7 +1250,10 @@ test.describe("the task console", () => {
       theta: 0,
     });
     await mockBackend(page, {
-      maps: [mapSummary(), mapSummary({ name: "wh1", active: false, vertex_count: 1 })],
+      maps: [
+        mapSummary(),
+        mapSummary({ name: "wh1", active: false, vertex_count: 1 }),
+      ],
       vertices: [vertex(), bay],
     });
     const saved: unknown[] = [];
@@ -1072,7 +1283,9 @@ test.describe("the task console", () => {
     await page.getByRole("option", { name: "wh1" }).click();
     await expect(map).toContainText("wh1");
 
-    const waypoint = page.getByRole("combobox", { name: "Waypoint for step 1" });
+    const waypoint = page.getByRole("combobox", {
+      name: "Waypoint for step 1",
+    });
     await waypoint.click();
     await expect(page.getByRole("option", { name: "bay-1" })).toBeVisible();
     await expect(page.getByRole("option", { name: "dock" })).toHaveCount(0);
@@ -1081,7 +1294,11 @@ test.describe("the task console", () => {
 
     // Held, with the reason, until that map is the loaded one.
     await expect(
-      page.getByText("This job is for wh1; the robot has dp2f loaded", { exact: false }).first(),
+      page
+        .getByText("This job is for wh1; the robot has dp2f loaded", {
+          exact: false,
+        })
+        .first(),
     ).toBeVisible();
 
     await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -1089,7 +1306,10 @@ test.describe("the task console", () => {
     await page.keyboard.press("Enter");
 
     await expect.poll(() => saved).toHaveLength(1);
-    const body = saved[0] as { map_name: string; steps: { vertex_id: string }[] };
+    const body = saved[0] as {
+      map_name: string;
+      steps: { vertex_id: string }[];
+    };
     expect(body.map_name).toBe("wh1");
     expect(body.steps[0].vertex_id).toBe(bay.id);
   });
@@ -1149,7 +1369,9 @@ test.describe("the task console", () => {
     const writes = await mockBackend(page);
     await page.goto("/tasks");
 
-    await page.getByRole("button", { name: 'Schedule "Morning round"' }).click();
+    await page
+      .getByRole("button", { name: 'Schedule "Morning round"' })
+      .click();
     // The form opens here, over the list it will join, not in the editor.
     await expect(page).toHaveURL(/\/tasks$/);
     await expect(page.getByText("Schedule Morning round")).toBeVisible();
@@ -1196,7 +1418,9 @@ test.describe("the task console", () => {
     const writes = await mockBackend(page);
     await page.goto("/tasks");
 
-    await page.getByRole("button", { name: 'Schedule "Morning round"' }).click();
+    await page
+      .getByRole("button", { name: 'Schedule "Morning round"' })
+      .click();
     await page.getByPlaceholder("robot01-daily-patrol").fill("half-hourly");
     await page.getByRole("button", { name: "Interval" }).click();
     await page.getByLabel("Every").fill("30");
@@ -1245,7 +1469,9 @@ test.describe("the task console", () => {
         "true",
       );
       await expect(page.getByLabel("Time")).toHaveValue("21:00");
-      await expect(page.getByPlaceholder("robot01-daily-patrol")).toHaveCount(0);
+      await expect(page.getByPlaceholder("robot01-daily-patrol")).toHaveCount(
+        0,
+      );
       const save = page.getByRole("button", { name: "Save schedule" });
       await expect(save).toBeDisabled();
 
@@ -1257,10 +1483,14 @@ test.describe("the task console", () => {
       expect(writes[0]).toEqual({
         method: "PATCH",
         path: "/api/v1/schedules/nightly",
-        body: { trigger: { cron: "30 10 * * 1,2,3,4,5", timezone: "Asia/Taipei" } },
+        body: {
+          trigger: { cron: "30 10 * * 1,2,3,4,5", timezone: "Asia/Taipei" },
+        },
       });
       await expect(page.getByText("Edit nightly")).toHaveCount(0);
-      await expect(page.getByText("Weekdays at 10:30 · Asia/Taipei")).toBeVisible();
+      await expect(
+        page.getByText("Weekdays at 10:30 · Asia/Taipei"),
+      ).toBeVisible();
       // Still the same schedule, still paused.
       await expect(page.getByText("nightly", { exact: true })).toBeVisible();
       await expect(page.getByText("Paused", { exact: true })).toBeVisible();
@@ -1290,7 +1520,8 @@ test.describe("the task console", () => {
       await page.route("**/api/v1/**", (route) => {
         const request = route.request();
         const path = new URL(request.url()).pathname;
-        if (request.method() === "POST" && path.endsWith("/schedule")) registered = true;
+        if (request.method() === "POST" && path.endsWith("/schedule"))
+          registered = true;
         if (request.method() !== "GET" || path !== "/api/v1/schedules") {
           return route.fallback();
         }
@@ -1301,20 +1532,34 @@ test.describe("the task console", () => {
         return route.fulfill({ json: registered ? [created] : [] });
       });
       await page.goto("/tasks");
-      await expect(page.getByText("No schedules are registered on this robot.")).toBeVisible();
+      await expect(
+        page.getByText("No schedules are registered on this robot."),
+      ).toBeVisible();
 
-      await page.getByRole("button", { name: 'Schedule "Morning round"' }).click();
-      await page.getByPlaceholder("robot01-daily-patrol").fill("weekday-patrol");
+      await page
+        .getByRole("button", { name: 'Schedule "Morning round"' })
+        .click();
+      await page
+        .getByPlaceholder("robot01-daily-patrol")
+        .fill("weekday-patrol");
       await page.getByRole("button", { name: "Weekdays" }).click();
       await page.getByRole("button", { name: "Create schedule" }).click();
 
-      const row = page.getByRole("listitem").filter({ hasText: "weekday-patrol" });
-      await expect(row.getByText("Weekdays at 09:00 · Asia/Taipei")).toBeVisible();
-      await expect(row.getByText("2099-01-01 09:00", { exact: true })).toBeVisible();
+      const row = page
+        .getByRole("listitem")
+        .filter({ hasText: "weekday-patrol" });
+      await expect(
+        row.getByText("Weekdays at 09:00 · Asia/Taipei"),
+      ).toBeVisible();
+      await expect(
+        row.getByText("2099-01-01 09:00", { exact: true }),
+      ).toBeVisible();
       expect(staleReads).toBe(2);
       // The job's own chip reads the same list, so it catches up with it.
       await expect(
-        page.getByRole("button", { name: /^Show the schedules for "Morning round"/ }),
+        page.getByRole("button", {
+          name: /^Show the schedules for "Morning round"/,
+        }),
       ).toHaveText("Weekdays at 09:00 · Asia/Taipei");
     });
 
@@ -1357,16 +1602,20 @@ test.describe("the task console", () => {
       await page.getByRole("button", { name: "Save schedule" }).click();
 
       // The new rule at once, and the next run it implies once the list has it.
-      await expect(page.getByText("Daily at 10:30 · Asia/Taipei")).toBeVisible();
-      await expect(page.getByText("2099-01-01 10:30", { exact: true })).toBeVisible();
+      await expect(
+        page.getByText("Daily at 10:30 · Asia/Taipei"),
+      ).toBeVisible();
+      await expect(
+        page.getByText("2099-01-01 10:30", { exact: true }),
+      ).toBeVisible();
       expect(staleReads).toBe(2);
       // The stale reads never reached the row.
-      await expect(page.getByText("Daily at 21:00 · Asia/Taipei")).toHaveCount(0);
+      await expect(page.getByText("Daily at 21:00 · Asia/Taipei")).toHaveCount(
+        0,
+      );
     });
 
-    test("lists registered schedules in words", async ({
-      page,
-    }) => {
+    test("lists registered schedules in words", async ({ page }) => {
       await mockBackend(page, {
         schedules: [
           {
@@ -1382,7 +1631,9 @@ test.describe("the task console", () => {
       await page.goto("/tasks");
 
       // The stored cron is read back as a sentence, never shown as itself.
-      await expect(page.getByText("Daily at 21:00 · Asia/Taipei")).toBeVisible();
+      await expect(
+        page.getByText("Daily at 21:00 · Asia/Taipei"),
+      ).toBeVisible();
       await expect(page.getByText("0 21 * * *")).toHaveCount(0);
 
       // 13:00Z is 21:00 on the operator's clock, and that is the number shown:
@@ -1463,7 +1714,10 @@ test.describe("the manual drive panel", () => {
     const speed = page.getByRole("slider", { name: "Max speed" });
     // Full on every page load, before anything is armed: the panel drives as
     // it did before the limit existed.
-    await expect(speed).toHaveAttribute("aria-valuetext", "100 percent of full speed");
+    await expect(speed).toHaveAttribute(
+      "aria-valuetext",
+      "100 percent of full speed",
+    );
     await expect(page.getByText("100%", { exact: true })).toBeVisible();
 
     await page.getByRole("switch", { name: "Arm manual drive input" }).click();
@@ -1477,8 +1731,12 @@ test.describe("the manual drive panel", () => {
     // Lowered to half with the keys still held: the new limit reaches the
     // frames at once, and rotation does not move with it.
     await speed.focus();
-    for (let step = 0; step < 5; step += 1) await page.keyboard.press("ArrowLeft");
-    await expect(speed).toHaveAttribute("aria-valuetext", "50 percent of full speed");
+    for (let step = 0; step < 5; step += 1)
+      await page.keyboard.press("ArrowLeft");
+    await expect(speed).toHaveAttribute(
+      "aria-valuetext",
+      "50 percent of full speed",
+    );
     await expect.poll(last).toEqual({ vx: 0.5, vy: 0, wz: -1 });
     await expect(page.getByText("50%", { exact: true })).toBeVisible();
 
@@ -1510,9 +1768,13 @@ test.describe("the floor plan editor's draw bar", () => {
       .getByRole("toolbar", { name: "Editor" })
       .getByRole("group", { name: "Tool" })
       .getByRole("button")
-      .evaluateAll((buttons) => buttons.map((b) => b.getAttribute("aria-label")));
+      .evaluateAll((buttons) =>
+        buttons.map((b) => b.getAttribute("aria-label")),
+      );
 
-  test("opens with no type, and offers the tools each type allows", async ({ page }) => {
+  test("opens with no type, and offers the tools each type allows", async ({
+    page,
+  }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
@@ -1521,19 +1783,24 @@ test.describe("the floor plan editor's draw bar", () => {
     // No type: Pan alone, lit, and no panel.
     await expect(drawList(page)).toContainText("No type");
     await expect.poll(() => toolNames(page)).toEqual(["Pan"]);
-    await expect(page.getByRole("button", { name: "Pan", exact: true })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(
+      page.getByRole("button", { name: "Pan", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
 
     // Wall: the paint tools, and nothing in the row that is not a tool.
     await choose(page, "Wall");
     await expect(drawList(page)).toContainText("Wall");
-    await expect.poll(() => toolNames(page)).toEqual(["Pan", "Brush", "Line", "Rect"]);
+    await expect
+      .poll(() => toolNames(page))
+      .toEqual(["Pan", "Brush", "Line", "Rect"]);
 
     await choose(page, "Waypoint");
-    await expect.poll(() => toolNames(page)).toEqual(["Pan", "Place", "Select"]);
-    await expect(page.getByRole("combobox", { name: "Waypoint type" })).toBeVisible();
+    await expect
+      .poll(() => toolNames(page))
+      .toEqual(["Pan", "Place", "Select"]);
+    await expect(
+      page.getByRole("combobox", { name: "Waypoint type" }),
+    ).toBeVisible();
 
     // The list is shut by default, with the count on its header, and the
     // filter narrows it by name.
@@ -1551,22 +1818,34 @@ test.describe("the floor plan editor's draw bar", () => {
     // Select armed, press Pan, and the panel is back to its list.
     await drawBar(page).getByRole("button", { name: "Select" }).click();
     await page.getByRole("button", { name: /dock/ }).click();
-    await expect(page.getByRole("button", { name: "Delete waypoint" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Delete waypoint" }),
+    ).toBeVisible();
     // The form puts the name and the type on one row, the type as a list.
     await expect(page.getByLabel("Name", { exact: true })).toHaveValue("dock");
-    await expect(page.getByRole("combobox", { name: "Type" })).toContainText("Chg");
+    await expect(page.getByRole("combobox", { name: "Type" })).toContainText(
+      "Chg",
+    );
     // Editing one waypoint shows that one only: the list is not under the form.
     await expect(page.getByRole("button", { name: /dock/ })).toHaveCount(0);
     await page.getByRole("button", { name: "Pan", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Delete waypoint" })).toHaveCount(0);
-    await expect(page.getByRole("combobox", { name: "Waypoint type" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Delete waypoint" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("combobox", { name: "Waypoint type" }),
+    ).toBeVisible();
     await expect(page.getByRole("button", { name: /dock/ })).toBeVisible();
 
     // Forbidden zone: Shape and Done, and until Shape is armed the map dims
     // behind a line that asks for it. Done has nothing to close yet.
     await choose(page, "Forbidden zone");
-    await expect.poll(() => toolNames(page)).toEqual(["Pan", "Shape", "Done", "Remove"]);
-    const hint = page.getByRole("status").filter({ hasText: "Select the shape to work with" });
+    await expect
+      .poll(() => toolNames(page))
+      .toEqual(["Pan", "Shape", "Done", "Remove"]);
+    const hint = page
+      .getByRole("status")
+      .filter({ hasText: "Select the shape to work with" });
     await expect(hint).toBeVisible();
     await expect(page.getByRole("button", { name: "Done" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Remove" })).toBeDisabled();
@@ -1576,11 +1855,15 @@ test.describe("the floor plan editor's draw bar", () => {
     // No type is an item of its own, and puts the choice down.
     await choose(page, "No type");
     await expect.poll(() => toolNames(page)).toEqual(["Pan"]);
-    await expect(page.getByRole("combobox", { name: "Waypoint type" })).toHaveCount(0);
+    await expect(
+      page.getByRole("combobox", { name: "Waypoint type" }),
+    ).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("draws a forbidden zone from three corners, and closes it on the first", async ({ page }) => {
+  test("draws a forbidden zone from three corners, and closes it on the first", async ({
+    page,
+  }) => {
     // The canvas exposes nothing, so the count of finished zones is read off
     // the editor's data-zones attribute — the shape has to *close*, not
     // merely take clicks. Every corner is at least 22 px from the first, so a
@@ -1637,16 +1920,19 @@ test.describe("the floor plan editor's draw bar", () => {
     // corner is where a shape *anchored to it* starts (see the growing test
     // below), so a second shape on the same corners would join the first
     // rather than stand beside it. All three still overlap at `inside`.
-    const shifted = (dx: number) => corners.map((corner) => ({ x: corner.x + dx, y: corner.y }));
+    const shifted = (dx: number) =>
+      corners.map((corner) => ({ x: corner.x + dx, y: corner.y }));
 
     // Enter closes the next one.
-    for (const corner of shifted(30)) await page.mouse.click(corner.x, corner.y);
+    for (const corner of shifted(30))
+      await page.mouse.click(corner.x, corner.y);
     await expect(done).toBeEnabled();
     await page.keyboard.press("Enter");
     await expect(zones).toHaveAttribute("data-zones", "2");
 
     // Done closes the one after that.
-    for (const corner of shifted(-30)) await page.mouse.click(corner.x, corner.y);
+    for (const corner of shifted(-30))
+      await page.mouse.click(corner.x, corner.y);
     await done.click();
     await expect(zones).toHaveAttribute("data-zones", "3");
 
@@ -1679,7 +1965,10 @@ test.describe("the floor plan editor's draw bar", () => {
     await page.mouse.click(shifted(30)[1].x, shifted(30)[1].y);
     await page.keyboard.press("Escape");
     await expect(drawList(page)).toContainText("Forbidden zone");
-    await expect(page.getByRole("button", { name: "Shape" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Shape" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     await page.keyboard.press("Escape");
     await expect(drawList(page)).toContainText("No type");
     await expect.poll(() => toolNames(page)).toEqual(["Pan"]);
@@ -1687,7 +1976,9 @@ test.describe("the floor plan editor's draw bar", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("selects several zones with Shift and removes them together", async ({ page }) => {
+  test("selects several zones with Shift and removes them together", async ({
+    page,
+  }) => {
     // Three overlapping zones, each with a spot only it covers. Shift-click
     // adds to the selection and toggles out again; a Shift-click on bare map
     // keeps the selection instead of starting a shape; Remove takes every
@@ -1719,7 +2010,8 @@ test.describe("the floor plan editor's draw bar", () => {
     ];
     for (const dx of [0, 30, -30]) {
       const corners = triangle(dx);
-      for (const corner of [...corners, corners[0]]) await page.mouse.click(corner.x, corner.y);
+      for (const corner of [...corners, corners[0]])
+        await page.mouse.click(corner.x, corner.y);
     }
     await expect(zones).toHaveAttribute("data-zones", "3");
     // A spot only the zone shifted that way covers.
@@ -1751,7 +2043,9 @@ test.describe("the floor plan editor's draw bar", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("moves a corner of the shape in flight by dragging it, without panning", async ({ page }) => {
+  test("moves a corner of the shape in flight by dragging it, without panning", async ({
+    page,
+  }) => {
     // The canvas exposes no corner positions, so the move is proved through
     // the one rule that depends on where a corner is: the first corner is
     // where a click closes the shape. Drag it 80 px left, and a click at the
@@ -1772,7 +2066,9 @@ test.describe("the floor plan editor's draw bar", () => {
       let text = "";
       await expect
         .poll(async () => {
-          text = ((await cellReadout.textContent()) ?? "").replace("Cell", "").trim();
+          text = ((await cellReadout.textContent()) ?? "")
+            .replace("Cell", "")
+            .trim();
           return text;
         })
         .not.toBe("—");
@@ -1829,7 +2125,9 @@ test.describe("the floor plan editor's draw bar", () => {
     await page.mouse.up();
     await expect(remove).toBeEnabled();
     await expect(zones).toHaveAttribute("data-zones", "1");
-    expect(await cellUnder(probe), "the handle drag panned the map").toBe(before);
+    expect(await cellUnder(probe), "the handle drag panned the map").toBe(
+      before,
+    );
     await page.mouse.click(inside.x, inside.y);
     await expect(remove).toBeDisabled();
     await expect(done).toBeDisabled();
@@ -1838,7 +2136,9 @@ test.describe("the floor plan editor's draw bar", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("grows a finished zone from one of its corners to another", async ({ page }) => {
+  test("grows a finished zone from one of its corners to another", async ({
+    page,
+  }) => {
     // A square, then a bump drawn off its right edge: start on corner B, two
     // corners out to the right, end on corner C. The zone count stays at one
     // and a point in the bump, which was bare map before (a click there was
@@ -1862,7 +2162,8 @@ test.describe("the floor plan editor's draw bar", () => {
     const b = { x: mid.x + 40, y: mid.y - 60 };
     const c = { x: mid.x + 40, y: mid.y + 60 };
     const d = { x: mid.x - 80, y: mid.y + 60 };
-    for (const corner of [a, b, c, d, a]) await page.mouse.click(corner.x, corner.y);
+    for (const corner of [a, b, c, d, a])
+      await page.mouse.click(corner.x, corner.y);
     await expect(zones).toHaveAttribute("data-zones", "1");
 
     // The bump's interior is bare map: a click is a corner, and Escape drops it.
@@ -1990,7 +2291,9 @@ test.describe("the floor plan editor's forbidden zones on the robot", () => {
     ],
   };
 
-  test("opens with the map's saved zones, and Save sends a new one beside them", async ({ page }) => {
+  test("opens with the map's saved zones, and Save sends a new one beside them", async ({
+    page,
+  }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, {
@@ -2022,14 +2325,22 @@ test.describe("the floor plan editor's forbidden zones on the robot", () => {
     await expect(save).toBeEnabled();
 
     await save.click();
-    await expect(page.getByRole("status").filter({ hasText: "Forbidden zones saved · in force now" })).toBeVisible();
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "Forbidden zones saved · in force now" }),
+    ).toBeVisible();
     await expect(save).toBeDisabled();
 
     // The whole list, the saved zone first and untouched, the new one under
     // an id of its own — the robot refuses a list that repeats one.
     const puts = writes.filter((w) => w.method === "PUT");
-    expect(puts.map((w) => w.path)).toEqual([`/api/v1/maps/${MAP_NAME}/keepout`]);
-    const body = puts[0].body as { zones: { id: string; points: { x: number; y: number }[] }[] };
+    expect(puts.map((w) => w.path)).toEqual([
+      `/api/v1/maps/${MAP_NAME}/keepout`,
+    ]);
+    const body = puts[0].body as {
+      zones: { id: string; points: { x: number; y: number }[] }[];
+    };
     expect(body.zones).toHaveLength(2);
     expect(body.zones[0]).toEqual(saved);
     expect(body.zones[1].id).not.toBe(saved.id);
@@ -2066,7 +2377,9 @@ test.describe("the floor plan editor's forbidden zones on the robot", () => {
     await page.mouse.click(corners[0].x, corners[0].y);
   };
 
-  test("Remove takes a zone off the robot at once, and leaves unsaved ones for Save", async ({ page }) => {
+  test("Remove takes a zone off the robot at once, and leaves unsaved ones for Save", async ({
+    page,
+  }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, {
@@ -2079,7 +2392,8 @@ test.describe("the floor plan editor's forbidden zones on the robot", () => {
     await page.locator("canvas").waitFor();
     const zones = page.locator("[data-zones]");
     const save = page.getByRole("button", { name: "Save" });
-    const keepoutPuts = () => writes.filter((w) => w.path.endsWith("/keepout")).map((w) => w.body);
+    const keepoutPuts = () =>
+      writes.filter((w) => w.path.endsWith("/keepout")).map((w) => w.body);
     await expect(zones).toHaveAttribute("data-zones", "1");
 
     await choose(page, "Forbidden zone");
@@ -2096,7 +2410,9 @@ test.describe("the floor plan editor's forbidden zones on the robot", () => {
     await page.mouse.click(middle.x, middle.y);
     await page.getByRole("button", { name: "Remove" }).click();
     await expect(zones).toHaveAttribute("data-zones", "1");
-    await expect(page.getByRole("status").filter({ hasText: /^Removed/ })).toBeVisible();
+    await expect(
+      page.getByRole("status").filter({ hasText: /^Removed/ }),
+    ).toBeVisible();
     await expect.poll(keepoutPuts).toEqual([{ zones: [] }]);
     await expect(save).toBeEnabled();
 
@@ -2110,10 +2426,14 @@ test.describe("the floor plan editor's forbidden zones on the robot", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("removing a zone the robot never had sends nothing", async ({ page }) => {
+  test("removing a zone the robot never had sends nothing", async ({
+    page,
+  }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    const writes = await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+    const writes = await mockBackend(page, {
+      gridImage: floorPlanPng(400, 300, 254),
+    });
     await page.goto(`/maps/${MAP_NAME}/edit`);
     await page.locator("canvas").waitFor();
     const zones = page.locator("[data-zones]");
@@ -2135,18 +2455,24 @@ test.describe("the floor plan editor's forbidden zones on the robot", () => {
 
   // No console-error guard here: the browser logs the 409 itself, which is
   // exactly the response under test.
-  test("puts a zone back when the robot refuses to remove it", async ({ page }) => {
+  test("puts a zone back when the robot refuses to remove it", async ({
+    page,
+  }) => {
     await mockBackend(page, {
       gridImage: floorPlanPng(400, 300, 254),
       keepout: { [MAP_NAME]: [saved] },
     });
-    const refusal = "A floor plan rebuild is running; save the forbidden zones once it has finished.";
+    const refusal =
+      "A floor plan rebuild is running; save the forbidden zones once it has finished.";
     await page.route(/\/api\/v1\/maps\/[^/]+\/keepout$/, (route) =>
       route.request().method() === "PUT"
         ? route.fulfill({
             status: 409,
             contentType: "application/json",
-            body: JSON.stringify({ detail: refusal, code: "conversion_running" }),
+            body: JSON.stringify({
+              detail: refusal,
+              code: "conversion_running",
+            }),
           })
         : route.fallback(),
     );
@@ -2162,7 +2488,9 @@ test.describe("the floor plan editor's forbidden zones on the robot", () => {
     await page.getByRole("button", { name: "Remove" }).click();
 
     // The planner still keeps to it, so the map shows it again, clean.
-    const alert = page.getByRole("alert").filter({ hasText: "Forbidden zone not removed" });
+    const alert = page
+      .getByRole("alert")
+      .filter({ hasText: "Forbidden zone not removed" });
     await expect(alert).toContainText(refusal);
     await expect(zones).toHaveAttribute("data-zones", "1");
     await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
@@ -2170,26 +2498,35 @@ test.describe("the floor plan editor's forbidden zones on the robot", () => {
 
   // No console-error guard here: the browser logs the 502 itself, which is
   // exactly the response under test.
-  test("locks the zones, and leaves the floor plan editable, when they cannot be read", async ({ page }) => {
-    const writes = await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+  test("locks the zones, and leaves the floor plan editable, when they cannot be read", async ({
+    page,
+  }) => {
+    const writes = await mockBackend(page, {
+      gridImage: floorPlanPng(400, 300, 254),
+    });
     await page.route(/\/api\/v1\/maps\/[^/]+\/keepout$/, (route) =>
       route.fulfill({
         status: 502,
         contentType: "application/json",
-        body: JSON.stringify({ detail: "The map's forbidden zones could not be read." }),
+        body: JSON.stringify({
+          detail: "The map's forbidden zones could not be read.",
+        }),
       }),
     );
     await page.goto(`/maps/${MAP_NAME}/edit`);
     await page.locator("canvas").waitFor();
 
-    const alert = page.getByRole("alert").filter({ hasText: "Forbidden zones could not be loaded" });
+    const alert = page
+      .getByRole("alert")
+      .filter({ hasText: "Forbidden zones could not be loaded" });
     // The backend's own sentence under the headline, verbatim.
-    await expect(alert).toContainText("The map's forbidden zones could not be read.");
-    await page.getByRole("combobox", { name: "Draw" }).click();
-    await expect(page.getByRole("option", { name: "Forbidden zone", exact: true })).toHaveAttribute(
-      "aria-disabled",
-      "true",
+    await expect(alert).toContainText(
+      "The map's forbidden zones could not be read.",
     );
+    await page.getByRole("combobox", { name: "Draw" }).click();
+    await expect(
+      page.getByRole("option", { name: "Forbidden zone", exact: true }),
+    ).toHaveAttribute("aria-disabled", "true");
     // The positive control: the rest of the list still works.
     await page.getByRole("option", { name: "Wall", exact: true }).click();
     await expect(page.getByRole("button", { name: "Brush" })).toBeVisible();
@@ -2199,7 +2536,9 @@ test.describe("the floor plan editor's forbidden zones on the robot", () => {
 });
 
 test.describe("the floor plan editor's waypoint list", () => {
-  test("shows five rows of twenty, and scrolls to the rest", async ({ page }) => {
+  test("shows five rows of twenty, and scrolls to the rest", async ({
+    page,
+  }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const twenty = Array.from({ length: 20 }, (_, i) =>
@@ -2208,7 +2547,10 @@ test.describe("the floor plan editor's waypoint list", () => {
         name: `stop-${String(i + 1).padStart(2, "0")}`,
       }),
     );
-    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254), vertices: twenty });
+    await mockBackend(page, {
+      gridImage: floorPlanPng(400, 300, 254),
+      vertices: twenty,
+    });
     await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
 
     const toggle = page.getByRole("button", { name: /^Waypoints/ });
@@ -2216,7 +2558,9 @@ test.describe("the floor plan editor's waypoint list", () => {
     await toggle.click();
 
     // Rows whose whole box lies inside the list's box are the ones on screen.
-    const list = page.locator("ul").filter({ has: page.getByRole("button", { name: /stop-01/ }) });
+    const list = page
+      .locator("ul")
+      .filter({ has: page.getByRole("button", { name: /stop-01/ }) });
     const visibleRows = () =>
       list.evaluate((ul) => {
         const box = ul.getBoundingClientRect();
@@ -2229,13 +2573,17 @@ test.describe("the floor plan editor's waypoint list", () => {
 
     // The other fifteen are a scroll away, inside the list.
     await list.evaluate((ul) => ul.scrollTo({ top: ul.scrollHeight }));
-    await expect(page.getByRole("button", { name: /stop-20/ })).toBeInViewport();
+    await expect(
+      page.getByRole("button", { name: /stop-20/ }),
+    ).toBeInViewport();
     expect(errors, "the page logged errors").toEqual([]);
   });
 });
 
 test.describe("the floor plan editor", () => {
-  test("aims a new waypoint by the direction it was dragged", async ({ page }) => {
+  test("aims a new waypoint by the direction it was dragged", async ({
+    page,
+  }) => {
     // The heading rule is shared with the dashboard now, so this holds the
     // editor's half of it end to end: a drag straight up the screen is +y on
     // the map, which is 90°, and that is what has to reach the robot.
@@ -2245,12 +2593,17 @@ test.describe("the floor plan editor", () => {
     const created: unknown[] = [];
     await page.route(/\/api\/v1\/maps\/[^/]+\/vertices$/, (route) => {
       if (route.request().method() !== "POST") return route.fallback();
-      const [draft] = route.request().postDataJSON() as Record<string, unknown>[];
+      const [draft] = route.request().postDataJSON() as Record<
+        string,
+        unknown
+      >[];
       created.push(draft);
       return route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify([vertex({ ...draft, id: "55555555-5555-5555-5555-555555555555" })]),
+        body: JSON.stringify([
+          vertex({ ...draft, id: "55555555-5555-5555-5555-555555555555" }),
+        ]),
       });
     });
     await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
@@ -2316,7 +2669,9 @@ test.describe("the step editor", () => {
     // Each row's type label, top to bottom.
     const order = () =>
       rows.evaluateAll((items) =>
-        items.map((item) => item.querySelector(".instrument-label")?.textContent),
+        items.map(
+          (item) => item.querySelector(".instrument-label")?.textContent,
+        ),
       );
     await expect.poll(order).toEqual(["Stand", "Lie", "Speak"]);
 
@@ -2350,7 +2705,11 @@ test.describe("the step editor", () => {
     //   before that. The first "is over" announcement comes after, because
     //   dnd-kit can only say which slot the row is over once it has them all.
     await expect
-      .poll(() => rows.evaluateAll((items) => items.every((i) => i.getAnimations().length === 0)))
+      .poll(() =>
+        rows.evaluateAll((items) =>
+          items.every((i) => i.getAnimations().length === 0),
+        ),
+      )
       .toBe(true);
     const grip = page.getByRole("button", { name: "Reorder step 3" });
     await grip.focus();
@@ -2376,7 +2735,9 @@ test.describe("the step editor", () => {
     await expect.poll(order).toEqual(["Lie", "Stand", "Speak"]);
 
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await page.getByRole("textbox", { name: "Task name" }).fill("reorder-check");
+    await page
+      .getByRole("textbox", { name: "Task name" })
+      .fill("reorder-check");
     await page.keyboard.press("Enter");
 
     await expect.poll(() => saved).toHaveLength(1);
@@ -2403,7 +2764,9 @@ test.describe("the step editor", () => {
       .getByRole("button", { name: 'Load "Morning round" into the editor' })
       .click();
     // The MOVE row's only input is its waypoint picker.
-    const waypoint = page.getByRole("combobox", { name: "Waypoint for step 1" });
+    const waypoint = page.getByRole("combobox", {
+      name: "Waypoint for step 1",
+    });
     await expect(page.getByText(/^dock · \(/)).toBeVisible();
     await expect(waypoint).toHaveCount(0);
 
@@ -2419,7 +2782,10 @@ test.describe("the step editor", () => {
     await expect(waypoint).toHaveCount(0);
     // Empty, and folded all the same: the header says what is missing.
     await expect(say).toHaveCount(0);
-    const speakRow = page.getByRole("button", { name: /^Speak/, expanded: false });
+    const speakRow = page.getByRole("button", {
+      name: /^Speak/,
+      expanded: false,
+    });
     await expect(speakRow).toHaveText(/Needs something to say\./);
 
     // Unfold, fill, fold: the line is read back in place of the problem.
@@ -2439,7 +2805,10 @@ test.describe("the step editor", () => {
     // console started looks exactly like this one.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    const entry = mapSummary({ grid_status: "converting", grid_converting: true });
+    const entry = mapSummary({
+      grid_status: "converting",
+      grid_converting: true,
+    });
     await mockBackend(page, { maps: [entry] });
     const imageReads: string[] = [];
     page.on("request", (request) => {
@@ -2450,7 +2819,9 @@ test.describe("the step editor", () => {
     // The job's floor plan opens from the Steps header, with or without a
     // Move step on the list.
     await page.getByRole("button", { name: "Floor plan" }).click();
-    await expect(page.getByRole("img", { name: /^Floor plan of dp2f/ })).toBeVisible();
+    await expect(
+      page.getByRole("img", { name: /^Floor plan of dp2f/ }),
+    ).toBeVisible();
 
     // Two catalogue polls' worth, while it still says converting.
     await page.waitForTimeout(4500);
@@ -2491,7 +2862,9 @@ test.describe("the step editor", () => {
     await expect(toggle).toHaveCount(1);
 
     // Closed until asked for.
-    const plan = page.getByRole("img", { name: /^Floor plan of dp2f with 2 waypoints/ });
+    const plan = page.getByRole("img", {
+      name: /^Floor plan of dp2f with 2 waypoints/,
+    });
     await expect(plan).toHaveCount(0);
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await toggle.click();
@@ -2501,7 +2874,9 @@ test.describe("the step editor", () => {
     await expect(plan).toHaveAccessibleName(/waypoints\.$/);
 
     // The pick is made on the row, and the map says where it went.
-    const waypoint = page.getByRole("combobox", { name: "Waypoint for step 1" });
+    const waypoint = page.getByRole("combobox", {
+      name: "Waypoint for step 1",
+    });
     await waypoint.click();
     await page.getByRole("option", { name: "room-a" }).click();
     await expect(waypoint).toContainText("room-a");
@@ -2512,7 +2887,9 @@ test.describe("the step editor", () => {
     const second = page.getByRole("combobox", { name: "Waypoint for step 2" });
     await second.click();
     await page.getByRole("option", { name: "dock" }).click();
-    await expect(plan).toHaveAccessibleName(/; room-a is step 1, dock is step 2\.$/);
+    await expect(plan).toHaveAccessibleName(
+      /; room-a is step 1, dock is step 2\.$/,
+    );
 
     // The map is a view: a click on it sets nothing on any row.
     const box = (await plan.boundingBox())!;
@@ -2595,18 +2972,28 @@ test.describe("the job history", () => {
 
   /** A dashboard tile's number, by its label. */
   const tile = (dashboard: Locator, label: string) =>
-    dashboard.locator("dt", { hasText: label }).locator("xpath=following-sibling::dd[1]");
+    dashboard
+      .locator("dt", { hasText: label })
+      .locator("xpath=following-sibling::dd[1]");
 
   /** The two reads one filter makes, as the fake saw them. */
-  const historyReads = (page: Page, match: (params: URLSearchParams) => boolean) =>
+  const historyReads = (
+    page: Page,
+    match: (params: URLSearchParams) => boolean,
+  ) =>
     Promise.all([
       page.waitForRequest((request) => {
         const url = new URL(request.url());
-        return url.pathname === "/api/v1/task_history" && match(url.searchParams);
+        return (
+          url.pathname === "/api/v1/task_history" && match(url.searchParams)
+        );
       }),
       page.waitForRequest((request) => {
         const url = new URL(request.url());
-        return url.pathname === "/api/v1/task_history/stats" && match(url.searchParams);
+        return (
+          url.pathname === "/api/v1/task_history/stats" &&
+          match(url.searchParams)
+        );
       }),
     ]);
 
@@ -2641,17 +3028,27 @@ test.describe("the job history", () => {
     await expect(
       page.getByRole("button", { name: /^COMPLETED Task Started directly/ }),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: /^FAILED Morning round Scheduled · nightly/ })).toBeVisible();
+    await expect(
+      page.getByRole("button", {
+        name: /^FAILED Morning round Scheduled · nightly/,
+      }),
+    ).toBeVisible();
     await expect(page.getByText("robot01-task-1758000000-1")).toBeHidden();
     // 09:40:00 → 09:44:12, measured between the backend's own timestamps.
     await expect(page.getByText("4:12", { exact: true })).toBeVisible();
     await expect(page.getByText("12:30", { exact: true })).toBeVisible();
     // Everything fits on one page, so there is nothing to page through.
-    await expect(page.getByRole("navigation", { name: "History pages" })).toBeHidden();
+    await expect(
+      page.getByRole("navigation", { name: "History pages" }),
+    ).toBeHidden();
 
     // The id is still there for whoever needs it: on expand.
-    await page.getByRole("button", { name: /^COMPLETED Task Started directly/ }).click();
-    await expect(page.getByText("robot01-task-1758000000-1", { exact: true })).toBeVisible();
+    await page
+      .getByRole("button", { name: /^COMPLETED Task Started directly/ })
+      .click();
+    await expect(
+      page.getByText("robot01-task-1758000000-1", { exact: true }),
+    ).toBeVisible();
   });
 
   test("counts the jobs the robot reports, per outcome and per kind", async ({
@@ -2668,7 +3065,9 @@ test.describe("the job history", () => {
     await expect(tile(dashboard, "Canceled")).toHaveText("0");
     await expect(tile(dashboard, "Success rate")).toHaveText("50 %");
     // The one bar lists every outcome on hover, zero included.
-    await expect(dashboard.getByTitle("Completed 1 · Failed 1 · Canceled 0")).toBeAttached();
+    await expect(
+      dashboard.getByTitle("Completed 1 · Failed 1 · Canceled 0"),
+    ).toBeAttached();
   });
 
   test("lists only failed jobs when that outcome is picked, without changing the counts", async ({
@@ -2693,7 +3092,9 @@ test.describe("the job history", () => {
 
     await expect(page.getByText("Scheduled · nightly")).toBeVisible();
     await expect(page.getByText("Started directly")).toBeHidden();
-    await expect(page.getByText(/Only failed jobs are listed below/)).toBeVisible();
+    await expect(
+      page.getByText(/Only failed jobs are listed below/),
+    ).toBeVisible();
     // The dashboard is how the window's jobs ended, whichever are listed:
     // Finished still says 2 and the rate is still 50 %, not 0 %.
     const dashboard = page.getByRole("region", { name: "Over this window" });
@@ -2712,7 +3113,8 @@ test.describe("the job history", () => {
     const narrowed = historyReads(
       page,
       (params) =>
-        params.get("since") === "2026-09-18T04:00:00.000Z" && params.get("until") === null,
+        params.get("since") === "2026-09-18T04:00:00.000Z" &&
+        params.get("until") === null,
     );
     await page.getByRole("combobox", { name: "Time" }).click();
     await page.getByRole("option", { name: "Last 6 h" }).click();
@@ -2733,7 +3135,10 @@ test.describe("the job history", () => {
     await page.goto("/history");
     await expect(page.getByText("Started directly")).toBeVisible();
 
-    const narrowed = historyReads(page, (params) => params.get("name") === "Morning round");
+    const narrowed = historyReads(
+      page,
+      (params) => params.get("name") === "Morning round",
+    );
     await page.getByRole("combobox", { name: "Name" }).click();
     await page.getByRole("option", { name: "Morning round" }).click();
     await narrowed;
@@ -2751,7 +3156,10 @@ test.describe("the job history", () => {
     await page.goto("/history");
     await expect(page.getByText("Started directly")).toBeVisible();
 
-    const narrowed = historyReads(page, (params) => params.get("kind") === "schedule");
+    const narrowed = historyReads(
+      page,
+      (params) => params.get("kind") === "schedule",
+    );
     await page.getByRole("combobox", { name: "Kind" }).click();
     await page.getByRole("option", { name: "Scheduled" }).click();
     await narrowed;
@@ -2787,12 +3195,20 @@ test.describe("the job history", () => {
     await page.goto("/history?status=FAILED&range=6h&kind=schedule");
     await read;
 
-    await expect(page.getByRole("combobox", { name: "Outcome" })).toContainText("Failed");
-    await expect(page.getByRole("combobox", { name: "Time" })).toContainText("Last 6 h");
-    await expect(page.getByRole("combobox", { name: "Kind" })).toContainText("Scheduled");
+    await expect(page.getByRole("combobox", { name: "Outcome" })).toContainText(
+      "Failed",
+    );
+    await expect(page.getByRole("combobox", { name: "Time" })).toContainText(
+      "Last 6 h",
+    );
+    await expect(page.getByRole("combobox", { name: "Kind" })).toContainText(
+      "Scheduled",
+    );
   });
 
-  test("sends a custom range as UTC from the operator's own clock", async ({ page }) => {
+  test("sends a custom range as UTC from the operator's own clock", async ({
+    page,
+  }) => {
     await mockBackend(page, { taskHistory: finished });
     await page.goto("/history");
     await expect(page.getByText("Started directly")).toBeVisible();
@@ -2800,7 +3216,9 @@ test.describe("the job history", () => {
     await page.getByRole("combobox", { name: "Time" }).click();
     await page.getByRole("option", { name: "Custom range…" }).click();
     // Seeded from the window that was on screen, so the fields are never blank.
-    await expect(page).toHaveURL(/range=custom&from=2026-09-17T10%3A00%3A00.000Z&to=2026-09-18T10%3A00%3A00.000Z/);
+    await expect(page).toHaveURL(
+      /range=custom&from=2026-09-17T10%3A00%3A00.000Z&to=2026-09-18T10%3A00%3A00.000Z/,
+    );
 
     // The test browser's zone is UTC, so 09:00 typed is 09:00Z sent; the
     // conversion itself is covered in lib/task/history.test.ts for any zone.
@@ -2823,17 +3241,25 @@ test.describe("the job history", () => {
     await page.goto("/history");
 
     // Once under the counts, once where the list would be.
-    await expect(page.getByText("No finished job in this window.", { exact: true })).toBeVisible();
     await expect(
-      page.getByText("No finished job in this window. Jobs appear here once they end."),
+      page.getByText("No finished job in this window.", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        "No finished job in this window. Jobs appear here once they end.",
+      ),
     ).toBeVisible();
   });
 
-  test("offers to clear the filters when they match nothing", async ({ page }) => {
+  test("offers to clear the filters when they match nothing", async ({
+    page,
+  }) => {
     await mockBackend(page, { taskHistory: finished });
     await page.goto("/history?status=CANCELED");
 
-    await expect(page.getByText("No finished job on this robot matches these filters.")).toBeVisible();
+    await expect(
+      page.getByText("No finished job on this robot matches these filters."),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Clear filters" }).click();
     await expect(page).toHaveURL(/\/history$/);
     await expect(page.getByText("Started directly")).toBeVisible();
@@ -2892,10 +3318,9 @@ test.describe("the job history", () => {
     await page.getByText("Morning round").click();
     await described;
 
-    await expect(page.getByRole("button", { name: /Morning round/ })).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
+    await expect(
+      page.getByRole("button", { name: /Morning round/ }),
+    ).toHaveAttribute("aria-expanded", "true");
     // The id, once, in the detail.
     await expect(page.getByText("nightly-2026-09-18T01:00:00Z")).toBeVisible();
     await expect(page.getByText("2-move")).toBeVisible();
@@ -2919,11 +3344,17 @@ test.describe("the job history when the robot cannot answer", () => {
     );
     await page.goto("/history");
 
-    await expect(page.getByText("List task history failed").first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Retry" }).first()).toBeVisible();
+    await expect(
+      page.getByText("List task history failed").first(),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Retry" }).first(),
+    ).toBeVisible();
   });
 
-  test("keeps the list when only the counts cannot be read", async ({ page }) => {
+  test("keeps the list when only the counts cannot be read", async ({
+    page,
+  }) => {
     await page.clock.setFixedTime(new Date("2026-09-18T10:00:00Z"));
     await mockBackend(page, { taskHistory: [taskHistoryEntry()] });
     await page.route("**/api/v1/task_history/stats**", (route) =>
@@ -2948,8 +3379,12 @@ test.describe("what a dispatch records about itself", () => {
     const writes = await mockBackend(page);
     await page.goto("/tasks");
 
-    await page.getByRole("button", { name: 'Dispatch "Morning round" now' }).click();
-    await expect.poll(() => writes.filter((w) => w.path === "/api/v1/tasks")).toHaveLength(1);
+    await page
+      .getByRole("button", { name: 'Dispatch "Morning round" now' })
+      .click();
+    await expect
+      .poll(() => writes.filter((w) => w.path === "/api/v1/tasks"))
+      .toHaveLength(1);
     const body = writes.find((w) => w.path === "/api/v1/tasks")!.body as {
       id: string;
       kind: string;
@@ -2967,7 +3402,9 @@ test.describe("what a dispatch records about itself", () => {
     await page.goto("/");
 
     await page.getByRole("button", { name: "Stand", exact: true }).click();
-    await expect.poll(() => writes.filter((w) => w.path === "/api/v1/tasks")).toHaveLength(1);
+    await expect
+      .poll(() => writes.filter((w) => w.path === "/api/v1/tasks"))
+      .toHaveLength(1);
     const body = writes.find((w) => w.path === "/api/v1/tasks")!.body as {
       id: string;
       kind: string;
@@ -3017,6 +3454,8 @@ test.describe("a schedule edit the robot refuses", () => {
     // Under the form's own fields, not the list's error line.
     const row = page.getByRole("listitem").filter({ hasText: "Edit nightly" });
     await expect(row.getByRole("alert")).toHaveText(refusal);
-    await expect(row.getByRole("button", { name: "Save schedule" })).toBeVisible();
+    await expect(
+      row.getByRole("button", { name: "Save schedule" }),
+    ).toBeVisible();
   });
 });
