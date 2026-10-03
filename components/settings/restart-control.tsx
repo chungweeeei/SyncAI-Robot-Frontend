@@ -69,7 +69,11 @@ export function RestartControl() {
   // Nothing to say while the button can simply be pressed: the dialog carries
   // the consequences, and a caption repeating them would crowd the header.
   // A failure is the robot's own sentence, verbatim; a success is this
-  // console's word, since the robot's names its internal session.
+  // console's words, since the robot's names its internal session. "Done"
+  // alone did not read as "the robot is running again", so the sentence says
+  // what the operator was waiting for, and it may claim Navigation because
+  // that is what `succeeded` means: a rebuild that came up in another mode
+  // is recorded as failed.
   const hint: { text: string; failed: boolean } | null = pending
     ? { text: "Restarting. This takes about 30 seconds.", failed: false }
     : outcome?.status === "failed"
@@ -77,7 +81,10 @@ export function RestartControl() {
       : !canRestart
         ? { text: unavailableReason(reported, stateStatus), failed: false }
         : outcome?.status === "succeeded"
-          ? { text: "Restarted.", failed: false }
+          ? {
+              text: "Restart complete. The robot is back in Navigation.",
+              failed: false,
+            }
           : null;
 
   return (
