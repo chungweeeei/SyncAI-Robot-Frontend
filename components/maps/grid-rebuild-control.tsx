@@ -58,7 +58,8 @@ export function GridRebuildControl({ map }: { map: MapSummary }) {
   // dialog below and never rendered as an error, whether the dialog is open or
   // was answered "keep". Every other refusal is the backend's sentence.
   const conflict =
-    isHandEditConflict(conversion.error) && !conversion.variables?.overwriteEdits;
+    isHandEditConflict(conversion.error) &&
+    !conversion.variables?.overwriteEdits;
   const error = conflict ? null : (conversion.error?.message ?? null);
 
   const convert = (recipe: GridRecipe, overwriteEdits: boolean) => {
@@ -88,7 +89,7 @@ export function GridRebuildControl({ map }: { map: MapSummary }) {
           className="instrument-label flex h-5 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
         >
           <RefreshCwIcon className="size-3" aria-hidden />
-          {map.grid ? "Rebuild floor plan" : "Build floor plan"}
+          {map.grid ? "Rebuild" : "Build"}
           <ChevronDownIcon className="size-3" aria-hidden />
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-64">

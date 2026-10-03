@@ -545,3 +545,93 @@ export function activateMap(name: string): Promise<ActivateMapResult> {
     },
   );
 }
+
+/** The two archive formats `/export` writes. The console only ever asks for zip. */
+export type MapArchiveFormat = "zip" | "tar.gz";
+
+/**
+ * Export a map: `map/<name>/` and its vertices, as one archive the robot can
+ * import again.
+ *
+ * `requestRaw`, because the answer is the archive itself and not JSON. Note
+ * the caller names the file: the backend does set `Content-Disposition`, but
+ * the console is cross-origin to it and the CORS policy exposes only
+ * `Location`, so `res.headers.get("Content-Disposition")` reads null in the
+ * browser. `exportFilename` in lib/map/archive.ts mirrors what the header
+ * would have said.
+ *
+ * Refused 409 `conversion_running` while the floor plan is being rebuilt —
+ * the archive would be torn — and 404 for a name the catalogue does not
+ * know. The map in use *can* be exported: reading the directory disturbs
+ * nothing the stack holds open.
+ */
+export async function exportMap(
+  name: string,
+  format: MapArchiveFormat = "zip",
+): Promise<Blob> {
+  const res = await requestRaw(
+    apiUrl(`/api/v1/maps/${encodeURIComponent(name)}/export?format=${format}`),
+  );
+  return res.blob();
+}
+
+/** `ImportMapResponse`, verbatim. */
+export interface ImportMapResult {
+  /** The map directory the archive became. */
+  name: string;
+  /** True when a map of that name existed and was replaced. */
+  replaced: boolean;
+  files: number;
+  bytes: number;
+  vertices_created: number;
+  /** The replaced map's vertices, or rows orphaned by an earlier hand delete. */
+  vertices_deleted: number;
+  /** Operator-facing sentence; render it verbatim. */
+  message: string;
+}
+
+const ImportMapResultSchema: z.ZodType<ImportMapResult> = z.object({
+  name: z.string(),
+  replaced: z.boolean(),
+  files: z.number(),
+  bytes: z.number(),
+  vertices_created: z.number(),
+  vertices_deleted: z.number(),
+  message: z.string(),
+});
+
+/**
+ * Import a map from an archive `exportMap` (or another robot's) produced.
+ *
+ * The body is the archive's bytes as `application/octet-stream`, not a
+ * multipart form: the backend ships no multipart parser and sniffs zip
+ * against tar.gz from the first bytes, so there is no format to declare.
+ * As with `saveMapGrid`, the explicit `Content-Type` is what stands
+ * requestJson's JSON default down.
+ *
+ * `name` is optional and overrides the one written into the archive's
+ * manifest; left out, the map lands under the name it was exported as. **A
+ * map of that name is replaced**, not refused and not renamed — the import is
+ * subject to the same 409s as a delete (`map_active`, `conversion_running`,
+ * `template_bound`), plus `disk_low` when the archive would not fit. None of
+ * them has a structured retry, so there is no error class; the control shows
+ * the backend's sentence. The answer is parsed because `name` picks which
+ * per-map cache entries the hook drops.
+ *
+ * Deliberately takes no `AbortSignal`: the backend stages the import and
+ * commits it whole, so aborting mid-upload wastes bandwidth and nothing
+ * else, but a navigation should not be what decides whether a 40 MB upload
+ * the operator started lands.
+ */
+export function importMap(
+  archive: Blob,
+  name?: string,
+): Promise<ImportMapResult> {
+  const query = name ? `?name=${encodeURIComponent(name)}` : "";
+  return requestJson<ImportMapResult>(apiUrl(`/api/v1/maps/import${query}`), {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: archive,
+    schema: ImportMapResultSchema,
+  });
+}

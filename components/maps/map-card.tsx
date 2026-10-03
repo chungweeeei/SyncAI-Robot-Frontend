@@ -1,17 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import {
-  BoxIcon,
-  CheckIcon,
-  LayersIcon,
-  PencilIcon,
-} from "lucide-react";
+import { BoxIcon, CheckIcon, LayersIcon, PencilIcon } from "lucide-react";
 
 import { Chip } from "@/components/console/instrument";
 import { GridRebuildControl } from "@/components/maps/grid-rebuild-control";
 import { MapActivateControl } from "@/components/maps/map-activate-control";
 import { MapDeleteControl } from "@/components/maps/map-delete-control";
+import { MapEditLink } from "@/components/maps/map-edit-link";
+import { MapExportControl } from "@/components/maps/map-export-control";
 import { MapRenameControl } from "@/components/maps/map-rename-control";
 import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
@@ -110,8 +107,8 @@ function GridStatusNote({ map }: { map: MapSummary }) {
     // hand. Re-saving the run is the only way back, and this run is gone.
     return (
       <p className="mt-2 text-[11px] leading-tight text-signal-warn">
-        This map has no scan data, so a floor plan cannot be built from it.
-        Only a fresh mapping run can replace it.
+        This map has no scan data, so a floor plan cannot be built from it. Only
+        a fresh mapping run can replace it.
       </p>
     );
   }
@@ -119,7 +116,8 @@ function GridStatusNote({ map }: { map: MapSummary }) {
   if (map.grid_status === "failed") {
     return (
       <p className="mt-2 text-[11px] leading-tight text-signal-warn">
-        {map.grid_error ?? "The floor plan could not be built, and the robot did not record why."}{" "}
+        {map.grid_error ??
+          "The floor plan could not be built, and the robot did not record why."}{" "}
         <span className="text-muted-foreground">
           {map.grid
             ? "The map is still using the floor plan it had before. Try rebuilding it with the other setting."
@@ -178,13 +176,14 @@ function GridStatusNote({ map }: { map: MapSummary }) {
  * one you see. The wording lives in the badge's tooltip and accessible name,
  * and `aria-current` carries the fact to a screen reader on its own.
  *
- * The title is the one editable value on the card (MapRenameControl). Delete is
- * the other thing that can happen to a whole map, and it lives in the corner
- * (MapDeleteControl) rather than in the header row — an X is the glyph for it,
- * and putting it among the word-labels would make the destructive action look
- * like one more view to open. Both are greyed on the map in use, for the same
- * reason: the stack was launched with that name, nothing here can re-point it,
- * and the backend refuses either way.
+ * The title is the one editable value on the card (MapRenameControl). Delete
+ * and Edit are the two things that happen to a whole map, and both live in the
+ * top-right corner as icon tiles (MapDeleteControl, MapEditLink) rather than
+ * in the header row — an X and a pencil are the glyphs for them, and putting
+ * Delete among the word-labels would make the destructive action look like
+ * one more view to open. Rename, Edit and Delete are all greyed on the map in
+ * use: the stack was launched with that name, nothing here can re-point it,
+ * and the backend refuses the first two either way.
  */
 export function MapCard({
   map,
@@ -218,19 +217,19 @@ export function MapCard({
       )}
     >
       {/* The answer to the only question this screen asks, in the corner the
-        * delete X does not use — and the corner MapActivateControl takes over
-        * on every card where the answer is "not this one".
-        *
-        * A check, not the words "In use". One card in the grid carries it, so
-        * it is read as *which one*, not as something to parse — and the same
-        * geometry as the delete X opposite makes the pair read as a system:
-        * two 24px corner tiles, one solid (a state) and one outlined (an
-        * action). The words survive as the tooltip and as the accessible name,
-        * because a glyph alone cannot say which of "loaded", "selected" or
-        * "converted" it means; `aria-current` on the card says it again.
-        *
-        * bg-primary is signal-cmd in both themes and ships a foreground already
-        * paired to it, so no colour is spelled out here. */}
+       * delete X does not use — and the corner MapActivateControl takes over
+       * on every card where the answer is "not this one".
+       *
+       * A check, not the words "In use". One card in the grid carries it, so
+       * it is read as *which one*, not as something to parse — and the same
+       * geometry as the delete X opposite makes the pair read as a system:
+       * two 24px corner tiles, one solid (a state) and one outlined (an
+       * action). The words survive as the tooltip and as the accessible name,
+       * because a glyph alone cannot say which of "loaded", "selected" or
+       * "converted" it means; `aria-current` on the card says it again.
+       *
+       * bg-primary is signal-cmd in both themes and ships a foreground already
+       * paired to it, so no colour is spelled out here. */}
       {map.active ? (
         <span
           title="In use — the map the robot is working in"
@@ -249,6 +248,7 @@ export function MapCard({
         <MapActivateControl map={map} onSwitched={onSwitched} />
       )}
       <MapDeleteControl map={map} onDeleted={onDeleted} />
+      <MapEditLink map={map} />
       <MapThumbnail map={map} />
 
       <div className="px-3 py-3">
@@ -265,27 +265,12 @@ export function MapCard({
           )}
           <GridStatusChip map={map} />
 
-          {/* A map with no gridmap has nothing to paint on, so the link is a
-           * disabled span rather than a route that would land on a guard screen.
-           * Also disabled mid-conversion: the grid on disk is about to be
-           * replaced, and an editor opened now would save cells onto a map with
-           * different extents. A map whose re-conversion *failed* keeps its
-           * editor — the grid it is serving is the archived one, which is a real
-           * grid and the only one it has. */}
-          {grid && map.grid_status !== "converting" ? (
-            <Link
-              href={`/maps/${encodeURIComponent(map.name)}/edit`}
-              className="instrument-label ml-auto flex h-5 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground transition-colors pointer-coarse:min-h-10 hover:bg-elevated hover:text-foreground"
-            >
-              <PencilIcon className="size-3" aria-hidden />
-              Edit
-            </Link>
-          ) : (
-            <span className="instrument-label ml-auto flex h-5 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground opacity-40 pointer-coarse:min-h-10">
-              <PencilIcon className="size-3" aria-hidden />
-              Edit
-            </span>
-          )}
+          {/* Export at the right of the facts: the one verb that takes a copy
+           * away without touching the map. Edit and Delete, which do touch
+           * it, are the corner tiles above. Export carries the `ml-auto`; its
+           * refusal line, when there is one, is a `basis-full` child of this
+           * same wrapping row, so it lands under the chips. */}
+          <MapExportControl map={map} />
         </div>
 
         {/* Why the grid is missing or stale, then the control that fixes it.
