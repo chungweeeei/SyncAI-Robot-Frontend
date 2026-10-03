@@ -85,7 +85,7 @@ test.describe("restarting the robot from Settings", () => {
       finished_at: "2026-09-18T09:45:31Z",
     };
     // The console's own word, not the robot's sentence naming its session.
-    await expect(page.getByText("Restarted.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Restart complete. The robot is back in Navigation.")).toBeVisible();
     await expect(page.getByText(/session auto/)).toHaveCount(0);
     await expect(restartButton(page)).toBeEnabled();
   });
