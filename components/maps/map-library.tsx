@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { MapCard } from "@/components/maps/map-card";
+import { MapImportControl } from "@/components/maps/map-import-control";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMaps } from "@/hooks/use-maps";
 
@@ -58,30 +59,65 @@ function LoadingGrid() {
  * outcomes unmount it with the refetch. A switch leaves its card mounted, but
  * its sentence is about the *robot* — where it ended up, and whether it still
  * needs an initial pose — so it belongs above the grid rather than inside the
- * card of a map that is now merely one of several.
+ * card of a map that is now merely one of several. An import's sentence lands
+ * on the same line for the first reason: the card it is about does not exist
+ * until the refetch mounts it.
+ *
+ * The toolbar — that line and the Import button — renders in every state,
+ * including "no maps" and "unavailable". A robot with no maps is exactly the
+ * one an operator is bringing an archive to, and hiding the only way in behind
+ * the empty state would make the state permanent.
  */
 export function MapLibrary() {
   const { maps, status } = useMaps();
   const [lastResult, setLastResult] = React.useState<string | null>(null);
 
+  // The backend's sentence, verbatim — same contract as the other map
+  // controls. It says how many vertices and templates followed the name, how
+  // many went with the deleted map, or what an import brought, which no card
+  // is around to show. One line for all of them: they are the same kind of
+  // answer, and the latest to arrive is the one worth reading.
+  const toolbar = (
+    <div className="mb-3 flex items-start gap-3">
+      {lastResult && (
+        <p
+          role="status"
+          className="min-w-0 flex-1 pt-1 text-[11px] leading-tight text-muted-foreground"
+        >
+          {lastResult}
+        </p>
+      )}
+      <div className="ml-auto shrink-0">
+        <MapImportControl maps={maps} onImported={setLastResult} />
+      </div>
+    </div>
+  );
+
   if (!maps) {
-    if (status === "error") {
-      return (
-        <Notice label="Maps unavailable">
-          The robot&apos;s map list could not be read.
-        </Notice>
-      );
-    }
-    return <LoadingGrid />;
+    return (
+      <div>
+        {toolbar}
+        {status === "error" ? (
+          <Notice label="Maps unavailable">
+            The robot&apos;s map list could not be read.
+          </Notice>
+        ) : (
+          <LoadingGrid />
+        )}
+      </div>
+    );
   }
 
   if (maps.length === 0) {
     return (
-      <Notice label="No maps">
-        This robot has no saved maps. They are written to{" "}
-        <span className="readout">map/&lt;name&gt;/</span> when a mapping run is
-        saved.
-      </Notice>
+      <div>
+        {toolbar}
+        <Notice label="No maps">
+          This robot has no saved maps. They are written to{" "}
+          <span className="readout">map/&lt;name&gt;/</span> when a mapping run
+          is saved, and Import brings one over from another robot.
+        </Notice>
+      </div>
     );
   }
 
@@ -93,19 +129,7 @@ export function MapLibrary() {
 
   return (
     <div>
-      {/* The backend's sentence, verbatim — same contract as the other map
-        * controls. It says how many vertices and templates followed the name,
-        * or how many went with the deleted map, which neither card is around to
-        * show. One line for both: they are the same kind of answer, and the
-        * second one to arrive is the one worth reading. */}
-      {lastResult && (
-        <p
-          role="status"
-          className="mb-3 text-[11px] leading-tight text-muted-foreground"
-        >
-          {lastResult}
-        </p>
-      )}
+      {toolbar}
       <div className={GRID}>
         {ordered.map((map) => (
           <MapCard
