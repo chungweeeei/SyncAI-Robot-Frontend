@@ -124,13 +124,17 @@ export function MapImportControl({
         tabIndex={-1}
         onChange={pick}
       />
+      {/* Solid signal-live rather than a Button variant: the page's one
+       * call to action, and green because it is the verb that brings a map
+       * *in* — the console's hue for a value that is sound and present.
+       * `text-background` keeps the label legible in both themes, where the
+       * hue is dark on light and light on dark. */}
       <Button
         type="button"
-        variant="outline"
-        size="sm"
         onClick={() => inputRef.current?.click()}
+        className="h-9 bg-signal-live px-4 text-sm text-background hover:bg-signal-live/85"
       >
-        <UploadIcon data-icon="inline-start" />
+        <UploadIcon data-icon="inline-start" className="size-4" />
         Import
       </Button>
 
