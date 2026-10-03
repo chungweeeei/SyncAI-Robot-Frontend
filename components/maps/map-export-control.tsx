@@ -8,9 +8,16 @@ import type { MapSummary } from "@/lib/types/map";
 const CONVERTING_REASON =
   "This map is still being prepared. Wait for it to finish, then export it.";
 
-/** Same geometry as the Edit link beside it, so the two read as one row of verbs. */
+/**
+ * A size up from the chips it shares the row with, and in `signal-live`: of
+ * the console's hues it is the one that means "sound and safe to take", which
+ * is what a download is — the only map verb on the card that cannot change
+ * anything on the robot, so it is also the only one that may wear a colour
+ * at rest. `h-7` is Button's `sm`, so it lines up with the Import button.
+ */
 const FACE =
-  "instrument-label ml-auto flex h-5 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground pointer-coarse:min-h-10";
+  "ml-auto flex h-7 items-center gap-1.5 rounded-sm border px-2.5 text-xs font-semibold tracking-wide pointer-coarse:min-h-10";
+const LIVE = "border-signal-live/40 bg-signal-live/10 text-signal-live";
 
 /**
  * The card-side face of GET /api/v1/maps/{name}/export.
@@ -44,9 +51,9 @@ export function MapExportControl({ map }: { map: MapSummary }) {
       <span
         aria-disabled="true"
         title={CONVERTING_REASON}
-        className={`${FACE} cursor-not-allowed opacity-40`}
+        className={`${FACE} ${LIVE} cursor-not-allowed opacity-40`}
       >
-        <DownloadIcon className="size-3" aria-hidden />
+        <DownloadIcon className="size-3.5" aria-hidden />
         Export
       </span>
     );
@@ -60,9 +67,9 @@ export function MapExportControl({ map }: { map: MapSummary }) {
         aria-label={`Export ${map.name}`}
         title={`Export ${map.name} as a zip archive`}
         onClick={() => exporting.mutate({ name: map.name })}
-        className={`${FACE} transition-colors hover:bg-elevated hover:text-foreground disabled:cursor-progress disabled:opacity-60`}
+        className={`${FACE} ${LIVE} transition-colors hover:border-signal-live/70 hover:bg-signal-live/20 disabled:cursor-progress disabled:opacity-60`}
       >
-        <DownloadIcon className="size-3" aria-hidden />
+        <DownloadIcon className="size-3.5" aria-hidden />
         {busy ? "Exporting…" : "Export"}
       </button>
       {error && (
