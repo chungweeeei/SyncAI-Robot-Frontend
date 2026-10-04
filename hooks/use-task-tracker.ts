@@ -1,12 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, type QueryFunctionContext } from "@tanstack/react-query";
 
 import { queryKeys } from "@/lib/api/query-keys";
 import {
-  TERMINAL_TASK_STATUSES,
   fetchTaskState,
+  isTerminalTaskStatus,
   type TaskStateResponse,
   type TaskStatus,
   type TaskStepState,
@@ -21,7 +21,36 @@ const TASK_POLL_MS = 1000;
  * Shared so the pre-first-response window does not hand a fresh array to every
  * render — useTaskDispatch keys a Map off this and would rebuild it each time.
  */
-const NO_STEPS: TaskStepState[] = [];
+export const NO_STEPS: TaskStepState[] = [];
+
+/**
+ * The `queryFn` every poller of `queryKeys.task(id)` must use.
+ *
+ * It reads the id off the key, not off a closure: the key is what the request
+ * belongs to, and it cannot go stale relative to the entry it writes. And it
+ * never overwrites a known step list with an empty one. get_task_state
+ * degrades `steps` to [] whenever the workflow query fails — in the window
+ * before the workflow's first task executes, when no worker is polling this
+ * robot's queue, and again once the execution has closed — and each of those
+ * would otherwise blank the per-step readback the operator is watching. An
+ * empty list is never meaningful here: the composer refuses to dispatch a
+ * zero-step task.
+ *
+ * Exported because the entry has more than one poller (see the key's note):
+ * TanStack runs whichever observer's `queryFn` triggered the fetch, so a
+ * second observer with a bare `fetchTaskState` would blank the first one's
+ * held list on its own tick.
+ */
+export async function fetchHeldTaskState({
+  signal,
+  queryKey,
+  client,
+}: QueryFunctionContext<ReturnType<typeof queryKeys.task>>): Promise<TaskStateResponse> {
+  const state = await fetchTaskState(queryKey[1], signal);
+  if (state.steps.length) return state;
+  const held = client.getQueryData<TaskStateResponse>(queryKey);
+  return held?.steps.length ? { ...state, steps: held.steps } : state;
+}
 
 export interface TaskTracker {
   taskStatus: TaskStatus | null;
@@ -49,10 +78,6 @@ export interface TaskTracker {
   reset: () => void;
 }
 
-function isTerminal(status: TaskStatus | undefined): boolean {
-  return status !== undefined && TERMINAL_TASK_STATUSES.includes(status);
-}
-
 /**
  * Follows one submitted task until it is terminal.
  *
@@ -72,7 +97,6 @@ function isTerminal(status: TaskStatus | undefined): boolean {
  * second copy of the status in state that could disagree with it.
  */
 export function useTaskTracker(): TaskTracker {
-  const queryClient = useQueryClient();
   /**
    * The run being followed. Survives a terminal status — the query stops
    * polling but its data is what keeps the outcome on screen — and is cleared
@@ -82,21 +106,7 @@ export function useTaskTracker(): TaskTracker {
 
   const query = useQuery({
     queryKey: queryKeys.task(followedId ?? ""),
-    queryFn: async ({ signal, queryKey }) => {
-      // The id off the key, not off the closure: the key is what this request
-      // belongs to, and it cannot go stale relative to the entry it writes.
-      const state = await fetchTaskState(queryKey[1], signal);
-      // Never overwrite a known step list with an empty one. get_task_state
-      // degrades `steps` to [] whenever the workflow query fails — in the
-      // window before the workflow's first task executes, when no worker is
-      // polling this robot's queue, and again once the execution has closed —
-      // and each of those would otherwise blank the per-step readback the
-      // operator is watching. An empty list is never meaningful here: the
-      // composer refuses to dispatch a zero-step task.
-      if (state.steps.length) return state;
-      const held = queryClient.getQueryData<TaskStateResponse>(queryKey);
-      return held?.steps.length ? { ...state, steps: held.steps } : state;
-    },
+    queryFn: fetchHeldTaskState,
     enabled: followedId !== null,
     // Silent, for the same reason the hand-rolled version swallowed its
     // errors: the workflow query fails while Temporal is starting the
@@ -110,7 +120,7 @@ export function useTaskTracker(): TaskTracker {
     // hidden and resumes on return, so a readback is at most one tick stale —
     // the same deal the active-task poll next door takes.
     refetchInterval: (entry) =>
-      isTerminal(entry.state.data?.status) ? false : TASK_POLL_MS,
+      isTerminalTaskStatus(entry.state.data?.status) ? false : TASK_POLL_MS,
   });
 
   const track = React.useCallback((id: string) => setFollowedId(id), []);
@@ -133,7 +143,7 @@ export function useTaskTracker(): TaskTracker {
   // already showing the goal it sent.
   const taskStatus: TaskStatus | null =
     query.data?.status ?? (followedId !== null ? "PENDING" : null);
-  const terminal = isTerminal(query.data?.status);
+  const terminal = isTerminalTaskStatus(query.data?.status);
   const steps = query.data?.steps ?? NO_STEPS;
 
   return {

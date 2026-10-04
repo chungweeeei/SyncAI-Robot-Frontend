@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { ActiveTaskChip } from "@/components/console/active-task-chip";
+import { ActiveRunControls } from "@/components/console/active-run-controls";
 import { CameraDisclosure } from "@/components/console/camera-disclosure";
 import { DriveDisclosure } from "@/components/console/drive-disclosure";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
@@ -112,21 +112,16 @@ export function StatusStrip() {
 
         <StripDivider className="hidden sm:block" />
 
-        {/* Whether the robot is executing anything, from Temporal rather than
+        {/* What the robot is executing, from the job scheduler rather than
           * from this tab — so it is true for a run another console started, or
           * one a schedule started with nobody watching, or one that began
-          * before this page was loaded. `role="status"` so going from idle to
-          * running is announced rather than just recoloured.
+          * before this page was loaded — with the step it is on and the hold
+          * and cancel controls beside it. Nothing at all while idle.
           *
           * Left cluster, beside the mode and the map: those three say what the
           * robot *is doing and where*, while the right cluster is the health of
           * the links and the machine. */}
-        <div role="status" className="flex items-center gap-2">
-          <span className="instrument-label hidden text-muted-foreground sm:inline">
-            Task
-          </span>
-          <ActiveTaskChip />
-        </div>
+        <ActiveRunControls />
 
         <div className="ml-auto flex shrink-0 items-center gap-2.5 sm:gap-3.5">
           {/* A 2 px gap rather than the strip's usual spacing: with their
