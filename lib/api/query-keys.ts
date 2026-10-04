@@ -18,12 +18,20 @@ export const queryKeys = {
   /** GET /api/v1/active_tasks — the console's single 2 s poll. */
   activeTasks: ["active-tasks"] as const,
   /**
-   * GET /api/v1/tasks/<id> — one dispatched run's per-step readback, polled at
-   * 1 Hz while it is still going.
+   * GET /api/v1/tasks/<id> — one run's per-step readback.
    *
-   * Keyed per task rather than per screen, which is what stops two surfaces
-   * following the same run from opening two intervals, and what makes the
-   * entry go away with the run it describes.
+   * Keyed per task rather than per screen, and read by three surfaces on
+   * purpose: useTaskTracker (1 Hz, a run this tab dispatched), the masthead's
+   * useActiveRun (2 s, whatever the active list says is running — the only
+   * place a paused run is visible, since `/active_tasks` lists it as
+   * IN_PROGRESS) and useTaskRun (once, an expanded history row). Sharing the
+   * entry is what gives the masthead the steps the tracker already fetched
+   * for a run this tab started, and what opens a history row on the last
+   * read the masthead made of a run that just finished. The two pollers each
+   * tick their own timer and dedupe only when they overlap, so a run this tab
+   * dispatched costs up to ~1.5 reads a second rather than one; any observer
+   * must use `fetchHeldTaskState`, or its own tick can blank the others'
+   * step list with a degraded `[]`.
    */
   task: (id: string) => ["task", id] as const,
   /**
