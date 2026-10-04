@@ -231,6 +231,77 @@ test.describe("the console shell", () => {
  * the browser log a failed document load, which is the correct behaviour being
  * asserted rather than noise to suppress.
  */
+test.describe("when a motor overheats", () => {
+  let errors: string[];
+
+  test.beforeEach(({ page }) => {
+    errors = [];
+    failOnConsoleErrors(page, errors);
+  });
+
+  test.afterEach(() => {
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  const hot = (temperature: number) => [
+    { name: "FL_Knee_joint", temperature: 41, error: 0 },
+    { name: "HL_Knee_joint", temperature, error: 0 },
+  ];
+
+  test("raises a notice over the viewport only above 85°, naming the joint", async ({
+    page,
+  }) => {
+    // The state object is shared with the fake by reference, so a mutation
+    // here is what the console's next 1 Hz poll reads.
+    const state = robotState({ motor_status: hot(85) });
+    await mockBackend(page, { state });
+    await page.goto("/");
+
+    const viewport = page.getByRole("region", { name: "Map viewport" });
+    const notice = viewport.getByRole("alert").filter({
+      hasText: "A motor is overheating",
+    });
+    await expect(viewport.getByText("41")).toHaveCount(0);
+    await expect(notice).toHaveCount(0);
+
+    state.motor_status = hot(86);
+    await expect(notice).toBeVisible();
+    await expect(notice.getByText("HL KN", { exact: true })).toBeVisible();
+    await expect(notice.getByText("86")).toBeVisible();
+    // The grid's own number, not the driver's identifier.
+    await expect(notice.getByText(/_joint/)).toHaveCount(0);
+  });
+
+  test("stays dismissed until the motor has cooled and crossed the limit again", async ({
+    page,
+  }) => {
+    const state = robotState({ motor_status: hot(90) });
+    await mockBackend(page, { state });
+    await page.goto("/");
+
+    const viewport = page.getByRole("region", { name: "Map viewport" });
+    const notice = viewport.getByRole("alert").filter({
+      hasText: "A motor is overheating",
+    });
+    await expect(notice).toBeVisible();
+
+    await notice.getByRole("button", { name: "Dismiss" }).click();
+    await expect(notice).toHaveCount(0);
+
+    // Still over the limit a poll later: a closed notice does not nag.
+    state.motor_status = hot(92);
+    await expect(viewport.getByText("92")).toHaveCount(0);
+    await expect(notice).toHaveCount(0);
+
+    // Cooled below the red readout, then hot again: that is a new event.
+    state.motor_status = hot(79);
+    await page.waitForTimeout(1500);
+    state.motor_status = hot(88);
+    await expect(notice).toBeVisible();
+    await expect(notice.getByText("88")).toBeVisible();
+  });
+});
+
 test.describe("routes that must not exist on the robot", () => {
   test("404s a route that was removed", async ({ page }) => {
     await mockBackend(page);
