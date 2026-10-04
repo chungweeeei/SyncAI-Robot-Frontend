@@ -186,6 +186,26 @@ export function taskHistoryEntry(over: Record<string, unknown> = {}) {
     schedule_id: null,
     kind: "task",
     name: null,
+    map_name: MAP_NAME,
+    ...over,
+  };
+}
+
+/**
+ * A job running right now, as GET /active_tasks lists it — on this robot's
+ * map unless a test says otherwise, which is what locks that map's writes.
+ */
+export function activeTask(over: Record<string, unknown> = {}) {
+  return {
+    id: "robot01-task-1758000000-1",
+    run_id: "run-1",
+    status: "IN_PROGRESS",
+    started_at: "2026-09-18T09:44:30Z",
+    source: "DIRECT",
+    schedule_id: null,
+    kind: "task",
+    name: "Morning round",
+    map_name: MAP_NAME,
     ...over,
   };
 }
