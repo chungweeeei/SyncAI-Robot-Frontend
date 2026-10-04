@@ -45,6 +45,8 @@ export function VertexMoveDialog({
   vertex,
   busy,
   running,
+  editLock = null,
+  dispatchLock = null,
   deleting,
   deleteError,
   onConfirm,
@@ -58,6 +60,13 @@ export function VertexMoveDialog({
   busy: boolean;
   /** A task is already running, so this one cannot be dispatched. */
   running: boolean;
+  /**
+   * Why this stop cannot be changed right now — a job is driving on its map —
+   * or null. Greys Reposition and Delete; Move is a command, not an edit.
+   */
+  editLock?: string | null;
+  /** Why no goal can be sent onto this map right now, or null. Greys Move. */
+  dispatchLock?: string | null;
   /** The delete is in flight. */
   deleting: boolean;
   /** The backend's refusal of the delete, or null. Rendered verbatim. */
@@ -115,6 +124,16 @@ export function VertexMoveDialog({
                 goal at a time.
               </p>
             )}
+            {!running && dispatchLock && (
+              <p className="text-[11px] leading-snug text-signal-caution">
+                {dispatchLock}
+              </p>
+            )}
+            {editLock && (
+              <p className="text-[11px] leading-snug text-signal-caution">
+                {editLock}
+              </p>
+            )}
             {deleteError && (
               <p role="alert" className="text-[11px] leading-snug break-words text-signal-warn">
                 {deleteError}
@@ -125,10 +144,11 @@ export function VertexMoveDialog({
               <Button
                 variant="ghost"
                 size="sm"
-                // Deliberately live while a task runs: the robot being on its
-                // way somewhere says nothing about whether this mark is in the
-                // right place, and the re-place writes a row, not a command.
+                // Live while *this tab's* goal is merely on its way, but not
+                // while any job drives on the stop's map: the backend refuses
+                // that write, and editLock says so before the press does.
                 className="mr-auto"
+                disabled={editLock !== null}
                 onClick={() => onReplace(shown)}
               >
                 <MapPinIcon data-icon="inline-start" />
@@ -140,7 +160,7 @@ export function VertexMoveDialog({
               <Button
                 variant="destructive"
                 size="sm"
-                disabled={deleting || busy}
+                disabled={deleting || busy || editLock !== null}
                 onClick={() => {
                   if (window.confirm(`Delete "${shown.name}"? This cannot be undone.`)) {
                     onDelete(shown);
@@ -152,7 +172,7 @@ export function VertexMoveDialog({
               </Button>
               <Button
                 size="sm"
-                disabled={busy || running || deleting}
+                disabled={busy || running || deleting || dispatchLock !== null}
                 onClick={() => onConfirm(shown)}
               >
                 <SendIcon data-icon="inline-start" />

@@ -366,6 +366,21 @@ touch one, prefer moving it toward the rule.
   `modified_at` covers the whole map directory, so a floor plan rebuild
   would re-download a scan that did not change. `queryKeys.mapPointCloud`
   records the one case that leaves open.
+- **A map a job drives on is read-only for the job's length.** Every job
+  that moves carries its map on the wire: the dispatch sends the map it
+  planned on (`map_name`, which the backend checks against the loaded one
+  and refuses with `map_mismatch`), and `GET /active_tasks` answers with
+  the map each running job was stamped with. The backend is the gate — it
+  refuses waypoint, floor plan, forbidden zone and rebuild writes on that
+  map with `task_running` (`tasks_unknown` when it cannot tell), for every
+  console and for a schedule nobody here started. `mapRunLock` in
+  `lib/map/run-lock.ts` is only how the console greys those controls
+  first, read off the shared active-tasks poll through `useMapRunLock`. It
+  keys on the job's `map_name` and never on which map is active, and it
+  fails closed while the poll is loading or failing. The reverse is
+  `dispatchMapLock`: no job that moves goes onto a map whose floor plan is
+  mid-rebuild. Only writes are held; the editor keeps strokes and typed
+  names until the job ends.
 - **Wire types** are split between `lib/types/` and the fetcher modules with no
   rule yet. Prefer `lib/types/` for anything more than one router shares.
 

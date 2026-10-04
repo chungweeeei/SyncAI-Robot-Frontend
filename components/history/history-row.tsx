@@ -192,6 +192,15 @@ export function HistoryRow({ entry }: { entry: TaskHistoryEntry }) {
               <span className="readout min-w-0 truncate text-[12px]">{entry.id}</span>
             </div>
           )}
+          {/* Which map it drove on: a route's coordinates only mean something
+            * on one map, and a site with several is where "it went to the
+            * wrong place" gets asked. Absent for a job that used none. */}
+          {entry.map_name && (
+            <div className="flex items-baseline gap-2">
+              <span className="instrument-label shrink-0 text-muted-foreground">Map</span>
+              <span className="readout min-w-0 truncate text-[12px]">{entry.map_name}</span>
+            </div>
+          )}
           <RunSteps id={entry.id} />
         </div>
       )}

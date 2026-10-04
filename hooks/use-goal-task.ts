@@ -72,14 +72,17 @@ export interface GoalTask {
  * actually stopped the robot, and a cancel that was refused because the
  * workflow had already closed must not stand in front of the reason it closed.
  */
-export function useGoalTask(robotId: string): GoalTask {
+export function useGoalTask(robotId: string, mapName: string | null): GoalTask {
   const [goal, setGoal] = React.useState<GoalPose | null>(null);
   const task = useTaskTracker();
 
   const { track, reset, taskId } = task;
 
   const submit = useMutation({
-    mutationFn: (staged: GoalPose) => sendMoveTask(robotId, staged),
+    // The map the goal was aimed on travels with it: the backend refuses the
+    // goal if the robot has been switched to another map since, which is the
+    // one way a pose drawn here could be driven somewhere nobody aimed.
+    mutationFn: (staged: GoalPose) => sendMoveTask(robotId, staged, mapName),
     // Before the request, not after it: the panel shows the new coordinates
     // the moment the drag is released, and the last run's step failure sitting
     // under them would read as this goal's. The button that got here is gated

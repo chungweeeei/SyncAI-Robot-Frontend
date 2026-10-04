@@ -281,6 +281,7 @@ export function EditorToolBar({
   onRedo,
   dirty,
   saving,
+  writeLock = null,
   onSave,
   drawKind,
   tool,
@@ -308,6 +309,11 @@ export function EditorToolBar({
   dirty: boolean;
   /** A write of either half is in flight. */
   saving: boolean;
+  /**
+   * Why nothing may be written to this map right now — a job is driving on
+   * it — or null. Holds Save and Remove; the edits themselves stay on screen.
+   */
+  writeLock?: string | null;
   onSave: () => void;
   drawKind: DrawKind | null;
   tool: EditTool;
@@ -359,10 +365,18 @@ export function EditorToolBar({
       <span className="relative flex">
         <ToolButton
           label="Save"
-          hint={saving ? "saving…" : dirty ? "unsaved changes — write them to the robot" : "nothing to save"}
+          hint={
+            saving
+              ? "saving…"
+              : writeLock
+                ? writeLock
+                : dirty
+                  ? "unsaved changes — write them to the robot"
+                  : "nothing to save"
+          }
           icon={SaveIcon}
           busy={saving}
-          disabled={!dirty || saving}
+          disabled={!dirty || saving || writeLock !== null}
           onClick={onSave}
         />
         {dirty && (
@@ -448,7 +462,7 @@ export function EditorToolBar({
               icon={Trash2Icon}
               tone="caution"
               busy={removingZones}
-              disabled={selectedZones === 0 || zoneWriting}
+              disabled={selectedZones === 0 || zoneWriting || writeLock !== null}
               onClick={onRemoveZone}
             />
           </>

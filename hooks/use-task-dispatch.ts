@@ -22,6 +22,13 @@ export interface TaskDispatch {
   /** Only true while the task id is still known — see the tracker's poll effect. */
   cancelable: boolean;
   error: string | null;
+  /**
+   * Only the submit's refusal — the backend's sentence for a job it would not
+   * start (another map loaded, a floor plan mid-rebuild, the robot busy).
+   * Apart from `error` because a row already shows its own steps' failures,
+   * and a refused submit has no row readback to show it in.
+   */
+  refused: string | null;
   /** Per-step state of the tracked task, keyed by step id. Empty before a dispatch. */
   stepStates: ReadonlyMap<string, TaskStepState>;
   /**
@@ -36,9 +43,14 @@ export interface TaskDispatch {
   /**
    * `name` is the template the steps were loaded from, when they were. It is
    * recorded on the run so the history can tell one template's jobs apart;
-   * the composer's own steps send none.
+   * the composer's own steps send none. `mapName` is the map the steps'
+   * coordinates were saved on, so the backend can refuse them on another.
    */
-  send: (steps: readonly TaskStepRequest[], name?: string | null) => Promise<void>;
+  send: (
+    steps: readonly TaskStepRequest[],
+    name?: string | null,
+    mapName?: string | null,
+  ) => Promise<void>;
   cancel: () => Promise<void>;
   clear: () => void;
 }
@@ -76,11 +88,13 @@ export function useTaskDispatch(robotId: string | null): TaskDispatch {
       robot,
       requests,
       name,
+      mapName,
     }: {
       robot: string;
       requests: readonly TaskStepRequest[];
       name: string | null;
-    }) => submitTask(robot, requests, name),
+      mapName: string | null;
+    }) => submitTask(robot, requests, name, mapName),
     // Before the request, not after it: this is the one place that knows a new
     // task is starting, so the previous task's per-step readback goes now
     // instead of lingering under the new one's rows.
@@ -98,10 +112,14 @@ export function useTaskDispatch(robotId: string | null): TaskDispatch {
   const { mutateAsync: cancelAsync, reset: resetCancel } = cancelRun;
 
   const send = React.useCallback(
-    async (requests: readonly TaskStepRequest[], name: string | null = null) => {
+    async (
+      requests: readonly TaskStepRequest[],
+      name: string | null = null,
+      mapName: string | null = null,
+    ) => {
       if (!robotId || !requests.length) return;
       resetCancel();
-      await submitAsync({ robot: robotId, requests, name }).catch(ignore);
+      await submitAsync({ robot: robotId, requests, name, mapName }).catch(ignore);
     },
     [robotId, submitAsync, resetCancel],
   );
@@ -134,6 +152,7 @@ export function useTaskDispatch(robotId: string | null): TaskDispatch {
     busy: submit.isPending || cancelRun.isPending,
     cancelable: task.cancelable,
     error: submit.error?.message ?? task.error ?? cancelRun.error?.message ?? null,
+    refused: submit.error?.message ?? null,
     stepStates,
     taskId,
     send,

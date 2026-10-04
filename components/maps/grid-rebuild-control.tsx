@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { isHandEditConflict, useConvertMapGrid } from "@/hooks/use-map-actions";
+import { useMapRunLock } from "@/hooks/use-map-run-lock";
+import { cn } from "@/lib/utils";
 import type { GridRecipe, MapSummary } from "@/lib/types/map";
 
 /**
@@ -47,6 +49,10 @@ import type { GridRecipe, MapSummary } from "@/lib/types/map";
  */
 export function GridRebuildControl({ map }: { map: MapSummary }) {
   const conversion = useConvertMapGrid();
+  // A rebuild replaces the floor plan the planner is using, so it waits for
+  // any job driving on this map — the backend refuses it, and this says so
+  // first. See lib/map/run-lock.ts.
+  const runLock = useMapRunLock(map.name);
   const [confirm, setConfirm] = React.useState<{
     recipe: GridRecipe;
     detail: string;
@@ -81,40 +87,66 @@ export function GridRebuildControl({ map }: { map: MapSummary }) {
   const disabled =
     busy || map.grid_status === "converting" || !map.has_pointcloud;
 
+  const label = map.grid ? "Rebuild" : "Build";
+  const trigger =
+    "instrument-label flex h-5 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground transition-colors";
+
   return (
     <div className="mt-2 space-y-1.5">
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          disabled={disabled}
-          className="instrument-label flex h-5 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+      {runLock.locked ? (
+        // A look-alike span rather than the disabled trigger, for the reason
+        // MapEditLink gives: the trigger's disabled state swallows the
+        // pointer, and the tooltip carrying the reason is the point. Focusable
+        // and named with the reason, so a keyboard reaches the same sentence.
+        <span
+          role="button"
+          tabIndex={0}
+          aria-disabled="true"
+          aria-label={`${label}: ${runLock.reason}`}
+          title={runLock.reason ?? undefined}
+          className={cn(trigger, "w-fit cursor-not-allowed opacity-40")}
         >
           <RefreshCwIcon className="size-3" aria-hidden />
-          {map.grid ? "Rebuild" : "Build"}
+          {label}
           <ChevronDownIcon className="size-3" aria-hidden />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-64">
-          <DropdownMenuItem onClick={() => convert("z-band", false)}>
-            <div>
-              <p className="text-sm">Standard</p>
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                Anywhere the robot did not see stays open, so you can fix it
-                later by driving through it or editing the map. The safe choice
-                on a new site.
-              </p>
-            </div>
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => convert("traversability", false)}>
-            <div>
-              <p className="text-sm">Strict</p>
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                For sites too large to tidy up by hand. Anywhere the robot did
-                not see becomes a wall it will never cross — choose this
-                deliberately.
-              </p>
-            </div>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        </span>
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            disabled={disabled}
+            className={cn(
+              trigger,
+              "hover:bg-elevated hover:text-foreground disabled:pointer-events-none disabled:opacity-40",
+            )}
+          >
+            <RefreshCwIcon className="size-3" aria-hidden />
+            {label}
+            <ChevronDownIcon className="size-3" aria-hidden />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-64">
+            <DropdownMenuItem onClick={() => convert("z-band", false)}>
+              <div>
+                <p className="text-sm">Standard</p>
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  Anywhere the robot did not see stays open, so you can fix it
+                  later by driving through it or editing the map. The safe choice
+                  on a new site.
+                </p>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => convert("traversability", false)}>
+              <div>
+                <p className="text-sm">Strict</p>
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  For sites too large to tidy up by hand. Anywhere the robot did
+                  not see becomes a wall it will never cross — choose this
+                  deliberately.
+                </p>
+              </div>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       {/* The backend's sentences, verbatim — same contract as SaveMapControl. */}
       {message && (

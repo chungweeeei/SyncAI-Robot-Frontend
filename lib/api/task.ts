@@ -216,6 +216,13 @@ interface TaskRequest {
   timestamp: number;
   kind: TaskKind;
   name: string | null;
+  /**
+   * The map the dispatcher planned the job's coordinates on. The backend
+   * refuses the job when it is not the map the robot is using, and records the
+   * map it actually ran on itself, so this is a check rather than a claim.
+   * Omitted for a job that does not move.
+   */
+  map_name?: string;
   steps: readonly TaskStepRequest[];
 }
 
@@ -239,9 +246,11 @@ async function postTask(
   kind: TaskKind,
   steps: readonly TaskStepRequest[],
   name: string | null = null,
+  mapName: string | null = null,
 ): Promise<string> {
   const { id, timestamp } = newTaskIdentity(robotId, kind);
   const body: TaskRequest = { id, timestamp, kind, name, steps };
+  if (mapName !== null) body.map_name = mapName;
   const ack = await requestJson<TaskAckResponse>(apiUrl("/api/v1/tasks"), {
     method: "POST",
     body: JSON.stringify(body),
@@ -250,15 +259,30 @@ async function postTask(
   return ack.id;
 }
 
-/** Submit a one-step MOVE task for a dragged nav goal. */
-export function sendMoveTask(robotId: string, goal: GoalPose): Promise<string> {
-  return postTask(robotId, "goal", [
-    {
-      id: "goal",
-      type: "MOVE",
-      params: { x: goal.x, y: goal.y, theta: normalizeTheta(goal.theta) },
-    },
-  ]);
+/**
+ * Submit a one-step MOVE task for a dragged nav goal. `mapName` is the map the
+ * goal was aimed on — the one the dashboard was drawing — so a switch made from
+ * another console between the drag and the request is refused rather than
+ * driven on the new map.
+ */
+export function sendMoveTask(
+  robotId: string,
+  goal: GoalPose,
+  mapName: string | null = null,
+): Promise<string> {
+  return postTask(
+    robotId,
+    "goal",
+    [
+      {
+        id: "goal",
+        type: "MOVE",
+        params: { x: goal.x, y: goal.y, theta: normalizeTheta(goal.theta) },
+      },
+    ],
+    null,
+    mapName,
+  );
 }
 
 // An explicit table rather than `toLowerCase()`: the kind is typed on the wire
@@ -285,14 +309,16 @@ export function sendPostureTask(
  *
  * `name` is the template the steps were loaded from, when they were: it is
  * recorded on the run and is what lets the history count one template's jobs
- * apart from everything else dispatched as a "task".
+ * apart from everything else dispatched as a "task". `mapName` is the map its
+ * MOVE coordinates belong to (the template's `map_name`), null when it has none.
  */
 export function submitTask(
   robotId: string,
   steps: readonly TaskStepRequest[],
   name: string | null = null,
+  mapName: string | null = null,
 ): Promise<string> {
-  return postTask(robotId, "task", steps, name);
+  return postTask(robotId, "task", steps, name, mapName);
 }
 
 export function fetchTaskState(
@@ -319,7 +345,20 @@ export interface ActiveTask {
   source: TaskSource;
   /** Set only when `source` is "SCHEDULE". */
   schedule_id: string | null;
+  /**
+   * The map the job drives on, as the backend stamped it; null for one that
+   * uses no map (Stand, Lie down). This is what locks a map against edits
+   * while the job runs — see lib/map/run-lock.ts.
+   */
+  map_name: string | null;
 }
+
+/**
+ * Absent and null both read as null: a backend from before the field existed
+ * sends neither, and must still parse. What null then costs is the lock, which
+ * the backend still enforces on its own side.
+ */
+const MapNameSchema = z.string().nullable().default(null);
 
 const ActiveTasksResponseSchema: z.ZodType<ActiveTasksResponse> = z.object({
   tasks: z.array(
@@ -330,6 +369,7 @@ const ActiveTasksResponseSchema: z.ZodType<ActiveTasksResponse> = z.object({
       started_at: z.string(),
       source: z.enum(["DIRECT", "SCHEDULE"]),
       schedule_id: z.string().nullable(),
+      map_name: MapNameSchema,
     }),
   ),
   as_of: z.string(),
@@ -405,6 +445,8 @@ export interface TaskHistoryEntry {
   kind: string | null;
   /** The template the run was dispatched from, or null when there was none. */
   name: string | null;
+  /** The map the run drove on, or null for one that used none or predates it. */
+  map_name: string | null;
 }
 
 export interface TaskHistoryResponse {
@@ -430,6 +472,7 @@ const TaskHistoryResponseSchema: z.ZodType<TaskHistoryResponse> = z.object({
       schedule_id: z.string().nullable(),
       kind: z.string().nullable(),
       name: z.string().nullable(),
+      map_name: MapNameSchema,
     }),
   ),
   next_page_token: z.string().nullable(),

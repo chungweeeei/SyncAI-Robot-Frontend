@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   MAP_NAME,
+  activeTask,
   failOnConsoleErrors,
   floorPlanPng,
   mapSummary,
@@ -128,6 +129,29 @@ test.describe("the map library", () => {
     await expect(
       page.getByRole("link", { name: `Edit ${MAP_NAME}` }),
     ).toHaveCount(0);
+  });
+
+  test("holds Rebuild while a job drives on the map, and says why", async ({
+    page,
+  }) => {
+    const running = [activeTask()];
+    const writes = await mockBackend(page, { activeTasks: running });
+    await page.goto("/maps");
+
+    const held = page.getByRole("button", {
+      name: /^Rebuild: The robot is running a job on this map/,
+    });
+    await expect(held).toHaveAttribute("aria-disabled", "true");
+    await held.click({ force: true });
+    await expect(page.getByRole("menuitem", { name: /Standard/ })).toHaveCount(0);
+
+    // Once the job ends, the real menu is back and a choice is sent.
+    running.length = 0;
+    await page.getByRole("button", { name: "Rebuild", exact: true }).click();
+    await page.getByRole("menuitem", { name: /Standard/ }).click();
+    await expect
+      .poll(() => writes.map((w) => w.path))
+      .toContain(`/api/v1/maps/${MAP_NAME}/grid/convert`);
   });
 
   test("puts a delete behind a dialog that names what goes with it", async ({
@@ -649,6 +673,71 @@ test.describe("adding a waypoint from the dashboard", () => {
     await expect(page.getByRole("button", { name: "Recenter" })).toBeEnabled();
     expect(errors, "the page logged errors").toEqual([]);
   });
+
+  test("is greyed while a job drives on the map, and comes back when it ends", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    // Mutated below: the fake answers each poll from this array.
+    const running = [activeTask()];
+    const writes = await mockBackend(page, { activeTasks: running });
+    // Waited on, so the grey below is the job's and not the first poll's.
+    const answered = page.waitForResponse((r) =>
+      r.url().includes("/api/v1/active_tasks"),
+    );
+    await page.goto("/");
+    await answered;
+    await expect(
+      page.getByRole("region", { name: "Map viewport" }),
+    ).toBeVisible();
+
+    const place = page.getByRole("button", { name: "Add waypoint" });
+    await expect(place).toBeDisabled();
+
+    // The positive control: the job ends, and the next poll gives the tool
+    // back — which is also what proves the grey was the job's.
+    running.length = 0;
+    await expect(place).toBeEnabled();
+    await placeOnMap(page);
+    const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
+    await dialog.getByLabel("Name").fill("shelf-b");
+    await dialog.getByRole("button", { name: "Create" }).click();
+    await expect
+      .poll(() => writes.filter((w) => w.path === verticesPath))
+      .toHaveLength(1);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("is not greyed by a job on another map", async ({ page }) => {
+    await mockBackend(page, {
+      activeTasks: [activeTask({ map_name: "wh1" })],
+    });
+    await page.goto("/");
+    await expect(
+      page.getByRole("button", { name: "Add waypoint" }),
+    ).toBeEnabled();
+  });
+
+  test("keeps the name typed when a job starts on the map, and holds Create", async ({
+    page,
+  }) => {
+    const running: Record<string, unknown>[] = [];
+    const writes = await mockBackend(page, { activeTasks: running });
+    await page.goto("/");
+
+    await placeOnMap(page);
+    const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
+    await dialog.getByLabel("Name").fill("shelf-b");
+    running.push(activeTask({ source: "SCHEDULE", schedule_id: "nightly" }));
+
+    await expect(
+      dialog.getByText(/The robot is running a job on this map/),
+    ).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Create" })).toBeDisabled();
+    await expect(dialog.getByLabel("Name")).toHaveValue("shelf-b");
+    expect(writes.filter((w) => w.path === verticesPath)).toEqual([]);
+  });
 });
 
 test.describe("tapping a stop on the dashboard", () => {
@@ -710,6 +799,29 @@ test.describe("tapping a stop on the dashboard", () => {
     await expect(page.getByRole("button", { name: "Waypoints" })).toHaveCount(
       0,
     );
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("holds Reposition and Delete while a job drives on its map", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, { activeTasks: [activeTask()] });
+    await page.goto("/");
+
+    await tapStop(page);
+    const dialog = page.getByRole("alertdialog", { name: `Move to ${stop.name}` });
+    await expect(
+      dialog.getByText(/The robot is running a job on this map/),
+    ).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Delete" })).toBeDisabled();
+    await expect(
+      dialog.getByRole("button", { name: "Reposition" }),
+    ).toBeDisabled();
+    expect(
+      writes.filter((w) => w.path.startsWith(`/api/v1/maps/${MAP_NAME}/vertices`)),
+    ).toEqual([]);
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -2222,6 +2334,67 @@ test.describe("the floor plan editor's draw bar", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
+  test("holds Save while a job drives on the map, and saves the strokes once it ends", async ({
+    page,
+  }) => {
+    // The editor is a typed URL away from any map, the card's grey or not,
+    // and a job can start after it opened — so it asks for itself. What it
+    // must not do is throw the strokes away: they are saved once the job ends.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const running = [activeTask()];
+    await mockBackend(page, {
+      gridImage: floorPlanPng(400, 300, 254),
+      activeTasks: running,
+    });
+    // Counted here: this route answers the PUT before the fake's log sees it.
+    let puts = 0;
+    await page.route(/\/api\/v1\/maps\/[^/]+\/grid$/, (route, request) =>
+      request.method() === "PUT" && ++puts
+        ? route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              name: MAP_NAME,
+              etag: "e2e",
+              active: true,
+              reloaded: true,
+              message: "Saved and reloaded.",
+            }),
+          })
+        : route.fallback(),
+    );
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    const canvas = page.locator("canvas");
+    await canvas.waitFor();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Read-only." }),
+    ).toBeVisible();
+
+    await choose(page, "Wall");
+    await page.getByRole("button", { name: "Brush" }).click();
+    const box = (await canvas.boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height * 0.6;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 60, y, { steps: 4 });
+    await page.mouse.up();
+
+    const save = page.getByRole("button", { name: "Save" });
+    await expect(save).toBeDisabled();
+    expect(puts).toBe(0);
+
+    running.length = 0;
+    await expect(
+      page.getByRole("status").filter({ hasText: "Read-only." }),
+    ).toHaveCount(0);
+    await expect(save).toBeEnabled();
+    await save.click();
+    await expect.poll(() => puts).toBe(1);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
   test("paints Wall as obstacle cells, and saves them", async ({ page }) => {
     // Both halves: the stroke is made with Wall chosen, and what reaches the
     // robot is the obstacle byte under it. A swapped Wall / Floor mapping
@@ -3392,10 +3565,13 @@ test.describe("what a dispatch records about itself", () => {
       id: string;
       kind: string;
       name: string | null;
+      map_name?: string;
       steps: unknown[];
     };
     expect(body.kind).toBe("task");
     expect(body.name).toBe("Morning round");
+    // The map its coordinates were saved on, for the backend to check.
+    expect(body.map_name).toBe(MAP_NAME);
     expect(body.id).toMatch(/^robot01-task-\d+-\d+$/);
     expect(body.steps).toHaveLength(1);
   });
@@ -3415,7 +3591,64 @@ test.describe("what a dispatch records about itself", () => {
     };
     expect(body.kind).toBe("standup");
     expect(body.name).toBeNull();
+    // A posture uses no map, so it names none.
+    expect(body).not.toHaveProperty("map_name");
     expect(body.id).toMatch(/^robot01-standup-\d+-\d+$/);
+  });
+});
+
+test.describe("a map whose floor plan is being rebuilt", () => {
+  const converting = () => [
+    mapSummary({ grid_status: "converting", grid_converting: true }),
+  ];
+
+  test("holds a saved job's Run, and says why", async ({ page }) => {
+    const writes = await mockBackend(page, { maps: converting() });
+    await page.goto("/tasks");
+
+    await expect(
+      page.getByRole("button", { name: 'Dispatch "Morning round" now' }),
+    ).toBeDisabled();
+    await expect(
+      page.getByText(/This map's floor plan is being rebuilt/),
+    ).toBeVisible();
+    expect(writes.filter((w) => w.path === "/api/v1/tasks")).toEqual([]);
+  });
+
+  test("holds Set goal, but still lets the robot stand", async ({ page }) => {
+    const writes = await mockBackend(page, { maps: converting() });
+    await page.goto("/");
+
+    await expect(page.getByRole("button", { name: "Set goal" })).toBeDisabled();
+    await page.getByRole("button", { name: "Stand", exact: true }).click();
+    await expect
+      .poll(() => writes.filter((w) => w.path === "/api/v1/tasks"))
+      .toHaveLength(1);
+  });
+});
+
+test.describe("a job the robot refuses for its map", () => {
+  // No console-error guard: the browser logs the 409 itself, which is the
+  // response under test.
+  test("shows the backend's sentence under the library", async ({ page }) => {
+    await mockBackend(page);
+    const refusal =
+      "This job was planned on map dp2f, but the robot is using map wh1. Switch maps first.";
+    await page.route("**/api/v1/tasks", (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({ detail: refusal, code: "map_mismatch" }),
+          })
+        : route.fallback(),
+    );
+    await page.goto("/tasks");
+
+    await page
+      .getByRole("button", { name: 'Dispatch "Morning round" now' })
+      .click();
+    await expect(page.getByRole("alert").filter({ hasText: refusal })).toBeVisible();
   });
 });
 
