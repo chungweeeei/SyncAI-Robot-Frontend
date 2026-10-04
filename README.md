@@ -73,6 +73,25 @@ The one thing that deliberately outlives its window is a **clip**: the capture
 handle is created in the click handler and owns its recorder and its delivery,
 so closing the camera window mid-capture still writes the file.
 
+The strip also carries the **running job**, from the backend's active list
+rather than from this tab, so it is there for a run another console or a
+schedule started. While a job runs the slot beside the mode and the map reads
+the step the robot is on — `2/5 Move`, with a sweep across it while it is
+going, and the job's name and elapsed time on hover — flanked by two icon
+buttons: pause (⏸, which becomes resume ▶ once the hold has landed) before it
+and cancel (✕) after it. The step comes from the run's own read
+(`GET /api/v1/tasks/{id}`), the only place a held run is visible, since the
+active list says `IN_PROGRESS` for it. A pause is a request: the readout says
+`Pausing…` until that read confirms `Paused`, because a line being spoken or a
+posture being taken finishes before the hold lands, while a move stops at
+once. A Stand or Lie down offers no pause — its one step is not interruptible
+and there is no next step to hold before — only a cancel. Idle shows nothing
+at all; a list that cannot be read shows `TASK ?` in the caution hue rather
+than an empty slot, because an empty slot over a driving robot is the one
+thing this readout must never show. A refusal (the run closed between the
+read and the press, or a backend without the pause routes) appears under the
+strip as the backend's own sentence.
+
 ## Layering
 
 ```

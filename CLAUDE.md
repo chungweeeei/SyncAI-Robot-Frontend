@@ -142,8 +142,9 @@ app/            route shells; the real content belongs to a component (see devia
 components/
   console/      shell: nav rail, status strip, the two layout-level providers
                 (their contexts live in hooks/use-console-*.ts — see Layering),
-                and the strip's disclosures: the drive panel and camera window
-                every screen can open
+                the strip's running-job controls (step readout, pause / resume
+                / cancel) and its disclosures: the drive panel and camera
+                window every screen can open
   dashboard/    3D viewport (pointcloud-canvas), telemetry rail, driving controls
   mapping/      mode switch, save-map and reset-run controls
   maps/         map library cards and the gridmap editor (grid-canvas)
@@ -288,7 +289,8 @@ touch one, prefer moving it toward the rule.
   by `lib/api/mutation-state.ts`.
 - **Command hooks are mutations too**, but they answer to the robot rather
   than to the cache: `use-goal-task`, `use-posture`, `use-task-dispatch`,
-  `use-initial-pose`, `use-locomotion`, `use-mode-switch`, `use-wifi-connect`.
+  `use-initial-pose`, `use-locomotion`, `use-mode-switch`, `use-wifi-connect`,
+  `use-task-hold`.
   They invalidate nothing — there is no cached resource a motion key or a pose
   estimate makes stale — and instead compose a *reader* that reports what the
   robot did with the command: `useTaskTracker` for anything dispatched as a
@@ -296,6 +298,13 @@ touch one, prefer moving it toward the rule.
   that command the machine directly. Read the epistemics note in
   `use-locomotion.ts` before adding another: a request is not a reading, and
   which of the two a value is decides whether it may be shown as fact.
+  `use-task-hold` is the newest case: a pause is a *request* the ack answers
+  `PAUSING` to, and `PAUSED` is a *reading* from `GET /tasks/{id}` — never
+  from `/active_tasks`, which lists a held run as `IN_PROGRESS` because it
+  cannot see inside the run. The masthead derives its "Pausing…" from the
+  request set against the reading (`runPhase` in `lib/task/run.ts`) and
+  never stores it, which is also why there is no optimistic flip the way the
+  schedule pause has.
   `mutateAsync(…).catch(ignore)` is the house idiom for a handler wired
   straight to a button — the rejection is on the mutation, which is where the
   UI reads it.
@@ -329,7 +338,13 @@ touch one, prefer moving it toward the rule.
   while `grid_status === "converting"`, `useRecordings` while a bag is live).
   Two console-wide polls are mounted once in `app/layout.tsx`:
   `RobotStateProvider` (1 Hz) and `ActiveTaskProvider` (2 s). Pages read those
-  providers; they do not start their own `robotState` poll. The history screen
+  providers; they do not start their own `robotState` poll. The status strip
+  adds one derived read on top of the second: `useActiveRun` polls
+  `task(id)` for whatever the active list says is running (2 s, the only
+  place a paused run and its current step are visible), and switches off
+  when the run leaves the list or its own read turns terminal. It shares the
+  entry with `useTaskTracker`, so every poller of that key goes through
+  `fetchHeldTaskState` — see the key's note. The history screen
   polls nothing: `taskHistory` is the prefix of both its page keys and its
   stats keys, so the one invalidation the active-task poll fires when a run
   finishes refreshes the list and the dashboard's counts together.
@@ -492,8 +507,13 @@ it is run in, so it does not belong to any one of them.
   the id. A history row is titled by its template's name, else its kind, and
   by the job id only when nothing labelled it (`describeRun`): the id is what
   the orchestrator calls a run, not what an operator does, so it lives in the
-  row's expanded detail. Backend sentences are still rendered verbatim; they
-  are written for operators too.
+  row's expanded detail. The masthead names a running job's step the same
+  way, off its id alone (`stepLabel` in `lib/task/run.ts`: `2-speak` reads
+  **Speak**, `goal` reads **Navigation goal**, a foreign id reads as itself),
+  and a hold is **Pausing… / Paused / Resuming…** — the first and last are a
+  request the reading has not caught up with, the middle is the reading.
+  Backend sentences are still rendered verbatim; they are written for
+  operators too.
 - **A clip is not a recording.** A recording is the robot's bag, on the robot's
   disk, started and stopped over REST; a clip is a video of the camera window's
   picture, written by the browser onto the operator's own machine and never
