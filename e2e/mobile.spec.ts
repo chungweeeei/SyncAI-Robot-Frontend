@@ -1,6 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { MAP_NAME, failOnConsoleErrors, floorPlanPng, mockBackend } from "./backend";
+import {
+  MAP_NAME,
+  activeTask,
+  failOnConsoleErrors,
+  floorPlanPng,
+  mockBackend,
+  taskState,
+} from "./backend";
 
 /**
  * The console on a phone: 375 px wide, driven by a finger.
@@ -115,6 +122,36 @@ test.describe("the console on a phone", () => {
       // display:none, where textContent would not).
       expect(await button.evaluate((el) => (el as HTMLElement).innerText.trim())).toBe("");
     }
+  });
+
+  test("keeps the running job's controls on screen beside the health cluster", async ({
+    page,
+  }) => {
+    // The strip's one row carries the robot id, the mode, the step readout,
+    // its hold and cancel, the drive and camera buttons and the battery. The
+    // robot id is the only thing allowed to give way; the buttons must stay
+    // whole and under a finger.
+    const ID = "robot01-task-1758000000-1";
+    await mockBackend(page, {
+      activeTasks: [activeTask()],
+      taskStates: { [ID]: taskState() },
+    });
+    await page.goto("/settings");
+    const strip = page.getByRole("banner");
+
+    await expect(strip.getByRole("status")).toContainText("2/3");
+    for (const name of ["Pause the job", "Cancel the job", "Manual drive panel", "Camera window"]) {
+      const button = strip.getByRole("button", { name });
+      const box = await button.boundingBox();
+      await expectOnScreen(page, name, box);
+      expect(box?.width, `${name} is narrower than a finger`).toBeGreaterThanOrEqual(TARGET);
+      expect(box?.height, `${name} is shorter than a finger`).toBeGreaterThanOrEqual(TARGET);
+    }
+
+    await strip.getByRole("button", { name: "Pause the job" }).click();
+    const resume = strip.getByRole("button", { name: "Resume the job" });
+    await expect(resume).toBeVisible();
+    await expectOnScreen(page, "Resume the job", await resume.boundingBox());
   });
 
   test("drops the drive panel and the camera window inside the viewport", async ({

@@ -1466,7 +1466,12 @@ test.describe("the task console", () => {
     });
     await page.goto("/tasks");
 
-    await page.getByRole("button", { name: "Cancel" }).click();
+    // The banner's own button: the masthead carries a second Cancel for the
+    // same run (see run-controls.spec.ts), and this test is about the banner.
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: "Cancel" })
+      .click();
 
     await expect
       .poll(() => writes.filter((w) => w.method === "DELETE"))
