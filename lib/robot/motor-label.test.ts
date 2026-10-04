@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { JOINTS, LEG_ROWS, jointName, strayMotorLabels } from "@/lib/robot/motor-label";
+import {
+  JOINTS,
+  LEG_ROWS,
+  jointName,
+  motorLabel,
+  strayMotorLabels,
+} from "@/lib/robot/motor-label";
 
 /**
  * The rule: a motor's label names a place on the robot, never the driver's
@@ -29,6 +35,19 @@ describe("strayMotorLabels", () => {
       expect(label).not.toContain("_");
       expect(label).not.toMatch(/joint|motor_/i);
     }
+  });
+});
+
+describe("motorLabel", () => {
+  it("names one motor the way the grid names it", () => {
+    expect(motorLabel("HL_Knee_joint")).toBe("HL KN");
+    expect(motorLabel("FL_Ankle_joint")).toBe("FL Ankle");
+  });
+
+  it("leaves a lone unplaceable motor unnumbered", () => {
+    // There is no list for a number to count in, and "Other motor 1" on its
+    // own would imply a second one somewhere.
+    expect(motorLabel("waist_motor")).toBe("Other motor");
   });
 });
 
