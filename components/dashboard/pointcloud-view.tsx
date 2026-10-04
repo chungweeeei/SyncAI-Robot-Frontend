@@ -23,11 +23,13 @@ import { useGoalTask } from "@/hooks/use-goal-task";
 import { useInitialPose } from "@/hooks/use-initial-pose";
 import { useMapKeepout } from "@/hooks/use-map-keepout";
 import { useMapPointCloud } from "@/hooks/use-map-point-cloud";
+import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useActiveMap } from "@/hooks/use-maps";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import { apiUrl } from "@/lib/api/config";
 import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
+import { dispatchMapLock } from "@/lib/map/run-lock";
 import { cn } from "@/lib/utils";
 import type { MapVertex, VertexType } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
@@ -84,6 +86,14 @@ export function PointCloudView({
   // mount, not polled.
   const stops = useActiveMapVertices();
   const { vertices, moveVertex, createVertex, removeVertex } = stops;
+  // While a job drives on this map its waypoints are read-only — the backend
+  // refuses the writes, and this greys the controls before a press earns the
+  // refusal. Keyed on the map the waypoints belong to, not on which map is
+  // active, for the reason lib/map/run-lock.ts gives.
+  const runLock = useMapRunLock(stops.mapName);
+  // And the other way round: no goal onto a map whose floor plan is being
+  // rebuilt under the planner.
+  const dispatchLock = dispatchMapLock(activeMap);
   // Robot pose + joints + planned route via the telemetry WebSocket — see
   // useTelemetry on the rates and on why this is a stream and not a poll.
   const { feed, path } = useTelemetry();
@@ -161,7 +171,20 @@ export function PointCloudView({
    */
   const [savingVertex, setSavingVertex] = React.useState<MapVertex | null>(null);
 
-  const task = useGoalTask(robotId);
+  // A lock that arrives with a pick armed disarms it, during render rather than
+  // in an effect (the derive-from-props escape hatch the dialogs use too): a
+  // tool left armed over a map that has just gone read-only would write on the
+  // next release, and the refusal would be the first the operator heard of it.
+  // An open name dialog is left up instead — its Create greys, and the name
+  // typed so far survives until the job ends.
+  if (
+    (runLock.locked && (pick?.mode === "place" || pick?.mode === "vertex")) ||
+    (dispatchLock.locked && pick?.mode === "goal")
+  ) {
+    setPick(null);
+  }
+
+  const task = useGoalTask(robotId, activeMap?.name ?? null);
   const estimate = useInitialPose();
 
   // Destructured because they are the stable parts of the hooks' return objects
@@ -358,6 +381,7 @@ export function PointCloudView({
 
       <VertexCreateDialog
         placement={placement}
+        lockedReason={runLock.reason}
         robotPose={robotPose}
         robotPoseReason={robotPoseReason}
         busy={stops.busy}
@@ -371,6 +395,8 @@ export function PointCloudView({
         vertex={askedVertex}
         busy={task.busy}
         running={task.running}
+        editLock={runLock.reason}
+        dispatchLock={dispatchLock.reason}
         deleting={stops.busy}
         deleteError={stops.writeError}
         onConfirm={moveToVertex}
@@ -390,6 +416,7 @@ export function PointCloudView({
             className="pointer-events-auto"
             placing={pick?.mode === "place"}
             canPlace={stops.mapName !== null}
+            placeLock={runLock.reason}
             onRecenter={recenter}
             onArmPlace={() => armPick("place")}
           />
@@ -401,7 +428,8 @@ export function PointCloudView({
                 ? pick.mode
                 : null
             }
-            goalLocked={task.running || task.busy}
+            goalLocked={task.running || task.busy || dispatchLock.locked}
+            goalLockReason={dispatchLock.reason}
             onArmGoal={() => armPick("goal")}
             onArmInitialPose={() => armPick("initial-pose")}
             cameraMode={cameraMode}

@@ -54,6 +54,7 @@ export interface Placement {
  */
 export function VertexCreateDialog({
   placement,
+  lockedReason = null,
   robotPose,
   robotPoseReason,
   busy,
@@ -64,6 +65,12 @@ export function VertexCreateDialog({
 }: {
   /** The placed pose being named, or null when the dialog is closed. */
   placement: Placement | null;
+  /**
+   * Why the map cannot take a new waypoint right now — a job is driving on
+   * it — or null. Greys Create and keeps the dialog up, so the name typed so
+   * far is still there when the job ends.
+   */
+  lockedReason?: string | null;
   /** Where the robot stands on the active map, or null when that is unknown. */
   robotPose: PlanarPose | null;
   /** Why `robotPose` is null, for the operator. Null when it is set. */
@@ -94,6 +101,7 @@ export function VertexCreateDialog({
           <NameForm
             key={shown.key}
             pose={shown.pose}
+            lockedReason={lockedReason}
             robotPose={robotPose}
             robotPoseReason={robotPoseReason}
             busy={busy}
@@ -112,6 +120,7 @@ const TYPE_ITEMS = VERTEX_TYPES.map(({ value, label }) => ({ value, label }));
 
 function NameForm({
   pose,
+  lockedReason,
   robotPose,
   robotPoseReason,
   busy,
@@ -121,6 +130,7 @@ function NameForm({
   onClose,
 }: {
   pose: PlanarPose;
+  lockedReason: string | null;
   robotPose: PlanarPose | null;
   robotPoseReason: string | null;
   busy: boolean;
@@ -138,7 +148,7 @@ function NameForm({
   // The backend's `min_length=1` would reject a blank name, but as a 422 whose
   // detail is a validation *array* rather than a sentence. Refusing here is what
   // keeps that off the operator's screen.
-  const submittable = trimmed.length > 0 && !busy;
+  const submittable = trimmed.length > 0 && !busy && lockedReason === null;
 
   return (
     <form
@@ -214,6 +224,9 @@ function NameForm({
         <p role="alert" className="text-[11px] leading-snug break-words text-signal-warn">
           {error}
         </p>
+      )}
+      {lockedReason && (
+        <p className="text-[11px] leading-snug text-signal-caution">{lockedReason}</p>
       )}
       {/* Only while the button below is greyed: a disabled control with no
         * reason is the failure mode useRobotMapPose spends its sentences on. */}

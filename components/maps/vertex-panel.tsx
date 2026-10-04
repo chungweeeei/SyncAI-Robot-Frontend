@@ -40,6 +40,11 @@ export interface VertexPanelProps {
   /** Load or last-write failure. Rendered verbatim — the backend writes prose. */
   error: string | null;
   busy: boolean;
+  /**
+   * The map is read-only while a job drives on it. Holds every write — Create,
+   * Save, Delete — but not the form: what was typed stays for when it ends.
+   */
+  locked?: boolean;
 
   /** The type the next placed vertex gets. */
   type: VertexType;
@@ -151,6 +156,7 @@ export function VertexPanel(props: VertexPanelProps) {
           initialName=""
           initialType={props.type}
           busy={props.busy}
+          locked={props.locked}
           onTypeChange={props.onTypeChange}
           onSubmit={(name, type) => props.onCreate(name, type)}
           onCancel={props.onCancelDraft}
@@ -160,6 +166,7 @@ export function VertexPanel(props: VertexPanelProps) {
           vertices={vertices}
           selectedIds={selectedIds}
           busy={props.busy}
+          locked={props.locked}
           onSelect={props.onSelect}
           onClear={props.onClearSelection}
           onDelete={props.onDelete}
@@ -174,6 +181,7 @@ export function VertexPanel(props: VertexPanelProps) {
           initialName={selected.name}
           initialType={selected.type}
           busy={props.busy}
+          locked={props.locked}
           onSubmit={(name, type) => {
             const changes: VertexChanges = {};
             if (name !== selected.name) changes.name = name;
@@ -294,6 +302,7 @@ function BandBlock({
   vertices,
   selectedIds,
   busy,
+  locked = false,
   onSelect,
   onClear,
   onDelete,
@@ -301,6 +310,7 @@ function BandBlock({
   vertices: MapVertex[];
   selectedIds: readonly string[];
   busy: boolean;
+  locked?: boolean;
   onSelect: (id: string) => void;
   onClear: () => void;
   onDelete: () => void;
@@ -336,7 +346,7 @@ function BandBlock({
 
       <button
         type="button"
-        disabled={busy || count === 0}
+        disabled={busy || locked || count === 0}
         onClick={() => {
           // The same confirm the single delete uses, listing what it is about to
           // take: a count alone is not enough to check a band against, since the
@@ -445,6 +455,7 @@ function VertexForm({
   initialName,
   initialType,
   busy,
+  locked = false,
   onTypeChange,
   onSubmit,
   onCancel,
@@ -457,6 +468,7 @@ function VertexForm({
   initialName: string;
   initialType: VertexType;
   busy: boolean;
+  locked?: boolean;
   /** Create mode only: keep the shell's next-placement type in step. */
   onTypeChange?: (type: VertexType) => void;
   onSubmit: (name: string, type: VertexType) => void;
@@ -471,7 +483,7 @@ function VertexForm({
   // The backend's `min_length=1` would reject a blank name, but as a 422 whose
   // detail is a validation *array* rather than a sentence. Refusing here is what
   // keeps that off the operator's screen.
-  const submittable = trimmed.length > 0 && !busy;
+  const submittable = trimmed.length > 0 && !busy && !locked;
   const dirty = kind === "create" || trimmed !== initialName || type !== initialType || moved;
 
   return (
@@ -560,7 +572,7 @@ function VertexForm({
         {kind === "edit" && (
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || locked}
             aria-label="Delete waypoint"
             title="Delete waypoint"
             onClick={() => {

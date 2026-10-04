@@ -58,6 +58,7 @@ type CameraMode = "move" | "focus";
 export function ViewportToolbar({
   pick,
   goalLocked,
+  goalLockReason = null,
   onArmGoal,
   onArmInitialPose,
   cameraMode,
@@ -72,6 +73,11 @@ export function ViewportToolbar({
   pick: "goal" | "initial-pose" | null;
   /** A goal is running or on its way; a second one must not be armed. */
   goalLocked: boolean;
+  /**
+   * Why the goal's map cannot take one, when that is what locks it, for the
+   * tooltip. A running goal needs no sentence: its read-back is on screen.
+   */
+  goalLockReason?: string | null;
   onArmGoal: () => void;
   onArmInitialPose: () => void;
   cameraMode: CameraMode;
@@ -91,7 +97,7 @@ export function ViewportToolbar({
         <ToolGroup label="Pose tools">
           <ToolButton
             label="Set goal"
-            hint="drag on the map to aim, release to send"
+            hint={goalLockReason ?? "drag on the map to aim, release to send"}
             icon={CrosshairIcon}
             pressed={pick === "goal"}
             // `busy` as well as `running`: the tracker only reports a task once
@@ -203,6 +209,7 @@ export function ViewportToolbar({
 export function MapToolbar({
   placing,
   canPlace,
+  placeLock = null,
   onRecenter,
   onArmPlace,
   className,
@@ -211,6 +218,8 @@ export function MapToolbar({
   placing: boolean;
   /** There is an active map to add a waypoint to. */
   canPlace: boolean;
+  /** Why the map's waypoints are read-only right now, or null. */
+  placeLock?: string | null;
   onRecenter: () => void;
   onArmPlace: () => void;
   className?: string;
@@ -226,13 +235,13 @@ export function MapToolbar({
         <ToolButton
           label="Add waypoint"
           hint={
-            canPlace
-              ? "press the map to place, drag to aim"
-              : "no map is loaded to put one on"
+            !canPlace
+              ? "no map is loaded to put one on"
+              : (placeLock ?? "press the map to place, drag to aim")
           }
           icon={MapPinPlusIcon}
           pressed={placing}
-          disabled={!canPlace}
+          disabled={!canPlace || placeLock !== null}
           onClick={onArmPlace}
         />
     </ToolStrip>

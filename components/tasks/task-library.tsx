@@ -37,6 +37,8 @@ export interface TaskLibraryProps {
   activeMapName: string | null;
   /** True while a task is running, or before the robot id is known. */
   dispatchDisabled: boolean;
+  /** Why one row's map holds its Run right now, or null; see dispatchMapLock. */
+  dispatchLockFor: (template: TaskTemplate) => string | null;
   /** The template the in-flight run came from, or null if it came from the editor. */
   dispatchedFromId: string | null;
   taskStatus: TaskStatus | null;
@@ -65,6 +67,7 @@ export function TaskLibrary({
   busy,
   activeMapName,
   dispatchDisabled,
+  dispatchLockFor,
   dispatchedFromId,
   taskStatus,
   stepStates,
@@ -112,6 +115,7 @@ export function TaskLibrary({
               template={template}
               activeMapName={activeMapName}
               dispatchDisabled={dispatchDisabled}
+              dispatchLock={dispatchLockFor(template)}
               busy={busy}
               // Only the row that started the run gets the readback. A row that
               // did not is left blank rather than showing another row's status.

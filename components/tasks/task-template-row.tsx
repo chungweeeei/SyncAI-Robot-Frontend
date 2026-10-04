@@ -26,6 +26,12 @@ export interface TaskTemplateRowProps {
   activeMapName: string | null;
   /** True while any task is in flight, or the robot id is not known yet. */
   dispatchDisabled: boolean;
+  /**
+   * Why this job's map cannot take a job right now (its floor plan is being
+   * rebuilt), or null. Shown under the row, since a greyed Run with no reason
+   * reads as broken.
+   */
+  dispatchLock: string | null;
   /** Per-step state, but only when *this* row is the one that was dispatched. */
   stepStates: ReadonlyMap<string, TaskStepState> | null;
   /** Task-level status of the run this row started, or null. */
@@ -59,6 +65,7 @@ export function TaskTemplateRow({
   template,
   activeMapName,
   dispatchDisabled,
+  dispatchLock,
   stepStates,
   taskStatus,
   schedules,
@@ -93,7 +100,7 @@ export function TaskTemplateRow({
   // dispatched or scheduled — unlike a missing vertex, which merely falls back to
   // the snapshot and is reported.
   const wrongMap = template.map_name !== null && !template.map_matches_active;
-  const blocked = wrongMap || dispatchDisabled;
+  const blocked = wrongMap || dispatchDisabled || dispatchLock !== null;
 
   return (
     <li className="rounded-sm border border-hairline bg-elevated/40 px-2 py-2">
@@ -188,6 +195,11 @@ export function TaskTemplateRow({
         <p className="mt-1 pl-7 text-[11px] leading-tight text-signal-caution">
           Saved for <span className="readout">{template.map_name}</span>; the robot has{" "}
           <span className="readout">{activeMapName ?? "no map"}</span> loaded.
+        </p>
+      )}
+      {!wrongMap && dispatchLock && (
+        <p className="mt-1 pl-7 text-[11px] leading-tight text-signal-caution">
+          {dispatchLock}
         </p>
       )}
 

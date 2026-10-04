@@ -15,6 +15,7 @@ import { useSchedules } from "@/hooks/use-schedules";
 import { useTaskDispatch } from "@/hooks/use-task-dispatch";
 import { useTaskDraft } from "@/hooks/use-task-draft";
 import type { TaskTemplate } from "@/lib/api/task-template";
+import { dispatchMapLock } from "@/lib/map/run-lock";
 import { draftFromTemplate, draftWouldBeLost } from "@/lib/task/draft-store";
 import { toDispatchSteps } from "@/lib/task/step";
 
@@ -129,8 +130,21 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
     // class of data loss the draft exists to prevent.
     // The name rides along so the history can count this template's jobs
     // apart from everything else dispatched from this screen.
-    void dispatch.send(toDispatchSteps(template.steps), template.name);
+    // And its map, so a switch made since this list was read is refused by
+    // the backend rather than driven on the map that replaced it.
+    void dispatch.send(
+      toDispatchSteps(template.steps),
+      template.name,
+      template.map_name,
+    );
   };
+
+  /** Why a row's Run is held by its map, beyond the wrong-map gate; see dispatchMapLock. */
+  const dispatchLockFor = (template: TaskTemplate): string | null =>
+    template.map_name === null
+      ? null
+      : dispatchMapLock(maps?.find((map) => map.name === template.map_name) ?? null)
+          .reason;
 
   return (
     <>
@@ -168,6 +182,17 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
               {library.error}
             </p>
           )}
+          {/* A Run the robot would not start, in its own words — another map
+            * loaded, a floor plan mid-rebuild, a job already running. A job
+            * that never started has no row readback to say it in. */}
+          {dispatch.refused && (
+            <p
+              role="alert"
+              className="text-[11px] leading-snug break-words text-signal-warn"
+            >
+              {dispatch.refused}
+            </p>
+          )}
           <TaskLibrary
             templates={library.templates}
             schedules={schedules.schedules}
@@ -176,6 +201,7 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
             busy={library.busy}
             activeMapName={activeMapName}
             dispatchDisabled={dispatch.running || robotId === null}
+            dispatchLockFor={dispatchLockFor}
             dispatchedFromId={dispatchedFrom}
             taskStatus={dispatch.taskStatus}
             stepStates={dispatch.stepStates}

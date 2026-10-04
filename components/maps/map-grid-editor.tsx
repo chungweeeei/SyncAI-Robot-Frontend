@@ -28,6 +28,7 @@ import { VertexPanel } from "@/components/maps/vertex-panel";
 import { useSaveMapGrid, useSaveMapKeepout } from "@/hooks/use-map-actions";
 import { useMapGrid } from "@/hooks/use-map-grid";
 import { useMapKeepout } from "@/hooks/use-map-keepout";
+import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useMapVertices, type UseMapVertices } from "@/hooks/use-map-vertices";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import type { VertexChanges } from "@/lib/api/vertex";
@@ -345,6 +346,21 @@ function EditorSurface({
    */
   const { pose: robotPose, reason: robotPoseReason } = useRobotMapPose(session.name);
 
+  /**
+   * Whether a job is driving on this map, which makes every write here wait:
+   * a floor plan, a zone or a waypoint changed under a running job is picked
+   * up by the planner mid-route. The card's Edit is greyed on the map in use,
+   * but this page is one typed URL away from any map, and the job may start
+   * after the page opened — so the editor asks for itself.
+   *
+   * Only the writes stop. Painting, drawing and typing go on, and nothing
+   * is thrown away: the edits are the operator's, and they are still worth
+   * saving once the job ends. Each write path also checks this, because a
+   * keyboard shortcut does not go through a greyed button.
+   */
+  const runLock = useMapRunLock(session.name);
+  const writeLocked = runLock.locked;
+
   // Destructured because the hook returns a fresh object each render: passing
   // `vertices.create` inline would give GridCanvas a new callback identity every
   // time and defeat its React.memo, which exists so a pan cannot re-render the
@@ -538,7 +554,7 @@ function EditorSurface({
    * never shows a zone as gone that the planner still keeps to.
    */
   const removeZone = React.useCallback(() => {
-    if (selectedZoneIds.length === 0 || zoneWriting) return;
+    if (selectedZoneIds.length === 0 || zoneWriting || writeLocked) return;
     const ids = selectedZoneIds;
     const { removed } = withoutZones(zones, ids);
     setZones((current) => withoutZones(current, ids).kept);
@@ -570,7 +586,7 @@ function EditorSurface({
         },
       },
     );
-  }, [selectedZoneIds, zoneWriting, zones, zoneDraftAnchor, savedZones, saveZones, session.name]);
+  }, [selectedZoneIds, zoneWriting, writeLocked, zones, zoneDraftAnchor, savedZones, saveZones, session.name]);
 
   const dropZoneDraft = React.useCallback(() => {
     setZoneDraft([]);
@@ -710,21 +726,21 @@ function EditorSurface({
 
   const createFromDraft = React.useCallback(
     async (name: string, type: VertexType) => {
-      if (!draft) return;
+      if (!draft || writeLocked) return;
       const created = await createVertex({ name, type, ...draft });
       // Cleared rather than selected: placing a run of stops is the common case,
       // and the list view is where the next one starts.
       if (created) setDraft(null);
     },
-    [createVertex, draft],
+    [createVertex, draft, writeLocked],
   );
 
   const saveSelected = React.useCallback(
     async (changes: VertexChanges) => {
-      if (!selectedId) return;
+      if (!selectedId || writeLocked) return;
       if (await updateVertex(selectedId, changes)) setStagedPose(null);
     },
-    [selectedId, updateVertex],
+    [selectedId, updateVertex, writeLocked],
   );
 
   /**
@@ -739,6 +755,7 @@ function EditorSurface({
    * list; PUT and DELETE are per id (see lib/api/vertex.ts).
    */
   const deleteSelected = React.useCallback(async () => {
+    if (writeLocked) return;
     for (let index = 0; index < selectedIds.length; index += 1) {
       if (!(await removeVertex(selectedIds[index]))) {
         // The failed one stays selected with everything after it, so the count in
@@ -748,7 +765,7 @@ function EditorSurface({
       }
     }
     clearVertexEdit();
-  }, [selectedIds, removeVertex, clearVertexEdit]);
+  }, [selectedIds, removeVertex, clearVertexEdit, writeLocked]);
 
   /** Anything Save would write: cells, zones, or both. */
   const anyDirty = dirty || zonesDirty;
@@ -815,6 +832,7 @@ function EditorSurface({
    * `sent`, and a stroke painted since has to put it back to idle.
    */
   const onSave = React.useCallback(() => {
+    if (writeLocked) return;
     if (zonesDirty) {
       // The list as of the press. What reaches disk is this snapshot, so it
       // is what `savedZones` becomes — a corner dragged while the request is
@@ -864,7 +882,7 @@ function EditorSurface({
         },
       },
     );
-  }, [dirty, saveGrid, saveZones, session, zones, zonesDirty]);
+  }, [dirty, saveGrid, saveZones, session, zones, zonesDirty, writeLocked]);
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -998,6 +1016,7 @@ function EditorSurface({
     status: vertexStatus,
     error: vertexError,
     busy: vertexBusy,
+    locked: writeLocked,
     type: vertexType,
     onTypeChange: setVertexType,
     draft,
@@ -1094,6 +1113,7 @@ function EditorSurface({
             onRedo={redo}
             dirty={anyDirty}
             saving={save.kind === "saving" || zoneWriting}
+            writeLock={runLock.reason}
             onSave={onSave}
             drawKind={drawKind}
             tool={tool}
@@ -1142,6 +1162,18 @@ function EditorSurface({
             * the aria-hidden wash so its status role is heard. */}
           <div className="flex flex-col items-start gap-2">
             {zoneUnarmed && <ArmedHint tone="cmd">Select the shape to work with</ArmedHint>}
+            {/* Above the save notes: it is why Save is greyed, and the first
+              * thing the operator needs on opening a map a job is driving on.
+              * A status, not an alert — nothing failed, and it may be on
+              * screen for the whole of a run. */}
+            {runLock.reason && (
+              <p
+                role="status"
+                className={cn(overlayPanel, "pointer-events-auto max-w-72 px-2 py-1.5 text-[11px] leading-tight", TONE_TEXT.caution)}
+              >
+                <span className="font-medium">Read-only.</span> {runLock.reason}
+              </p>
+            )}
             <SaveNote save={save} className="pointer-events-auto max-w-72" />
             {/* A save's note only while it is still true of the zones on
               * screen: a zone edited since "Saved" is unsaved again, and the
