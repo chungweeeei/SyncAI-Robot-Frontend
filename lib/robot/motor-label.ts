@@ -43,13 +43,27 @@ const LEG_JOINT = /^([A-Z]{2})_([A-Za-z0-9]+)_joint$/;
  */
 export function strayMotorLabels(names: readonly string[]): string[] {
   let others = 0;
-  return names.map((name) => {
-    const match = LEG_JOINT.exec(name);
-    if (match && LEGS.has(match[1])) {
-      const [, leg, part] = match;
-      return `${leg} ${JOINT_LABEL.get(part) ?? part}`;
-    }
-    others += 1;
-    return `Other motor ${others}`;
-  });
+  return names.map((name) => motorLabel(name, () => (others += 1)));
 }
+
+/**
+ * One motor's label on its own, for a surface that names a single motor
+ * rather than listing them (the overheating notice). The same rule as the
+ * list, so the notice and the grid agree about what to call a joint; a
+ * motor that is neither placed nor leg-shaped is "Other motor" with no
+ * number, since there is no list for a number to count in.
+ */
+export function motorLabel(
+  name: string,
+  /** Hands back the ordinal for a motor that needs one. Unnumbered without it. */
+  nextOther: () => number = () => 0,
+): string {
+  const match = LEG_JOINT.exec(name);
+  if (match && LEGS.has(match[1])) {
+    const [, leg, part] = match;
+    return `${leg} ${JOINT_LABEL.get(part) ?? part}`;
+  }
+  const ordinal = nextOther();
+  return ordinal > 0 ? `Other motor ${ordinal}` : "Other motor";
+}
+

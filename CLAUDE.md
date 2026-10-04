@@ -184,6 +184,8 @@ lib/
   robot/        G23 joint table (URDF link names ↔ GLB node names), how the
                 dashboard names a motor (the leg grid and its joint codes), and
                 the readout thresholds (levels.ts: Wi-Fi bars, battery, joint heat)
+                and the overheating notice's rule (heat-alert.ts: raised above
+                85 °C, re-armed only once the motor has cooled)
   teleop/       thumbstick maths: clamp, deadzone, key bindings, the linear
                 speed limit and the screen-to-body-frame turn the drive panel
                 commands through
