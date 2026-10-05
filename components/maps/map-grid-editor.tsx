@@ -349,7 +349,7 @@ function EditorSurface({
   /**
    * Whether a job is driving on this map, which makes every write here wait:
    * a floor plan, a zone or a waypoint changed under a running job is picked
-   * up by the planner mid-route. The card's Edit is greyed on the map in use,
+   * up by the planner mid-route. The card's Edit is greyed by the same lock,
    * but this page is one typed URL away from any map, and the job may start
    * after the page opened — so the editor asks for itself.
    *

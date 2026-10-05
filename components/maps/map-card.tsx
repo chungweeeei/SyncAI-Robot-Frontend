@@ -181,9 +181,10 @@ function GridStatusNote({ map }: { map: MapSummary }) {
  * top-right corner as icon tiles (MapDeleteControl, MapEditLink) rather than
  * in the header row — an X and a pencil are the glyphs for them, and putting
  * Delete among the word-labels would make the destructive action look like
- * one more view to open. Rename, Edit and Delete are all greyed on the map in
- * use: the stack was launched with that name, nothing here can re-point it,
- * and the backend refuses the first two either way.
+ * one more view to open. Rename and Delete are greyed on the map in use: the
+ * stack was launched with that name, nothing here can re-point it, and the
+ * backend refuses both either way. Edit is not — a floor plan saved onto the
+ * live map is reloaded in place — and greys only while a job drives on it.
  */
 export function MapCard({
   map,

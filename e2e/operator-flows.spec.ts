@@ -115,7 +115,8 @@ test.describe("the map library", () => {
   test("marks the map the stack is running and locks it", async ({ page }) => {
     // The running map is the one map that cannot be renamed or deleted — the
     // backend refuses both, and the card says so rather than letting the
-    // operator find out from a 409.
+    // operator find out from a 409. Its floor plan stays editable while the
+    // robot is idle: the backend saves onto the live map and reloads it.
     await mockBackend(page, { maps: [mapSummary({ active: true })] });
     await page.goto("/maps");
 
@@ -126,6 +127,25 @@ test.describe("the map library", () => {
     await expect(
       page.getByRole("button", { name: `Rename ${MAP_NAME}` }),
     ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", { name: `Edit ${MAP_NAME}` }),
+    ).toHaveAttribute("href", `/maps/${MAP_NAME}/edit`);
+  });
+
+  test("holds Edit on the map in use while a job drives on it", async ({
+    page,
+  }) => {
+    await mockBackend(page, {
+      maps: [mapSummary({ active: true })],
+      activeTasks: [activeTask()],
+    });
+    await page.goto("/maps");
+
+    await expect(
+      page.locator(
+        'span[aria-disabled="true"]:not([role])[title^="The robot is running a job on this map"]',
+      ),
+    ).toHaveAttribute("aria-disabled", "true");
     await expect(
       page.getByRole("link", { name: `Edit ${MAP_NAME}` }),
     ).toHaveCount(0);
