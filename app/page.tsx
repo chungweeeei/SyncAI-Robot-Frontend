@@ -4,6 +4,7 @@ import { RadarIcon } from "lucide-react";
 
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { PointCloudView } from "@/components/dashboard/pointcloud-view";
+import { PoseOverlay } from "@/components/dashboard/pose-overlay";
 import { TelemetryRail } from "@/components/dashboard/telemetry-rail";
 import { cn } from "@/lib/utils";
 
@@ -37,8 +38,16 @@ export default function DashboardPage() {
       >
         {/* The pose the viewport draws does not come from here: the canvas has
           * its own ~20 Hz telemetry WebSocket. This page's 1 Hz state is what
-          * the rail and the strip read. */}
+          * the rail, the strip and the pose overlay read. */}
         <PointCloudView robotId={state.robot_id} />
+        {/* Pointer-transparent: it is a reading, and the corner of the scene
+          * under it still has to take a drag. Bottom-left because the
+          * read-backs hang from the top-left and bottom-right is kept free
+          * for the drive panel (see PointCloudView). */}
+        <PoseOverlay
+          state={state}
+          className="pointer-events-none absolute bottom-3 left-3"
+        />
       </section>
 
       <aside
