@@ -303,6 +303,11 @@ export interface BackendOverrides {
   restart?: Record<string, unknown>;
   /** Forbidden zones by map name, as GET .../keepout lists them; none by default. */
   keepout?: Record<string, Record<string, unknown>[]>;
+  /**
+   * GET /mapping's answer before any press. `unknown` by default — what a
+   * navigating robot says; a mapping test hands in `idle` or `mapping`.
+   */
+  mappingStatus?: Record<string, unknown>;
 }
 
 /**
@@ -356,6 +361,13 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   const keepout: Record<string, Record<string, unknown>[]> = {
     ...over.keepout,
   };
+  // pgo's run state; the three run writes below move it the way the robot's
+  // would, so the rail's next poll sees a start land or a save end the run.
+  let mappingStatus: Record<string, unknown> = over.mappingStatus ?? {
+    state: "unknown",
+    key_poses: 0,
+    loop_closures: 0,
+  };
   // The backend's record of the latest restart; the POST below moves it on.
   let restart: Record<string, unknown> = over.restart ?? {
     status: "idle",
@@ -386,6 +398,9 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     }
     if (path === "/api/v1/robot/restart" && method === "GET") {
       return json(route, restart);
+    }
+    if (path === "/api/v1/mapping" && method === "GET") {
+      return json(route, mappingStatus);
     }
     if (path === "/api/v1/active_tasks") {
       return json(route, { tasks: activeTasks, as_of: "2026-09-18T09:45:00Z" });
@@ -591,6 +606,48 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         },
         201,
       );
+    }
+    if (path === "/api/v1/mapping/start" && method === "POST") {
+      // Refused the way the backend refuses it, from the latched state; a
+      // test that wants a different refusal routes it itself.
+      if (mappingStatus.state === "mapping") {
+        return json(
+          route,
+          {
+            detail: "The robot is already building a map. Save it, or start a new one with a reset.",
+            code: "mapping_running",
+          },
+          409,
+        );
+      }
+      mappingStatus = { state: "mapping", key_poses: 0, loop_closures: 0 };
+      return json(route, {
+        started: true,
+        message:
+          "Mapping started. The map begins building once the lidar has re-levelled — keep the robot still until then.",
+      });
+    }
+    if (path === "/api/v1/maps" && method === "POST") {
+      // A save ends the run: the robot goes idle, and the console's next poll
+      // is what moves the rail from Save back to Start. Without this the
+      // catch-all's `{ message }` fails the save schema.
+      const body = parseBody(request.postData()) as { name?: string } | null;
+      const name = body?.name ?? "map";
+      mappingStatus = { state: "idle", key_poses: 0, loop_closures: 0 };
+      return json(route, {
+        name,
+        has_pointcloud: true,
+        grid_pending: false,
+        message: `Saved '${name}'. Mapping has stopped — start it again for another map.`,
+      });
+    }
+    if (path === "/api/v1/mapping/reset" && method === "POST") {
+      mappingStatus = { ...mappingStatus, key_poses: 0, loop_closures: 0 };
+      return json(route, {
+        reset: true,
+        message:
+          "Map discarded. The new one starts building once the lidar has re-levelled — keep the robot still until then.",
+      });
     }
     if (path === "/api/v1/robot/restart" && method === "POST") {
       // Dispatched, the usual answer: the robot reports back only once the

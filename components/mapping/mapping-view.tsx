@@ -14,7 +14,14 @@ import { overlayPanel } from "@/components/console/instrument";
 import { PointCloudCanvas } from "@/components/dashboard/pointcloud-canvas";
 import { ModeControl } from "@/components/mapping/mode-control";
 import { ResetRunControl } from "@/components/mapping/reset-run-control";
-import { SaveMapControl } from "@/components/mapping/save-map-control";
+import {
+  SaveMapControl,
+  type RunAvailability,
+} from "@/components/mapping/save-map-control";
+import {
+  StartMappingControl,
+  type StartAvailability,
+} from "@/components/mapping/start-mapping-control";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -24,10 +31,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { useResetMappingRun } from "@/hooks/use-mapping-run";
+import { useMappingStatus, useResetMappingRun } from "@/hooks/use-mapping-run";
 import { useModeSwitch } from "@/hooks/use-mode-switch";
 import { useTelemetry } from "@/hooks/use-telemetry";
-import type { SwitchableMode } from "@/lib/api/mapping";
+import type { MappingRunState, SwitchableMode } from "@/lib/api/mapping";
 import type { StreamStatus } from "@/lib/types/stream";
 import { cn } from "@/lib/utils";
 
@@ -39,8 +46,8 @@ const STATUS_LABEL: Record<StreamStatus, string> = {
 };
 
 // The "map so far" stream's pill reads "Map live" as soon as the socket is
-// open — the first dot of data still needs pgo (MANUAL mode) to have banked a
-// keyframe, which the mode control alongside already communicates.
+// open — the first dot of data still needs a run to have been started and pgo
+// to have banked a keyframe, which the run control alongside communicates.
 const MAP_STATUS_LABEL: Record<StreamStatus, string> = {
   connecting: "Map connecting",
   open: "Map live",
@@ -178,11 +185,20 @@ function StreamPill({
  * either direction tears the stack down for ~30 s and stops whatever the robot
  * was doing, which is not something to hand to a stray tap on a touchscreen.
  * What differs is how loud the dialog is — `savedRun` is what escalates leaving
- * MANUAL from "the stack restarts" to "the map is gone". It re-arms on two
- * events that look nothing alike: a new MANUAL run, tracked by watching
+ * MANUAL from "the stack restarts" to "the map is gone". It re-arms on three
+ * events that look nothing alike: a new MANUAL session, tracked by watching
  * `reported` change (the adjust-during-render pattern, same as
- * VertexMoveDialog's `shown`), and a successful reset, which has to say so
- * explicitly because `reported` never moves across one.
+ * VertexMoveDialog's `shown`), a successful reset, and a successful start —
+ * the last two have to say so explicitly because `reported` never moves across
+ * either. The guard is also lifted by the robot itself: once the run state
+ * reads `idle` (after a save, or before any start) there is nothing in RAM to
+ * lose, so leaving is a plain switch. `unknown` keeps the guard, the way the
+ * map job lock refuses rather than assumes.
+ *
+ * The run state is the robot's, polled, not a flag this page sets on a press:
+ * a run started from another console, or a save that landed there, must read
+ * the same here, and after a reload the rail has to know whether Start or
+ * Save is the next thing to offer.
  */
 export function MappingView() {
   const control = useModeSwitch();
@@ -216,6 +232,28 @@ export function MappingView() {
 
   const mapping = reported === "MANUAL" && !pending;
 
+  // Polled only while the robot reports Mapping: outside it the answer is
+  // `unknown` by construction and the query is not even fetched. Loading fails
+  // closed to `unknown`, which offers nothing.
+  const runStatus = useMappingStatus(mapping);
+  const runState: MappingRunState =
+    mapping && runStatus.run ? runStatus.run.state : "unknown";
+  const building = mapping && runState === "mapping";
+  // Opposite readings of the same state: Start wants idle, Save and the reset
+  // want a run.
+  const startAvailability: StartAvailability = !mapping
+    ? "wrong-mode"
+    : runState === "idle"
+      ? "ready"
+      : runState === "mapping"
+        ? "running"
+        : "busy";
+  const runAvailability: RunAvailability = !mapping
+    ? "wrong-mode"
+    : building
+      ? "ready"
+      : "no-run";
+
   // No segment commands a switch directly — every one of them opens the dialog
   // and the operator's second tap is what reaches sys_manager. The one press
   // that still does nothing is the mode already reported: re-selecting it is
@@ -229,11 +267,22 @@ export function MappingView() {
         to: mode,
         // Only leaving MANUAL can lose a run — and only towards AUTO, since
         // re-selecting MANUAL to cancel a pending switch keeps the run alive.
-        unsaved: mode === "AUTO" && reported === "MANUAL" && !savedRun,
+        // And only while the robot holds one: `idle` means nothing is in RAM
+        // (saved, or never started); `unknown` fails closed and still warns.
+        unsaved:
+          mode === "AUTO" && reported === "MANUAL" && runState !== "idle" && !savedRun,
       });
     },
-    [reported, pending, savedRun],
+    [reported, pending, savedRun, runState],
   );
+
+  // The third re-arm event (see the component doc): a start after a save is a
+  // new unsaved run that `reported` never sees. The remount clears the last
+  // save's receipt for the same reason the reset's does.
+  const onStarted = React.useCallback(() => {
+    setSavedRun(false);
+    setRunNonce((n) => n + 1);
+  }, []);
 
   const { mutate: resetRun } = reset;
   const runReset = React.useCallback(() => {
@@ -352,13 +401,18 @@ export function MappingView() {
         className="w-full shrink-0 border-t border-hairline bg-panel lg:h-full lg:w-72 lg:overflow-y-auto lg:border-t-0 lg:border-l"
       >
         <ModeControl control={control} onSelect={selectMode} />
+        <StartMappingControl
+          availability={startAvailability}
+          status={runStatus}
+          onStarted={onStarted}
+        />
         <SaveMapControl
           key={runNonce}
-          enabled={mapping}
+          availability={runAvailability}
           onSaved={() => setSavedRun(true)}
         />
         <ResetRunControl
-          enabled={mapping}
+          availability={runAvailability}
           busy={reset.isPending}
           error={reset.error?.message ?? null}
           done={reset.data?.message ?? null}

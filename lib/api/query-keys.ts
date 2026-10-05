@@ -15,6 +15,16 @@ export const queryKeys = {
    * only while it says `restarting`.
    */
   robotRestart: ["robot-restart"] as const,
+  /**
+   * GET /api/v1/mapping — where the mapping run stands (idle / mapping /
+   * resetting / unknown, with the keyframe count). Polled at 1 Hz only on
+   * /mapping and only while the robot reports Mapping: keyframes bank as the
+   * robot drives, so the server changes it on its own; off everywhere else,
+   * where the answer is `unknown` by construction. A start, save or reset
+   * invalidates it rather than writing it — the answer travels a latched ROS
+   * topic, so the poll is the one source every console agrees on.
+   */
+  mappingStatus: ["mapping-status"] as const,
   /** GET /api/v1/active_tasks — the console's single 2 s poll. */
   activeTasks: ["active-tasks"] as const,
   /**

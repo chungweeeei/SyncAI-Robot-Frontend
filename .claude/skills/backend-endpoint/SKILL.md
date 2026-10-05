@@ -226,6 +226,7 @@ Known cross-key edges in this codebase:
 | forbidden zone save | `mapKeepout` (set), `maps` | the answer is the next zone read; the files moved `modified_at` |
 | map rename / delete / activate | `mapKeepout` | the zones move with the directory; `active` moves with a switch |
 | recording start/stop | `recordings` **and** `activeRecording` | one event changes both faces |
+| mapping start / save / reset | `mappingStatus` | the run state moved (a save ends the run); invalidated rather than written, since the receipt is not the status |
 
 Three rules for this block:
 
