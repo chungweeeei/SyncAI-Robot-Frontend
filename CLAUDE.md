@@ -144,8 +144,9 @@ components/
                 (their contexts live in hooks/use-console-*.ts — see Layering),
                 the strip's running-job controls (a fixed pause / resume and
                 cancel pair, then one always-present bar: job id, step and
-                state) and its disclosures: the drive panel and camera
-                window every screen can open
+                state) and its disclosures: the sensor alerts (where an
+                overheating motor interrupts, on every screen), the drive
+                panel and camera window every screen can open
   dashboard/    3D viewport (pointcloud-canvas), telemetry rail, driving controls
   mapping/      mode switch, save-map and reset-run controls
   maps/         map library cards and the gridmap editor (grid-canvas)

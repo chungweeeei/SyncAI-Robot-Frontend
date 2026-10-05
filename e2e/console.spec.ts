@@ -248,7 +248,7 @@ test.describe("when a motor overheats", () => {
     { name: "HL_Knee_joint", temperature, error: 0 },
   ];
 
-  test("raises a notice over the viewport only above 85°, naming the joint", async ({
+  test("drops a notice from the masthead's sensor button only above 85°, naming the joint", async ({
     page,
   }) => {
     // The state object is shared with the fake by reference, so a mutation
@@ -257,11 +257,11 @@ test.describe("when a motor overheats", () => {
     await mockBackend(page, { state });
     await page.goto("/");
 
-    const viewport = page.getByRole("region", { name: "Map viewport" });
-    const notice = viewport.getByRole("alert").filter({
+    const strip = page.getByRole("banner");
+    const notice = strip.getByRole("alert").filter({
       hasText: "A motor is overheating",
     });
-    await expect(viewport.getByText("41")).toHaveCount(0);
+    await expect(strip.getByRole("button", { name: "Sensor alerts", exact: true })).toBeVisible();
     await expect(notice).toHaveCount(0);
 
     state.motor_status = hot(86);
@@ -270,32 +270,73 @@ test.describe("when a motor overheats", () => {
     await expect(notice.getByText("86")).toBeVisible();
     // The grid's own number, not the driver's identifier.
     await expect(notice.getByText(/_joint/)).toHaveCount(0);
+    // The dot's meaning, in the words a screen reader hears.
+    await expect(
+      strip.getByRole("button", { name: "Sensor alerts: a motor is overheating" }),
+    ).toBeVisible();
+    // Off the dashboard too: the dashboard's own corner no longer carries it.
+    await expect(
+      page.getByRole("region", { name: "Map viewport" }).getByText("A motor is overheating"),
+    ).toHaveCount(0);
   });
 
-  test("stays dismissed until the motor has cooled and crossed the limit again", async ({
+  test("interrupts on a screen other than the dashboard", async ({ page }) => {
+    // The notice used to live in the dashboard's viewport, so a motor running
+    // hot while an operator edited a job said nothing.
+    const state = robotState({ motor_status: hot(41) });
+    await mockBackend(page, { state });
+    await page.goto("/tasks");
+
+    const notice = page.getByRole("banner").getByRole("alert").filter({
+      hasText: "A motor is overheating",
+    });
+    await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
+    state.motor_status = hot(91);
+    await expect(notice).toBeVisible();
+    await expect(notice.getByText("91")).toBeVisible();
+  });
+
+  test("keeps the dot after Dismiss until the motor has cooled and crossed the limit again", async ({
     page,
   }) => {
     const state = robotState({ motor_status: hot(90) });
     await mockBackend(page, { state });
     await page.goto("/");
 
-    const viewport = page.getByRole("region", { name: "Map viewport" });
-    const notice = viewport.getByRole("alert").filter({
+    const strip = page.getByRole("banner");
+    const notice = strip.getByRole("alert").filter({
       hasText: "A motor is overheating",
     });
+    const lit = strip.getByRole("button", { name: "Sensor alerts: a motor is overheating" });
+    const calm = strip.getByRole("button", { name: "Sensor alerts", exact: true });
     await expect(notice).toBeVisible();
 
     await notice.getByRole("button", { name: "Dismiss" }).click();
     await expect(notice).toHaveCount(0);
+    // Closed, but the motor is still hot, and the button still says so.
+    await expect(lit).toBeVisible();
 
     // Still over the limit a poll later: a closed notice does not nag.
     state.motor_status = hot(92);
-    await expect(viewport.getByText("92")).toHaveCount(0);
+    await page.waitForTimeout(1500);
     await expect(notice).toHaveCount(0);
 
-    // Cooled below the red readout, then hot again: that is a new event.
+    // The button reopens it to read — not as an alert, which it already was.
+    await lit.click();
+    await expect(strip.getByText("A motor is overheating")).toBeVisible();
+    await expect(strip.getByText("92")).toBeVisible();
+    await expect(notice).toHaveCount(0);
+    await lit.click();
+    await expect(strip.getByText("A motor is overheating")).toHaveCount(0);
+
+    // Cooled below the red readout: the dot goes, and pressing says so.
     state.motor_status = hot(79);
-    await page.waitForTimeout(1500);
+    await expect(calm).toBeVisible();
+    await calm.click();
+    await expect(strip.getByText("All motors are within limits.")).toBeVisible();
+    await calm.click();
+
+    // Hot again: that is a new event.
     state.motor_status = hot(88);
     await expect(notice).toBeVisible();
     await expect(notice.getByText("88")).toBeVisible();

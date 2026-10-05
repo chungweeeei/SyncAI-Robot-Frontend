@@ -28,6 +28,9 @@ export function StripDisclosure({
   label,
   showTitle,
   hideTitle,
+  open: controlledOpen,
+  onOpenChange,
+  alert = false,
   children,
 }: {
   icon: LucideIcon;
@@ -36,10 +39,28 @@ export function StripDisclosure({
   /** Hover text for each state; the button is icon-only, so it carries the words. */
   showTitle: string;
   hideTitle: string;
+  /**
+   * Set to own the open state, for a panel that also opens on its own — the
+   * sensor alert drops when a motor runs hot, not only when pressed. Every
+   * press and Escape goes through `onOpenChange` either way.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /**
+   * Something behind the button needs the operator: the glyph turns warn and
+   * a dot sits on its corner. The dot is decoration; the caller says the same
+   * thing in `label`, because a dot is not something a screen reader hears.
+   */
+  alert?: boolean;
   /** Rendered only while open. Position it against the wrapper. */
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [ownOpen, setOwnOpen] = React.useState(false);
+  const open = controlledOpen ?? ownOpen;
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setOwnOpen(next);
+    onOpenChange?.(next);
+  };
   const panelId = React.useId();
   const buttonRef = React.useRef<HTMLButtonElement>(null);
 
@@ -62,13 +83,13 @@ export function StripDisclosure({
         aria-controls={panelId}
         aria-label={label}
         title={open ? hideTitle : showTitle}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(!open)}
         className={cn(
           // The full height of the strip and as wide as it is tall: these are
-          // the two things in the strip an operator presses, on a phone and at
+          // the things in the strip an operator presses, on a phone and at
           // arm's length from a laptop, so they get the whole row rather than
-          // a 24 px target inside it. Square so the two read as a pair.
-          "flex size-14 items-center justify-center rounded-sm border transition-colors",
+          // a 24 px target inside it. Square so they read as a set.
+          "relative flex size-14 items-center justify-center rounded-sm border transition-colors",
           // Open is the cmd hue, like every other operator choice in the
           // console. It is the only state these buttons show: what the panel
           // is doing once open is the panel's own business.
@@ -80,9 +101,18 @@ export function StripDisclosure({
           open
             ? "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd"
             : "border-transparent text-muted-foreground hover:border-hairline hover:bg-elevated hover:text-foreground focus-visible:border-hairline",
+          // After the open/closed hues so it wins over both: an alert is
+          // worth more than which way the panel is.
+          alert && "text-signal-warn hover:text-signal-warn",
         )}
       >
         <Icon aria-hidden className="size-5" />
+        {alert && (
+          <span
+            aria-hidden
+            className="absolute top-3 right-3 size-2 rounded-full bg-signal-warn ring-2 ring-panel"
+          />
+        )}
       </button>
 
       <div id={panelId}>{open && children}</div>
