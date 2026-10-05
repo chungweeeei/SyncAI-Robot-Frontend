@@ -3,11 +3,10 @@
 import Link from "next/link";
 import { PencilIcon } from "lucide-react";
 
+import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
 
-const LOCKED_REASON =
-  "The robot is working in this map right now, so it cannot be edited. Switch it to another map first.";
 const NO_GRID_REASON =
   "This map has no floor plan to edit yet. Rebuild one from the card first.";
 const CONVERTING_REASON =
@@ -35,29 +34,31 @@ const CORNER =
  * change" as an X is for "remove", so a label would only repeat it; the name
  * survives as the tooltip and the accessible name.
  *
- * Greyed on the map in use, like Rename and Delete beside it: a floor plan
- * saved under the running stack is a change the planner picks up at once,
- * and the card's answer to that is the same as for the other two — switch
- * the robot to another map first. Also greyed for a map with no floor plan
- * (the editor would open onto a guard screen) and mid-conversion, when the
- * grid on disk is about to be replaced and cells saved now would land on a
- * map with different extents. A map whose re-conversion *failed* keeps its
+ * Greyed while a job drives on this map, not merely because it is the map
+ * in use: an idle robot's own map is the one an operator most often needs
+ * to correct, and the backend saves a floor plan onto the live map and
+ * reloads it. What it refuses is a write under a running job, which the
+ * planner would pick up mid-route — so the tile asks the same run lock the
+ * editor and Rebuild do, and carries its sentence. Also greyed for a map
+ * with no floor plan (the editor would open onto a guard screen) and
+ * mid-conversion, when the grid on disk is about to be replaced and cells
+ * saved now would land on a map with different extents. A map whose re-conversion *failed* keeps its
  * editor: the grid it serves is the archived one, which is a real grid and
  * the only one it has. A look-alike span rather than a disabled link, for
  * the reason the other tiles give — the tooltip is the point, and
  * `disabled` would swallow it.
  */
 export function MapEditLink({ map }: { map: MapSummary }) {
-  const locked = map.active;
+  const runLock = useMapRunLock(map.name);
   const converting = map.grid_status === "converting";
 
-  if (locked || !map.grid || converting) {
+  if (runLock.locked || !map.grid || converting) {
     return (
       <span
         aria-disabled="true"
         title={
-          locked
-            ? LOCKED_REASON
+          runLock.locked
+            ? (runLock.reason ?? undefined)
             : converting
               ? CONVERTING_REASON
               : NO_GRID_REASON
