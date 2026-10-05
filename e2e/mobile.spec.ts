@@ -357,7 +357,8 @@ test.describe("the console on a phone", () => {
     // 1 px default out from under the fingers.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
     await page.goto("/tasks/editor");
-    await page.getByRole("button", { name: "Floor plan" }).click();
+    await page.getByTitle("Drive to a pose in the map frame.").click();
+    await page.getByRole("button", { name: "Floor plan for step 1" }).click();
     const plan = page.getByRole("img", { name: /^Floor plan of dp2f/ });
     await expect(plan).toBeVisible();
     const zoom = page.locator("[data-zoom]");

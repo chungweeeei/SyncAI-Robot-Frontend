@@ -205,7 +205,7 @@ export function stepSummary(
  * Which waypoints the job goes to, and as which steps: vertex id → the
  * 1-based ordinals of the MOVE rows picked from it, in list order.
  *
- * For the floor plan the task editor opens over the steps, which lights those
+ * For the floor plan a Move row of the task editor opens, which lights those
  * stops and captions each with its step numbers. A list rather than one
  * number because a patrol returns to `dock`, and "steps 1, 4" is exactly the
  * thing an operator reading a map wants to know about it. A MOVE whose

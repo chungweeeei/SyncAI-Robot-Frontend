@@ -11,6 +11,7 @@ import {
   ChevronRightIcon,
   EllipsisIcon,
   GripVerticalIcon,
+  MapIcon,
   Trash2Icon,
 } from "lucide-react";
 
@@ -18,6 +19,7 @@ import { Chip, Segmented } from "@/components/console/instrument";
 import { IconButton } from "@/components/tasks/icon-button";
 import { TaskStatusChip } from "@/components/console/task-chip";
 import { VertexPicker } from "@/components/tasks/vertex-picker";
+import { WaypointPreview } from "@/components/tasks/waypoint-preview";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,6 +41,7 @@ import {
   type StepDraft,
 } from "@/lib/task/step";
 import type { MapVertex } from "@/lib/types/map";
+import type { MapMetadata } from "@/lib/types/robot";
 import { cn } from "@/lib/utils";
 
 const TYPE_OPTIONS = STEP_TYPES.map(({ value, label }) => ({ value, label }));
@@ -51,6 +54,10 @@ export interface StepRowProps {
   vertices: MapVertex[];
   verticesStatus: ActiveVerticesStatus;
   mapName: string | null;
+  /** The map's geometry; null when it has no floor plan to show. */
+  mapGrid: MapMetadata | null;
+  /** Vertex id → the job's step numbers that go there, lit on the floor plan. */
+  stepMarks: ReadonlyMap<string, readonly number[]>;
   disabled: boolean;
   /** Tracked status + error_msg for this step, or null when nothing is tracked. */
   state: TaskStepState | null;
@@ -69,6 +76,8 @@ export function StepRow({
   vertices,
   verticesStatus,
   mapName,
+  mapGrid,
+  stepMarks,
   disabled,
   state,
   onPatch,
@@ -115,6 +124,13 @@ export function StepRow({
       // goes with it.
       vertexMissing: false,
     });
+  // The floor plan needs a map with one and nothing else — the waypoints are
+  // drawn as they arrive, and an empty map is still the map. Closed by
+  // default, and the choice lives with the row: folding it keeps the map open
+  // for when it is unfolded again.
+  const canPreview = mapName !== null && mapGrid !== null;
+  const [previewOpen, setPreviewOpen] = React.useState(false);
+  const previewId = React.useId();
 
   const {
     attributes,
@@ -292,21 +308,69 @@ export function StepRow({
            * fields. The draft still carries the numbers — they are what is sent,
            * and a template saved with hand-typed ones still loads and runs — but
            * an operator places a waypoint on the floor plan, not a coordinate. */}
-          {/* The picker alone: a name in a list is not a place, but the map
-           * that says which stop `v2` is now belongs to the Steps group, one
-           * for the whole job (see TaskEditor), where it also shows which
-           * steps go where. It used to open under each row and pick for it;
-           * a map under every row of a twenty-step patrol was a wall of maps. */}
+          {/* The picker and, on request, the floor plan beside it: a name in
+           * a list is not a place, and the map is what says which stop `v2`
+           * is. It sits with the row by request — it had moved up to the
+           * Steps header, out of sight of the pick it explains. Opened by its
+           * button rather than always shown, because a twenty-step patrol
+           * with a map under every row is a wall of maps. The map is still a
+           * view of the whole job (every Move step's stop lit with its
+           * number), not a picker: the dropdown is how a step is set. */}
           {step.type === "MOVE" && (
-            <VertexPicker
-              vertices={vertices}
-              status={verticesStatus}
-              mapName={mapName}
-              value={step.vertexId}
-              disabled={disabled}
-              onPick={pickWaypoint}
-              label={`Waypoint for step ${ordinal}`}
-            />
+            <div className="space-y-2">
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <VertexPicker
+                    vertices={vertices}
+                    status={verticesStatus}
+                    mapName={mapName}
+                    value={step.vertexId}
+                    disabled={disabled}
+                    onPick={pickWaypoint}
+                    label={`Waypoint for step ${ordinal}`}
+                  />
+                </div>
+                {/* Icon only: the row is already dense with words, and the
+                 * pressed state says more than a label that would have to
+                 * flip between Show and Hide to keep up. Disabled rather than
+                 * absent without a floor plan, so the row keeps its shape
+                 * whichever map is picked. Not held by `disabled`: opening
+                 * the map changes nothing that is sent. */}
+                <button
+                  type="button"
+                  aria-pressed={previewOpen && canPreview}
+                  aria-controls={canPreview && previewOpen ? previewId : undefined}
+                  aria-label={`Floor plan for step ${ordinal}`}
+                  disabled={!canPreview}
+                  title={
+                    !canPreview
+                      ? "This map has no floor plan yet"
+                      : previewOpen
+                        ? "Hide the floor plan"
+                        : "Show where each waypoint is on the floor plan"
+                  }
+                  onClick={() => setPreviewOpen((open) => !open)}
+                  className={cn(
+                    "flex size-7 shrink-0 items-center justify-center rounded-sm border transition-colors disabled:opacity-40 disabled:hover:bg-transparent pointer-coarse:size-10",
+                    previewOpen && canPreview
+                      ? "border-signal-cmd/40 bg-signal-cmd/8 text-signal-cmd hover:bg-signal-cmd/16"
+                      : "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground",
+                  )}
+                >
+                  <MapIcon className="size-3.5" aria-hidden />
+                </button>
+              </div>
+              {canPreview && previewOpen && (
+                <div id={previewId}>
+                  <WaypointPreview
+                    mapName={mapName}
+                    meta={mapGrid}
+                    vertices={vertices}
+                    steps={stepMarks}
+                  />
+                </div>
+              )}
+            </div>
           )}
 
           {step.type === "SPEAK" && (
