@@ -3,7 +3,6 @@
 import { RadarIcon } from "lucide-react";
 
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
-import { MotorHeatAlert } from "@/components/dashboard/motor-heat-alert";
 import { PointCloudView } from "@/components/dashboard/pointcloud-view";
 import { TelemetryRail } from "@/components/dashboard/telemetry-rail";
 import { cn } from "@/lib/utils";
@@ -40,15 +39,6 @@ export default function DashboardPage() {
           * its own ~20 Hz telemetry WebSocket. This page's 1 Hz state is what
           * the rail and the strip read. */}
         <PointCloudView robotId={state.robot_id} />
-
-        {/* The overheating notice floats over the viewport rather than sitting
-          * in the rail, because the rail's motor group is below the fold on a
-          * phone and at the bottom of the rail on a desktop; the viewport is
-          * where the operator is looking when the robot is being driven hot. */}
-        <MotorHeatAlert
-          motors={state.motor_status}
-          className="absolute bottom-3 left-3"
-        />
       </section>
 
       <aside
