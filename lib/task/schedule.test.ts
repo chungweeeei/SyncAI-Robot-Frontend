@@ -19,6 +19,7 @@ import {
   scheduleFormSeed,
   scheduleDrift,
   toCron,
+  glanceSchedules,
   upcomingRun,
 } from "@/lib/task/schedule";
 import type { TaskStepRequest } from "@/lib/api/task";
@@ -217,6 +218,45 @@ describe("upcomingRun", () => {
     expect(upcomingRun(row({ next_run_times: ["2026-09-24T08:00:00Z"] }), readAtMs))
       .toBeUndefined();
   });
+});
+
+describe("glanceSchedules", () => {
+  const readAtMs = Date.parse("2026-09-24T09:00:00Z");
+  const row = (id: string, over: Partial<ScheduleState> = {}): ScheduleState => ({
+    id,
+    trigger: { interval_seconds: 3600 },
+    paused: false,
+    next_run_times: [],
+    ...over,
+  });
+  const ids = (rows: ReturnType<typeof glanceSchedules>) =>
+    rows.map((entry) => entry.schedule.id);
+
+  it("lists the run the robot will make first at the top, paused rows last", () => {
+    // A paused row keeps future times on the wire; it must not sort by them.
+    const rows = [
+      row("paused", { paused: true, next_run_times: ["2026-09-24T09:01:00Z"] }),
+      row("late", { next_run_times: ["2026-09-24T22:30:00Z"] }),
+      row("soon", { next_run_times: ["2026-09-24T09:30:00Z"] }),
+    ];
+    const glance = glanceSchedules(rows, readAtMs);
+    expect(ids(glance)).toEqual(["soon", "late", "paused"]);
+    expect(glance[2].next).toBeUndefined();
+  });
+
+  it("sorts by the run still to come, not one the snapshot has already passed", () => {
+    const rows = [
+      row("b", { next_run_times: ["2026-09-24T10:00:00Z"] }),
+      row("a", { next_run_times: ["2026-09-24T08:00:00Z", "2026-09-24T11:00:00Z"] }),
+    ];
+    expect(ids(glanceSchedules(rows, readAtMs))).toEqual(["b", "a"]);
+  });
+
+  it("keeps the backend's order among rows with no next run", () => {
+    const rows = [row("x", { paused: true }), row("y"), row("z", { paused: true })];
+    expect(ids(glanceSchedules(rows, readAtMs))).toEqual(["x", "y", "z"]);
+  });
+
 });
 
 describe("nextScheduleRefetchMs", () => {

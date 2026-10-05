@@ -367,6 +367,116 @@ test.describe("the WebRTC bench", () => {
   });
 });
 
+test.describe("the dashboard's schedules", () => {
+  test("lists what will run next first and pauses one from the rail", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    // Relative to the browser's clock, because the rail measures "next"
+    // against the moment the list was read.
+    const inMinutes = (minutes: number) =>
+      new Date(Date.now() + minutes * 60_000).toISOString();
+    const schedule = (
+      id: string,
+      name: string | null,
+      paused: boolean,
+      next: string[],
+    ) => ({
+      id,
+      trigger: { interval_seconds: 3600 },
+      paused,
+      next_run_times: next,
+      task_template_id: name ? `tpl-${id}` : null,
+      task_template_name: name,
+    });
+    const writes = await mockBackend(page, {
+      schedules: [
+        schedule("dock", "Dock check", true, []),
+        schedule("night", "Night patrol", false, [inMinutes(180)]),
+        schedule("morning", "Morning round", false, [inMinutes(30)]),
+        // No job behind it: the id is what names it.
+        schedule("loose-steps", null, false, [inMinutes(600)]),
+      ],
+    });
+    await page.goto("/");
+
+    const rail = page.getByRole("complementary", { name: "Telemetry" });
+    // Soonest first, paused last.
+    await expect(rail.getByRole("listitem")).toHaveText([
+      /Morning round/,
+      /Night patrol/,
+      /loose-steps/,
+      /Dock check.*Paused/,
+    ]);
+    await expect(rail.getByRole("link", { name: "View all schedules" })).toHaveAttribute(
+      "href",
+      "/tasks",
+    );
+
+    await rail.getByRole("button", { name: "Pause schedule Morning round" }).click();
+    await expect
+      .poll(() => writes.map((w) => `${w.method} ${w.path}`))
+      .toContain("POST /api/v1/schedules/morning/pause");
+    // The flip is the hook's optimistic one. The row sorts below the ones
+    // that will still fire, and stays on the rail with the Resume that undoes
+    // the press.
+    await expect(rail.getByRole("listitem")).toHaveText([
+      /Night patrol/,
+      /loose-steps/,
+      /Dock check.*Paused/,
+      /Morning round.*Paused/,
+    ]);
+    await expect(
+      rail.getByRole("button", { name: "Resume schedule Morning round" }),
+    ).toBeVisible();
+
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("deletes a schedule from the rail only once the operator confirms", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, {
+      schedules: [
+        {
+          id: "morning",
+          trigger: { interval_seconds: 3600 },
+          paused: false,
+          next_run_times: [new Date(Date.now() + 30 * 60_000).toISOString()],
+          task_template_id: "tpl-morning",
+          task_template_name: "Morning round",
+        },
+      ],
+    });
+    await page.goto("/");
+    const rail = page.getByRole("complementary", { name: "Telemetry" });
+    const remove = rail.getByRole("button", {
+      name: "Delete schedule Morning round",
+    });
+    const deletes = () =>
+      writes.filter((w) => w.method === "DELETE").map((w) => w.path);
+
+    // Dismissed: nothing goes out.
+    page.once("dialog", (confirm) => void confirm.dismiss());
+    await remove.click();
+    await expect(remove).toBeEnabled();
+    expect(deletes()).toEqual([]);
+
+    // Confirmed, and the confirm names the schedule the way the row does.
+    page.once("dialog", (confirm) => {
+      expect(confirm.message()).toContain('Delete schedule "Morning round"?');
+      void confirm.accept();
+    });
+    await remove.click();
+    await expect.poll(deletes).toEqual(["/api/v1/schedules/morning"]);
+
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+});
+
 test.describe("when the robot has not localized", () => {
   test("says so rather than showing empty instruments", async ({ page }) => {
     // GET /robot/state 404s until the localizer converges, and a dashboard
