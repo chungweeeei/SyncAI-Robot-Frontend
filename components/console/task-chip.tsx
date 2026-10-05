@@ -9,7 +9,9 @@ import type { TaskStatus } from "@/lib/api/task";
 // CANCELED is caution, not neutral: a job that did not finish left the robot
 // short of where it was sent, which is worth a second look in the history
 // even when someone stopped it on purpose. It stays short of FAILED's red,
-// because nothing went wrong.
+// because nothing went wrong. PAUSED (and the ack-only PAUSING) is caution
+// for the same reason: the hold is intended, but the robot is standing
+// somewhere between stops and will stay there until someone acts.
 //
 // Exported for the one surface that cannot use TaskStatusChip itself: the
 // status strip has no room for "IN PROGRESS" and renders its own shorter label.
@@ -18,6 +20,8 @@ import type { TaskStatus } from "@/lib/api/task";
 export const STATUS_TONE: Record<TaskStatus, Tone> = {
   PENDING: "cmd",
   IN_PROGRESS: "active",
+  PAUSED: "caution",
+  PAUSING: "caution",
   COMPLETED: "live",
   FAILED: "warn",
   CANCELED: "caution",

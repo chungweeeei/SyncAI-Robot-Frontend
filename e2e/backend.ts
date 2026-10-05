@@ -211,6 +211,25 @@ export function activeTask(over: Record<string, unknown> = {}) {
 }
 
 /**
+ * A running job's own state, as GET /tasks/<id> reports it: a three-step
+ * task on its second step, which is what the masthead reads the step from
+ * (the active list carries no steps). Step ids follow the composer's
+ * `${ordinal}-${type}` shape, so the readout can name the type.
+ */
+export function taskState(over: Record<string, unknown> = {}) {
+  return {
+    id: "robot01-task-1758000000-1",
+    status: "IN_PROGRESS",
+    steps: [
+      { id: "1-move", status: "COMPLETED", error_msg: "" },
+      { id: "2-speak", status: "IN_PROGRESS", error_msg: "" },
+      { id: "3-move", status: "PENDING", error_msg: "" },
+    ],
+    ...over,
+  };
+}
+
+/**
  * The finished runs a history read's filter names, the way the backend
  * applies it: outcome, kind and name are exact matches, and the two bounds
  * are on the close time. Shared by the page and the stats routes so the
@@ -273,7 +292,10 @@ export interface BackendOverrides {
   taskHistory?: Record<string, unknown>[];
   /** Rows per history page; the fake's cursor is the offset of the next one. */
   taskHistoryPageSize?: number;
-  /** GET /tasks/<id> bodies by id; an id with none answers 404. */
+  /**
+   * GET /tasks/<id> bodies by id. An id in `activeTasks` with none answers
+   * the default `taskState`; any other id with none answers 404.
+   */
   taskStates?: Record<string, Record<string, unknown>>;
   /** The floor plan every map's /image answers with; see floorPlanPng. */
   gridImage?: Buffer;
@@ -394,11 +416,45 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         message: "ok",
       });
     }
+    const holdMatch = /^\/api\/v1\/tasks\/([^/]+)\/(pause|resume)$/.exec(path);
+    if (holdMatch && method === "POST") {
+      // The backend's signal routes. Like the robot's, the ack is a claim
+      // about the request (PAUSING, not PAUSED); the run's own state is what
+      // changes, and it changes here so the console's next read sees the
+      // hold land — the screen half of a pause test is otherwise untestable.
+      const id = decodeURIComponent(holdMatch[1]);
+      const run = taskStates[id] as
+        | { status: string; steps?: { status: string }[] }
+        | undefined;
+      if (!run) return json(route, { detail: `Task ${id} not found` }, 404);
+      const pausing = holdMatch[2] === "pause";
+      run.status = pausing ? "PAUSED" : "IN_PROGRESS";
+      const live = run.steps?.find(
+        (step) => step.status === "IN_PROGRESS" || step.status === "PAUSED",
+      );
+      if (live) live.status = pausing ? "PAUSED" : "IN_PROGRESS";
+      return json(route, {
+        id,
+        status: pausing ? "PAUSING" : "IN_PROGRESS",
+        message: pausing
+          ? `Pause of task ${id} requested; poll GET /api/v1/tasks/${id} until its status is PAUSED.`
+          : `Task ${id} resumed.`,
+      });
+    }
     const taskMatch = /^\/api\/v1\/tasks\/([^/]+)$/.exec(path);
     if (taskMatch && method === "GET") {
       const id = decodeURIComponent(taskMatch[1]);
-      return taskStates[id]
-        ? json(route, taskStates[id])
+      // A job the active list carries has a state by construction, so one a
+      // test did not spell out answers with the default rather than a 404:
+      // the masthead reads every running job's state, and a 404 there is a
+      // logged resource error that would fail the console-error guard in
+      // every test that merely has a job running. An id nobody listed still
+      // answers 404, the way the backend does for a run it never had.
+      const state =
+        taskStates[id] ??
+        (activeTasks.some((task) => task.id === id) ? taskState({ id }) : undefined);
+      return state
+        ? json(route, state)
         : json(route, { detail: `Task ${id} not found` }, 404);
     }
     if (path === "/api/v1/maps" && method === "GET") return json(route, maps);

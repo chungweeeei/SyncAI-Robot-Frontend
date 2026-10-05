@@ -142,8 +142,10 @@ app/            route shells; the real content belongs to a component (see devia
 components/
   console/      shell: nav rail, status strip, the two layout-level providers
                 (their contexts live in hooks/use-console-*.ts — see Layering),
-                and the strip's disclosures: the drive panel and camera window
-                every screen can open
+                the strip's running-job controls (a fixed pause / resume and
+                cancel pair, then one always-present bar: job id, step and
+                state) and its disclosures: the drive panel and camera
+                window every screen can open
   dashboard/    3D viewport (pointcloud-canvas), telemetry rail, driving controls
   mapping/      mode switch, save-map and reset-run controls
   maps/         map library cards and the gridmap editor (grid-canvas)
@@ -177,8 +179,10 @@ lib/
                 robot mesh
   theme/        the signal hues both canvases draw with
   task/         step, schedule and history domain helpers, template name limit,
-                and the editor's unsaved draft (draft-store.ts — the one place
-                that touches browser storage)
+                the masthead's rules for the running job (run.ts: which step is
+                live, what to call it, whether a hold is offered, and the state
+                the bar ends in) and the editor's unsaved draft (draft-store.ts
+                — the one place that touches browser storage)
   recording/    bag size/duration formatting, the bag name rule and the channel
                 field's rule
   robot/        G23 joint table (URDF link names ↔ GLB node names), how the
@@ -288,7 +292,8 @@ touch one, prefer moving it toward the rule.
   by `lib/api/mutation-state.ts`.
 - **Command hooks are mutations too**, but they answer to the robot rather
   than to the cache: `use-goal-task`, `use-posture`, `use-task-dispatch`,
-  `use-initial-pose`, `use-locomotion`, `use-mode-switch`, `use-wifi-connect`.
+  `use-initial-pose`, `use-locomotion`, `use-mode-switch`, `use-wifi-connect`,
+  `use-task-hold`.
   They invalidate nothing — there is no cached resource a motion key or a pose
   estimate makes stale — and instead compose a *reader* that reports what the
   robot did with the command: `useTaskTracker` for anything dispatched as a
@@ -296,6 +301,15 @@ touch one, prefer moving it toward the rule.
   that command the machine directly. Read the epistemics note in
   `use-locomotion.ts` before adding another: a request is not a reading, and
   which of the two a value is decides whether it may be shown as fact.
+  `use-task-hold` is the newest case: a pause is a *request* the ack answers
+  `PAUSING` to, and `PAUSED` is a *reading* from `GET /tasks/{id}` — never
+  from `/active_tasks`, which lists a held run as `IN_PROGRESS` because it
+  cannot see inside the run. The masthead derives its "Pausing…" from the
+  request set against the reading (`runPhase` in `lib/task/run.ts`, wrapped
+  by `runState`, which answers an ending before a phase so a hold this tab
+  asked for is never shown over a run that has since closed) and
+  never stores it, which is also why there is no optimistic flip the way the
+  schedule pause has.
   `mutateAsync(…).catch(ignore)` is the house idiom for a handler wired
   straight to a button — the rejection is on the mutation, which is where the
   UI reads it.
@@ -329,7 +343,13 @@ touch one, prefer moving it toward the rule.
   while `grid_status === "converting"`, `useRecordings` while a bag is live).
   Two console-wide polls are mounted once in `app/layout.tsx`:
   `RobotStateProvider` (1 Hz) and `ActiveTaskProvider` (2 s). Pages read those
-  providers; they do not start their own `robotState` poll. The history screen
+  providers; they do not start their own `robotState` poll. The status strip
+  adds one derived read on top of the second: `useActiveRun` polls
+  `task(id)` for whatever the active list says is running (2 s, the only
+  place a paused run and its current step are visible), and switches off
+  when the run leaves the list or its own read turns terminal. It shares the
+  entry with `useTaskTracker`, so every poller of that key goes through
+  `fetchHeldTaskState` — see the key's note. The history screen
   polls nothing: `taskHistory` is the prefix of both its page keys and its
   stats keys, so the one invalidation the active-task poll fires when a run
   finishes refreshes the list and the dashboard's counts together.
@@ -492,8 +512,22 @@ it is run in, so it does not belong to any one of them.
   the id. A history row is titled by its template's name, else its kind, and
   by the job id only when nothing labelled it (`describeRun`): the id is what
   the orchestrator calls a run, not what an operator does, so it lives in the
-  row's expanded detail. Backend sentences are still rendered verbatim; they
-  are written for operators too.
+  row's expanded detail. The masthead's bar is the one deliberate exception,
+  by request — it carries the running job's id from `lg` up, muted and in the
+  readout face, as the first thing to give way when the strip narrows — and
+  it is *not* uppercased by `instrument-label`, because an uppercased id is a
+  different string from the one an engineer greps for. The masthead names
+  that job's step the same way as a history row, off its id alone
+  (`stepLabel` in `lib/task/run.ts`: `2-speak` reads **Speak**, `goal` reads
+  **Navigation goal**, a foreign id reads as itself). The bar ends in the
+  run's state: **Running / Pausing… / Paused / Resuming… / Completed /
+  Failed / Canceled** (`runState`) — `Pausing…` and `Resuming…` are a request
+  the reading has not caught up with, the rest are the reading. An idle robot
+  reads **No task message in queue** and an unreadable list **Job list
+  unavailable**; the bar is never blank, because a blank one is also what a
+  readout that failed to render looks like.
+  Backend sentences are still rendered verbatim; they are written for
+  operators too.
 - **A clip is not a recording.** A recording is the robot's bag, on the robot's
   disk, started and stopped over REST; a clip is a video of the camera window's
   picture, written by the browser onto the operator's own machine and never
@@ -535,6 +569,16 @@ it is run in, so it does not belong to any one of them.
   handler, never in render. The other JS-side reading is `pointerType` on
   the event itself, which is how a hit disc widens to 22 px under a finger
   and how Remove step asks a finger twice but a mouse once.
+  **A row that has to become two rows wraps; it is not rendered twice.** The
+  status strip is one `flex-wrap` row where the job block takes
+  `order-last w-full` below `sm` and `w-auto` from `sm` up, so a phone gets
+  two lines out of the same markup. Two copies behind `hidden`/`sm:hidden`
+  would put two Pause buttons and two `role="status"` readouts in the
+  accessibility tree, and the hidden one would still mount its hooks. One
+  consequence to keep: a wrapping row breaks *before* it shrinks, so an item
+  that must stay on the first line needs `max-sm:basis-0 max-sm:grow` rather
+  than `shrink` alone — which is what keeps the robot id's cluster from
+  pushing the health cluster onto a third line.
 - **A touch gesture belongs to one pointer.** Both canvases and both panels
   gate move and release on the pointer id the press recorded; a second
   finger is never a second press. What it is instead is each surface's

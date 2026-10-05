@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { ActiveTaskChip } from "@/components/console/active-task-chip";
+import { ActiveRunControls } from "@/components/console/active-run-controls";
 import { CameraDisclosure } from "@/components/console/camera-disclosure";
 import { DriveDisclosure } from "@/components/console/drive-disclosure";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
@@ -90,11 +90,27 @@ export function StatusStrip() {
 
   return (
     <header className="relative shrink-0 bg-panel">
-      <div className="flex h-14 items-center gap-2.5 px-3 sm:gap-3.5 sm:px-4">
+      {/* One wrapping row, which is the whole phone layout.
+        *
+        * Below `sm` the strip cannot hold everything on one line — the robot
+        * id, the mode, two 40 px job controls, a readable bar, the drive and
+        * camera buttons and the battery come to well over 375 px — so the
+        * job block takes `w-full order-last` and wraps onto a second line of
+        * its own. From `sm` it is `w-auto` again and the row does not wrap.
+        * `flex-wrap` rather than a second element: rendering the controls
+        * twice and hiding one would put two Pause buttons and two live
+        * readouts in the accessibility tree. */}
+      <div className="flex min-h-14 flex-wrap items-center gap-x-2.5 gap-y-0 px-3 sm:flex-nowrap sm:gap-x-3.5 sm:px-4">
         {/* The one cluster that may shrink, and inside it the robot id is the
           * one thing that truncates: at 375 px the health cluster on the right
-          * is fixed-width, and it is the part an operator cannot do without. */}
-        <div className="flex min-w-0 shrink items-center gap-2.5 sm:gap-3.5">
+          * is fixed-width, and it is the part an operator cannot do without.
+          *
+          * `basis-0 grow` below `sm`, because a wrapping row breaks before it
+          * shrinks: at its natural width this cluster plus the health one is
+          * ~20 px over a phone, which would put the health cluster on a line
+          * of its own and make the strip three rows deep. A zero basis lets
+          * the line form first and this cluster take whatever is left. */}
+        <div className="flex min-w-0 shrink items-center gap-2.5 max-sm:grow max-sm:basis-0 sm:gap-3.5">
           <span className="readout truncate text-[15px] font-medium">
             {state?.robot_id ?? "—"}
           </span>
@@ -110,25 +126,34 @@ export function StatusStrip() {
           </span>
         </div>
 
-        <StripDivider className="hidden sm:block" />
+        {/* No divider after the map: the job block is flush right now, so a
+          * rule here would mark the start of a stretch of nothing. */}
 
-        {/* Whether the robot is executing anything, from Temporal rather than
-          * from this tab — so it is true for a run another console started, or
-          * one a schedule started with nobody watching, or one that began
-          * before this page was loaded. `role="status"` so going from idle to
-          * running is announced rather than just recoloured.
+        {/* What the robot is executing, from the job scheduler rather than
+          * from this tab — so it is true for a run another console started,
+          * or one a schedule started with nobody watching, or one that began
+          * before this page was loaded. Two presses and then a long bar.
           *
-          * Left cluster, beside the mode and the map: those three say what the
-          * robot *is doing and where*, while the right cluster is the health of
-          * the links and the machine. */}
-        <div role="status" className="flex items-center gap-2">
-          <span className="instrument-label hidden text-muted-foreground sm:inline">
-            Task
-          </span>
-          <ActiveTaskChip />
+          * Capped rather than left to grow: on a wide screen the bar would
+          * otherwise run half the width of the display to say "2/4 Speak",
+          * and a readout whose right edge moves with the window is one the
+          * eye has to find again on every screen. 32rem is the full job id,
+          * the step and the state word with room to spare.
+          *
+          * `basis-[32rem]` with an auto margin rather than `flex-1`: the
+          * block asks for 32rem, shrinks below it on a narrow window, and
+          * the auto margin puts the spare width *before* it, so the bar ends
+          * flush against the health cluster instead of trailing empty space
+          * after it. The auto margin lives here and nowhere else in the row —
+          * two of them would halve the gap between them. */}
+        <div className="order-last -mx-3 flex w-full min-w-0 items-center gap-2 border-t border-hairline px-3 py-1.5 sm:order-none sm:mx-0 sm:ml-auto sm:w-auto sm:basis-[32rem] sm:border-0 sm:px-0 sm:py-0">
+          <ActiveRunControls />
         </div>
 
-        <div className="ml-auto flex shrink-0 items-center gap-2.5 sm:gap-3.5">
+        {/* No auto margin: on a phone the left cluster's `grow` holds this
+          * against the right edge, and from `sm` the job block's does. */}
+        <div className="flex shrink-0 items-center gap-2.5 sm:gap-3.5">
+          <StripDivider />
           {/* A 2 px gap rather than the strip's usual spacing: with their
             * frames hidden until hovered, the drive and camera buttons and
             * the link chip read as one cluster, and the sliver is what keeps

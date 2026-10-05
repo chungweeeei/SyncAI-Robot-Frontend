@@ -28,10 +28,20 @@ import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
 import type { PlanarPose } from "@/lib/types/robot";
 
-/** Shared by every task-shaped response below. */
+/**
+ * Shared by every task-shaped response below.
+ *
+ * PAUSED is a *reading*: `GET /tasks/{id}` says it once a step is held, on the
+ * run and on that step. PAUSING is only ever a *claim*, the pause ack's status
+ * the moment the signal lands — this console does not parse that ack (see
+ * `pauseTask`), but the member is here so a backend that one day reports it
+ * from the read does not fail the schema and blank the readout.
+ */
 const TaskStatusSchema = z.enum([
   "PENDING",
   "IN_PROGRESS",
+  "PAUSED",
+  "PAUSING",
   "COMPLETED",
   "FAILED",
   "CANCELED",
@@ -40,15 +50,22 @@ const TaskStatusSchema = z.enum([
 export type TaskStatus =
   | "PENDING"
   | "IN_PROGRESS"
+  | "PAUSED"
+  | "PAUSING"
   | "COMPLETED"
   | "FAILED"
   | "CANCELED";
 
+/** A hold is not an end: a paused run is still running to the orchestrator. */
 export const TERMINAL_TASK_STATUSES: readonly TaskStatus[] = [
   "COMPLETED",
   "FAILED",
   "CANCELED",
 ];
+
+export function isTerminalTaskStatus(status: TaskStatus | undefined | null): boolean {
+  return status != null && TERMINAL_TASK_STATUSES.includes(status);
+}
 
 /**
  * A navigation goal in map coordinates. Structurally the same planar pose the
@@ -346,6 +363,16 @@ export interface ActiveTask {
   /** Set only when `source` is "SCHEDULE". */
   schedule_id: string | null;
   /**
+   * How the run was started (see `TaskHistoryKind`), or null for one
+   * dispatched by a caller that did not say. A string rather than the union
+   * for the same reason `TaskHistoryEntry.kind` is: a kind this build does
+   * not know must be an unfamiliar label in the masthead, not a parse failure
+   * that takes the whole active list — and the map lock with it — off screen.
+   */
+  kind: string | null;
+  /** The template the run was dispatched from, or null when there was none. */
+  name: string | null;
+  /**
    * The map the job drives on, as the backend stamped it; null for one that
    * uses no map (Stand, Lie down). This is what locks a map against edits
    * while the job runs — see lib/map/run-lock.ts.
@@ -355,10 +382,11 @@ export interface ActiveTask {
 
 /**
  * Absent and null both read as null: a backend from before the field existed
- * sends neither, and must still parse. What null then costs is the lock, which
- * the backend still enforces on its own side.
+ * sends neither, and must still parse. What null costs is only what the field
+ * bought — the lock for `map_name`, a name in the masthead for `kind` and
+ * `name` — and the backend still enforces the lock on its own side.
  */
-const MapNameSchema = z.string().nullable().default(null);
+const AbsentOrNullStringSchema = z.string().nullable().default(null);
 
 const ActiveTasksResponseSchema: z.ZodType<ActiveTasksResponse> = z.object({
   tasks: z.array(
@@ -369,7 +397,9 @@ const ActiveTasksResponseSchema: z.ZodType<ActiveTasksResponse> = z.object({
       started_at: z.string(),
       source: z.enum(["DIRECT", "SCHEDULE"]),
       schedule_id: z.string().nullable(),
-      map_name: MapNameSchema,
+      kind: AbsentOrNullStringSchema,
+      name: AbsentOrNullStringSchema,
+      map_name: AbsentOrNullStringSchema,
     }),
   ),
   as_of: z.string(),
@@ -413,6 +443,31 @@ export function cancelTask(id: string): Promise<void> {
     method: "DELETE",
     parse: false,
   });
+}
+
+/**
+ * Hold a running task, and release one. Both are workflow signals: the
+ * backend answers as soon as the signal lands, with `{id, status, message}`
+ * whose `status` is PAUSING / IN_PROGRESS — a claim about the *request*, not a
+ * reading of the robot. A pause lands at once on a MOVE (the robot stops) but
+ * only after a SPEAK or a posture finishes, so the envelope is dropped the way
+ * `cancelTask`'s is: PAUSED is confirmed by the next `fetchTaskState`, never by
+ * the ack, and parsing it would invite someone to splice PAUSING into the
+ * cache as if it were one. A 409 `task_not_running` once the run has closed is
+ * rendered as the sentence it is; nothing branches on the code.
+ */
+export function pauseTask(id: string): Promise<void> {
+  return requestJson<void>(
+    apiUrl(`/api/v1/tasks/${encodeURIComponent(id)}/pause`),
+    { method: "POST", parse: false },
+  );
+}
+
+export function resumeTask(id: string): Promise<void> {
+  return requestJson<void>(
+    apiUrl(`/api/v1/tasks/${encodeURIComponent(id)}/resume`),
+    { method: "POST", parse: false },
+  );
 }
 
 /** The statuses a *finished* run can have — the history filter's vocabulary. */
@@ -472,7 +527,7 @@ const TaskHistoryResponseSchema: z.ZodType<TaskHistoryResponse> = z.object({
       schedule_id: z.string().nullable(),
       kind: z.string().nullable(),
       name: z.string().nullable(),
-      map_name: MapNameSchema,
+      map_name: AbsentOrNullStringSchema,
     }),
   ),
   next_page_token: z.string().nullable(),

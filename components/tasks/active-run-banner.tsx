@@ -6,8 +6,7 @@ import { TaskStatusChip } from "@/components/console/task-chip";
 import { useConsoleActiveTasks } from "@/hooks/use-console-active-tasks";
 import { useCancelTask } from "@/hooks/use-cancel-task";
 import type { ActiveTask } from "@/lib/api/task";
-import { formatDuration } from "@/lib/recording/format";
-import { runSeconds } from "@/lib/task/history";
+import { runElapsed } from "@/lib/task/run";
 
 /**
  * Runs this tab is not following, with a way to stop them.
@@ -73,7 +72,7 @@ function ActiveRunRow({ task, asOf }: { task: ActiveTask; asOf: string | null })
           </span>
         )}
         <span className="readout shrink-0 text-[11px] text-muted-foreground">
-          {elapsed(task.started_at, asOf)}
+          {runElapsed(task.started_at, asOf)}
         </span>
         <button
           type="button"
@@ -96,23 +95,4 @@ function ActiveRunRow({ task, asOf }: { task: ActiveTask; asOf: string | null })
       )}
     </div>
   );
-}
-
-/**
- * How long the run has been going, as `m:ss` / `h:mm:ss`.
- *
- * Measured between two *server* timestamps — the start time and the snapshot's
- * `as_of` — never against the browser's clock. The backend and the console are
- * different machines, and this answer is served from a short server-side cache,
- * so mixing the two would show a robot that started three seconds in the future
- * on a console whose clock is a little behind.
- *
- * The span and its spelling are the history screen's own, `runSeconds` and
- * `formatDuration`, so a run reads the same while it is going and after it
- * has finished. This used to be a line-for-line copy of both, with no test,
- * and it printed "NaN:NaN" for a timestamp that did not parse.
- */
-function elapsed(startedAt: string, asOf: string | null): string {
-  const seconds = runSeconds(startedAt, asOf);
-  return seconds === null ? "—" : formatDuration(seconds);
 }
