@@ -402,19 +402,24 @@ test.describe("the dashboard's schedules", () => {
     await page.goto("/");
 
     const rail = page.getByRole("complementary", { name: "Telemetry" });
-    // Soonest first, paused last.
+    // Soonest first, paused last; each row says how often it runs.
     await expect(rail.getByRole("listitem")).toHaveText([
-      /Morning round/,
+      /Up next: Morning round.*every 1 h/,
       /Night patrol/,
       /loose-steps/,
-      /Dock check.*Paused/,
+      /Dock check.*paused/,
     ]);
     await expect(rail.getByRole("link", { name: "View all schedules" })).toHaveAttribute(
       "href",
       "/tasks",
     );
 
-    await rail.getByRole("button", { name: "Pause schedule Morning round" }).click();
+    // The actions are behind the row's ⋯, not on the row.
+    await expect(rail.getByRole("button", { name: /^Pause/ })).toHaveCount(0);
+    await rail
+      .getByRole("button", { name: "Actions for schedule Morning round" })
+      .click();
+    await page.getByRole("menuitem", { name: "Pause" }).click();
     await expect
       .poll(() => writes.map((w) => `${w.method} ${w.path}`))
       .toContain("POST /api/v1/schedules/morning/pause");
@@ -422,14 +427,15 @@ test.describe("the dashboard's schedules", () => {
     // that will still fire, and stays on the rail with the Resume that undoes
     // the press.
     await expect(rail.getByRole("listitem")).toHaveText([
-      /Night patrol/,
+      /Up next: Night patrol/,
       /loose-steps/,
-      /Dock check.*Paused/,
-      /Morning round.*Paused/,
+      /Dock check.*paused/,
+      /Morning round.*paused/,
     ]);
-    await expect(
-      rail.getByRole("button", { name: "Resume schedule Morning round" }),
-    ).toBeVisible();
+    await rail
+      .getByRole("button", { name: "Actions for schedule Morning round" })
+      .click();
+    await expect(page.getByRole("menuitem", { name: "Resume" })).toBeVisible();
 
     expect(errors, "the page logged errors").toEqual([]);
   });
@@ -453,25 +459,28 @@ test.describe("the dashboard's schedules", () => {
     });
     await page.goto("/");
     const rail = page.getByRole("complementary", { name: "Telemetry" });
-    const remove = rail.getByRole("button", {
-      name: "Delete schedule Morning round",
-    });
     const deletes = () =>
       writes.filter((w) => w.method === "DELETE").map((w) => w.path);
+    const askToDelete = async () => {
+      await rail
+        .getByRole("button", { name: "Actions for schedule Morning round" })
+        .click();
+      await page.getByRole("menuitem", { name: "Delete" }).click();
+    };
+    const dialog = page.getByRole("alertdialog");
 
-    // Dismissed: nothing goes out.
-    page.once("dialog", (confirm) => void confirm.dismiss());
-    await remove.click();
-    await expect(remove).toBeEnabled();
+    // Kept: nothing goes out.
+    await askToDelete();
+    await expect(dialog).toContainText("Delete Morning round?");
+    await dialog.getByRole("button", { name: "Keep" }).click();
+    await expect(dialog).toHaveCount(0);
     expect(deletes()).toEqual([]);
 
-    // Confirmed, and the confirm names the schedule the way the row does.
-    page.once("dialog", (confirm) => {
-      expect(confirm.message()).toContain('Delete schedule "Morning round"?');
-      void confirm.accept();
-    });
-    await remove.click();
+    // Confirmed: the delete goes out and the dialog closes on success.
+    await askToDelete();
+    await dialog.getByRole("button", { name: "Delete" }).click();
     await expect.poll(deletes).toEqual(["/api/v1/schedules/morning"]);
+    await expect(dialog).toHaveCount(0);
 
     expect(errors, "the page logged errors").toEqual([]);
   });
