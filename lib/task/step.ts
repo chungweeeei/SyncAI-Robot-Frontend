@@ -12,6 +12,7 @@ import type {
   MoveStepParams,
   StepType,
   TaskStepRequest,
+  WaitStepParams,
 } from "@/lib/api/task";
 
 export interface StepTypeSpec {
@@ -30,12 +31,21 @@ export const STEP_TYPES: readonly StepTypeSpec[] = [
   // "T" because STANDUP already owns "S" — the glyph reads as TTS, and the hint
   // spells that out so it is not a riddle.
   { value: "SPEAK", label: "Speak", glyph: "T", hint: "Say a line on the robot speaker (TTS)." },
+  // "Stay put", not "pause": Pause is the masthead's hold on a running job,
+  // and a step that shared the word would read as one.
+  { value: "WAIT", label: "Wait", glyph: "W", hint: "Stay put for a set time, then go on." },
   { value: "STANDUP", label: "Stand", glyph: "S", hint: "Stand up. Nothing to set." },
   { value: "LIEDOWN", label: "Lie", glyph: "L", hint: "Lie down. Nothing to set." },
 ];
 
 /** Mirrors `SpeakParams.text`'s `max_length` — the backend 422s past this. */
 export const SPEAK_TEXT_MAX = 1000;
+
+/**
+ * Mirrors `WaitParams.seconds`' `le` — the backend caps a WAIT at an hour so a
+ * typo cannot park the robot for days with every other dispatch refused.
+ */
+export const WAIT_SECONDS_MAX = 3600;
 
 const GLYPHS: Record<StepType, string> = STEP_TYPES.reduce(
   (all, spec) => ({ ...all, [spec.value]: spec.glyph }),
@@ -62,6 +72,12 @@ export interface StepDraft {
    * fetch is weight the "announce arrival" use case does not carry.
    */
   text: string;
+  /**
+   * WAIT only: the duration in seconds, as typed. Text for the reason the
+   * coordinates are (see parseCoordinate), and named after the wire field
+   * rather than the "Duration" label so the conversion reads one-to-one.
+   */
+  seconds: string;
   /**
    * The vertex the numbers were prefilled from, or null once they were hand
    * edited.
@@ -96,7 +112,16 @@ export function newStepDraft(type: StepType): StepDraft {
   nextKey += 1;
   // theta defaults to "0" rather than "": a heading of zero is a real, common
   // answer, whereas a position has no sensible default and must be supplied.
-  return { key: nextKey, type, x: "", y: "", theta: "0", text: "", vertexId: null };
+  return {
+    key: nextKey,
+    type,
+    x: "",
+    y: "",
+    theta: "0",
+    text: "",
+    seconds: "",
+    vertexId: null,
+  };
 }
 
 /**
@@ -166,6 +191,10 @@ export function stepSummary(
     case "SPEAK": {
       const text = draft.text.trim();
       return text ? `“${text}”` : null;
+    }
+    case "WAIT": {
+      const seconds = draft.seconds.trim();
+      return seconds ? `${seconds} s` : null;
     }
     default:
       return null;
@@ -259,6 +288,12 @@ function moveParams(draft: StepDraft): MoveStepParams | null {
   return { x, y, theta: normalizeTheta(theta) };
 }
 
+function waitParams(draft: StepDraft): WaitStepParams | null {
+  const seconds = parseCoordinate(draft.seconds);
+  if (seconds === null || seconds <= 0 || seconds > WAIT_SECONDS_MAX) return null;
+  return { seconds };
+}
+
 /** The operator-facing reason this row cannot be sent, or null. */
 export function stepDraftError(draft: StepDraft): string | null {
   if (draft.type === "SPEAK") {
@@ -269,6 +304,17 @@ export function stepDraftError(draft: StepDraft): string | null {
     // operator's screen.
     if (text.length > SPEAK_TEXT_MAX) {
       return `Too long — ${text.length} of ${SPEAK_TEXT_MAX} characters.`;
+    }
+    return null;
+  }
+  if (draft.type === "WAIT") {
+    // Both bounds checked here for the same reason as the line length above:
+    // the backend's refusal would be a validation array, not a sentence.
+    const seconds = parseCoordinate(draft.seconds);
+    if (seconds === null) return "Needs a duration in seconds.";
+    if (seconds <= 0) return "Needs a duration longer than 0 seconds.";
+    if (seconds > WAIT_SECONDS_MAX) {
+      return `At most ${WAIT_SECONDS_MAX} seconds (1 hour).`;
     }
     return null;
   }
@@ -299,6 +345,11 @@ export function toStepRequest(draft: StepDraft, index: number): TaskStepRequest 
     // No voice / speed keys at all — the backend's defaults are the decision,
     // and sending them would freeze today's defaults into saved templates.
     return { id, type: "SPEAK", params: { text } };
+  }
+  if (draft.type === "WAIT") {
+    const params = waitParams(draft);
+    if (!params) throw new Error(`Step ${id} has no usable duration.`);
+    return { id, type: "WAIT", params };
   }
   if (draft.type !== "MOVE") return { id, type: draft.type };
 
@@ -366,6 +417,10 @@ export function fromTemplateSteps(steps: readonly TemplateStep[]): StepDraft[] {
       // snapshot verbatim — there is no vertex to resolve against.
       return { ...draft, text: step.resolved_params?.text ?? draft.text };
     }
+    if (step.type === "WAIT") {
+      const seconds = step.resolved_params?.seconds;
+      return { ...draft, seconds: seconds === undefined ? draft.seconds : String(seconds) };
+    }
     return draft;
   });
 }
@@ -400,6 +455,8 @@ export function toDispatchSteps(steps: readonly TemplateStep[]): TaskStepRequest
         // Same construction guarantee — a SPEAK's resolved_params is its
         // snapshot verbatim, and the backend refuses to store one without text.
         return { id: step.id, type: "SPEAK", params: assertResolved(step, "no text") };
+      case "WAIT":
+        return { id: step.id, type: "WAIT", params: assertResolved(step, "no duration") };
       default:
         return { id: step.id, type: step.type };
     }

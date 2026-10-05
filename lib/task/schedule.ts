@@ -476,6 +476,7 @@ export function schedulesByTemplate(
  *   difference is not reported as drift.
  * - A SPEAK drifts when its line was edited: the frozen copy keeps saying the
  *   old sentence, the same mechanism as a moved waypoint.
+ * - A WAIT drifts when its duration was edited.
  * - A step whose type changed drifts. Two posture steps of one type never do.
  *
  * Moved here from schedule-steps.tsx, where it had no test.
@@ -497,6 +498,9 @@ export function scheduleDrift(
     if (!now || now.type !== step.type) return count + 1;
     if (step.type === "SPEAK" && now.type === "SPEAK") {
       return step.params.text === now.params.text ? count : count + 1;
+    }
+    if (step.type === "WAIT" && now.type === "WAIT") {
+      return step.params.seconds === now.params.seconds ? count : count + 1;
     }
     if (step.type !== "MOVE" || now.type !== "MOVE") return count;
     const same =

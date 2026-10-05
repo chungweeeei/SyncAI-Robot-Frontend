@@ -295,6 +295,13 @@ describe("scheduleDrift", () => {
     resolved_params: { text },
     ...ref,
   });
+  const waitT = (id: string, seconds: number): TemplateStep => ({
+    id,
+    type: "WAIT",
+    params: { seconds },
+    resolved_params: { seconds },
+    ...ref,
+  });
   const standT = (id: string): TemplateStep => ({
     id,
     type: "STANDUP",
@@ -334,6 +341,12 @@ describe("scheduleDrift", () => {
 
   it("counts an edited line, since the schedule still says the old one", () => {
     expect(scheduleDrift([speak("1", "Hello")], [speakT("1", "Hello there")])).toBe(1);
+  });
+
+  it("counts an edited duration, and not an unchanged one", () => {
+    const frozen: TaskStepRequest[] = [{ id: "1", type: "WAIT", params: { seconds: 10 } }];
+    expect(scheduleDrift(frozen, [waitT("1", 30)])).toBe(1);
+    expect(scheduleDrift(frozen, [waitT("1", 10)])).toBe(0);
   });
 
   it("counts a step whose type changed", () => {
