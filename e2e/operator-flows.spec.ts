@@ -3126,9 +3126,9 @@ test.describe("the step editor", () => {
       if (pathname.endsWith("/image")) imageReads.push(pathname);
     });
     await page.goto("/tasks/editor");
-    // The job's floor plan opens from the Steps header, with or without a
-    // Move step on the list.
-    await page.getByRole("button", { name: "Floor plan" }).click();
+    // The floor plan opens from a Move row, beside its waypoint picker.
+    await page.getByTitle("Drive to a pose in the map frame.").click();
+    await page.getByRole("button", { name: "Floor plan for step 1" }).click();
     await expect(
       page.getByRole("img", { name: /^Floor plan of dp2f/ }),
     ).toBeVisible();
@@ -3149,11 +3149,10 @@ test.describe("the step editor", () => {
   test("lights the waypoints the job's Move steps go to on the floor plan", async ({
     page,
   }) => {
-    // A name in the picker is not a place. The floor plan used to open under
-    // each Move row and pick for it; now the Steps group opens one for the
-    // whole job, above the list, and what it adds is the route: the stops
-    // the job goes to are lit and named with their step numbers, in the
-    // words a screen reader hears too.
+    // A name in the picker is not a place. The floor plan opens under a
+    // Move row, from a button beside its waypoint picker, and what it adds is
+    // the route: every stop the job goes to is lit and named with its step
+    // numbers, in the words a screen reader hears too.
     const room = vertex({
       id: "44444444-4444-4444-4444-444444444444",
       name: "room-a",
@@ -3165,9 +3164,9 @@ test.describe("the step editor", () => {
     await mockBackend(page, { vertices: [vertex(), room] });
     await page.goto("/tasks/editor");
 
-    // One button for the job, on the Steps header — none on the row.
-    const toggle = page.getByRole("button", { name: "Floor plan" });
-    await expect(toggle).toHaveCount(1);
+    // The button belongs to a Move row, not to the Steps header.
+    const toggle = page.getByRole("button", { name: "Floor plan for step 1" });
+    await expect(page.getByRole("button", { name: /^Floor plan/ })).toHaveCount(0);
     await page.getByTitle("Drive to a pose in the map frame.").click();
     await expect(toggle).toHaveCount(1);
 
@@ -3192,8 +3191,13 @@ test.describe("the step editor", () => {
     await expect(waypoint).toContainText("room-a");
     await expect(plan).toHaveAccessibleName(/; room-a is step 1\.$/);
 
-    // A second Move to the dock: both stops, in job order.
+    // A second Move to the dock: both stops, in job order, on the map the
+    // first row opened — it is the job's route, not the row's pick.
     await page.getByTitle("Drive to a pose in the map frame.").click();
+    await expect(page.getByRole("button", { name: "Floor plan for step 2" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
     const second = page.getByRole("combobox", { name: "Waypoint for step 2" });
     await second.click();
     await page.getByRole("option", { name: "dock" }).click();
@@ -3217,7 +3221,8 @@ test.describe("the step editor", () => {
     // extent to zoom into.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
     await page.goto("/tasks/editor");
-    await page.getByRole("button", { name: "Floor plan" }).click();
+    await page.getByTitle("Drive to a pose in the map frame.").click();
+    await page.getByRole("button", { name: "Floor plan for step 1" }).click();
     const plan = page.getByRole("img", { name: /^Floor plan of dp2f/ });
     await expect(plan).toBeVisible();
     const zoom = page.locator("[data-zoom]");

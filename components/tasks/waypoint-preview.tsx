@@ -29,7 +29,7 @@ interface Pan {
 }
 
 /**
- * The floor plan the Steps group opens over the step list.
+ * The floor plan a Move row opens under its waypoint picker.
  *
  * It exists because a name in a dropdown is not a place: by the time an
  * operator is composing a job they have forgotten which of `dock`, `v2` and
@@ -39,10 +39,10 @@ interface Pan {
  * so the map reads as the route. Mounted only while open, so the raster is
  * not fetched for a job that never asks.
  *
- * It is a view, not a control. It used to sit under each Move row and a click
- * on a marker picked it for that row; up here there is no row beside it to
- * pick for, and the Waypoint dropdown on each row is the one way to set a
- * step — which is also the keyboard and screen-reader path, and why the
+ * It is a view, not a control. A click on a marker once picked it for the row
+ * it opened under; now it shows every Move step of the job, not only that
+ * row's, so a click on a stop has no one row it would obviously mean, and
+ * the Waypoint dropdown on each row is the one way to set a step — which is also the keyboard and screen-reader path, and why the
  * canvas is a `role="img"` with a description rather than a button.
  *
  * What it does instead is zoom and pan, which the fixed preview never could:

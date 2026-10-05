@@ -24,12 +24,17 @@ import type { ActiveVerticesStatus } from "@/hooks/use-active-map-vertices";
 import type { StepType, TaskStepState } from "@/lib/api/task";
 import { STEP_TYPES, stepIdFor, type StepDraft } from "@/lib/task/step";
 import type { MapVertex } from "@/lib/types/map";
+import type { MapMetadata } from "@/lib/types/robot";
 
 export interface StepListProps {
   steps: StepDraft[];
   vertices: MapVertex[];
   verticesStatus: ActiveVerticesStatus;
   mapName: string | null;
+  /** The map's geometry, for a Move row's floor plan; null with no floor plan. */
+  mapGrid: MapMetadata | null;
+  /** Vertex id → the job's step numbers that go there; see stepWaypointOrdinals. */
+  stepMarks: ReadonlyMap<string, readonly number[]>;
   /** True while a dispatched task is running — see the note below. */
   disabled: boolean;
   /** Per-step state of the tracked task, keyed by the derived step id. */
@@ -57,6 +62,8 @@ export function StepList({
   vertices,
   verticesStatus,
   mapName,
+  mapGrid,
+  stepMarks,
   disabled,
   stepStates,
   onAdd,
@@ -169,12 +176,15 @@ export function StepList({
                   vertices={vertices}
                   verticesStatus={verticesStatus}
                   mapName={mapName}
+                  mapGrid={mapGrid}
+                  stepMarks={stepMarks}
                   disabled={disabled}
                   state={stepStates.get(stepIdFor(index, step.type)) ?? null}
                   onPatch={(changes) => onPatch(step.key, changes)}
                   onRemove={() => onRemove(step.key)}
                   onMoveTo={(to) => onMoveTo(step.key, to)}
-                  expanded={expanded.has(step.key)}                  onExpandedChange={(open) => setRowExpanded(step.key, open)}
+                  expanded={expanded.has(step.key)}
+                  onExpandedChange={(open) => setRowExpanded(step.key, open)}
                 />
               ))}
             </ul>
