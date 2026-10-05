@@ -133,6 +133,15 @@ describe("requestJson headers", () => {
     await requestJson(URL_, { method: "PUT", body });
     expect(sentInit().body).toBe(body);
   });
+
+  it("hands the caller's signal to fetch", async () => {
+    // Cancelling an import rests on this: the dialog's button aborts a
+    // controller, and only a signal that reaches fetch stops the upload.
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+    const { signal } = new AbortController();
+    await requestJson(URL_, { method: "POST", body: "x", signal });
+    expect(sentInit().signal).toBe(signal);
+  });
 });
 
 describe("requestJson failures", () => {

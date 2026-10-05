@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeftIcon, UploadIcon } from "lucide-react";
+import { ArrowLeftIcon, UploadIcon, XIcon } from "lucide-react";
 
 import {
   AlertDialog,
@@ -56,19 +56,31 @@ const ACCEPT =
  * the delete dialog does: 409 `template_bound` names the templates to go and
  * unbind, and closing the dialog would take the list away.
  *
- * On success the backend's sentence goes *up* through `onImported` to the
+ * On success the backend's sentence goes *up* through `onResult` to the
  * line MapLibrary keeps above the grid — the same line a rename's and a
  * delete's land on — because the thing the import produced is a new card,
  * and the sentence is about the catalogue rather than about this button.
+ *
+ * While the upload runs the footer's Cancel stays live and reads "Cancel
+ * upload": a wrong file picked over a weak link is minutes of waiting
+ * otherwise. It aborts the request and closes the dialog, and the one
+ * sentence this console writes itself — "Import canceled." — goes up the same
+ * line, so a dialog that vanished is explained. Escape is still swallowed
+ * while busy: the button is the deliberate path, and an accidental key should
+ * not throw an upload away. What the sentence cannot know is whether the last
+ * byte had already landed; the hook refetches the catalogue for that case.
  */
 export function MapImportControl({
   maps,
-  onImported,
+  onResult,
 }: {
   /** The catalogue, for the replace warning; null while it is still loading. */
   maps: readonly MapSummary[] | null;
-  /** The backend's sentence, for the library's status line. */
-  onImported?: (message: string) => void;
+  /**
+   * A sentence for the library's status line: the backend's on success, this
+   * console's on cancel.
+   */
+  onResult?: (message: string) => void;
 }) {
   const importing = useImportMap();
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -96,7 +108,13 @@ export function MapImportControl({
   };
 
   const close = () => {
+    if (busy) {
+      importing.cancel();
+      onResult?.("Import canceled.");
+    }
     setArchive(null);
+    // Detaches this dialog from the mutation, so the abort's rejection settles
+    // in the background instead of rendering as an error on the next open.
     importing.reset();
   };
 
@@ -106,7 +124,7 @@ export function MapImportControl({
       { archive, name: trimmed.length > 0 ? trimmed : undefined },
       {
         onSuccess: (result) => {
-          onImported?.(result.message);
+          onResult?.(result.message);
           setArchive(null);
         },
       },
@@ -141,6 +159,8 @@ export function MapImportControl({
       <AlertDialog
         open={archive !== null}
         onOpenChange={(open) => {
+          // Escape is this path; while uploading only the footer's button may
+          // cancel, so a stray key cannot throw the transfer away.
           if (!open && !busy) close();
         }}
       >
@@ -207,15 +227,18 @@ export function MapImportControl({
             )}
 
             <AlertDialogFooter>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={close}
-              >
-                <ArrowLeftIcon data-icon="inline-start" />
-                Cancel
+              <Button type="button" variant="ghost" size="sm" onClick={close}>
+                {busy ? (
+                  <>
+                    <XIcon data-icon="inline-start" />
+                    Cancel upload
+                  </>
+                ) : (
+                  <>
+                    <ArrowLeftIcon data-icon="inline-start" />
+                    Cancel
+                  </>
+                )}
               </Button>
               <Button
                 type="submit"
