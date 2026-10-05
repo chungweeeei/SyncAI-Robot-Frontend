@@ -3000,6 +3000,46 @@ test.describe("the step editor", () => {
     await expect(page.getByText("“Hello”")).toBeVisible();
   });
 
+  test("saves a Wait step's duration as seconds, refusing one past the hour", async ({
+    page,
+  }) => {
+    await mockBackend(page);
+    const posted: { steps: unknown[] }[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      const request = route.request();
+      if (request.method() !== "POST") return route.fallback();
+      const body = request.postDataJSON() as { name: string; steps: unknown[] };
+      posted.push(body);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(taskTemplate({ name: body.name })),
+      });
+    });
+    await page.goto("/tasks/editor");
+
+    await page.getByTitle("Stay put for a set time, then go on.").click();
+    const duration = page.getByRole("textbox", { name: "Duration" });
+    await expect(duration).toBeVisible();
+
+    // Past the backend's hour, the row says so and Save is held — the 422
+    // would otherwise be a validation array on the operator's screen.
+    await duration.fill("3601");
+    await expect(page.getByText("At most 3600 seconds (1 hour).")).toBeVisible();
+    const save = page.getByRole("button", { name: "Save", exact: true });
+    await expect(save).toBeDisabled();
+
+    await duration.fill("90");
+    await save.click();
+    await page.getByRole("textbox", { name: "Task name" }).fill("pause at dock");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => posted).toHaveLength(1);
+    // The on-screen word is Duration; the wire field is `seconds`, a number.
+    expect(posted[0]!.steps).toEqual([
+      { id: "1-wait", type: "WAIT", params: { seconds: 90 } },
+    ]);
+  });
+
   test("waits out a conversion before drawing the floor plan it produced", async ({
     page,
   }) => {

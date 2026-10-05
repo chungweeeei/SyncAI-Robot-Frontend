@@ -80,6 +80,24 @@ describe("decodeTaskDraft", () => {
     expect(restored).not.toHaveProperty("mode");
   });
 
+  it("still restores a draft saved before the duration field existed", () => {
+    // `seconds` arrived with WAIT; a draft from before it has no WAIT row,
+    // and losing all of its steps over a field none of them use would be
+    // the wrong trade.
+    const stored = draft();
+    const old = {
+      ...stored,
+      steps: stored.steps.map((step) => {
+        const { seconds, ...rest } = step;
+        void seconds;
+        return rest;
+      }),
+    };
+    const restored = decodeTaskDraft(JSON.stringify(old));
+    expect(restored.steps).toHaveLength(2);
+    expect(restored.steps.every((step) => step.seconds === "")).toBe(true);
+  });
+
   it("re-mints every restored key so a row added next cannot collide", () => {
     // Keys as a previous page load minted them: low numbers the counter in
     // this module will reach again.

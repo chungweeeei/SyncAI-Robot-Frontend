@@ -27,12 +27,17 @@ import { z } from "zod";
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
 import type { ScheduleTrigger } from "@/lib/api/schedule";
-import { MoveStepParamsSchema, SpeakStepParamsSchema } from "@/lib/api/task";
+import {
+  MoveStepParamsSchema,
+  SpeakStepParamsSchema,
+  WaitStepParamsSchema,
+} from "@/lib/api/task";
 import type {
   MoveStepParams,
   Posture,
   SpeakStepParams,
   TaskStepRequest,
+  WaitStepParams,
 } from "@/lib/api/task";
 
 /** One step as it is *stored*: a task step plus where a MOVE's numbers came from. */
@@ -80,6 +85,11 @@ export type TemplateStep =
       type: "SPEAK";
       params: SpeakStepParams | null;
       resolved_params: SpeakStepParams | null;
+    })
+  | (TemplateStepBase & {
+      type: "WAIT";
+      params: WaitStepParams | null;
+      resolved_params: WaitStepParams | null;
     })
   | (TemplateStepBase & {
       type: Posture;
@@ -141,6 +151,15 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     type: z.literal("SPEAK"),
     params: SpeakStepParamsSchema.nullable(),
     resolved_params: SpeakStepParamsSchema.nullable(),
+  }),
+  z.object({
+    id: z.string(),
+    vertex_id: z.string().nullable(),
+    vertex_name: z.string().nullable(),
+    vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
+    type: z.literal("WAIT"),
+    params: WaitStepParamsSchema.nullable(),
+    resolved_params: WaitStepParamsSchema.nullable(),
   }),
   z.object({
     id: z.string(),

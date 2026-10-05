@@ -46,9 +46,9 @@ const LABEL_BY_TYPE_WORD = new Map(
  * What a step is called, read off its id — the only thing the read carries.
  *
  * A step this console authored is `${ordinal}-${type}` (`stepIdFor` in
- * lib/task/step.ts) and reads as its type's label: Move, Speak, Stand, Lie. A
- * single-gesture run's one step is named after its kind (`goal`, `standup`,
- * `liedown`) and reads as the dashboard's own words for it. Anything else was
+ * lib/task/step.ts) and reads as its type's label: Move, Speak, Wait, Stand,
+ * Lie. A single-gesture run's one step is named after its kind (`goal`,
+ * `standup`, `liedown`) and reads as the dashboard's own words for it. Anything else was
  * authored by another client and is shown verbatim: a name it chose is still
  * more telling than "Step", and guessing a type from it would be a claim.
  */

@@ -51,6 +51,7 @@ describe("stepLabel", () => {
   it("reads a composer step as its type's label", () => {
     expect(stepLabel("1-move")).toBe("Move");
     expect(stepLabel("2-speak")).toBe("Speak");
+    expect(stepLabel("5-wait")).toBe("Wait");
     expect(stepLabel("12-standup")).toBe("Stand");
     expect(stepLabel("3-liedown")).toBe("Lie");
   });

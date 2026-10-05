@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { TemplateStep } from "@/lib/api/task-template";
 import {
   SPEAK_TEXT_MAX,
+  WAIT_SECONDS_MAX,
   formatDraftAngle,
   formatDraftPosition,
   fromTemplateSteps,
@@ -30,6 +31,9 @@ function move(over: Partial<StepDraft> = {}): StepDraft {
 }
 function speak(text: string): StepDraft {
   return { ...newStepDraft("SPEAK"), text };
+}
+function wait(seconds: string): StepDraft {
+  return { ...newStepDraft("WAIT"), seconds };
 }
 
 describe("newStepDraft", () => {
@@ -87,6 +91,24 @@ describe("stepDraftError", () => {
     expect(stepDraftError(speak("a".repeat(SPEAK_TEXT_MAX)))).toBeNull();
   });
 
+  it("refuses a WAIT with no usable duration", () => {
+    for (const seconds of ["", "  ", "abc", "1,5"]) {
+      expect(stepDraftError(wait(seconds))).toBe("Needs a duration in seconds.");
+    }
+  });
+
+  it("refuses a WAIT outside the backend's range, inclusive of the hour", () => {
+    // gt=0, le=3600 in WaitParams: past either end the 422 is a validation
+    // array, so the row has to say it first.
+    expect(stepDraftError(wait("0"))).toBe("Needs a duration longer than 0 seconds.");
+    expect(stepDraftError(wait("-5"))).toBe("Needs a duration longer than 0 seconds.");
+    expect(stepDraftError(wait(String(WAIT_SECONDS_MAX + 1)))).toBe(
+      `At most ${WAIT_SECONDS_MAX} seconds (1 hour).`,
+    );
+    expect(stepDraftError(wait(String(WAIT_SECONDS_MAX)))).toBeNull();
+    expect(stepDraftError(wait("0.5"))).toBeNull();
+  });
+
   it("has nothing to check on a posture step", () => {
     expect(stepDraftError(newStepDraft("STANDUP"))).toBeNull();
     expect(stepDraftError(newStepDraft("LIEDOWN"))).toBeNull();
@@ -125,6 +147,11 @@ describe("stepSummary", () => {
     expect(stepSummary(move({ x: "" }))).toBeNull();
     expect(stepSummary(newStepDraft("SPEAK"))).toBeNull();
     expect(stepSummary(newStepDraft("STANDUP"))).toBeNull();
+  });
+
+  it("reads a duration back in seconds, as typed", () => {
+    expect(stepSummary(wait(" 2.50 "))).toBe("2.50 s");
+    expect(stepSummary(newStepDraft("WAIT"))).toBeNull();
   });
 
   it("quotes a spoken line", () => {
@@ -223,6 +250,15 @@ describe("toStepRequests", () => {
     expect("params" in step).toBe(false);
   });
 
+  it("sends a WAIT's duration as the number of seconds", () => {
+    const [step] = toStepRequests([wait(" 90 ")]);
+    expect(step).toEqual({ id: "1-wait", type: "WAIT", params: { seconds: 90 } });
+  });
+
+  it("throws rather than dispatch a WAIT the backend would refuse", () => {
+    expect(() => toStepRequests([wait("0")])).toThrow(/duration/);
+  });
+
   it("sends no voice or speed, leaving the backend's defaults alone", () => {
     const [step] = toStepRequests([speak("hi")]);
     expect(step).toEqual({ id: "1-speak", type: "SPEAK", params: { text: "hi" } });
@@ -289,6 +325,23 @@ describe("fromTemplateSteps", () => {
     expect(draft.vertexMissing).toBe(false);
   });
 
+  it("loads a WAIT's duration as text the field can hold", () => {
+    const [draft] = fromTemplateSteps([
+      stored({
+        id: "1-wait",
+        type: "WAIT",
+        vertex_id: null,
+        vertex_name: null,
+        vertex_status: "NONE",
+        params: { seconds: 12.5 },
+        resolved_params: { seconds: 12.5 },
+      }),
+    ]);
+    expect(draft.type).toBe("WAIT");
+    expect(draft.seconds).toBe("12.5");
+    expect(stepDraftError(draft)).toBeNull();
+  });
+
   it("flags a step whose vertex was deleted", () => {
     const [draft] = fromTemplateSteps([stored({ vertex_status: "MISSING" })]);
     expect(draft.vertexMissing).toBe(true);
@@ -307,6 +360,12 @@ describe("toDispatchSteps", () => {
     expect(() =>
       toDispatchSteps([stored({ resolved_params: null })]),
     ).toThrow(/no coordinates/);
+  });
+
+  it("throws rather than dispatch a WAIT with no duration", () => {
+    expect(() =>
+      toDispatchSteps([stored({ type: "WAIT", params: null, resolved_params: null })]),
+    ).toThrow(/no duration/);
   });
 
   it("keeps a posture step free of params", () => {

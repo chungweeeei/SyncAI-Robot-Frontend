@@ -56,11 +56,15 @@ export function isEmptyTaskDraft(draft: TaskDraft): boolean {
 // keys are stripped, so a draft written by a newer build still restores.
 const StepDraftSchema: z.ZodType<StepDraft> = z.object({
   key: z.number(),
-  type: z.enum(["MOVE", "SPEAK", "STANDUP", "LIEDOWN"]),
+  type: z.enum(["MOVE", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
   x: z.string(),
   y: z.string(),
   theta: z.string(),
   text: z.string(),
+  // Defaulted rather than required: it arrived with WAIT, and a draft saved by
+  // a build from before that has no WAIT row to need it — refusing the whole
+  // draft over it would cost the operator steps that are all still valid.
+  seconds: z.string().default(""),
   vertexId: z.string().nullable(),
   vertexMissing: z.boolean().optional(),
 });

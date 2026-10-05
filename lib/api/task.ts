@@ -131,7 +131,7 @@ export type Posture = "STANDUP" | "LIEDOWN";
  * `Posture` is reused rather than restating "STANDUP" | "LIEDOWN", so the two
  * cannot drift.
  */
-export type StepType = "MOVE" | "SPEAK" | Posture;
+export type StepType = "MOVE" | "SPEAK" | "WAIT" | Posture;
 
 /** `MoveParams`, verbatim. `theta` in degrees, folded into (-180, 180] on the way out. */
 export interface MoveStepParams {
@@ -154,6 +154,14 @@ export interface SpeakStepParams {
 }
 
 /**
+ * `WaitParams`, verbatim: how long the robot stands still before the next
+ * step, in seconds. Range in `WAIT_SECONDS_MAX` (lib/task/step.ts).
+ */
+export interface WaitStepParams {
+  seconds: number;
+}
+
+/**
  * One step as the endpoint takes it.
  *
  * A discriminated union, deliberately: this is the only thing that guarantees a
@@ -167,6 +175,7 @@ export interface SpeakStepParams {
 export type TaskStepRequest =
   | { id: string; type: "MOVE"; params: MoveStepParams }
   | { id: string; type: "SPEAK"; params: SpeakStepParams }
+  | { id: string; type: "WAIT"; params: WaitStepParams }
   | { id: string; type: Posture };
 
 export const MoveStepParamsSchema: z.ZodType<MoveStepParams> = z.object({
@@ -181,6 +190,10 @@ export const SpeakStepParamsSchema: z.ZodType<SpeakStepParams> = z.object({
   speed: z.number().optional(),
 });
 
+export const WaitStepParamsSchema: z.ZodType<WaitStepParams> = z.object({
+  seconds: z.number(),
+});
+
 /**
  * Read back off a schedule, which is the one place a step list arrives from the
  * backend rather than leaving for it. A plain union rather than a discriminated
@@ -189,6 +202,7 @@ export const SpeakStepParamsSchema: z.ZodType<SpeakStepParams> = z.object({
 export const TaskStepRequestSchema: z.ZodType<TaskStepRequest> = z.union([
   z.object({ id: z.string(), type: z.literal("MOVE"), params: MoveStepParamsSchema }),
   z.object({ id: z.string(), type: z.literal("SPEAK"), params: SpeakStepParamsSchema }),
+  z.object({ id: z.string(), type: z.literal("WAIT"), params: WaitStepParamsSchema }),
   z.object({ id: z.string(), type: z.enum(["STANDUP", "LIEDOWN"]) }),
 ]);
 
@@ -449,8 +463,8 @@ export function cancelTask(id: string): Promise<void> {
  * Hold a running task, and release one. Both are workflow signals: the
  * backend answers as soon as the signal lands, with `{id, status, message}`
  * whose `status` is PAUSING / IN_PROGRESS — a claim about the *request*, not a
- * reading of the robot. A pause lands at once on a MOVE (the robot stops) but
- * only after a SPEAK or a posture finishes, so the envelope is dropped the way
+ * reading of the robot. A pause lands at once on a MOVE (the robot stops) or a
+ * WAIT (its countdown freezes) but only after a SPEAK or a posture finishes, so the envelope is dropped the way
  * `cancelTask`'s is: PAUSED is confirmed by the next `fetchTaskState`, never by
  * the ack, and parsing it would invite someone to splice PAUSING into the
  * cache as if it were one. A 409 `task_not_running` once the run has closed is
