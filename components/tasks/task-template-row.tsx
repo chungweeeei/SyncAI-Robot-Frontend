@@ -258,7 +258,7 @@ function TemplateStepLine({
       )}
       {/* resolved_params, not params: this is what a dispatch would actually
         * send, so showing the snapshot would be showing a number the robot will
-        * not drive to. (For a SPEAK the two are the same by construction.) */}
+        * not drive to. (For a SPEAK or a WAIT the two are the same by construction.) */}
       {step.type === "MOVE" && step.resolved_params && (
         <span className="readout min-w-0 truncate">
           {step.resolved_params.x.toFixed(3)}, {step.resolved_params.y.toFixed(3)} ·{" "}
@@ -271,6 +271,9 @@ function TemplateStepLine({
         <span className="min-w-0 wrap-anywhere italic">
           “{step.resolved_params.text}”
         </span>
+      )}
+      {step.type === "WAIT" && step.resolved_params && (
+        <span className="readout">{step.resolved_params.seconds} s</span>
       )}
       {state && <TaskStatusChip status={state.status} />}
     </li>

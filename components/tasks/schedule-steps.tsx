@@ -82,6 +82,9 @@ export function ScheduleSteps({ scheduleId, source }: ScheduleStepsProps) {
                 “{step.params.text}”
               </span>
             )}
+            {step.type === "WAIT" && (
+              <span className="readout">{step.params.seconds} s</span>
+            )}
           </li>
         ))}
       </ol>

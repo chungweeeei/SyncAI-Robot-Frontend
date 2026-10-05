@@ -31,6 +31,7 @@ import type { TaskStepState } from "@/lib/api/task";
 import {
   SPEAK_TEXT_MAX,
   STEP_TYPES,
+  WAIT_SECONDS_MAX,
   formatDraftAngle,
   formatDraftPosition,
   stepDraftError,
@@ -283,9 +284,10 @@ export function StepRow({
             onChange={(type) => onPatch({ type })}
           />
 
-          {/* Coordinates and the spoken line are kept in the draft across a type
-           * change, so switching to STANDUP and back does not lose what was typed —
-           * the wire shape is derived from the type, not stored alongside it. */}
+          {/* Coordinates, the spoken line and the duration are kept in the draft
+           * across a type change, so switching to STANDUP and back does not lose
+           * what was typed — the wire shape is derived from the type, not stored
+           * alongside it. */}
           {/* The waypoint is the whole of a MOVE row's input: no X / Y / heading
            * fields. The draft still carries the numbers — they are what is sent,
            * and a template saved with hand-typed ones still loads and runs — but
@@ -340,6 +342,32 @@ export function StepRow({
                 )}
               </label>
             </div>
+          )}
+
+          {step.type === "WAIT" && (
+            <label className="block">
+              <span className="instrument-label text-muted-foreground">Duration</span>
+              <span className="mt-0.5 flex items-center gap-1.5">
+                <Input
+                  value={step.seconds}
+                  disabled={disabled}
+                  // Text with a decimal keypad rather than type="number": a
+                  // number input reports "" for "1." and "-" alike, which would
+                  // erase what the operator is halfway through typing.
+                  inputMode="decimal"
+                  onChange={(event) => onPatch({ seconds: event.target.value })}
+                  placeholder="10"
+                  aria-describedby={`step-${step.key}-wait-unit`}
+                  className="h-7 w-20 rounded-sm md:text-[13px]"
+                />
+                <span
+                  id={`step-${step.key}-wait-unit`}
+                  className="text-[11px] text-muted-foreground"
+                >
+                  seconds, up to {WAIT_SECONDS_MAX}
+                </span>
+              </span>
+            </label>
           )}
         </div>
       )}
