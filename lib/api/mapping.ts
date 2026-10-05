@@ -1,7 +1,8 @@
-// Client for the mapping-run surface: switching the operating mode and saving
-// the map a run built.
-// (backend: POST /api/v1/robot/mode in routers/robot.py,
-//  POST /api/v1/maps in routers/map.py)
+// Client for the mapping-run surface: switching the operating mode, starting
+// a run, saving the map it built, discarding it, and reading where it stands.
+// (backend: POST /api/v1/robot/mode in routers/robot.py; POST /api/v1/maps,
+//  POST /api/v1/mapping/start, POST /api/v1/mapping/reset and
+//  GET /api/v1/mapping in routers/map.py)
 
 import { z } from "zod";
 
@@ -74,13 +75,19 @@ const SaveMapResultSchema: z.ZodType<SaveMapResult> = z.object({
 });
 
 /**
- * Save the current mapping run as `map/<name>/` on the robot.
+ * Save the current mapping run as `map/<name>/` on the robot — and end it.
  *
  * Only meaningful in MANUAL mode: pgo is the sole holder of the run's
  * keyframes and the sole serialiser, so in AUTO this is a 502 whose `detail`
  * says exactly that. The other operator-facing refusals are a 409 for a taken
- * name and pgo's own "NO POSES!" for a run that has not banked a keyframe yet.
- * The call can take a while — the robot is merging and writing a ~20 MB cloud.
+ * name, a 409 `mapping_idle` for a run that was never started (see
+ * `startMapping`) and pgo's own "NO POSES!" for one that has not banked a
+ * keyframe yet. The call can take a while — the robot is merging and writing
+ * a ~20 MB cloud.
+ *
+ * On success the run is over: pgo goes idle, frees its keyframes and clears
+ * the "map so far" layer itself, and the next map needs another
+ * `startMapping`. The `message` says so; render it verbatim.
  */
 export function saveMap(name: string): Promise<SaveMapResult> {
   return requestJson<SaveMapResult>(apiUrl("/api/v1/maps"), {
@@ -125,5 +132,83 @@ export function resetMappingRun(): Promise<ResetMappingResult> {
   return requestJson<ResetMappingResult>(apiUrl("/api/v1/mapping/reset"), {
     method: "POST",
     schema: ResetMappingResultSchema,
+  });
+}
+
+/**
+ * pgo's run state, as the backend last heard it.
+ *
+ * `unknown` is a real answer, not an error: it is what every navigating robot
+ * says (pgo exists only in a mapping session), and what a mapping robot says
+ * for the first second after pgo comes up or once it has gone quiet. The
+ * console treats it as "do not offer anything", the same way it treats a
+ * missing state frame.
+ */
+export type MappingRunState = "idle" | "mapping" | "resetting" | "unknown";
+
+export interface MappingStatus {
+  state: MappingRunState;
+  /** Keyframes in the robot's graph; 0 unless mapping. */
+  key_poses: number;
+  /** Loop closures the graph has accepted. */
+  loop_closures: number;
+}
+
+const MappingStatusSchema: z.ZodType<MappingStatus> = z.object({
+  state: z.enum(["idle", "mapping", "resetting", "unknown"]),
+  key_poses: z.number().int().nonnegative(),
+  loop_closures: z.number().int().nonnegative(),
+});
+
+/**
+ * Where the mapping run stands: GET /api/v1/mapping.
+ *
+ * Read from a latched ROS topic on the backend, so it answers after a page
+ * reload and from a second console alike — which is what lets the rail show
+ * "press Start" or "mapping · N keyframes" without a local flag that would be
+ * wrong the moment another tab pressed a button.
+ */
+export function fetchMappingStatus(signal?: AbortSignal): Promise<MappingStatus> {
+  return requestJson<MappingStatus>(apiUrl("/api/v1/mapping"), {
+    signal,
+    schema: MappingStatusSchema,
+  });
+}
+
+export interface StartMappingResult {
+  /** True on any 200 — pgo is building a map. A failure is a 502 or a 409. */
+  started: boolean;
+  /** Operator-facing sentence; render it verbatim. */
+  message: string;
+}
+
+const StartMappingResultSchema: z.ZodType<StartMappingResult> = z.object({
+  started: z.boolean(),
+  message: z.string(),
+});
+
+/**
+ * Begin a mapping run: POST /api/v1/mapping/start.
+ *
+ * A mapping session comes up with pgo idle and banking nothing, so the drive
+ * from wherever the robot was switched on to the site's starting point is not
+ * part of any map. This is what starts one, from where the robot stands; a
+ * successful `saveMap` ends it, and the next map needs this call again.
+ *
+ * Refusals are the backend's sentences: 409 `mapping_running` while a run is
+ * already on (save it, or discard it with `resetMappingRun`), 409
+ * `mapping_busy` for the seconds a start or reset takes, and the wrong-mode
+ * 502. Like `resetMappingRun`, this request does NOT outlive its server —
+ * nothing is torn down — so a network error here is a real failure.
+ *
+ * The robot must be STANDING STILL when this lands and until the live scan
+ * returns: the LIO front end re-runs a static, gravity-aligning IMU
+ * initialisation, and one done in motion tilts the whole map with no error
+ * anywhere. The control's caption is what says so.
+ */
+export function startMapping(): Promise<StartMappingResult> {
+  return requestJson<StartMappingResult>(apiUrl("/api/v1/mapping/start"), {
+    method: "POST",
+    schema: StartMappingResultSchema,
   });
 }

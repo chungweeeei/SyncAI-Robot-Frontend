@@ -13,6 +13,15 @@ import { MAP_NAME_RE } from "@/lib/map/name";
 import type { MapSummary } from "@/lib/types/map";
 
 /**
+ * Whether a run control (Save, Start a new map) may act, and if not, why.
+ *
+ * `no-run` arrived with the explicit run state (2026-10): the robot can be in
+ * mapping mode with nothing started, and a Save then is a 409 `mapping_idle`
+ * that the rail should pre-empt with its caption rather than show.
+ */
+export type RunAvailability = "ready" | "no-run" | "wrong-mode";
+
+/**
  * How the 2D-grid conversion of the map just saved is going.
  *
  * The other half of Save, and the reason this component exists: saving writes
@@ -78,7 +87,9 @@ function ConversionLine({ map }: { map: MapSummary | null }) {
  *
  * This is the only durable exit for a mapping run: pgo holds the keyframes in
  * RAM and nothing else serialises them, so until this succeeds the map exists
- * only while the mapping session does. The page reads `onSaved` to lift its
+ * only while the mapping session does. A successful save also *ends* the run
+ * (the robot goes idle and clears its "map so far"); the next map starts with
+ * the Start control above. The page reads `onSaved` to lift its
  * leave-without-saving guard.
  *
  * The success message is the backend's sentence verbatim — it is the one that
@@ -88,13 +99,14 @@ function ConversionLine({ map }: { map: MapSummary | null }) {
  * and cannot speak for a thread that outlives it.
  */
 export function SaveMapControl({
-  enabled,
+  availability,
   onSaved,
 }: {
-  /** False outside MANUAL — there is no run to save and the POST would 502. */
-  enabled: boolean;
+  /** Anything but `ready` disables the row: no run to save, or the wrong mode. */
+  availability: RunAvailability;
   onSaved: () => void;
 }) {
+  const enabled = availability === "ready";
   const save = useSaveMap();
   const [name, setName] = React.useState("");
 
@@ -128,9 +140,11 @@ export function SaveMapControl({
     <InstrumentGroup
       label="Save map"
       caption={
-        enabled
-          ? "The run lives in the robot's memory until saved. Saving can take a minute on a large site."
-          : "Saving needs mapping mode — there is no run to save in Nav."
+        availability === "ready"
+          ? "The run lives in the robot's memory until saved. Saving ends the run and can take a minute on a large site."
+          : availability === "no-run"
+            ? "Nothing to save yet — press Start mapping first."
+            : "Saving needs mapping mode — there is no run to save in Nav."
       }
     >
       <form

@@ -144,10 +144,11 @@ components/
                 (their contexts live in hooks/use-console-*.ts — see Layering),
                 the strip's running-job controls (a fixed pause / resume and
                 cancel pair, then one always-present bar: job id, step and
-                state) and its disclosures: the drive panel and camera
-                window every screen can open
+                state) and its disclosures: the sensor alerts (where an
+                overheating motor interrupts, on every screen), the drive
+                panel and camera window every screen can open
   dashboard/    3D viewport (pointcloud-canvas), telemetry rail, driving controls
-  mapping/      mode switch, save-map and reset-run controls
+  mapping/      mode switch, start-mapping, save-map and reset-run controls
   maps/         map library cards and the gridmap editor (grid-canvas)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
@@ -343,7 +344,10 @@ touch one, prefer moving it toward the rule.
   while `grid_status === "converting"`, `useRecordings` while a bag is live).
   Two console-wide polls are mounted once in `app/layout.tsx`:
   `RobotStateProvider` (1 Hz) and `ActiveTaskProvider` (2 s). Pages read those
-  providers; they do not start their own `robotState` poll. The status strip
+  providers; they do not start their own `robotState` poll. `/mapping` adds
+  one page-level poll, `useMappingStatus` (1 Hz, `mappingStatus`), on only
+  while that screen is open and the robot reports Mapping — the only time
+  the answer is anything but `unknown` or changes on its own. The status strip
   adds one derived read on top of the second: `useActiveRun` polls
   `task(id)` for whatever the active list says is running (2 s, the only
   place a paused run and its current step are visible), and switches off
@@ -374,7 +378,9 @@ touch one, prefer moving it toward the rule.
   change the scan the dashboard's "Map scan" layer draws (`mapPointCloud`),
   which a grid save or convert leaves alone; a map rename, delete or
   activate also changes the forbidden zones' read (`mapKeepout`, whose
-  `active` moves with a switch). Those are wired in the write
+  `active` moves with a switch); a mapping start, save or reset changes the
+  run state (`mappingStatus` — invalidated, never written, because the
+  answer travels a latched ROS topic every console reads). Those are wired in the write
   hooks now — when adding a write, list every key its response affects in
   its `onSuccess`, not only the key it was fetched under.
 - **A file cache is versioned by the catalogue, not by this console's

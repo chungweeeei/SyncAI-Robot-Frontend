@@ -3,6 +3,7 @@
 import { RotateCcwIcon } from "lucide-react";
 
 import { InstrumentGroup } from "@/components/console/instrument";
+import type { RunAvailability } from "@/components/mapping/save-map-control";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -10,8 +11,8 @@ import { Button } from "@/components/ui/button";
  *
  * The other exit from a mapping run, and the destructive one: SaveMapControl
  * above makes a run permanent, this discards it. Placed below that control on
- * purpose — the rail then reads mode → save → start over, and the button that
- * loses work never sits above the one that prevents the loss.
+ * purpose — the rail then reads mode → start → save → start over, and the
+ * button that loses work never sits above the one that prevents the loss.
  *
  * Presentational, in ModeControl's idiom rather than SaveMapControl's: the
  * click goes out through `onRequest` and the page performs the reset, because
@@ -20,14 +21,14 @@ import { Button } from "@/components/ui/button";
  * own request precisely because saving needs no such permission.
  */
 export function ResetRunControl({
-  enabled,
+  availability,
   busy,
   error,
   done,
   onRequest,
 }: {
-  /** False outside MANUAL — there is no run to reset and the POST would 502. */
-  enabled: boolean;
+  /** Anything but `ready` disables the row: no run to discard, or the wrong mode. */
+  availability: RunAvailability;
   busy: boolean;
   /** The backend's own sentence for a failure; rendered verbatim. */
   error: string | null;
@@ -35,13 +36,16 @@ export function ResetRunControl({
   done: string | null;
   onRequest: () => void;
 }) {
+  const enabled = availability === "ready";
   return (
     <InstrumentGroup
       label="New map"
       caption={
-        enabled
+        availability === "ready"
           ? "Throws away the map built so far and starts a new one. Keep the robot still while it does — its sensors re-level themselves."
-          : "Starting a new map needs mapping mode."
+          : availability === "no-run"
+            ? "Nothing to start over — press Start mapping first."
+            : "Starting a new map needs mapping mode."
       }
     >
       <Button
