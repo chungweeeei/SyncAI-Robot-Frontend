@@ -124,6 +124,48 @@ export function runPhase(
   return status === "PAUSED" ? "paused" : "running";
 }
 
+/**
+ * Every word the masthead's bar can end in: the four phases above plus the
+ * three ways a run closes.
+ *
+ * `runPhase` answers "running" for a closed run, which is right for the
+ * buttons — there is nothing left to hold — and wrong for a readout that has
+ * to name what it is looking at. The bar is on screen for the moment between
+ * a run ending and the active list noticing, so an ending is a state it must
+ * be able to say.
+ */
+export type RunState = RunPhase | "completed" | "failed" | "canceled";
+
+/**
+ * How a run reads, terminal states first.
+ *
+ * Before the phase, deliberately: a pause this console asked for says nothing
+ * about a run that has since been canceled from elsewhere, and "Pausing…"
+ * over a finished job would be a claim the reading has already contradicted.
+ */
+export function runState(
+  status: TaskStatus | null,
+  requested: HoldVerb | null,
+): RunState {
+  if (status === "COMPLETED") return "completed";
+  if (status === "FAILED") return "failed";
+  if (status === "CANCELED") return "canceled";
+  return runPhase(status, requested);
+}
+
+/**
+ * Whether the run this state describes is over, and so has nothing left to
+ * hold or to stop.
+ *
+ * Read off the state rather than the status so a component never has to
+ * import the wire vocabulary to ask (`isTerminalTaskStatus` lives in
+ * lib/api/task, which components do not reach into — see CLAUDE.md
+ * > Layering).
+ */
+export function runClosed(state: RunState): boolean {
+  return state === "completed" || state === "failed" || state === "canceled";
+}
+
 /** The slice of a mutation this reads, so the rule needs no TanStack to test. */
 export interface HoldRequestView {
   /** 0 for a mutation that has never run. */

@@ -6,8 +6,10 @@ import {
   holdOffered,
   pauseOffered,
   requestedHold,
+  runClosed,
   runElapsed,
   runPhase,
+  runState,
   stepLabel,
   stepProgress,
   type HoldRequestView,
@@ -131,6 +133,40 @@ describe("runPhase", () => {
   it("is resuming while a resume was accepted and the read still says paused", () => {
     expect(runPhase("PAUSED", "resume")).toBe("resuming");
     expect(runPhase("IN_PROGRESS", "resume")).toBe("running");
+  });
+});
+
+describe("runState", () => {
+  it("names an ending, which runPhase cannot", () => {
+    expect(runState("COMPLETED", null)).toBe("completed");
+    expect(runState("FAILED", null)).toBe("failed");
+    expect(runState("CANCELED", null)).toBe("canceled");
+  });
+
+  it("reads the ending over a hold this console asked for", () => {
+    // The run was canceled from somewhere else after this tab's pause was
+    // accepted. "Pausing…" over a job that has already stopped would be a
+    // claim the reading has contradicted.
+    expect(runState("CANCELED", "pause")).toBe("canceled");
+  });
+
+  it("is the phase for a run that is still going", () => {
+    expect(runState("IN_PROGRESS", null)).toBe("running");
+    expect(runState("IN_PROGRESS", "pause")).toBe("pausing");
+    expect(runState("PAUSED", null)).toBe("paused");
+    expect(runState("PAUSED", "resume")).toBe("resuming");
+  });
+});
+
+describe("runClosed", () => {
+  it("is true only for the three ways a run ends", () => {
+    expect(runClosed("completed")).toBe(true);
+    expect(runClosed("failed")).toBe(true);
+    expect(runClosed("canceled")).toBe(true);
+    expect(runClosed("running")).toBe(false);
+    expect(runClosed("pausing")).toBe(false);
+    expect(runClosed("paused")).toBe(false);
+    expect(runClosed("resuming")).toBe(false);
   });
 });
 
