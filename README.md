@@ -75,22 +75,41 @@ so closing the camera window mid-capture still writes the file.
 
 The strip also carries the **running job**, from the backend's active list
 rather than from this tab, so it is there for a run another console or a
-schedule started. While a job runs the slot beside the mode and the map reads
-the step the robot is on — `2/5 Move`, with a sweep across it while it is
-going, and the job's name and elapsed time on hover — flanked by two icon
-buttons: pause (⏸, which becomes resume ▶ once the hold has landed) before it
-and cancel (✕) after it. The step comes from the run's own read
-(`GET /api/v1/tasks/{id}`), the only place a held run is visible, since the
-active list says `IN_PROGRESS` for it. A pause is a request: the readout says
-`Pausing…` until that read confirms `Paused`, because a line being spoken or a
-posture being taken finishes before the hold lands, while a move stops at
-once. A Stand or Lie down offers no pause — its one step is not interruptible
-and there is no next step to hold before — only a cancel. Idle shows nothing
-at all; a list that cannot be read shows `TASK ?` in the caution hue rather
-than an empty slot, because an empty slot over a driving robot is the one
-thing this readout must never show. A refusal (the run closed between the
-read and the press, or a backend without the pause routes) appears under the
-strip as the backend's own sentence.
+schedule started. It is two icon buttons — pause (⏸, which becomes resume ▶
+once the hold has landed) and cancel (✕) — and then one bar, capped at 32rem
+and flush against the health cluster on the right. The bar reads, left to
+right: the job id (from `lg` up), the step the robot is on (`2/4 Speak`), and
+at its right end the state — `Running`, `Pausing…`, `Paused`, `Resuming…`,
+`Completed`, `Failed`, `Canceled`.
+
+Neither the buttons nor the bar ever leave the row, and for two different
+reasons. The pair is fixed so a control that disappears cannot slide the one
+beside it under a finger already on its way: a job that cannot be held (a
+Stand or a Lie down, whose one step is not interruptible and has no next step
+to hold before) greys its pause and says why on hover, and a job that has
+closed greys both. The bar is permanent because an empty slot is also what a
+readout that failed to render looks like, so an idle robot says
+`No task message in queue` in so many words, and a list that cannot be read
+says `Job list unavailable` in the caution hue — an empty slot over a driving
+robot is the one thing this readout must never show.
+
+The step comes from the run's own read (`GET /api/v1/tasks/{id}`), the only
+place a held run is visible, since the active list says `IN_PROGRESS` for it.
+A pause is a request: the bar says `Pausing…` until that read confirms
+`Paused`, because a line being spoken or a posture being taken finishes before
+the hold lands, while a move stops at once. Nothing in the bar animates, by
+request: the state word says whether the job is going, and a loop behind a
+readout an operator reads all day only repeats a fact already on the row.
+The job's name and elapsed time are on hover, and the bar is a link to
+`/tasks`. A refusal (the run closed
+between the read and the press, or a backend without the pause routes) appears
+under the strip as the backend's own sentence.
+
+Below `sm` the strip is **two rows**: the id, mode, drive, camera and battery
+on the first, the job's buttons and bar across the full width of the second.
+One wrapping flex row rather than a second copy of the component — rendering
+it twice and hiding one would put two pause buttons and two live readouts in
+the accessibility tree.
 
 ## Layering
 
