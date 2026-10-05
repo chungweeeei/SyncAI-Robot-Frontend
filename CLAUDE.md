@@ -184,8 +184,7 @@ lib/
                 live, what to call it, whether a hold is offered, and the state
                 the bar ends in) and the editor's unsaved draft (draft-store.ts
                 — the one place that touches browser storage)
-  recording/    bag size/duration formatting, the bag name rule and the channel
-                field's rule
+  recording/    bag size/duration formatting and the bag name rule
   robot/        G23 joint table (URDF link names ↔ GLB node names), how the
                 dashboard names a motor (the leg grid and its joint codes), and
                 the readout thresholds (levels.ts: Wi-Fi bars, battery, joint heat)
