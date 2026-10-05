@@ -1,83 +1,28 @@
 "use client";
 
-import {
-  InstrumentGroup,
-  PrimaryReadout,
-  Readout,
-  SignalBars,
-  rssiToBars,
-} from "@/components/console/instrument";
 import { LocomotionControl } from "@/components/dashboard/locomotion-control";
 import { MotorStatus } from "@/components/dashboard/motor-status";
 import { PostureControl } from "@/components/dashboard/posture-control";
 import type { RobotState } from "@/lib/types/robot";
 
 /**
- * The instrument rail beside the viewport: pose, link, posture, locomotion, motors.
- *
- * These were four equal-weight cards above the map, which put the two numbers
- * an operator watches continuously (x/y and heading) at the same size as the
- * BSSID. Here the pose is the largest type on the screen after the robot id,
- * and everything else is a row.
+ * The instrument rail beside the viewport: posture, locomotion, motors — the
+ * controls and the readings an operator consults rather than watches.
  *
  * Battery, mode and map name are *not* here — they live in the status strip,
- * because they qualify the whole console rather than this screen.
+ * because they qualify the whole console rather than this screen. The pose is
+ * not here either: it is over the viewport's corner (PoseOverlay).
  */
 export function TelemetryRail({ state }: { state: RobotState }) {
-  const { position } = state.localization_status;
-  const network = state.network_status;
-  // A false flag means the pose fields are a zeroed placeholder, not a
-  // reading — a state frame arrives before the localizer converges (and all
-  // through a mapping run) now that the backend no longer withholds it. The
-  // numbers are masked rather than shown at 0.00: a dash cannot be misread as
-  // the robot standing on the map origin.
-  const localized = state.localization_valid;
-
   return (
     <div className="divide-y divide-hairline">
-      <InstrumentGroup
-        label="Pose"
-        caption={localized ? undefined : "The robot does not know where it is yet."}
-      >
-        <div className="mb-3 grid grid-cols-2 gap-3">
-          <PrimaryReadout
-            label="X"
-            value={localized ? position.x.toFixed(2) : "—"}
-            unit="m"
-            tone={localized ? "live" : "neutral"}
-          />
-          <PrimaryReadout
-            label="Y"
-            value={localized ? position.y.toFixed(2) : "—"}
-            unit="m"
-            tone={localized ? "live" : "neutral"}
-          />
-        </div>
-        <Readout
-          label="Orientation"
-          value={localized ? position.theta.toFixed(1) : "—"}
-          unit="°"
-          tone={localized ? "live" : "neutral"}
-        />
-        {/* No velocity row, by request. The field is still on the wire and in
-          * the schema; the pose group is where the robot *is*, and how fast it
-          * is going is a reading nobody watched here. */}
-      </InstrumentGroup>
+      {/* No Pose group: it is laid over the viewport's corner now (PoseOverlay),
+        * next to the marker it describes. No velocity row there either, by
+        * request — how fast the robot is going was a reading nobody watched. */}
 
-      <InstrumentGroup label="Link">
-        <Readout label="SSID" value={network.ssid} />
-        <Readout
-          label="RSSI"
-          value={
-            <span className="inline-flex items-center gap-1.5">
-              <SignalBars bars={rssiToBars(network.rssi)} />
-              {network.rssi}
-            </span>
-          }
-          unit="dBm"
-        />
-        <Readout label="IP" value={network.ip_address} />
-      </InstrumentGroup>
+      {/* No Link group, by request. SSID, signal and IP are the Settings
+        * screen's Wi-Fi panel, next to the network they describe; the strip's
+        * link chip already says whether the console can reach the robot. */}
 
       <PostureControl robotId={state.robot_id} />
 
@@ -88,7 +33,7 @@ export function TelemetryRail({ state }: { state: RobotState }) {
       <LocomotionControl lowLevelMode={state.low_level_mode} />
 
       {/* Last: it is the longest group and the one an operator consults, rather
-        * than watches. Pose and link stay above the fold on a short rail. */}
+        * than watches. Posture stays above the fold on a short rail. */}
       <MotorStatus motors={state.motor_status} />
     </div>
   );
