@@ -79,7 +79,9 @@ test.describe("the recorder", () => {
       compression: boolean;
     };
     expect(body.name).toBe("field-run-3");
-    expect(body.topics.length).toBeGreaterThan(0);
+    // The scanner pair a map is rebuilt from, plus the body IMU. Relative
+    // names: the backend expands them under the robot's namespace.
+    expect(body.topics).toEqual(["livox/lidar", "livox/imu", "imu"]);
     // Compressed unless the operator turns it off.
     expect(body.compression).toBe(true);
   });

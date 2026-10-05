@@ -1,10 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { PlusIcon, XIcon } from "lucide-react";
 
-import { Input } from "@/components/ui/input";
-import { isUsableChannel } from "@/lib/recording/channel";
 import { cn } from "@/lib/utils";
 
 /**
@@ -13,13 +10,12 @@ import { cn } from "@/lib/utils";
  * Hardcoded rather than discovered: the backend has no topic-list route, and
  * adding one to serve a convenience row would put a ROS graph query behind
  * every visit to this page. The cost is that this list can drift from what the
- * robot actually publishes — which is what the free-text row below is for, and
- * why a recording's message count is on every row of the catalogue.
+ * robot actually publishes — which is why a recording's message count is on
+ * every row of the catalogue.
  *
  * Relative names only. Everything the robot owns is namespaced and the backend
  * expands it (`livox/lidar` → `/robot01/livox/lidar`), so nothing here spells a
- * robot id. A fleet-wide channel such as `/tf` is still one typed name away:
- * a leading slash is the escape hatch the API documents.
+ * robot id.
  *
  * Kept to what is worth one tap. The drive commands, the live scan and the
  * two transform channels were offered too, and were trimmed by request; none
@@ -29,14 +25,17 @@ const PRESETS: readonly { topic: string; hint: string }[] = [
   // The pair a lost mapping run is replayed from — the reason this page exists.
   { topic: "livox/lidar", hint: "Laser scanner — the robot's main sensor" },
   { topic: "livox/imu", hint: "Motion sensor — needed with the scanner to rebuild a map" },
+  { topic: "imu", hint: "Body motion sensor — how the robot itself tilts and turns" },
   { topic: "odom", hint: "Where the robot calculates it has travelled" },
   { topic: "robot_state", hint: "Overall status: battery, mode, motor health" },
 ];
 
-/** The default selection: the LIO inputs, matching the backend's own default. */
-export const DEFAULT_TOPICS = ["livox/lidar", "livox/imu"];
-
-const PRESET_TOPICS = new Set(PRESETS.map((preset) => preset.topic));
+/**
+ * The default selection: the LIO inputs, which are the backend's own default,
+ * plus the body IMU, by request. The console always sends its list, so the
+ * backend's default only answers a client that sends none.
+ */
+export const DEFAULT_TOPICS = ["livox/lidar", "livox/imu", "imu"];
 
 /**
  * One selectable topic. The `Segmented` idiom widened to multi-select: chosen
@@ -56,15 +55,12 @@ function TopicChip({
   selected,
   disabled,
   onToggle,
-  onRemove,
 }: {
   topic: string;
-  hint?: string;
+  hint: string;
   selected: boolean;
   disabled: boolean;
   onToggle: () => void;
-  /** Present only for a hand-added topic — a preset is never removed, only unpicked. */
-  onRemove?: () => void;
 }) {
   return (
     <span
@@ -81,7 +77,7 @@ function TopicChip({
         aria-pressed={selected}
         disabled={disabled}
         onClick={onToggle}
-        title={hint ?? topic}
+        title={hint}
         className={cn(
           "readout h-6 px-1.5 text-[11px] leading-none",
           !disabled && !selected && "hover:bg-elevated hover:text-foreground",
@@ -89,18 +85,6 @@ function TopicChip({
       >
         {topic}
       </button>
-      {onRemove && (
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={onRemove}
-          aria-label={`Forget ${topic}`}
-          title={`Forget ${topic}`}
-          className="flex size-5 items-center justify-center rounded-sm opacity-60 transition-opacity hover:opacity-100"
-        >
-          <XIcon className="size-3" aria-hidden />
-        </button>
-      )}
     </span>
   );
 }
@@ -108,15 +92,14 @@ function TopicChip({
 /**
  * Pick the topics a recording will subscribe to.
  *
- * Presets as toggles plus a free-text row, rather than the bare text field the
- * hand-pasted `ros2 bag record` command was: the common case here is one tap
- * (the LIO pair, already selected), and the failure mode of typing is silent —
- * a misspelled topic records nothing and says nothing, because the recorder
- * waits for topics rather than refusing unknown ones.
+ * Presets as toggles rather than the bare text field the hand-pasted
+ * `ros2 bag record` command was: the common case here is one tap (the LIO
+ * pair and the body IMU, already selected), and the failure mode of typing is
+ * silent — a misspelled topic records nothing and says nothing, because the
+ * recorder waits for topics rather than refusing unknown ones.
  *
- * Hand-added topics join the same row and keep an X, so a typo can be taken
- * back rather than sitting in the list unpicked. A preset has no X: its place
- * in the row is fixed and unpicking it is what "not this one" means.
+ * There is no free-text row any more, by request: a channel off this list is
+ * added here, in code, with its hint.
  */
 export function TopicPicker({
   value,
@@ -127,11 +110,6 @@ export function TopicPicker({
   onChange: (topics: string[]) => void;
   disabled?: boolean;
 }) {
-  const [draft, setDraft] = React.useState("");
-  // Hand-added names, kept so an unpicked one stays on screen to be re-picked.
-  // Selection alone could not hold them: unpicking would make the chip vanish.
-  const [extra, setExtra] = React.useState<string[]>([]);
-
   const selected = React.useMemo(() => new Set(value), [value]);
 
   const toggle = React.useCallback(
@@ -145,88 +123,18 @@ export function TopicPicker({
     [onChange, selected, value],
   );
 
-  const add = React.useCallback(() => {
-    const topic = draft.trim();
-    if (!isUsableChannel(topic)) return;
-    setDraft("");
-    // An existing name is selected rather than duplicated — typing a preset's
-    // name is a reasonable way to reach for it.
-    if (!selected.has(topic)) onChange([...value, topic]);
-    if (!PRESET_TOPICS.has(topic) && !extra.includes(topic)) {
-      setExtra((current) => [...current, topic]);
-    }
-  }, [draft, extra, onChange, selected, value]);
-
-  const forget = React.useCallback(
-    (topic: string) => {
-      setExtra((current) => current.filter((entry) => entry !== topic));
-      onChange(value.filter((entry) => entry !== topic));
-    },
-    [onChange, value],
-  );
-
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-1.5">
-        {PRESETS.map((preset) => (
-          <TopicChip
-            key={preset.topic}
-            topic={preset.topic}
-            hint={preset.hint}
-            selected={selected.has(preset.topic)}
-            disabled={disabled}
-            onToggle={() => toggle(preset.topic)}
-          />
-        ))}
-        {extra.map((topic) => (
-          <TopicChip
-            key={topic}
-            topic={topic}
-            selected={selected.has(topic)}
-            disabled={disabled}
-            onToggle={() => toggle(topic)}
-            onRemove={() => forget(topic)}
-          />
-        ))}
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Input
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            // Enter adds rather than submits: this control sits inside the
-            // recorder's form, where the default would start the recording with
-            // the topic still sitting unread in the box.
-            if (event.key === "Enter") {
-              event.preventDefault();
-              add();
-            }
-          }}
-          placeholder="another channel"
-          aria-label="Add a channel"
+    <div className="flex flex-wrap gap-1.5">
+      {PRESETS.map((preset) => (
+        <TopicChip
+          key={preset.topic}
+          topic={preset.topic}
+          hint={preset.hint}
+          selected={selected.has(preset.topic)}
           disabled={disabled}
-          className="readout h-7 flex-1 md:text-[11px]"
+          onToggle={() => toggle(preset.topic)}
         />
-        <button
-          type="button"
-          onClick={add}
-          disabled={disabled || !isUsableChannel(draft.trim())}
-          className={cn(
-            "instrument-label flex h-7 shrink-0 items-center gap-1 rounded-sm border border-hairline px-2 text-muted-foreground transition-colors",
-            "hover:bg-elevated hover:text-foreground",
-            "disabled:pointer-events-none disabled:opacity-40",
-          )}
-        >
-          <PlusIcon className="size-3" aria-hidden />
-          Add
-        </button>
-      </div>
-
-      <p className="text-[11px] leading-tight text-muted-foreground">
-        Names apply to this robot. Start the name with a slash for a channel
-        that is shared by every robot.
-      </p>
+      ))}
     </div>
   );
 }
