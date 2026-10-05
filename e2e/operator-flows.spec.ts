@@ -1446,9 +1446,12 @@ test.describe("the task console", () => {
     });
     await page.goto("/tasks");
 
-    await expect(page.getByText("Running outside this page")).toBeVisible();
-    await expect(page.getByText("robot01-task-1758000000-1")).toBeVisible();
-    await expect(page.getByText("via nightly")).toBeVisible();
+    // Scoped past the masthead: its bar names the running job's id too, so a
+    // page-wide locator would match both and prove neither.
+    const banner = page.locator("main");
+    await expect(banner.getByText("Running outside this page")).toBeVisible();
+    await expect(banner.getByText("robot01-task-1758000000-1")).toBeVisible();
+    await expect(banner.getByText("via nightly")).toBeVisible();
   });
 
   test("cancels that run against the id it announced", async ({ page }) => {

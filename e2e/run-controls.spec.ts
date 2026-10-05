@@ -47,15 +47,20 @@ test.describe("the running-job controls", () => {
     ).toEqual([]);
   });
 
-  test("shows nothing while the robot is idle", async ({ page }) => {
+  test("says the queue is empty while the robot is idle, in so many words", async ({
+    page,
+  }) => {
     await mockBackend(page);
     await page.goto("/settings");
 
-    // The mode chip is the proof the strip has rendered; then nothing of a
-    // job: no readout, no IDLE, no buttons.
+    // The bar is drawn in every state: an empty slot is also what a readout
+    // that failed to render looks like, so idle has to say that it is idle.
+    // Both controls stay in the row and are out, so nothing moves under a
+    // finger when a job starts.
     await expect(strip(page).getByText("Navigation")).toBeVisible();
-    await expect(readout(page)).toHaveCount(0);
-    await expect(cancelButton(page)).toHaveCount(0);
+    await expect(readout(page)).toContainText("No task message in queue");
+    await expect(pauseButton(page)).toBeDisabled();
+    await expect(cancelButton(page)).toBeDisabled();
   });
 
   test("names the step the robot is on, from the run's own read", async ({
@@ -175,8 +180,10 @@ test.describe("the running-job controls", () => {
     });
     await page.goto("/settings");
 
+    // Greyed rather than gone: the pair is a fixed cluster, and a Pause that
+    // dropped out would slide Cancel under a finger already on its way to it.
     await expect(readout(page)).toContainText("Stand");
-    await expect(pauseButton(page)).toHaveCount(0);
+    await expect(pauseButton(page)).toBeDisabled();
     await expect(resumeButton(page)).toHaveCount(0);
     await expect(cancelButton(page)).toBeEnabled();
   });
@@ -196,7 +203,7 @@ test.describe("the running-job controls", () => {
     expect(writes[0].path).toBe(`/api/v1/tasks/${ID}`);
   });
 
-  test("goes away with the run, and says so when the list cannot be read", async ({
+  test("empties with the run, and never draws a failing list as idle", async ({
     page,
   }) => {
     const running = [activeTask()];
@@ -208,13 +215,15 @@ test.describe("the running-job controls", () => {
     await expect(readout(page)).toContainText("2/3");
 
     running.length = 0;
-    await expect(readout(page)).toHaveCount(0);
-    await expect(cancelButton(page)).toHaveCount(0);
+    await expect(readout(page)).toContainText("No task message in queue");
+    await expect(cancelButton(page)).toBeDisabled();
 
-    // A failing list is never drawn as idle.
+    // The distinction the bar exists to keep: "there is no job" and "the
+    // console cannot tell" are different sentences, and the second must
+    // never be drawn as the first.
     await page.route("**/api/v1/active_tasks", (route) =>
       route.fulfill({ status: 502, body: "" }),
     );
-    await expect(strip(page).getByText("TASK ?")).toBeVisible();
+    await expect(readout(page)).toContainText("Job list unavailable");
   });
 });
