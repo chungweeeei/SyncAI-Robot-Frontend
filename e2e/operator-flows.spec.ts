@@ -288,6 +288,72 @@ test.describe("the map library", () => {
     await expect(dialog).toHaveCount(0);
   });
 
+  test("cancels an upload still in flight, then imports on the second try", async ({
+    page,
+  }) => {
+    const writes = await mockBackend(page, {
+      maps: [mapSummary({ active: true, name: "in-use" })],
+    });
+    // Registered after mockBackend so it wins: the robot never answers this
+    // upload, which is the state a Cancel exists for.
+    let release = () => {};
+    await page.route("**/api/v1/maps/import**", async (route) => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      // By now the browser has dropped the request; the route may already
+      // be gone with it.
+      await route.abort().catch(() => undefined);
+    });
+    await page.goto("/maps");
+
+    const archive = {
+      name: "site-b.zip",
+      mimeType: "application/zip",
+      buffer: Buffer.from("PK\x05\x06", "latin1"),
+    };
+    await page.getByLabel("Map archive").setInputFiles(archive);
+    const dialog = page.getByRole("alertdialog");
+
+    const sent = page.waitForRequest(
+      (request) =>
+        request.method() === "POST" &&
+        request.url().includes("/api/v1/maps/import"),
+    );
+    await dialog.getByRole("button", { name: "Import" }).click();
+    // Positive control: the upload is really in flight before it is cancelled.
+    await sent;
+    await expect(dialog.getByRole("button", { name: "Importing…" })).toBeDisabled();
+
+    // The other half of the assertion is the network's: an abort the console
+    // only pretended to do leaves the request pending, and this never fires.
+    const failed = page.waitForEvent(
+      "requestfailed",
+      (request) => request.url().includes("/api/v1/maps/import"),
+    );
+    await dialog.getByRole("button", { name: "Cancel upload" }).click();
+    expect((await failed).failure()?.errorText).toBe("net::ERR_ABORTED");
+    await expect(dialog).toHaveCount(0);
+    await expect(
+      page.getByRole("status").filter({ hasText: "Import canceled." }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "site-b" })).toHaveCount(0);
+
+    // A cancel must not poison the next attempt: the fake answers this one.
+    await page.unroute("**/api/v1/maps/import**");
+    release();
+    await page.getByLabel("Map archive").setInputFiles(archive);
+    await dialog.getByRole("button", { name: "Import" }).click();
+    await expect
+      .poll(() => writes.filter((w) => w.method === "POST"))
+      .toHaveLength(1);
+    await expect(
+      page.getByRole("status").filter({ hasText: "Imported 'site-b'" }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "site-b" })).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+  });
+
   test("warns before an import that would replace a map", async ({ page }) => {
     const writes = await mockBackend(page, {
       maps: [
