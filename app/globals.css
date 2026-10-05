@@ -229,30 +229,6 @@
   }
 }
 
-/* The masthead's step readout, swept while the job is going. A loop rather
- * than the strip's one-shot: nothing arrives per step the way a telemetry
- * frame does, so there is no event to restart it on, and what it says is
- * only "still moving". Reduced motion drops it; the readout's text and tone
- * carry the same fact. */
-@keyframes run-sweep {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(300%);
-  }
-}
-
-@utility run-sweep {
-  animation: run-sweep 1.8s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .run-sweep {
-    display: none;
-  }
-}
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
