@@ -4,8 +4,6 @@ import {
   InstrumentGroup,
   PrimaryReadout,
   Readout,
-  SignalBars,
-  rssiToBars,
 } from "@/components/console/instrument";
 import { LocomotionControl } from "@/components/dashboard/locomotion-control";
 import { MotorStatus } from "@/components/dashboard/motor-status";
@@ -13,7 +11,7 @@ import { PostureControl } from "@/components/dashboard/posture-control";
 import type { RobotState } from "@/lib/types/robot";
 
 /**
- * The instrument rail beside the viewport: pose, link, posture, locomotion, motors.
+ * The instrument rail beside the viewport: pose, posture, locomotion, motors.
  *
  * These were four equal-weight cards above the map, which put the two numbers
  * an operator watches continuously (x/y and heading) at the same size as the
@@ -25,7 +23,6 @@ import type { RobotState } from "@/lib/types/robot";
  */
 export function TelemetryRail({ state }: { state: RobotState }) {
   const { position } = state.localization_status;
-  const network = state.network_status;
   // A false flag means the pose fields are a zeroed placeholder, not a
   // reading — a state frame arrives before the localizer converges (and all
   // through a mapping run) now that the backend no longer withholds it. The
@@ -64,20 +61,9 @@ export function TelemetryRail({ state }: { state: RobotState }) {
           * is going is a reading nobody watched here. */}
       </InstrumentGroup>
 
-      <InstrumentGroup label="Link">
-        <Readout label="SSID" value={network.ssid} />
-        <Readout
-          label="RSSI"
-          value={
-            <span className="inline-flex items-center gap-1.5">
-              <SignalBars bars={rssiToBars(network.rssi)} />
-              {network.rssi}
-            </span>
-          }
-          unit="dBm"
-        />
-        <Readout label="IP" value={network.ip_address} />
-      </InstrumentGroup>
+      {/* No Link group, by request. SSID, signal and IP are the Settings
+        * screen's Wi-Fi panel, next to the network they describe; the strip's
+        * link chip already says whether the console can reach the robot. */}
 
       <PostureControl robotId={state.robot_id} />
 
@@ -88,7 +74,7 @@ export function TelemetryRail({ state }: { state: RobotState }) {
       <LocomotionControl lowLevelMode={state.low_level_mode} />
 
       {/* Last: it is the longest group and the one an operator consults, rather
-        * than watches. Pose and link stay above the fold on a short rail. */}
+        * than watches. Pose and posture stay above the fold on a short rail. */}
       <MotorStatus motors={state.motor_status} />
     </div>
   );
