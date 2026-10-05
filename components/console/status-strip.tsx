@@ -5,6 +5,7 @@ import * as React from "react";
 import { ActiveRunControls } from "@/components/console/active-run-controls";
 import { CameraDisclosure } from "@/components/console/camera-disclosure";
 import { DriveDisclosure } from "@/components/console/drive-disclosure";
+import { SensorDisclosure } from "@/components/console/sensor-disclosure";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { useActiveMap, useMaps } from "@/hooks/use-maps";
 import { batteryTone } from "@/lib/robot/levels";
@@ -161,9 +162,11 @@ export function StatusStrip() {
           <div className="flex items-center gap-0.5">
             {/* First in the health cluster, where the link chip used to stand:
               * icon-only controls need the room to be seen at all, and these
-              * are the only things in the strip an operator presses. Drive
-              * before camera because one commands the robot and the other
-              * watches it. */}
+              * are the only things in the strip an operator presses. Sensor
+              * first, by request, beside the drive panel it tells the operator
+              * to stop using; drive before camera because one commands the
+              * robot and the other watches it. */}
+            <SensorDisclosure />
             <DriveDisclosure />
             <CameraDisclosure />
             {link && (

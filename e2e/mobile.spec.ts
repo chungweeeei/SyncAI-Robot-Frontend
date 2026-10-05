@@ -6,6 +6,7 @@ import {
   failOnConsoleErrors,
   floorPlanPng,
   mockBackend,
+  robotState,
   taskState,
 } from "./backend";
 
@@ -128,7 +129,7 @@ test.describe("the console on a phone", () => {
     page,
   }) => {
     // The strip's one row carries the robot id, the mode, the step readout,
-    // its hold and cancel, the drive and camera buttons and the battery. The
+    // its hold and cancel, the sensor, drive and camera buttons and the battery. The
     // robot id is the only thing allowed to give way; the buttons must stay
     // whole and under a finger.
     const ID = "robot01-task-1758000000-1";
@@ -140,7 +141,7 @@ test.describe("the console on a phone", () => {
     const strip = page.getByRole("banner");
 
     await expect(strip.getByRole("status")).toContainText("2/3");
-    for (const name of ["Pause the job", "Cancel the job", "Manual drive panel", "Camera window"]) {
+    for (const name of ["Pause the job", "Cancel the job", "Sensor alerts", "Manual drive panel", "Camera window"]) {
       const button = strip.getByRole("button", { name });
       const box = await button.boundingBox();
       await expectOnScreen(page, name, box);
@@ -186,6 +187,25 @@ test.describe("the console on a phone", () => {
     const gripBox = await grip.boundingBox();
     expect(gripBox?.width).toBeGreaterThanOrEqual(TARGET);
     expect(gripBox?.height).toBeGreaterThanOrEqual(TARGET);
+  });
+
+  test("drops the overheating notice inside the viewport", async ({ page }) => {
+    // The sensor button is the leftmost of the strip's three, so its panel
+    // hung off it would open furthest past the left edge of all of them.
+    await mockBackend(page, {
+      state: robotState({
+        motor_status: [{ name: "HL_Knee_joint", temperature: 90, error: 0 }],
+      }),
+    });
+    await page.goto("/settings");
+
+    const notice = page.getByRole("alert").filter({ hasText: "A motor is overheating" });
+    await expect(notice).toBeVisible();
+    await expectOnScreen(page, "the overheating notice", await notice.boundingBox());
+    const dismiss = notice.getByRole("button", { name: "Dismiss" });
+    const box = await dismiss.boundingBox();
+    expect(box?.width).toBeGreaterThanOrEqual(TARGET);
+    expect(box?.height).toBeGreaterThanOrEqual(TARGET);
   });
 
   test("drops a goal draft when a second finger lands", async ({ page }) => {

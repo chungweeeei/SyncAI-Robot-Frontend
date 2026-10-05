@@ -1,4 +1,4 @@
-// When the dashboard interrupts an operator about a hot motor, and when it is
+// When the masthead interrupts an operator about a hot motor, and when it is
 // allowed to do so again. The thresholds are lib/robot/levels.ts's; this is
 // the rule that turns a stream of 1 Hz readings into one notice rather than
 // one per frame, kept pure so the edges are tested and not remembered.

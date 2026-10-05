@@ -47,7 +47,7 @@ export const TEMP_CAUTION_C = 60;
 export const TEMP_WARN_C = 80;
 
 /**
- * Above this the dashboard stops colouring and starts interrupting: a notice
+ * Above this the console stops colouring and starts interrupting: a notice
  * the operator has to dismiss. Set by request at 85 °C, and strictly above —
  * a joint sitting exactly on the number is hot, not over. The red readout
  * begins five degrees earlier so the notice never arrives on a grid that
