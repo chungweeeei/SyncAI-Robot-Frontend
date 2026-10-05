@@ -510,3 +510,36 @@ export function scheduleDrift(
     return same ? count : count + 1;
   }, 0);
 }
+
+/**
+ * The schedules the dashboard lists, in the order the robot will act on them:
+ * soonest next run first, then the ones with no next run at all — paused, or
+ * past the end of the snapshot's list — so a row that will not fire never
+ * stands above one that will. Ties keep the backend's order, so rows do not
+ * swap places between two reads that agree.
+ *
+ * Not cut to a few rows: the rail can pause one, and a paused row sorts last,
+ * so a cut would make the row the operator just pressed vanish — and with it
+ * the Resume that undoes the press. The rail bounds the list's height instead.
+ *
+ * Measured against the snapshot's read time for `upcomingRun`'s reason.
+ */
+export function glanceSchedules(
+  schedules: readonly ScheduleState[],
+  readAtMs: number,
+): { schedule: ScheduleState; next: string | undefined }[] {
+  return schedules
+    .map((schedule) => ({ schedule, next: upcomingRun(schedule, readAtMs) }))
+    .sort((a, b) => compareRuns(runOrder(a.next), runOrder(b.next)));
+}
+
+// Not a bare subtraction: two rows with no next run are Infinity - Infinity,
+// which is NaN, and a comparator that answers NaN leaves the order undefined.
+function compareRuns(a: number, b: number): number {
+  return a === b ? 0 : a < b ? -1 : 1;
+}
+
+function runOrder(next: string | undefined): number {
+  const at = next === undefined ? NaN : Date.parse(next);
+  return Number.isNaN(at) ? Number.POSITIVE_INFINITY : at;
+}
