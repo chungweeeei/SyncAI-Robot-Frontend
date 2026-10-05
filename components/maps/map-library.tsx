@@ -88,7 +88,7 @@ export function MapLibrary() {
         </p>
       )}
       <div className="ml-auto shrink-0">
-        <MapImportControl maps={maps} onImported={setLastResult} />
+        <MapImportControl maps={maps} onResult={setLastResult} />
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -217,11 +218,37 @@ export interface ImportMapVariables {
   name?: string;
 }
 
-/** POST /api/v1/maps/import. */
+/**
+ * POST /api/v1/maps/import, plus the one mutation here that can be called off.
+ *
+ * `cancel` aborts the upload in flight. The controller lives in a ref rather
+ * than in the component because it is the hook that knows which request is
+ * current, and because it must *not* be tied to an unmount: the fetcher's
+ * note explains why a navigation never decides whether an upload lands. The
+ * abort is reworded before it reaches the mutation's `error`, since the DOM's
+ * own sentence is not written for an operator. A cancel is also a cache
+ * consequence, which is why the refetch sits beside it and not in the dialog:
+ * a body that had already arrived whole may still be committed by the robot,
+ * and the catalogue is the only place that would show it.
+ */
 export function useImportMap() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ archive, name }: ImportMapVariables) => importMap(archive, name),
+  const controller = React.useRef<AbortController | null>(null);
+  const mutation = useMutation({
+    mutationFn: ({ archive, name }: ImportMapVariables) => {
+      const own = new AbortController();
+      controller.current = own;
+      return importMap(archive, name, own.signal)
+        .catch((cause: unknown) => {
+          if (own.signal.aborted) throw new Error("Import canceled.");
+          throw cause;
+        })
+        .finally(() => {
+          // Only its own: a cancel followed at once by a retry has already
+          // put the retry's controller here, and this settle must not drop it.
+          if (controller.current === own) controller.current = null;
+        });
+    },
     onSuccess: (result) => {
       // Keyed by the answer's `name`, not the variable: the archive's manifest
       // names the map when the operator left the field empty. When the import
@@ -239,4 +266,10 @@ export function useImportMap() {
       // a template resolves to.
     },
   });
+  const cancel = React.useCallback(() => {
+    controller.current?.abort();
+    controller.current = null;
+    void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
+  }, [queryClient]);
+  return { ...mutation, cancel };
 }

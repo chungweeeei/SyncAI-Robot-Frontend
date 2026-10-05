@@ -618,20 +618,27 @@ const ImportMapResultSchema: z.ZodType<ImportMapResult> = z.object({
  * the backend's sentence. The answer is parsed because `name` picks which
  * per-map cache entries the hook drops.
  *
- * Deliberately takes no `AbortSignal`: the backend stages the import and
- * commits it whole, so aborting mid-upload wastes bandwidth and nothing
- * else, but a navigation should not be what decides whether a 40 MB upload
- * the operator started lands.
+ * The `signal` is the operator's Cancel and nothing else. The backend stages
+ * the import and commits it whole, so a body cut short lands nothing on the
+ * robot — which is what makes an explicit cancel safe to offer. It is still
+ * not wired to an effect cleanup: a navigation should not be what decides
+ * whether a 40 MB upload the operator started lands, so `useImportMap` holds
+ * the controller and fires it only from the dialog's button. One window the
+ * signal cannot close: a body that had already arrived whole may still be
+ * committed after the console stopped listening, which is why a cancel also
+ * refetches the catalogue.
  */
 export function importMap(
   archive: Blob,
   name?: string,
+  signal?: AbortSignal,
 ): Promise<ImportMapResult> {
   const query = name ? `?name=${encodeURIComponent(name)}` : "";
   return requestJson<ImportMapResult>(apiUrl(`/api/v1/maps/import${query}`), {
     method: "POST",
     headers: { "Content-Type": "application/octet-stream" },
     body: archive,
+    signal,
     schema: ImportMapResultSchema,
   });
 }
