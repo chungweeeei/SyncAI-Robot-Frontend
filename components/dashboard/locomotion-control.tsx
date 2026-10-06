@@ -24,7 +24,8 @@ const POLICIES: readonly { value: Policy; label: string }[] = [
  *
  * - **Controller** is commanded, defaulting to RL. It cannot be read back —
  *   `low_level_mode.motion` has no code for MPC — so the lit segment is an
- *   assumption plus whatever the operator last pressed.
+ *   assumption plus whatever the operator last pressed, except that a return
+ *   to IDLE drops MPC back to RL (`controllerAfterMotion`).
  * - **Policy** is reported. The lit segment is `low_level_mode.policy`, i.e. what
  *   the controller says it is running. A request that the robot has not confirmed
  *   yet shows as `confirming…` rather than silently looking applied, which is the
@@ -52,10 +53,10 @@ export function LocomotionControl({
   } = useLocomotion(lowLevelMode);
 
   const mpc = controller === "MPC";
-  // UNKNOWN is worth flagging rather than reading as a state: it is either the
-  // controller's startup sentinel or a code this stack has no name for (MPC's is
-  // genuinely unknown), and the payload carries labels only so the two cannot be
-  // told apart here. `ros2 topic echo … --field low_level_mode` is the escape hatch.
+  // UNKNOWN is worth flagging rather than reading as a state: it is a code this
+  // stack has no name for (MPC's is genuinely unknown), and the payload carries
+  // labels only so two unnamed codes cannot be told apart here. IDLE, the
+  // controller's own resting state, is named and reads as live. `ros2 topic echo … --field low_level_mode` is the escape hatch.
   const motionUnknown = lowLevelMode.motion === "UNKNOWN";
 
   return (

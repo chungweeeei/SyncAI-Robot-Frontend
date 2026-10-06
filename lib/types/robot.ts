@@ -20,7 +20,9 @@ export type RobotMode = "MAINTENANCE" | "MANUAL" | "AUTO";
  * Open strings rather than unions on purpose: the backend decodes the controller's
  * integers through a lookup with an `"UNKNOWN"` fallback, and it will legitimately
  * hit that fallback — CHAMP/ISSAC are real policies the REST command surface does
- * not expose, and MPC's motion code is genuinely unknown.
+ * not expose, and MPC's motion code is genuinely unknown. Motion 8 is named
+ * `"IDLE"` (motors not driven by any controller) rather than left to the
+ * fallback, because `lib/robot/controller.ts` acts on it.
  *
  * The payload carries labels only; the raw integers stay on the ROS topic. So
  * `"UNKNOWN"` is as much as the console can ever say, and two different unmapped
