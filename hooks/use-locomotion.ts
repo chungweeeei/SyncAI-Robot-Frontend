@@ -47,8 +47,8 @@ const REPORTED_POLICY: Record<string, Policy> = {
 
 export interface LocomotionControl {
   /**
-   * Commanded, defaulting to RL, and dropped back to RL when the motion returns
-   * to IDLE. Not readable back — see the note below.
+   * Commanded, defaulting to RL, and dropped back to RL when the motion arrives
+   * at IDLE or LOCOMOTION. Not readable back — see the note below.
    */
   controller: Controller;
   /** The policy to light: the reported one, or a pending request. */
@@ -82,9 +82,11 @@ export interface LocomotionControl {
  * default because it is the normal operating mode and the one a policy switch is
  * meaningful under; it is a starting assumption, not a reading.
  *
- * One reading does overrule it: a return to IDLE (motion code 8, the motors not
- * driven by anything) ends a commanded MPC, because the controller comes back
- * up under RL and a lit MPC would then claim a mode the robot has dropped. The
+ * Two readings do overrule it: an arrival at IDLE (motion code 8, the motors
+ * not driven by anything), because the controller comes back up under RL, and
+ * at LOCOMOTION (code 1), which is RL's own gait — an MPC pressed while lying
+ * down is followed by a stand that comes up there. Either ends a commanded MPC,
+ * since a lit MPC would then claim a mode the robot has dropped. The
  * rule is `controllerAfterMotion`, applied on the motion's *change* — see there
  * for why the edge and not the level.
  *

@@ -195,8 +195,8 @@ lib/
                 the readout thresholds (levels.ts: Wi-Fi bars, battery, joint heat)
                 and the overheating notice's rule (heat-alert.ts: raised above
                 85 °C, re-armed only once the motor has cooled), and the
-                commanded controller's one override (controller.ts: a return
-                to IDLE drops a commanded MPC back to RL)
+                commanded controller's override (controller.ts: an arrival
+                at IDLE or LOCOMOTION drops a commanded MPC back to RL)
   teleop/       thumbstick maths: clamp, deadzone, key bindings, the linear
                 speed limit and the screen-to-body-frame turn the drive panel
                 commands through
