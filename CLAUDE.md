@@ -147,7 +147,11 @@ components/
                 state) and its disclosures: the sensor alerts (where an
                 overheating motor interrupts, on every screen), the drive
                 panel and camera window every screen can open
-  dashboard/    3D viewport (pointcloud-canvas), telemetry rail, driving controls
+  dashboard/    3D viewport (pointcloud-canvas) with the pose laid over its
+                corner, the instrument rail (the registered schedules first —
+                a glance with pause and delete, the list itself stays on
+                /tasks — then posture, locomotion and motors) and the
+                driving controls
   mapping/      the mode switch (the rail), the run strip over the viewport
                 (Start, then a recording-style indicator beside Save and New
                 map — its face is lib/map/run-face.ts), the save dialog, the
@@ -206,6 +210,9 @@ lib/
                 readout tone a lib/ rule answers in
   angle.ts      normalizeTheta — the degree fold every heading goes through
   download.ts   downloadBlob — hands a file to the operator's own machine
+  keyboard.ts   isTypingTarget — whether a focused element is really taking
+                letters, which is what keeps the drive keys alive beside a
+                slider or a checkbox
 ```
 
 ## Layering
