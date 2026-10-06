@@ -24,8 +24,8 @@ const POLICIES: readonly { value: Policy; label: string }[] = [
  *
  * - **Controller** is commanded, defaulting to RL. It cannot be read back —
  *   `low_level_mode.motion` has no code for MPC — so the lit segment is an
- *   assumption plus whatever the operator last pressed, except that a return
- *   to IDLE drops MPC back to RL (`controllerAfterMotion`).
+ *   assumption plus whatever the operator last pressed, except that an arrival
+ *   at IDLE or LOCOMOTION drops MPC back to RL (`controllerAfterMotion`).
  * - **Policy** is reported. The lit segment is `low_level_mode.policy`, i.e. what
  *   the controller says it is running. A request that the robot has not confirmed
  *   yet shows as `confirming…` rather than silently looking applied, which is the
