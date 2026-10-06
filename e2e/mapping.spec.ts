@@ -50,6 +50,9 @@ test.describe("the mapping run", () => {
     await expect(saveButton(page)).toHaveCount(0);
     await expect(resetButton(page)).toHaveCount(0);
     await expect(strip(page).getByRole("status")).toHaveCount(0);
+    // The map so far is always on: no layer toggle, and no stream pills.
+    await expect(page.getByRole("button", { name: "Map so far" })).toHaveCount(0);
+    await expect(page.getByText(/^(Scan|Map) live$/)).toHaveCount(0);
   });
 
   test("starts the run and the strip follows the robot's status", async ({ page }) => {
@@ -64,14 +67,15 @@ test.describe("the mapping run", () => {
     expect(writes.filter((w) => w.path === "/api/v1/mapping/start")).toEqual([
       { method: "POST", path: "/api/v1/mapping/start", body: null },
     ]);
-    // The robot's sentence, with its stillness warning, verbatim — under the strip.
-    await expect(page.getByText(/keep the robot still/)).toBeVisible();
     // The next poll says mapping: Start gives way to the indicator, Save and
-    // New map light up.
-    await expect(strip(page).getByRole("status")).toHaveText("Mapping · 0 keyframes");
+    // New map light up. The indicator is the dot alone; its word is for a
+    // screen reader.
+    await expect(strip(page).getByRole("status")).toHaveText("Mapping");
     await expect(saveButton(page)).toBeEnabled();
     await expect(resetButton(page)).toBeEnabled();
     await expect(startButton(page)).toHaveCount(0);
+    // A start that was accepted leaves no sentence under the strip.
+    await expect(page.getByText(/keep the robot still/)).toHaveCount(0);
   });
 
   test("saving asks for the name, shows the receipt, and offers Start again", async ({
@@ -82,7 +86,7 @@ test.describe("the mapping run", () => {
       mappingStatus: { state: "mapping", key_poses: 12, loop_closures: 1 },
     });
     await page.goto("/mapping");
-    await expect(strip(page).getByRole("status")).toHaveText("Mapping · 12 keyframes");
+    await expect(strip(page).getByRole("status")).toHaveText("Mapping");
     await expect(startButton(page)).toHaveCount(0);
 
     await saveButton(page).click();
@@ -101,16 +105,10 @@ test.describe("the mapping run", () => {
     await dialog(page).getByRole("button", { name: "Close" }).click();
     await expect(dialog(page)).toHaveCount(0);
 
-    // Closing the dialog moves the receipt under the strip rather than
-    // dropping it, and the strip itself has followed the robot back to idle.
-    await expect(page.getByText(/Mapping has stopped/)).toBeVisible();
+    // The strip has followed the robot back to idle, and the receipt went
+    // with the dialog: nothing under the strip repeats it.
     await expect(startButton(page)).toBeEnabled();
     await expect(resetButton(page)).toHaveCount(0);
-
-    // The next run clears the last one's receipt: a "Saved" line under a
-    // brand-new empty map would be a lie about this run.
-    await startButton(page).click();
-    await expect(page.getByText(/keep the robot still/)).toBeVisible();
     await expect(page.getByText(/Mapping has stopped/)).toHaveCount(0);
   });
 
@@ -180,7 +178,7 @@ test.describe("the mapping run", () => {
 
     // A run is now in RAM and unsaved: the same switch asks the loud question.
     await startButton(page).click();
-    await expect(strip(page).getByRole("status")).toHaveText("Mapping · 0 keyframes");
+    await expect(strip(page).getByRole("status")).toHaveText("Mapping");
     await page.getByRole("button", { name: "Navigation" }).click();
     await expect(dialog(page)).toContainText("Leave mapping without saving?");
   });
@@ -204,8 +202,9 @@ test.describe("the mapping run", () => {
     expect(writes.filter((w) => w.path === "/api/v1/mapping/reset")).toEqual([
       { method: "POST", path: "/api/v1/mapping/reset", body: null },
     ]);
-    await expect(page.getByText(/Map discarded/)).toBeVisible();
-    await expect(strip(page).getByRole("status")).toHaveText("Mapping · 0 keyframes");
+    await expect(strip(page).getByRole("status")).toHaveText("Mapping");
+    // An accepted reset leaves no sentence under the strip; only a refusal does.
+    await expect(page.getByText(/Map discarded/)).toHaveCount(0);
   });
 
   test("a refused start is shown in the robot's words", async ({ page }) => {

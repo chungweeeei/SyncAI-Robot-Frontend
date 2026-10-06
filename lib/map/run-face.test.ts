@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  START_NEEDS_MAPPING_MODE,
-  keyframesReadout,
-  mappingRunFace,
-} from "@/lib/map/run-face";
+import { START_NEEDS_MAPPING_MODE, mappingRunFace } from "@/lib/map/run-face";
 
 /**
  * The rule that decides what the run strip offers. Each case is a press the
@@ -59,16 +55,9 @@ describe("mappingRunFace", () => {
     ).toEqual({ kind: "held", readout: "Resetting…" });
   });
 
-  it("shows the run with its keyframe count while mapping", () => {
+  it("shows the run while mapping", () => {
     expect(
       mappingRunFace({ inMapping: true, run: status("mapping", 12), status: "ok" }),
-    ).toEqual({ kind: "run", readout: "Mapping · 12 keyframes" });
-  });
-});
-
-describe("keyframesReadout", () => {
-  it("reads one keyframe in the singular", () => {
-    expect(keyframesReadout(1)).toBe("Mapping · 1 keyframe");
-    expect(keyframesReadout(0)).toBe("Mapping · 0 keyframes");
+    ).toEqual({ kind: "run" });
   });
 });

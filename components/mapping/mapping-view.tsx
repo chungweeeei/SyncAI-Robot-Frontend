@@ -13,7 +13,7 @@ import {
 import { overlayPanel } from "@/components/console/instrument";
 import { PointCloudCanvas } from "@/components/dashboard/pointcloud-canvas";
 import { ModeControl } from "@/components/mapping/mode-control";
-import { RunReadback } from "@/components/mapping/run-readback";
+import { RunError } from "@/components/mapping/run-error";
 import { RunStrip, type RunPending } from "@/components/mapping/run-strip";
 import { SaveMapDialog } from "@/components/mapping/save-map-dialog";
 import {
@@ -36,25 +36,7 @@ import { useModeSwitch } from "@/hooks/use-mode-switch";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import type { MappingRunState, SwitchableMode } from "@/lib/api/mapping";
 import { mappingRunFace } from "@/lib/map/run-face";
-import type { StreamStatus } from "@/lib/types/stream";
 import { cn } from "@/lib/utils";
-
-const STATUS_LABEL: Record<StreamStatus, string> = {
-  connecting: "Connecting",
-  open: "Scan live",
-  closed: "Scan lost",
-  error: "Cloud error",
-};
-
-// The "map so far" stream's pill reads "Map live" as soon as the socket is
-// open — the first dot of data still needs a run to have been started and pgo
-// to have banked a keyframe, which the run strip alongside communicates.
-const MAP_STATUS_LABEL: Record<StreamStatus, string> = {
-  connecting: "Map connecting",
-  open: "Map live",
-  closed: "Map down",
-  error: "Map error",
-};
 
 /*
  * There is no camera-mode control here, unlike the dashboard's viewport
@@ -134,31 +116,6 @@ function confirmKey(confirming: Confirming): keyof typeof CONFIRM_COPY {
   return confirming.unsaved ? "leave" : confirming.to;
 }
 
-/** One stream-health row: dot in the three link tones, then the label. */
-function StreamPill({
-  status,
-  label,
-}: {
-  status: StreamStatus;
-  label: string;
-}) {
-  return (
-    <span className="flex items-center gap-2">
-      <span
-        className={cn(
-          "inline-block size-2 rounded-full",
-          status === "open"
-            ? "bg-signal-live"
-            : status === "connecting"
-              ? "bg-signal-caution"
-              : "bg-signal-warn",
-        )}
-      />
-      <span className="instrument-label text-muted-foreground">{label}</span>
-    </span>
-  );
-}
-
 /**
  * The mapping screen's content: drive the robot around and watch the map being
  * built.
@@ -186,13 +143,13 @@ function StreamPill({
  * reload the strip has to know whether Start or Save is the next thing to
  * offer. The rule is lib/map/run-face.ts.
  *
- * This page owns the three run writes — start, save, reset — because what
- * each one answers lands in the same read-back under the strip, and the
- * save's receipt has to outlive the dialog it was asked in. Whichever was
- * pressed last owns the read-back: every press `reset()`s the other two
- * (the recorder's idiom), which is also what clears a save's receipt and
- * its floor plan line when the next run starts — a line claiming "Saved
- * 'foo'" under a brand-new empty map would be a lie about this run.
+ * This page owns the three run writes — start, save, reset — because a
+ * refused start or reset lands in the same panel under the strip, and the
+ * save's receipt has to outlive a dialog that stays open as it. Whichever was
+ * pressed last owns the panel: every press `reset()`s the other two (the
+ * recorder's idiom), which is also what clears a save's receipt and its
+ * floor plan line when the next run starts — a dialog reopened on "Saved
+ * 'foo'" for a brand-new empty map would be a lie about this run.
  *
  * The one rule this page owns: **every act that rebuilds or discards something
  * goes through one confirm dialog**, because nothing downstream will stop you —
@@ -216,15 +173,12 @@ function StreamPill({
  * stays up and there is no run to lose, which the robot itself guarantees by
  * refusing a start while a run is on. Its one hazard, the robot having to
  * stand still while the lidar re-levels, is in the sentence the robot answers
- * with, which the read-back shows.
+ * with — which, since the panel under the strip keeps only refusals
+ * (2026-10, by request), is no longer on screen.
  */
 export function MappingView() {
   const control = useModeSwitch();
   const { feed } = useTelemetry();
-  const [cloudStatus, setCloudStatus] = React.useState<StreamStatus>("connecting");
-  const [mapCloudStatus, setMapCloudStatus] =
-    React.useState<StreamStatus>("connecting");
-  const [showMapSoFar, setShowMapSoFar] = React.useState(true);
   const [topDownNonce, setTopDownNonce] = React.useState(0);
   const [savedRun, setSavedRun] = React.useState(false);
   // One dialog, every question. They all ask "you are about to interrupt the
@@ -318,9 +272,8 @@ export function MappingView() {
     save.mutate(name, { onSuccess: () => setSavedRun(true) });
   };
 
-  // A refusal the operator backed out of was shown in the dialog and must
-  // not land in the read-back too; a receipt is kept, because the read-back
-  // is exactly where it goes next.
+  // A refusal the operator backed out of was shown in the dialog and is
+  // dropped with it, so the dialog reopens on an empty form.
   const closeSave = () => {
     if (save.error) save.reset();
     setSaving(false);
@@ -382,22 +335,10 @@ export function MappingView() {
         ? "reset"
         : null;
 
-  // Whichever write spoke last — at most one holds data or an error, since
-  // every press resets the other two. The save's refusal is the exception:
-  // it is shown in the dialog, and `closeSave` drops it before it could land
-  // here. Its receipt waits for the dialog to close, where it was already
-  // read once.
-  const readback: { message: string | null; tone: "live" | "warn" } = start.data
-    ? { message: start.data.message, tone: "live" }
-    : start.error
-      ? { message: start.error.message, tone: "warn" }
-      : discard.data
-        ? { message: discard.data.message, tone: "live" }
-        : discard.error
-          ? { message: discard.error.message, tone: "warn" }
-          : save.data && !saving
-            ? { message: save.data.message, tone: "live" }
-            : { message: null, tone: "live" };
+  // Whichever press was refused last — at most one holds an error, since
+  // every press resets the other two. The save's refusal stays in its dialog,
+  // beside the name to fix.
+  const runError = start.error?.message ?? discard.error?.message ?? null;
 
   return (
     <div className="flex h-full flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
@@ -408,62 +349,30 @@ export function MappingView() {
         <PointCloudCanvas
           telemetry={feed}
           topDownNonce={topDownNonce}
-          onStatus={setCloudStatus}
-          mapCloudStream={showMapSoFar}
-          onMapStatus={setMapCloudStatus}
+          mapCloudStream
         />
 
-        {/* One row across the top, the dashboard's shape: the stream pills
-          * at the left, the run strip at the right, wrapping onto two lines
-          * on a phone rather than overlapping. The read-back hangs under the
-          * strip. The whole overlay is pointer-transparent so the scene
-          * behind its empty stretches still takes a drag — only the panels
-          * themselves catch the pointer. */}
+        {/* The run strip at the top right, a refused press hanging under
+          * it. No stream-health pills and no layer toggle (2026-10, by
+          * request): the map so far is always streamed, and whether there is
+          * any is read off the picture itself. The whole overlay is
+          * pointer-transparent so the scene behind its empty stretches still
+          * takes a drag — only the panels themselves catch the pointer. */}
         <div className="pointer-events-none absolute inset-x-3 top-3 flex max-h-[calc(100%-1.5rem)] flex-col gap-2">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            {/* Same stream-health pills as the dashboard viewport, one per
-              * socket — the two fail independently. During a mode switch both
-              * go red with everything else; the mode control's caption is
-              * what says that is expected. The map row disappears with its
-              * toggle: a deliberately closed stream shown as "Map down" would
-              * read as a fault. */}
-            <div
-              className={cn(
-                overlayPanel,
-                "pointer-events-auto flex flex-col gap-1.5 px-2 py-1.5",
-              )}
-            >
-              <StreamPill status={cloudStatus} label={STATUS_LABEL[cloudStatus]} />
-              {showMapSoFar && (
-                <StreamPill
-                  status={mapCloudStatus}
-                  label={MAP_STATUS_LABEL[mapCloudStatus]}
-                />
-              )}
-            </div>
-
-            <RunStrip
-              className="pointer-events-auto"
-              face={face}
-              pending={runPending}
-              onStart={onStart}
-              onSave={openSave}
-              onReset={requestReset}
-            />
-          </div>
+          <RunStrip
+            className="pointer-events-auto self-end"
+            face={face}
+            pending={runPending}
+            onStart={onStart}
+            onSave={openSave}
+            onReset={requestReset}
+          />
 
           {/* Right-aligned, under the strip whose press it answers. Scrolling
             * because a phone held sideways leaves the viewport ~200 px tall,
             * and a refusal can be three lines. */}
           <div className="pointer-events-none flex min-h-0 w-56 flex-col gap-2 self-end overflow-y-auto empty:hidden">
-            <RunReadback
-              className="pointer-events-auto"
-              message={readback.message}
-              tone={readback.tone}
-              // The floor plan line follows the receipt: in the dialog while
-              // it is open, here once it has closed.
-              conversion={saving ? null : converting}
-            />
+            <RunError className="pointer-events-auto" message={runError} />
           </div>
         </div>
 
@@ -479,24 +388,6 @@ export function MappingView() {
           >
             <Grid2x2Icon aria-hidden className="size-3.5" />
             Top down
-          </button>
-          {/* Layer toggle in the dashboard's LayerToggle idiom: pressed state
-            * in the commanded hue, because what is drawn is the operator's
-            * choice. Off closes the WebSocket too — the layer re-arrives
-            * seconds after re-enabling. */}
-          <button
-            type="button"
-            aria-pressed={showMapSoFar}
-            onClick={() => setShowMapSoFar((v) => !v)}
-            className={cn(
-              overlayPanel,
-              "instrument-label h-6 px-2 transition-colors",
-              showMapSoFar
-                ? "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd"
-                : "text-muted-foreground hover:bg-elevated hover:text-foreground",
-            )}
-          >
-            Map so far
           </button>
         </div>
       </section>

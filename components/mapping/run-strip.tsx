@@ -11,8 +11,8 @@ export type RunPending = "start" | "save" | "reset" | null;
 
 /**
  * The run's controls, as one strip over the viewport: Start while nothing is
- * running, and once a run is on, a recording indicator with the keyframe
- * count beside Save and New map.
+ * running, and once a run is on, a recording indicator beside Save and New
+ * map.
  *
  * It replaced three groups in the rail (2026-10), by request: the run is what
  * this screen is for, and its buttons belong on the picture they act on, the
@@ -72,8 +72,8 @@ export function RunStrip({
         <>
           {/* A live region: the state word changes on a start, a save and a
             * reset, which a screen reader should hear the way a sighted
-            * operator sees the dot start to pulse. Keyframes bank per metre
-            * driven, so the count does not chatter. */}
+            * operator sees the dot start to pulse. A run shows the dot alone,
+            * by request, so its word is for the screen reader only. */}
           <span
             role="status"
             className={cn(
@@ -81,8 +81,14 @@ export function RunStrip({
               face.kind === "run" ? "text-signal-warn" : "text-signal-caution",
             )}
           >
-            {face.kind === "run" && <RecordDot />}
-            {face.readout}
+            {face.kind === "run" ? (
+              <>
+                <RecordDot />
+                <span className="sr-only">Mapping</span>
+              </>
+            ) : (
+              face.readout
+            )}
           </span>
 
           <StripDivider />

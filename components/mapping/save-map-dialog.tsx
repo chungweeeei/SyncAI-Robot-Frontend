@@ -36,8 +36,9 @@ import type { MapSummary } from "@/lib/types/map";
  * the one that knows whether the floor plan conversion was started or has to
  * be run by hand) and the conversion's progress under it — with a single
  * Close. An operator who has just waited a minute for a save should read
- * how it went where they were looking, not hunt for it under the strip; the
- * read-back there is where the same lines go once Close is pressed.
+ * how it went where they were looking, not hunt for it elsewhere — and this
+ * is the only place it is shown: nothing under the strip repeats it once
+ * Close is pressed.
  *
  * Presentational over the page's save mutation, because the receipt and the
  * conversion it watches have to outlive this dialog. A refusal (name taken,
@@ -56,7 +57,7 @@ export function SaveMapDialog({
 }: {
   open: boolean;
   busy: boolean;
-  /** The backend's refusal, verbatim. Shown here, never in the read-back. */
+  /** The backend's refusal, verbatim. Shown here, never under the strip. */
   error: string | null;
   /** The backend's receipt, verbatim; non-null flips the dialog to its second face. */
   saved: string | null;
@@ -160,7 +161,10 @@ export function SaveMapDialog({
               <AlertDialogDescription>{saved}</AlertDialogDescription>
             </AlertDialogHeader>
 
-            {/* Under the receipt, not replacing it — see RunReadback. */}
+            {/* Under the receipt, not replacing it: the two say different
+              * things — that the scan is on disk (permanent, and the thing
+              * that makes the run safe to leave) and how the floor plan
+              * built from it went. */}
             <ConversionLine map={conversion} />
 
             <AlertDialogFooter>

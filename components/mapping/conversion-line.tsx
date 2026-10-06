@@ -16,9 +16,9 @@ import type { MapSummary } from "@/lib/types/map";
  * usable. Saving and converting are one act to the person doing it; only the
  * backend has a reason to see two.
  *
- * Shown in the save dialog while it is open and in the read-back under the
- * run strip once it is closed — the same line in both, because the operator
- * closing the dialog has not stopped caring how the floor plan turned out.
+ * Shown in the save dialog, under its receipt. It used to follow the
+ * operator under the run strip once the dialog closed; that copy was dropped
+ * by request (2026-10), so the outcome after Close is on the Maps screen.
  *
  * Renders nothing until the catalogue has an entry to report, which covers the
  * seconds between the save landing and the first poll.
