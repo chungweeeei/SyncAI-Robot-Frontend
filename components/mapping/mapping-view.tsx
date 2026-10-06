@@ -13,15 +13,9 @@ import {
 import { overlayPanel } from "@/components/console/instrument";
 import { PointCloudCanvas } from "@/components/dashboard/pointcloud-canvas";
 import { ModeControl } from "@/components/mapping/mode-control";
-import { ResetRunControl } from "@/components/mapping/reset-run-control";
-import {
-  SaveMapControl,
-  type RunAvailability,
-} from "@/components/mapping/save-map-control";
-import {
-  StartMappingControl,
-  type StartAvailability,
-} from "@/components/mapping/start-mapping-control";
+import { RunReadback } from "@/components/mapping/run-readback";
+import { RunStrip, type RunPending } from "@/components/mapping/run-strip";
+import { SaveMapDialog } from "@/components/mapping/save-map-dialog";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -31,10 +25,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { useMappingStatus, useResetMappingRun } from "@/hooks/use-mapping-run";
+import {
+  useMappingStatus,
+  useResetMappingRun,
+  useSaveMap,
+  useStartMapping,
+} from "@/hooks/use-mapping-run";
+import { useMapConversion } from "@/hooks/use-maps";
 import { useModeSwitch } from "@/hooks/use-mode-switch";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import type { MappingRunState, SwitchableMode } from "@/lib/api/mapping";
+import { mappingRunFace } from "@/lib/map/run-face";
 import type { StreamStatus } from "@/lib/types/stream";
 import { cn } from "@/lib/utils";
 
@@ -47,7 +48,7 @@ const STATUS_LABEL: Record<StreamStatus, string> = {
 
 // The "map so far" stream's pill reads "Map live" as soon as the socket is
 // open — the first dot of data still needs a run to have been started and pgo
-// to have banked a keyframe, which the run control alongside communicates.
+// to have banked a keyframe, which the run strip alongside communicates.
 const MAP_STATUS_LABEL: Record<StreamStatus, string> = {
   connecting: "Map connecting",
   open: "Map live",
@@ -178,6 +179,21 @@ function StreamPill({
  * robot model needs the telemetry pose, which mapping's TF chain may not
  * provide; the clouds are the primary instrument either way.
  *
+ * The run's controls sit over the viewport as one strip (RunStrip), and the
+ * rail keeps only the mode switch. The strip's face is the robot's run state,
+ * polled, not a flag this page sets on a press: a run started from another
+ * console, or a save that landed there, must read the same here, and after a
+ * reload the strip has to know whether Start or Save is the next thing to
+ * offer. The rule is lib/map/run-face.ts.
+ *
+ * This page owns the three run writes — start, save, reset — because what
+ * each one answers lands in the same read-back under the strip, and the
+ * save's receipt has to outlive the dialog it was asked in. Whichever was
+ * pressed last owns the read-back: every press `reset()`s the other two
+ * (the recorder's idiom), which is also what clears a save's receipt and
+ * its floor plan line when the next run starts — a line claiming "Saved
+ * 'foo'" under a brand-new empty map would be a lie about this run.
+ *
  * The one rule this page owns: **every act that rebuilds or discards something
  * goes through one confirm dialog**, because nothing downstream will stop you —
  * sys_manager takes `switch_mode` at its word and pgo holds the run in RAM. So
@@ -195,10 +211,12 @@ function StreamPill({
  * lose, so leaving is a plain switch. `unknown` keeps the guard, the way the
  * map job lock refuses rather than assumes.
  *
- * The run state is the robot's, polled, not a flag this page sets on a press:
- * a run started from another console, or a save that landed there, must read
- * the same here, and after a reload the rail has to know whether Start or
- * Save is the next thing to offer.
+ * A start goes through **no confirm dialog**, and that is a decision against
+ * the rule above: a start rebuilds nothing and discards nothing — the stack
+ * stays up and there is no run to lose, which the robot itself guarantees by
+ * refusing a start while a run is on. Its one hazard, the robot having to
+ * stand still while the lidar re-levels, is in the sentence the robot answers
+ * with, which the read-back shows.
  */
 export function MappingView() {
   const control = useModeSwitch();
@@ -213,12 +231,13 @@ export function MappingView() {
   // robot" and differ only in what happens next, so a second AlertDialog block
   // would be a copy of the same copy, drifting apart at the first reword.
   const [confirming, setConfirming] = React.useState<Confirming | null>(null);
-  const reset = useResetMappingRun();
-  // Bumped on every successful reset and used as SaveMapControl's key, which
-  // remounts it. Remounting is the least code that says "different run": it
-  // clears the "Saved 'foo' / 2D grid ready" line, which would otherwise sit
-  // under a brand-new empty map claiming it was already saved.
-  const [runNonce, setRunNonce] = React.useState(0);
+  // The save dialog is the other one, and never open at the same time: it is
+  // reached from the strip, which is inert under the confirm.
+  const [saving, setSaving] = React.useState(false);
+
+  const start = useStartMapping();
+  const save = useSaveMap();
+  const discard = useResetMappingRun();
 
   const { reported, pending, switchTo } = control;
 
@@ -234,25 +253,25 @@ export function MappingView() {
 
   // Polled only while the robot reports Mapping: outside it the answer is
   // `unknown` by construction and the query is not even fetched. Loading fails
-  // closed to `unknown`, which offers nothing.
+  // closed, which offers nothing.
   const runStatus = useMappingStatus(mapping);
   const runState: MappingRunState =
     mapping && runStatus.run ? runStatus.run.state : "unknown";
-  const building = mapping && runState === "mapping";
-  // Opposite readings of the same state: Start wants idle, Save and the reset
-  // want a run.
-  const startAvailability: StartAvailability = !mapping
-    ? "wrong-mode"
-    : runState === "idle"
-      ? "ready"
-      : runState === "mapping"
-        ? "running"
-        : "busy";
-  const runAvailability: RunAvailability = !mapping
-    ? "wrong-mode"
-    : building
-      ? "ready"
-      : "no-run";
+  const face = mappingRunFace({
+    inMapping: mapping,
+    run: runStatus.run,
+    status: runStatus.status,
+  });
+
+  // The map whose conversion this screen is following, read off the last save:
+  // "the one I just saved" is not something the catalogue can be asked, since
+  // it lists every map on the robot and says nothing about which one is this
+  // operator's. Only when the backend says a conversion started — for
+  // grid_pending false there is nothing running to watch, and the line would
+  // sit on "none" saying nothing. Null until then, which is also what keeps the
+  // mapping screen from fetching a catalogue it otherwise has no use for.
+  const watching = save.data?.grid_pending ? save.data.name : null;
+  const converting = useMapConversion(watching);
 
   // No segment commands a switch directly — every one of them opens the dialog
   // and the operator's second tap is what reaches sys_manager. The one press
@@ -276,18 +295,42 @@ export function MappingView() {
     [reported, pending, savedRun, runState],
   );
 
-  // The third re-arm event (see the component doc): a start after a save is a
-  // new unsaved run that `reported` never sees. The remount clears the last
-  // save's receipt for the same reason the reset's does.
-  const onStarted = React.useCallback(() => {
-    setSavedRun(false);
-    setRunNonce((n) => n + 1);
-  }, []);
+  const onStart = () => {
+    save.reset();
+    discard.reset();
+    start.mutate(undefined, {
+      // The third re-arm event (see the component doc): a start after a save
+      // is a new unsaved run that `reported` never sees.
+      onSuccess: () => setSavedRun(false),
+    });
+  };
 
-  const { mutate: resetRun } = reset;
-  const runReset = React.useCallback(() => {
+  // Cleared on open, not on submit: a receipt from a run another console
+  // saved and restarted would otherwise show as this save's for a frame.
+  const openSave = () => {
+    start.reset();
+    discard.reset();
+    save.reset();
+    setSaving(true);
+  };
+
+  const submitSave = (name: string) => {
+    save.mutate(name, { onSuccess: () => setSavedRun(true) });
+  };
+
+  // A refusal the operator backed out of was shown in the dialog and must
+  // not land in the read-back too; a receipt is kept, because the read-back
+  // is exactly where it goes next.
+  const closeSave = () => {
+    if (save.error) save.reset();
+    setSaving(false);
+  };
+
+  const runReset = () => {
     setConfirming(null);
-    resetRun(undefined, {
+    start.reset();
+    save.reset();
+    discard.mutate(undefined, {
       onSuccess: () => {
         // The line that makes the leave-guard keep working. Its usual re-arm
         // watches `reported` change, and `reported` stays MANUAL straight
@@ -295,10 +338,9 @@ export function MappingView() {
         // resets, drives map B and then switches to Nav gets no warning and
         // loses B silently.
         setSavedRun(false);
-        setRunNonce((n) => n + 1);
       },
     });
-  }, [resetRun]);
+  };
 
   // Confirmed even when the run IS saved: a misclick costs the run either way,
   // and "it was saved" says nothing about the minutes driven since the save.
@@ -316,7 +358,7 @@ export function MappingView() {
   const confirmCopy = CONFIRM_COPY[confirmKey(shown)];
   const ConfirmIcon = confirmCopy.icon;
 
-  const confirmDialog = React.useCallback(() => {
+  const confirmDialog = () => {
     if (!confirming) return;
     if (confirming.kind === "reset") {
       runReset();
@@ -324,8 +366,38 @@ export function MappingView() {
     }
     const target = confirming.to;
     setConfirming(null);
+    // A switch tears the session down; the receipts describe a run that no
+    // longer exists.
+    start.reset();
+    save.reset();
+    discard.reset();
     void switchTo(target);
-  }, [confirming, runReset, switchTo]);
+  };
+
+  const runPending: RunPending = start.isPending
+    ? "start"
+    : save.isPending
+      ? "save"
+      : discard.isPending
+        ? "reset"
+        : null;
+
+  // Whichever write spoke last — at most one holds data or an error, since
+  // every press resets the other two. The save's refusal is the exception:
+  // it is shown in the dialog, and `closeSave` drops it before it could land
+  // here. Its receipt waits for the dialog to close, where it was already
+  // read once.
+  const readback: { message: string | null; tone: "live" | "warn" } = start.data
+    ? { message: start.data.message, tone: "live" }
+    : start.error
+      ? { message: start.error.message, tone: "warn" }
+      : discard.data
+        ? { message: discard.data.message, tone: "live" }
+        : discard.error
+          ? { message: discard.error.message, tone: "warn" }
+          : save.data && !saving
+            ? { message: save.data.message, tone: "live" }
+            : { message: null, tone: "live" };
 
   return (
     <div className="flex h-full flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
@@ -341,24 +413,58 @@ export function MappingView() {
           onMapStatus={setMapCloudStatus}
         />
 
-        {/* Same stream-health pills as the dashboard viewport, one per socket
-          * — the two fail independently. During a mode switch both go red with
-          * everything else; the mode control's caption is what says that is
-          * expected. The map row disappears with its toggle: a deliberately
-          * closed stream shown as "Map down" would read as a fault. */}
-        <div
-          className={cn(
-            overlayPanel,
-            "absolute top-3 right-3 flex flex-col gap-1.5 px-2 py-1.5",
-          )}
-        >
-          <StreamPill status={cloudStatus} label={STATUS_LABEL[cloudStatus]} />
-          {showMapSoFar && (
-            <StreamPill
-              status={mapCloudStatus}
-              label={MAP_STATUS_LABEL[mapCloudStatus]}
+        {/* One row across the top, the dashboard's shape: the stream pills
+          * at the left, the run strip at the right, wrapping onto two lines
+          * on a phone rather than overlapping. The read-back hangs under the
+          * strip. The whole overlay is pointer-transparent so the scene
+          * behind its empty stretches still takes a drag — only the panels
+          * themselves catch the pointer. */}
+        <div className="pointer-events-none absolute inset-x-3 top-3 flex max-h-[calc(100%-1.5rem)] flex-col gap-2">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            {/* Same stream-health pills as the dashboard viewport, one per
+              * socket — the two fail independently. During a mode switch both
+              * go red with everything else; the mode control's caption is
+              * what says that is expected. The map row disappears with its
+              * toggle: a deliberately closed stream shown as "Map down" would
+              * read as a fault. */}
+            <div
+              className={cn(
+                overlayPanel,
+                "pointer-events-auto flex flex-col gap-1.5 px-2 py-1.5",
+              )}
+            >
+              <StreamPill status={cloudStatus} label={STATUS_LABEL[cloudStatus]} />
+              {showMapSoFar && (
+                <StreamPill
+                  status={mapCloudStatus}
+                  label={MAP_STATUS_LABEL[mapCloudStatus]}
+                />
+              )}
+            </div>
+
+            <RunStrip
+              className="pointer-events-auto"
+              face={face}
+              pending={runPending}
+              onStart={onStart}
+              onSave={openSave}
+              onReset={requestReset}
             />
-          )}
+          </div>
+
+          {/* Right-aligned, under the strip whose press it answers. Scrolling
+            * because a phone held sideways leaves the viewport ~200 px tall,
+            * and a refusal can be three lines. */}
+          <div className="pointer-events-none flex min-h-0 w-56 flex-col gap-2 self-end overflow-y-auto empty:hidden">
+            <RunReadback
+              className="pointer-events-auto"
+              message={readback.message}
+              tone={readback.tone}
+              // The floor plan line follows the receipt: in the dialog while
+              // it is open, here once it has closed.
+              conversion={saving ? null : converting}
+            />
+          </div>
         </div>
 
         <div className="absolute bottom-3 left-3 flex items-center gap-2">
@@ -393,7 +499,6 @@ export function MappingView() {
             Map so far
           </button>
         </div>
-
       </section>
 
       <aside
@@ -401,24 +506,17 @@ export function MappingView() {
         className="w-full shrink-0 border-t border-hairline bg-panel lg:h-full lg:w-72 lg:overflow-y-auto lg:border-t-0 lg:border-l"
       >
         <ModeControl control={control} onSelect={selectMode} />
-        <StartMappingControl
-          availability={startAvailability}
-          status={runStatus}
-          onStarted={onStarted}
-        />
-        <SaveMapControl
-          key={runNonce}
-          availability={runAvailability}
-          onSaved={() => setSavedRun(true)}
-        />
-        <ResetRunControl
-          availability={runAvailability}
-          busy={reset.isPending}
-          error={reset.error?.message ?? null}
-          done={reset.data?.message ?? null}
-          onRequest={requestReset}
-        />
       </aside>
+
+      <SaveMapDialog
+        open={saving}
+        busy={save.isPending}
+        error={save.error?.message ?? null}
+        saved={save.data?.message ?? null}
+        conversion={converting}
+        onSave={submitSave}
+        onClose={closeSave}
+      />
 
       <AlertDialog
         open={confirming !== null}
@@ -445,8 +543,8 @@ export function MappingView() {
               * delete and switch dialogs): the glyph tells the two buttons
               * apart at a glance, the word is what makes the committing one
               * unmistakable. The confirm glyph is the one the action already
-              * wears elsewhere on this page — RotateCcw is ResetRunControl's
-              * own button — so the dialog reads as that control continued. */}
+              * wears elsewhere on this page — RotateCcw is the strip's New
+              * map — so the dialog reads as that control continued. */}
             <Button variant="ghost" size="sm" onClick={() => setConfirming(null)}>
               <ArrowLeftIcon data-icon="inline-start" />
               {confirmCopy.cancel}

@@ -148,7 +148,10 @@ components/
                 overheating motor interrupts, on every screen), the drive
                 panel and camera window every screen can open
   dashboard/    3D viewport (pointcloud-canvas), telemetry rail, driving controls
-  mapping/      mode switch, start-mapping, save-map and reset-run controls
+  mapping/      the mode switch (the rail), the run strip over the viewport
+                (Start, then a recording-style indicator beside Save and New
+                map — its face is lib/map/run-face.ts), the save dialog, the
+                read-back under the strip and the floor plan conversion line
   maps/         map library cards and the gridmap editor (grid-canvas)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
@@ -173,8 +176,10 @@ lib/
                 the forbidden zone rules (zone.ts: corner count, close-on-first,
                 point-in-polygon pick) and
                 the task editor's floor plan preview (preview.ts: fit, markers,
-                hit test), and the gesture rules both map surfaces share
-                (gesture.ts: press intent, drag deadzone, heading, band)
+                hit test), the gesture rules both map surfaces share
+                (gesture.ts: press intent, drag deadzone, heading, band), the
+                job lock (run-lock.ts) and the mapping run strip's face rule
+                (run-face.ts: what the robot's run state lets the strip offer)
   scene/        three.js scene building for the 3D viewport: theme, markers,
                 vertex layer, zone layer, path ribbon, camera policy, picking,
                 robot mesh
