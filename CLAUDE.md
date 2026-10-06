@@ -151,7 +151,7 @@ components/
   mapping/      the mode switch (the rail), the run strip over the viewport
                 (Start, then a recording-style indicator beside Save and New
                 map — its face is lib/map/run-face.ts), the save dialog, the
-                read-back under the strip and the floor plan conversion line
+                refusal panel under the strip and the floor plan conversion line
   maps/         map library cards and the gridmap editor (grid-canvas)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)

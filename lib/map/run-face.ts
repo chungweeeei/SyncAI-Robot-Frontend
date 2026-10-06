@@ -27,17 +27,15 @@ export interface RunFaceInput {
 export type RunFace =
   /** Nothing is running: offer Start. `enabled` is false in the wrong mode, and `reason` says so. */
   | { kind: "start"; enabled: boolean; reason: string | null }
-  /** A run is on: the recording indicator, then Save and New map. */
-  | { kind: "run"; readout: string }
+  /**
+   * A run is on: the recording indicator, then Save and New map. The dot
+   * alone, by request — the keyframe count beside it was dropped (2026-10).
+   */
+  | { kind: "run" }
   /** The robot is between states or unreadable: the indicator alone, every button held. */
   | { kind: "held"; readout: string };
 
 export const START_NEEDS_MAPPING_MODE = "Starting a map needs mapping mode.";
-
-/** The indicator's text while a run is on. */
-export function keyframesReadout(keyPoses: number): string {
-  return `Mapping · ${keyPoses} keyframe${keyPoses === 1 ? "" : "s"}`;
-}
 
 export function mappingRunFace({ inMapping, run, status }: RunFaceInput): RunFace {
   if (!inMapping) {
@@ -52,7 +50,7 @@ export function mappingRunFace({ inMapping, run, status }: RunFaceInput): RunFac
     case "idle":
       return { kind: "start", enabled: true, reason: null };
     case "mapping":
-      return { kind: "run", readout: keyframesReadout(run.key_poses) };
+      return { kind: "run" };
     case "resetting":
       return { kind: "held", readout: "Resetting…" };
     default:
