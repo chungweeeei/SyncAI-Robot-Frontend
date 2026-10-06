@@ -34,8 +34,8 @@ const POLICIES: readonly { value: Policy; label: string }[] = [
  * The policy row is disabled only under a commanded MPC: a policy switch is
  * meaningless unless RL is running.
  *
- * Motion is a readout rather than a control — the postures are PostureControl's,
- * and this is the one place the controller's own state machine is visible.
+ * The controller's motion state (`low_level_mode.motion`) is deliberately not
+ * shown on the card; it is still read, by the fallback to RL above.
  */
 export function LocomotionControl({
   lowLevelMode,
@@ -53,11 +53,6 @@ export function LocomotionControl({
   } = useLocomotion(lowLevelMode);
 
   const mpc = controller === "MPC";
-  // UNKNOWN is worth flagging rather than reading as a state: it is a code this
-  // stack has no name for (MPC's is genuinely unknown), and the payload carries
-  // labels only so two unnamed codes cannot be told apart here. IDLE, the
-  // controller's own resting state, is named and reads as live. `ros2 topic echo … --field low_level_mode` is the escape hatch.
-  const motionUnknown = lowLevelMode.motion === "UNKNOWN";
 
   return (
     <InstrumentGroup
@@ -102,12 +97,6 @@ export function LocomotionControl({
       {policy === null && (
         <Readout label="Reported" value={lowLevelMode.policy} tone="caution" />
       )}
-
-      <Readout
-        label="Motion"
-        value={lowLevelMode.motion}
-        tone={motionUnknown ? "caution" : "live"}
-      />
 
       {error && (
         <p className="text-[11px] leading-snug break-words text-signal-warn">
