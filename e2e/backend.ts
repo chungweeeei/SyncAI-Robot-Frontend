@@ -665,6 +665,16 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
           "Restarting the live mode; poll GET /api/v1/robot/restart for the outcome.",
       });
     }
+    if (path === "/api/v1/robot/set_motion_key" && method === "POST") {
+      // The backend's own answer: every key is forwarded except the
+      // emergency stop, which it accepts and holds back.
+      const { key } = parseBody(request.postData()) as { key: string };
+      return json(route, {
+        key,
+        sent: key !== "4",
+        message: key === "4" ? "Emergency stop is not forwarded." : "Sent.",
+      });
+    }
     if (method === "DELETE") return route.fulfill({ status: 204, body: "" });
 
     return json(route, { message: "ok" });

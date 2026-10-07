@@ -5,7 +5,9 @@ import * as React from "react";
 import { ActiveRunControls } from "@/components/console/active-run-controls";
 import { CameraDisclosure } from "@/components/console/camera-disclosure";
 import { DriveDisclosure } from "@/components/console/drive-disclosure";
+import { EstopButton } from "@/components/console/estop-button";
 import { SensorDisclosure } from "@/components/console/sensor-disclosure";
+import { useConsoleEstop } from "@/hooks/use-console-estop";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { useActiveMap, useMaps } from "@/hooks/use-maps";
 import { batteryTone } from "@/lib/robot/levels";
@@ -50,6 +52,7 @@ const MODE_TONE: Record<RobotMode, Tone> = {
  */
 export function StatusStrip() {
   const { state, status, updatedAt } = useConsoleRobotState();
+  const { engaged: stopped } = useConsoleEstop();
   const { map: activeMap } = useActiveMap();
   const { refresh: refreshMaps } = useMaps();
 
@@ -166,6 +169,10 @@ export function StatusStrip() {
               * first, by request, beside the drive panel it tells the operator
               * to stop using; drive before camera because one commands the
               * robot and the other watches it. */}
+            {/* The stop first, by request: at the head of the presses, in a
+              * cluster that never shrinks or wraps, so it is whole and in
+              * the same place on every screen and at every width. */}
+            <EstopButton />
             <SensorDisclosure />
             <DriveDisclosure />
             <CameraDisclosure />
@@ -226,14 +233,20 @@ export function StatusStrip() {
         aria-hidden
         className={cn(
           "relative h-px w-full overflow-hidden",
-          status !== "error"
+          // An engaged stop outranks the link's state: it is the one fact
+          // on the strip that says the robot must not be moving. Solid, with
+          // the heartbeat's sweep held off until it is released, by request:
+          // a green pulse running over it would read as all-clear.
+          stopped
+            ? "h-0.5 bg-signal-warn"
+            : status !== "error"
             ? "bg-hairline"
             : state
               ? "bg-signal-caution/50"
               : "bg-signal-warn/50",
         )}
       >
-        {status === "ok" && (
+        {status === "ok" && !stopped && (
           // Remounted on every frame (`key`) so the 1 s traverse restarts in
           // step with the arrival rather than free-running out of phase.
           <span
