@@ -67,6 +67,25 @@ export function clampStick(stick: StickId, raw: StickValue): StickValue {
 }
 
 /**
+ * The drive view's translation stick drives one axis at a time: forward /
+ * back or strafe, whichever the thumb is further along, and the other is
+ * dropped. A thumb on glass has no detent to find straight ahead by, so an
+ * unlocked stick turned every intended "forward" into a slow crab. The drive
+ * panel's stick keeps the full disc: a mouse has the precision, and the keys
+ * already are the four directions.
+ *
+ * The kept axis is the projection, not the full deflection: the knob rides
+ * the axis under the thumb like a rail, so pushing at 30° off straight ahead
+ * is slower than pushing straight, and no sideways drag is a jump to full
+ * speed. A tie goes to forward / back, the commoner command.
+ */
+export function lockToAxis(value: StickValue): StickValue {
+  return Math.abs(value.x) > Math.abs(value.y)
+    ? { x: value.x, y: 0 }
+    : { x: 0, y: value.y };
+}
+
+/**
  * Radial deadzone with rescale, so the command is continuous from zero: a plain
  * cutoff would make the smallest possible command DEADZONE-sized, which on a
  * real robot is a visible lurch the moment the stick leaves the ring.

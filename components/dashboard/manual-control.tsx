@@ -1,25 +1,22 @@
 "use client";
 
 import * as React from "react";
-import { GripHorizontalIcon } from "lucide-react";
+import Link from "next/link";
+import { GripHorizontalIcon, Maximize2Icon } from "lucide-react";
 
 import { overlayPanel } from "@/components/console/instrument";
 import { panelFloor } from "@/components/console/strip-disclosure";
+import {
+  ArmSwitch,
+  SpeedLimit,
+  TeleopFooter,
+} from "@/components/dashboard/drive-parts";
 import { Thumbstick } from "@/components/dashboard/thumbstick";
-import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
+import { DRIVE_PAGE } from "@/components/drive/drive-screen";
 import { useConsoleEstop } from "@/hooks/use-console-estop";
 import { useJoystick } from "@/hooks/use-joystick";
-import { useTeleopSender } from "@/hooks/use-teleop-sender";
-import {
-  LINEAR_SCALE_DEFAULT,
-  LINEAR_SCALE_MAX,
-  LINEAR_SCALE_MIN,
-  LINEAR_SCALE_STEP,
-  clampLinearScale,
-} from "@/lib/teleop/stick";
+import { LINEAR_SCALE_DEFAULT } from "@/lib/teleop/stick";
 import { isDrag } from "@/lib/map/gesture";
-import type { TeleopVector } from "@/lib/types/robot";
 import { cn } from "@/lib/utils";
 
 function clamp(value: number, min: number, max: number): number {
@@ -86,9 +83,6 @@ export function ManualControl({ className }: { className?: string }) {
   if (stopped && armed) setArmed(false);
   const [linearScale, setLinearScale] = React.useState(LINEAR_SCALE_DEFAULT);
   const stick = useJoystick(armed, linearScale);
-  // Whole percent on the slider, so a step of 10 never accumulates float
-  // error; the fraction the command uses is derived from it.
-  const speedPercent = Math.round(linearScale * 100);
   // A WS event, not an effect body — the allowed place for setState.
   const handleDrop = React.useCallback(() => setArmed(false), []);
 
@@ -127,9 +121,11 @@ export function ManualControl({ className }: { className?: string }) {
   const onGrab = (event: React.PointerEvent<HTMLElement>) => {
     // The arm switch lives inside the header; a press on it is a press on it.
     // It is a span with role="switch", not a button (the primitive's default),
-    // so it is named here beside the buttons. The grip is a button too, but
-    // it is the header's own, so a press on it is a drag (camera-window's rule).
-    const button = (event.target as HTMLElement).closest("button, [role='switch']");
+    // so it is named here beside the buttons, and so is the drive view's link:
+    // a captured press would land its click on the header instead. The grip
+    // is a button too, but it is the header's own, so a press on it is a drag
+    // (camera-window's rule).
+    const button = (event.target as HTMLElement).closest("a, button, [role='switch']");
     if (dragRef.current || (button && !button.hasAttribute("data-move-handle"))) return;
     const panel = panelRef.current;
     if (!panel) return;
@@ -220,27 +216,22 @@ export function ManualControl({ className }: { className?: string }) {
           </button>
           Manual drive
         </h2>
-        {/* On = listening. A switch rather than a pressed toggle, because
-          * this is an on/off state the panel stays in, not a one-shot pick
-          * mode; and green, `signal-live`, rather than the cmd hue the pick
-          * modes light in — on request, and it reads as "input is live",
-          * which is what it is. The Translate / Rotate readout below still
-          * goes cmd while armed: that is the value being commanded. The
-          * title and aria-label carry the words. */}
-        <Switch
-          checked={armed}
-          onCheckedChange={setArmed}
-          disabled={stopped}
-          aria-label="Arm manual drive input"
-          title={
-            stopped
-              ? "Emergency stop is engaged. Release it to drive."
-              : armed
-              ? "Stop capturing pointer and keyboard input"
-              : "Capture pointer and keyboard (WS / QE / AD) input"
-          }
-          className="data-checked:bg-signal-live"
-        />
+        <div className="flex items-center gap-1">
+          {/* The way to the drive view, on a phone only: there the card puts
+            * both wells under one thumb, and the view is where they come
+            * apart to the two corners. From sm up the card is the better
+            * fit, so the link is not offered. A link rather than a button,
+            * so it is a page the operator can come back from. */}
+          <Link
+            href={DRIVE_PAGE}
+            aria-label="Open the full-screen drive view"
+            title="Full-screen drive"
+            className="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:hidden pointer-coarse:size-10"
+          >
+            <Maximize2Icon aria-hidden className="size-3.5" />
+          </Link>
+          <ArmSwitch armed={armed} onArmedChange={setArmed} stopped={stopped} />
+        </div>
       </header>
       <div className="flex items-start justify-center gap-4">
         <LabeledStick caption="Translate">
@@ -265,38 +256,12 @@ export function ManualControl({ className }: { className?: string }) {
           />
         </LabeledStick>
       </div>
-      {/* No visible label, by the user's choice: the bar and its percentage
-        * are the whole row. The name is still there for a screen reader and
-        * on hover, because an unnamed slider reads as "slider, 100". */}
-      <div className="mt-3 flex items-center gap-2.5" title="Max speed">
-        <Slider
-          className="min-w-0 flex-1"
-          min={Math.round(LINEAR_SCALE_MIN * 100)}
-          max={Math.round(LINEAR_SCALE_MAX * 100)}
-          step={Math.round(LINEAR_SCALE_STEP * 100)}
-          value={speedPercent}
-          onValueChange={(next) => {
-            // One thumb, but the wrapper's type admits a range slider's array.
-            const percent = typeof next === "number" ? next : next[0];
-            setLinearScale(clampLinearScale(percent / 100));
-          }}
-          thumbProps={{
-            "aria-label": "Max speed",
-            getAriaValueText: (_formatted, percent) =>
-              `${percent} percent of full speed`,
-          }}
-        />
-        {/* The readout's own rule: the cmd hue only while armed, because a
-          * limit on a panel that is not listening is not yet a command. */}
-        <span
-          className={cn(
-            "readout w-9 shrink-0 text-right text-[13px] font-medium",
-            armed ? "text-signal-cmd" : "text-muted-foreground",
-          )}
-        >
-          {speedPercent}%
-        </span>
-      </div>
+      <SpeedLimit
+        className="mt-3"
+        linearScale={linearScale}
+        onLinearScaleChange={setLinearScale}
+        armed={armed}
+      />
       {/* Mounting TeleopFooter only while armed is what opens/closes the
         * channel AND what resets its per-session state — the mount boundary
         * replaces any setState-in-effect reset (Next 16 lint). Disarmed shows
@@ -309,43 +274,6 @@ export function ManualControl({ className }: { className?: string }) {
         </div>
       )}
     </div>
-  );
-}
-
-/**
- * The live half of the panel: owns the WS channel for exactly as long as it
- * is mounted. Three states on one line: connecting (muted), streaming (cmd
- * hue — this IS the command channel now), and a backend refusal (warn hue;
- * e.g. teleop rejected while an autonomous move runs, decays after ~2 s of
- * the frames no longer being refused).
- */
-function TeleopFooter({
-  vectorRef,
-  onDrop,
-}: {
-  vectorRef: React.RefObject<TeleopVector>;
-  onDrop: () => void;
-}) {
-  const link = useTeleopSender(vectorRef, onDrop);
-
-  if (link.phase === "connecting") {
-    return (
-      <p className="mt-2 text-[11px] leading-tight text-muted-foreground">
-        Connecting to robot…
-      </p>
-    );
-  }
-  if (link.refusal !== null) {
-    return (
-      <p className="mt-2 text-[11px] leading-tight text-signal-warn">
-        {link.refusal}
-      </p>
-    );
-  }
-  return (
-    <p className="mt-2 text-[11px] leading-tight text-signal-cmd">
-      Streaming to robot · 10 Hz
-    </p>
   );
 }
 

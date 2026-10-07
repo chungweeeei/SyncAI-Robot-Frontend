@@ -10,6 +10,7 @@ import {
   clampStick,
   commandFrom,
   isStickKey,
+  lockToAxis,
   resolveStick,
   type StickValue,
 } from "@/lib/teleop/stick";
@@ -112,6 +113,38 @@ describe("the reachable set", () => {
     expect(clampStick("right", { x: 2, y: 0.9 })).toEqual({ x: 1, y: 0 });
     expect(clampStick("right", { x: -2, y: -0.9 })).toEqual({ x: -1, y: 0 });
     expect(commandFrom({ x: 0, y: 0 }, { x: 0, y: -1 }).wz + 0).toBe(0);
+  });
+});
+
+describe("the phone's one-axis translation", () => {
+  const command = (raw: StickValue) => {
+    const v = commandFrom(clampStick("left", lockToAxis(raw)), { x: 0, y: 0 });
+    return { vx: v.vx + 0, vy: v.vy + 0, wz: v.wz + 0 };
+  };
+
+  it("never sends a diagonal: one of vx and vy is always zero", () => {
+    for (let a = 0; a < 2 * Math.PI; a += Math.PI / 36) {
+      const v = command({ x: Math.cos(a), y: Math.sin(a) });
+      expect(v.vx === 0 || v.vy === 0, `at ${a} rad`).toBe(true);
+    }
+  });
+
+  it("keeps the axis the thumb is further along, with its sign", () => {
+    expect(lockToAxis({ x: 0.2, y: -0.9 })).toEqual({ x: 0, y: -0.9 });
+    expect(lockToAxis({ x: -0.9, y: 0.2 })).toEqual({ x: -0.9, y: 0 });
+    // Forward stays forward, and a push left still strafes left (+vy).
+    expect(command({ x: 0.2, y: -1 }).vx).toBeGreaterThan(0);
+    expect(command({ x: -1, y: 0.2 }).vy).toBeGreaterThan(0);
+  });
+
+  it("is the projection, so an off-axis push is slower than a straight one", () => {
+    // A sideways wobble must not read as full speed down the kept axis.
+    const off = command({ x: 0.5, y: -0.866 });
+    expect(off.vx).toBeLessThan(command({ x: 0, y: -1 }).vx);
+  });
+
+  it("gives a tie to forward / back", () => {
+    expect(lockToAxis({ x: 0.5, y: -0.5 })).toEqual({ x: 0, y: -0.5 });
   });
 });
 

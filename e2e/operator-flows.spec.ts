@@ -1905,6 +1905,21 @@ test.describe("the task console", () => {
 });
 
 test.describe("the manual drive panel", () => {
+  test("keeps the card at desktop width, with no way to the phone's drive view", async ({
+    page,
+  }) => {
+    // The full-screen view is for thumbs; a mouse drives the card. The
+    // positive control is the panel itself being open.
+    await mockBackend(page);
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Manual drive panel" }).click();
+    await expect(page.getByRole("heading", { name: "Manual drive" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Translation stick" })).toHaveCSS("width", "96px");
+    await expect(
+      page.getByRole("link", { name: "Open the full-screen drive view" }),
+    ).toBeHidden();
+  });
+
   test("limits translation to the Max speed it shows, and never rotation", async ({
     page,
   }) => {
