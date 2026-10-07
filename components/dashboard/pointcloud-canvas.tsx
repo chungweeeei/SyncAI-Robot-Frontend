@@ -695,6 +695,12 @@ export function PointCloudCanvas({
       renderer.setSize(rect.width, rect.height, false);
       camera.aspect = rect.width / rect.height;
       camera.updateProjectionMatrix();
+      // Draw now, not on the next frame. setSize reassigns the canvas's
+      // width and height, which clears it, and an observer fires after this
+      // frame's render: without a draw here the browser paints the cleared
+      // canvas, and the scene blinks out on every resize — for the whole of
+      // a resize that runs over several frames.
+      renderer.render(scene, camera);
     };
     resize();
     const observer = new ResizeObserver(resize);

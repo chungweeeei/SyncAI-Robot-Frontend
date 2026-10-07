@@ -215,6 +215,40 @@ test.describe("the console shell", () => {
     ).toBeVisible();
   });
 
+  test("opens the rail labelled, and folds it to icons from its head", async ({ page }) => {
+    // Seven icons read as seven guesses until they are learnt, so the rail
+    // names every screen by default; the fold gives the width back.
+    await page.goto("/maps");
+    const rail = page.getByRole("navigation", { name: "Console sections" });
+    const dashboard = rail.getByText("Dashboard", { exact: true });
+    const mapping = rail.getByText("Mapping", { exact: true });
+    await expect(dashboard).toBeVisible();
+    await expect(mapping).toBeVisible();
+    const open = (await rail.boundingBox())!.width;
+
+    const fold = rail.getByRole("button", { name: "Collapse the sidebar" });
+    await expect(fold).toHaveAttribute("aria-expanded", "true");
+    await fold.click();
+    await expect(dashboard).toBeHidden();
+    await expect(mapping).toBeHidden();
+    await expect.poll(async () => (await rail.boundingBox())!.width).toBeLessThan(open);
+    // Icons only, even under the pointer: no tooltip names one. Still named
+    // for a screen reader, and still navigates.
+    const mappingLink = rail.getByRole("link", { name: "Mapping" });
+    await mappingLink.hover();
+    await page.waitForTimeout(500);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+    await expect(page.getByText("Mapping", { exact: true })).toBeHidden();
+    await mappingLink.click();
+    await expect(page).toHaveURL(/\/mapping$/);
+
+    // Held across navigation, and opened again from the same corner.
+    const unfold = rail.getByRole("button", { name: "Expand the sidebar" });
+    await expect(unfold).toHaveAttribute("aria-expanded", "false");
+    await unfold.click();
+    await expect(dashboard).toBeVisible();
+  });
+
   test("keeps the robot id the header read on every screen", async ({ page }) => {
     // One poll for the whole console: the header and the page cannot disagree
     // because there is only one frame to disagree about.
