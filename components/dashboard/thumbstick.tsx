@@ -2,19 +2,43 @@
 
 import * as React from "react";
 
-import { DEADZONE, type StickValue } from "@/lib/teleop/stick";
+import { DEADZONE, lockToAxis, type StickValue } from "@/lib/teleop/stick";
 import { cn } from "@/lib/utils";
 
-/** Well and knob diameter in px, applied as inline size below so the maths
- *  and the drawing cannot disagree. The travel radius keeps the knob's edge
- *  inside the well at full deflection. */
-const WELL = 96;
-const KNOB = 28;
-const TRAVEL = (WELL - KNOB) / 2;
-/** Ring inside which the knob centre produces no command — drawn from the same
- *  DEADZONE the math uses, plus the knob's own radius so the *knob* visually
- *  clears the ring exactly when the command starts. */
-const DEADZONE_RING = DEADZONE * TRAVEL * 2 + KNOB;
+/**
+ * Well and knob diameter in px per variant, applied as inline size below so
+ * the maths and the drawing cannot disagree. The overlay stick is a thumb's
+ * size, the card's a cursor's. The travel radius keeps the knob's edge inside
+ * the well at full deflection.
+ */
+const SIZES = {
+  card: { well: 96, knob: 28 },
+  overlay: { well: 144, knob: 52 },
+} as const;
+
+/**
+ * The two faces, as classes per part. The overlay stick is the kind a phone
+ * game draws over its scene: a faint fill and a light rim so the map shows
+ * through, where the card's recessed, opaque well would be a 144 px hole in
+ * it. The blur is light on purpose; it separates the rim from a busy map
+ * without hiding what is under the stick.
+ */
+const FACES = {
+  card: {
+    well: "border-hairline bg-elevated/50 inset-shadow-sm",
+    guide: "bg-hairline",
+    ring: "border-hairline",
+    knob: "border-hairline",
+    dot: "bg-hairline",
+  },
+  overlay: {
+    well: "border-foreground/25 bg-panel/20 backdrop-blur-[2px]",
+    guide: "bg-foreground/15",
+    ring: "border-foreground/15",
+    knob: "border-foreground/40 bg-foreground/20 backdrop-blur-sm",
+    dot: "bg-foreground/40",
+  },
+} as const;
 
 /**
  * One virtual thumbstick: a circular well, a knob, and the key hints for the
@@ -31,6 +55,10 @@ const DEADZONE_RING = DEADZONE * TRAVEL * 2 + KNOB;
  * faces are rectilinear" (globals.css): the clamp on the command *is* a
  * circle, and a rectangular face would lie about where the knob can go.
  *
+ * Two variants: `card`, the drive panel's, with the key hints a keyboard is
+ * taught by; and `overlay`, the drive screen's, bigger and translucent, with
+ * no hints because it is driven by thumbs (see FACES).
+ *
  * Past the deadzone a needle is drawn from centre to knob. It is not
  * decoration: direction and length ARE the command, and the needle is the one
  * reading of it that works in peripheral vision while the eyes are on the
@@ -41,6 +69,8 @@ export function Thumbstick({
   active,
   disabled = false,
   lockY = false,
+  variant = "card",
+  axisLock = false,
   hints,
   label,
   onPointer,
@@ -53,12 +83,23 @@ export function Thumbstick({
   disabled?: boolean;
   /** Rotation stick: draw a horizontal guide instead of up/down hints. */
   lockY?: boolean;
-  /** Key letters shown at the well's compass points, teaching the shortcut. */
-  hints: { up?: string; down?: string; left: string; right: string };
+  variant?: keyof typeof SIZES;
+  /** Snap a drag to the axis it is further along (lockToAxis). */
+  axisLock?: boolean;
+  /** Key letters shown at the well's compass points, teaching the shortcut.
+   *  The overlay variant draws none. */
+  hints?: { up?: string; down?: string; left: string; right: string };
   label: string;
   /** Raw deflection while a pointer drags; null on release or cancel. */
   onPointer: (value: StickValue | null) => void;
 }) {
+  const { well: WELL, knob: KNOB } = SIZES[variant];
+  const TRAVEL = (WELL - KNOB) / 2;
+  /** Ring inside which the knob centre produces no command — drawn from the
+   *  same DEADZONE the math uses, plus the knob's own radius so the *knob*
+   *  visually clears the ring exactly when the command starts. */
+  const DEADZONE_RING = DEADZONE * TRAVEL * 2 + KNOB;
+  const face = FACES[variant];
   /**
    * The active gesture, in a ref because it changes at pointer rate: which
    * pointer owns the stick, and the well centre cached from one
@@ -83,12 +124,13 @@ export function Thumbstick({
     (event: React.PointerEvent) => {
       const gesture = gestureRef.current;
       if (!gesture) return;
-      onPointer({
+      const raw = {
         x: (event.clientX - gesture.cx) / TRAVEL,
         y: (event.clientY - gesture.cy) / TRAVEL,
-      });
+      };
+      onPointer(axisLock ? lockToAxis(raw) : raw);
     },
-    [onPointer],
+    [onPointer, TRAVEL, axisLock],
   );
 
   // Disarmed mid-drag (a second finger on the arm toggle while this one holds
@@ -155,10 +197,11 @@ export function Thumbstick({
       onContextMenu={(event) => event.preventDefault()}
       style={{ width: WELL, height: WELL }}
       className={cn(
-        "relative shrink-0 touch-none rounded-full border border-hairline bg-elevated/50 select-none",
-        // Recessed, not flat: the well is the one thing on the console the
-        // operator's finger goes *into*, and the inset is what says so.
-        "inset-shadow-sm",
+        "relative shrink-0 touch-none rounded-full border select-none",
+        // The card's is recessed, not flat: the well is the one thing on the
+        // console the operator's finger goes *into*, and the inset is what
+        // says so. The overlay's is see-through instead (see FACES).
+        face.well,
         // Dim like a disabled Segmented: the container carries the one
         // opacity, the knob and hints just stop reacting.
         disabled ? "opacity-40" : "cursor-pointer",
@@ -169,12 +212,12 @@ export function Thumbstick({
         * an axis the stick refuses would be the face lying about the control. */}
       <span
         aria-hidden
-        className="absolute top-1/2 right-4 left-4 h-px bg-hairline"
+        className={cn("absolute top-1/2 right-4 left-4 h-px", face.guide)}
       />
       {!lockY && (
         <span
           aria-hidden
-          className="absolute top-4 bottom-4 left-1/2 w-px bg-hairline"
+          className={cn("absolute top-4 bottom-4 left-1/2 w-px", face.guide)}
         />
       )}
       {/* Deadzone ring. Lit past the ring = a command is live — the same
@@ -184,15 +227,19 @@ export function Thumbstick({
         style={{ width: DEADZONE_RING, height: DEADZONE_RING }}
         className={cn(
           "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border",
-          engaged ? "border-signal-cmd/50" : "border-hairline",
+          engaged ? "border-signal-cmd/50" : face.ring,
         )}
       />
-      {hints.up && <Hint className="top-1 left-1/2 -translate-x-1/2">{hints.up}</Hint>}
-      {hints.down && (
-        <Hint className="bottom-1 left-1/2 -translate-x-1/2">{hints.down}</Hint>
+      {hints && variant === "card" && (
+        <>
+          {hints.up && <Hint className="top-1 left-1/2 -translate-x-1/2">{hints.up}</Hint>}
+          {hints.down && (
+            <Hint className="bottom-1 left-1/2 -translate-x-1/2">{hints.down}</Hint>
+          )}
+          <Hint className="top-1/2 left-1.5 -translate-y-1/2">{hints.left}</Hint>
+          <Hint className="top-1/2 right-1.5 -translate-y-1/2">{hints.right}</Hint>
+        </>
       )}
-      <Hint className="top-1/2 left-1.5 -translate-y-1/2">{hints.left}</Hint>
-      <Hint className="top-1/2 right-1.5 -translate-y-1/2">{hints.right}</Hint>
       {/* The command needle — see the component doc. Under the knob, so the
         * knob reads as the hand and the needle as the instrument. */}
       {engaged && (
@@ -216,7 +263,7 @@ export function Thumbstick({
           "absolute top-1/2 left-1/2 flex items-center justify-center rounded-full border bg-panel shadow-sm",
           active
             ? "border-signal-cmd bg-signal-cmd/20 shadow-[0_0_10px_0] shadow-signal-cmd/40"
-            : "border-hairline",
+            : face.knob,
           // Eased only when no pointer is captured — see `dragging`.
           !dragging && "transition-transform duration-100 ease-out motion-reduce:transition-none",
         )}
@@ -227,7 +274,7 @@ export function Thumbstick({
           aria-hidden
           className={cn(
             "rounded-full size-[3px]",
-            active ? "bg-signal-cmd" : "bg-hairline",
+            active ? "bg-signal-cmd" : face.dot,
           )}
         />
       </span>
