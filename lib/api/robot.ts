@@ -132,6 +132,46 @@ export function setPolicyMode(mode: PolicyMode): Promise<SetPolicyModeResult> {
   );
 }
 
+export interface SafetyLockResult {
+  /** The lock state that was asked for — not a reading of it. */
+  locked: boolean;
+  /**
+   * True only when this request engaged a lock that was not already on: the
+   * backend has then started cancelling every running job and navigation
+   * goal. Started, not finished — the active list is what says they ended.
+   */
+  cancel_requested: boolean;
+  message: string;
+}
+
+const SafetyLockResultSchema: z.ZodType<SafetyLockResult> = z.object({
+  locked: z.boolean(),
+  cancel_requested: z.boolean(),
+  message: z.string(),
+});
+
+/**
+ * Engage or release the driver's safety lock — the emergency stop.
+ *
+ * Not motion key `"4"`, which the backend still refuses to forward: that is a
+ * datagram to the gait controller, this is the driver's gate in front of it.
+ * While it is engaged the driver drops manual drive and every motion key, and
+ * the backend cancels every running job on the lock's rising edge — for a
+ * lock engaged here, by another console or by the driver itself alike, so
+ * this console sends no cancels of its own.
+ *
+ * The answer is the request echoed; whether the lock is on is read from
+ * `low_level_mode.safety_locked` on the robot state. A 502 means the driver
+ * could not be reached, and then nothing was locked and nothing cancelled.
+ */
+export function setSafetyLock(locked: boolean): Promise<SafetyLockResult> {
+  return requestJson<SafetyLockResult>(apiUrl("/api/v1/robot/estop"), {
+    method: "POST",
+    body: JSON.stringify({ locked }),
+    schema: SafetyLockResultSchema,
+  });
+}
+
 export interface RestartResult {
   /**
    * True when the rebuild was dispatched, which is the usual answer: the

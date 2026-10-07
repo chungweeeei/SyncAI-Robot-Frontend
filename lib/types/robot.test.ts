@@ -18,7 +18,7 @@ const frame = {
   robot_id: "robot01",
   map: "map/dp2f/gridmap.yaml",
   mode: "AUTO",
-  low_level_mode: { policy: "PPO", motion: "LOCOMOTION" },
+  low_level_mode: { policy: "PPO", motion: "LOCOMOTION", safety_locked: false },
   localization_valid: true,
   localization_status: {
     position: { x: 1.2, y: -3.4, z: 0, theta: 90 },
@@ -85,7 +85,7 @@ describe("RobotStateSchema", () => {
     for (const policy of ["PPO", "HIMLOCO", "CHAMP", "ISSAC", "UNKNOWN"]) {
       const result = RobotStateSchema.safeParse({
         ...frame,
-        low_level_mode: { policy, motion: "WHATEVER" },
+        low_level_mode: { policy, motion: "WHATEVER", safety_locked: false },
       });
       expect(result.success).toBe(true);
     }
