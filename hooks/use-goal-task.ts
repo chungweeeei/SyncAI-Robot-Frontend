@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 
+import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { normalizeTheta } from "@/lib/angle";
 import { ignore } from "@/lib/api/mutation-state";
@@ -77,12 +78,19 @@ export function useGoalTask(robotId: string, mapName: string | null): GoalTask {
   const task = useTaskTracker();
 
   const { track, reset, taskId } = task;
+  const { engaged: stopped } = useConsoleEstop();
 
   const submit = useMutation({
     // The map the goal was aimed on travels with it: the backend refuses the
     // goal if the robot has been switched to another map since, which is the
     // one way a pose drawn here could be driven somewhere nobody aimed.
-    mutationFn: (staged: GoalPose) => sendMoveTask(robotId, staged, mapName),
+    mutationFn: async (staged: GoalPose) => {
+      // Refused here rather than only greyed at the button, so no path to
+      // this hook — a drag, a stored waypoint, a keyboard shortcut — can
+      // send the robot anywhere while the stop is engaged.
+      if (stopped) throw new Error(ESTOP_REFUSAL);
+      return sendMoveTask(robotId, staged, mapName);
+    },
     // Before the request, not after it: the panel shows the new coordinates
     // the moment the drag is released, and the last run's step failure sitting
     // under them would read as this goal's. The button that got here is gated

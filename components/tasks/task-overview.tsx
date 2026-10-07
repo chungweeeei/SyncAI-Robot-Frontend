@@ -12,6 +12,7 @@ import { TemplateScheduleForm } from "@/components/tasks/template-schedule-form"
 import { useMaps } from "@/hooks/use-maps";
 import { useTaskTemplates } from "@/hooks/use-task-templates";
 import { useSchedules } from "@/hooks/use-schedules";
+import { useConsoleEstop } from "@/hooks/use-console-estop";
 import { useTaskDispatch } from "@/hooks/use-task-dispatch";
 import { useTaskDraft } from "@/hooks/use-task-draft";
 import type { TaskTemplate } from "@/lib/api/task-template";
@@ -40,6 +41,7 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
   const router = useRouter();
   const [draft, updateDraft] = useTaskDraft();
   const dispatch = useTaskDispatch(robotId);
+  const { engaged: stopped } = useConsoleEstop();
   const schedules = useSchedules();
   const library = useTaskTemplates();
   const { maps } = useMaps();
@@ -200,7 +202,7 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
             status={library.status}
             busy={library.busy}
             activeMapName={activeMapName}
-            dispatchDisabled={dispatch.running || robotId === null}
+            dispatchDisabled={dispatch.running || robotId === null || stopped}
             dispatchLockFor={dispatchLockFor}
             dispatchedFromId={dispatchedFrom}
             taskStatus={dispatch.taskStatus}

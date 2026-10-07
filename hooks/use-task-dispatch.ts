@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 
+import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { ignore } from "@/lib/api/mutation-state";
 import {
@@ -79,12 +80,13 @@ export function useTaskDispatch(robotId: string | null): TaskDispatch {
   const task = useTaskTracker();
 
   const { track, reset, taskId, steps } = task;
+  const { engaged: stopped } = useConsoleEstop();
 
   const submit = useMutation({
     // The robot id travels in the variables rather than being read from the
     // closure, which is what keeps `submitTask`'s non-null argument honest
     // without an assertion: `send` refuses before there is anything to submit.
-    mutationFn: ({
+    mutationFn: async ({
       robot,
       requests,
       name,
@@ -94,7 +96,11 @@ export function useTaskDispatch(robotId: string | null): TaskDispatch {
       requests: readonly TaskStepRequest[];
       name: string | null;
       mapName: string | null;
-    }) => submitTask(robot, requests, name, mapName),
+    }) => {
+      // Refused here as well as greyed at the button: see useGoalTask.
+      if (stopped) throw new Error(ESTOP_REFUSAL);
+      return submitTask(robot, requests, name, mapName);
+    },
     // Before the request, not after it: this is the one place that knows a new
     // task is starting, so the previous task's per-step readback goes now
     // instead of lingering under the new one's rows.

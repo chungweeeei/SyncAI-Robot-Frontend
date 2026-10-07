@@ -4,6 +4,7 @@ import { ArrowDownToLineIcon, ArrowUpFromLineIcon } from "lucide-react";
 
 import { InstrumentGroup } from "@/components/console/instrument";
 import { TaskStatusChip } from "@/components/console/task-chip";
+import { useConsoleEstop } from "@/hooks/use-console-estop";
 import { usePosture } from "@/hooks/use-posture";
 import { cn } from "@/lib/utils";
 import type { Posture } from "@/lib/api/task";
@@ -31,6 +32,7 @@ const COMMANDS: ReadonlyArray<{
 export function PostureControl({ robotId }: { robotId: string }) {
   const posture = usePosture(robotId);
   const { sent, taskStatus, running, busy, error } = posture;
+  const { engaged: stopped } = useConsoleEstop();
 
   return (
     <InstrumentGroup
@@ -43,8 +45,9 @@ export function PostureControl({ robotId }: { robotId: string }) {
             key={command.posture}
             type="button"
             // One posture at a time: a second command while the first is still
-            // running would race the gait controller's mode change.
-            disabled={busy || running}
+            // running would race the gait controller's mode change. None at
+            // all under the emergency stop: standing up is moving.
+            disabled={busy || running || stopped}
             onClick={() => posture.send(command.posture)}
             className={cn(
               "instrument-label flex h-8 items-center justify-center gap-1.5 rounded-sm border px-2 transition-colors disabled:opacity-40",

@@ -8,6 +8,7 @@ import { panelFloor } from "@/components/console/strip-disclosure";
 import { Thumbstick } from "@/components/dashboard/thumbstick";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import { useConsoleEstop } from "@/hooks/use-console-estop";
 import { useJoystick } from "@/hooks/use-joystick";
 import { useTeleopSender } from "@/hooks/use-teleop-sender";
 import {
@@ -76,6 +77,13 @@ function clamp(value: number, min: number, max: number): number {
  */
 export function ManualControl({ className }: { className?: string }) {
   const [armed, setArmed] = React.useState(false);
+  const { engaged: stopped } = useConsoleEstop();
+  // The emergency stop disarms the panel, and keeps it disarmed after the
+  // release: arming again is the operator's own act, never a side effect of
+  // lifting the stop. A render-time adjust rather than an effect, so not one
+  // more frame goes out over the channel (unmounting the footer closes it,
+  // which sends the zero frame first).
+  if (stopped && armed) setArmed(false);
   const [linearScale, setLinearScale] = React.useState(LINEAR_SCALE_DEFAULT);
   const stick = useJoystick(armed, linearScale);
   // Whole percent on the slider, so a step of 10 never accumulates float
@@ -222,9 +230,12 @@ export function ManualControl({ className }: { className?: string }) {
         <Switch
           checked={armed}
           onCheckedChange={setArmed}
+          disabled={stopped}
           aria-label="Arm manual drive input"
           title={
-            armed
+            stopped
+              ? "Emergency stop is engaged. Release it to drive."
+              : armed
               ? "Stop capturing pointer and keyboard input"
               : "Capture pointer and keyboard (WS / QE / AD) input"
           }
