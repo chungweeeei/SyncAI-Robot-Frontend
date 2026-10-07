@@ -140,17 +140,30 @@ test.describe("the emergency stop", () => {
     page,
   }) => {
     await mockBackend(page);
+    // The teleop channel answered here, as operator-flows does: an armed
+    // panel whose channel fails disarms itself, and that would pass the
+    // assertion below for the wrong reason (or, with no socket at all, fail
+    // the positive control).
+    const frames: { vx: number; vy: number; wz: number }[] = [];
+    await page.routeWebSocket(/\/api\/v1\/robot\/teleop$/, (ws) => {
+      ws.onMessage((message) => {
+        if (typeof message === "string") frames.push(JSON.parse(message));
+      });
+    });
     await page.goto("/settings");
     await strip(page).getByRole("button", { name: "Manual drive panel" }).click();
     const arm = page.getByRole("switch", { name: "Arm manual drive input" });
 
-    // Positive control: the switch arms before the stop.
+    // Positive control: the switch arms before the stop, and streams.
     await arm.click();
     await expect(arm).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByText("Streaming to robot · 10 Hz")).toBeVisible();
 
     await stopButton(page).click();
     await expect(arm).toHaveAttribute("aria-checked", "false");
     await expect(arm).toHaveAttribute("aria-disabled", "true");
+    // Disarming closes the channel, and its last word is a zero command.
+    await expect.poll(() => frames.at(-1)).toEqual({ vx: 0, vy: 0, wz: 0 });
 
     // Released, it may be armed again — but it was not re-armed for us.
     await holdStop(page, 1300);
