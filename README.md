@@ -120,7 +120,21 @@ The job's name and elapsed time are on hover, and the bar is a link to
 between the read and the press, or a backend without the pause routes) appears
 under the strip as the backend's own sentence.
 
-Below `sm` the strip is **two rows**: the id, mode, sensor, drive, camera and battery
+The **emergency stop** is the first of the strip's presses, before the
+sensor, drive and camera buttons, on every screen. One press (or
+Shift+Space) engages it, firing at the press rather than the release: it sends
+the robot's emergency-stop key, cancels every job the active list names, and
+disarms the drive panel. While it is engaged, the panel cannot be armed, and
+Stand, Lie down, a navigation goal and a task's Run are greyed and refused. It
+is released only by holding the button for a second. A tap does nothing to an
+engaged stop. Releasing sends nothing, so moving again is the operator's own
+next act. The latch belongs to the tab and is not stored. A robot that
+reports `ESTOP` shows as engaged in every console, and that state can only
+be released on the robot. The backend currently accepts the stop key without
+forwarding it to the motors. The button's hover says so, without a line
+under the strip: the job and the drive stopped, the motors did not.
+
+Below `sm` the strip is **two rows**: the id, mode, stop, sensor, drive, camera and battery
 on the first, the job's buttons and bar across the full width of the second.
 One wrapping flex row rather than a second copy of the component — rendering
 it twice and hiding one would put two pause buttons and two live readouts in

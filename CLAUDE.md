@@ -140,8 +140,12 @@ The stack as built. Correct this section if a choice changes.
 ```
 app/            route shells; the real content belongs to a component (see deviations)
 components/
-  console/      shell: nav rail, status strip, the two layout-level providers
-                (their contexts live in hooks/use-console-*.ts — see Layering),
+  console/      shell: nav rail, status strip, the three layout-level
+                providers (their contexts live in hooks/use-console-*.ts — see
+                Layering), the emergency stop at the head of the strip's
+                presses (one press engages, a one-second hold releases;
+                estop-provider.tsx holds the latch the drive panel and the
+                command hooks obey),
                 the strip's running-job controls (a fixed pause / resume and
                 cancel pair, then one always-present bar: job id, step and
                 state) and its disclosures: the sensor alerts (where an
@@ -200,7 +204,9 @@ lib/
                 and the overheating notice's rule (heat-alert.ts: raised above
                 85 °C, re-armed only once the motor has cooled), and the
                 commanded controller's override (controller.ts: an arrival
-                at IDLE or LOCOMOTION drops a commanded MPC back to RL)
+                at IDLE or LOCOMOTION drops a commanded MPC back to RL), and
+                when the emergency stop reads as engaged (estop.ts: this tab's
+                latch or the robot reporting ESTOP, and the release hold)
   teleop/       thumbstick maths: clamp, deadzone, key bindings, the linear
                 speed limit and the screen-to-body-frame turn the drive panel
                 commands through
