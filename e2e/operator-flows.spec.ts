@@ -2641,6 +2641,17 @@ test.describe("the floor plan editor's forbidden zones on the robot", () => {
     return { x: left + px * scale, y: top + py * scale };
   };
 
+  /**
+   * The saved zone sits in the floor plan's bottom-left corner, which the
+   * editor's cell readout covers once the open rail narrows the canvas; the
+   * folded rail gives back the width this geometry was written for. Folded
+   * before anything is drawn, so the editor is still fitted when it is read.
+   */
+  const foldRail = async (page: Page) => {
+    await page.getByRole("button", { name: "Collapse the sidebar" }).click();
+    await expect(page.getByRole("button", { name: "Expand the sidebar" })).toBeVisible();
+  };
+
   const drawTriangle = async (page: Page) => {
     const box = (await page.locator("canvas").boundingBox())!;
     const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -2666,6 +2677,7 @@ test.describe("the floor plan editor's forbidden zones on the robot", () => {
     });
     await page.goto(`/maps/${MAP_NAME}/edit`);
     await page.locator("canvas").waitFor();
+    await foldRail(page);
     const zones = page.locator("[data-zones]");
     const save = page.getByRole("button", { name: "Save" });
     const keepoutPuts = () =>
@@ -2754,6 +2766,7 @@ test.describe("the floor plan editor's forbidden zones on the robot", () => {
     );
     await page.goto(`/maps/${MAP_NAME}/edit`);
     await page.locator("canvas").waitFor();
+    await foldRail(page);
     const zones = page.locator("[data-zones]");
     await expect(zones).toHaveAttribute("data-zones", "1");
 
