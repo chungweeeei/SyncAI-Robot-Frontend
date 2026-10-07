@@ -9,8 +9,9 @@ import {
 } from "./backend";
 
 /**
- * The masthead's emergency stop: one press engages it, only a held press
- * releases it. Each test asserts both halves — what the strip says and what
+ * The masthead's emergency stop — the driver's safety lock: one press
+ * engages it, only a held press releases it, and what the button shows is
+ * the lock the robot reports. Each test asserts both halves — what the strip says and what
  * the console sent — and every "nothing happened" carries a positive control,
  * because a button that never received the press also leaves the stop where
  * it was.
@@ -40,11 +41,17 @@ test.describe("the emergency stop", () => {
     failOnConsoleErrors(page, errors);
   });
 
+  // A 502 makes Chromium log "Failed to load resource", and one test here
+  // answers the lock with exactly that on purpose (run-controls.spec.ts
+  // records the same exception). A thrown render still fails.
   test.afterEach(() => {
-    expect(errors, "the page logged errors").toEqual([]);
+    expect(
+      errors.filter((text) => !/Failed to load resource/.test(text)),
+      "the page logged errors",
+    ).toEqual([]);
   });
 
-  test("one press sends the stop and cancels the running job", async ({
+  test("one press locks the robot and leaves the cancels to it", async ({
     page,
   }) => {
     const writes = await mockBackend(page, {
@@ -58,40 +65,63 @@ test.describe("the emergency stop", () => {
     await stopButton(page).click();
 
     await expect(stopButton(page)).toHaveAttribute("aria-pressed", "true");
-    await expect
-      .poll(() => writes.map((w) => `${w.method} ${w.path}`).sort())
-      .toEqual(["DELETE /api/v1/tasks/" + ID, "POST /api/v1/robot/set_motion_key"]);
-    expect(writes.find((w) => w.method === "POST")?.body).toEqual({ key: "4" });
-
-    // The robot's side holds the motor stop back today, and the operator
-    // has to be able to find out the motors were not stopped — on the
-    // hover and the description, never as a line under the strip.
-    await expect(stopButton(page)).toHaveAttribute(
-      "title",
-      /Its motors are still powered/,
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0]).toEqual({
+      method: "POST",
+      path: "/api/v1/robot/estop",
+      body: { locked: true },
+    });
+    // The backend cancels every job on the lock's edge, so the console sends
+    // no DELETE of its own — and the run leaving the list is how it shows.
+    await expect(strip(page).getByRole("status")).toHaveText(
+      "No task message in queue",
     );
+    expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
+  });
+
+  test("puts the press back and says why when the lock is refused", async ({
+    page,
+  }) => {
+    await mockBackend(page);
+    // Registered after the fake, so it answers first.
+    await page.route("**/api/v1/robot/estop", (route) =>
+      route.fulfill({
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "The robot's driver did not answer." }),
+      }),
+    );
+    await page.goto("/settings");
+
+    await stopButton(page).click();
+
+    // Nothing was locked, so the controls are not held — but the sentence is
+    // on the button for whoever asks, never as a line under the strip.
+    await expect(stopButton(page)).toHaveAttribute("aria-pressed", "false");
     await expect(stopButton(page)).toHaveAccessibleDescription(
-      /Its motors are still powered/,
+      "The robot's driver did not answer.",
     );
     await expect(strip(page).getByRole("alert")).toHaveCount(0);
   });
 
   test("a tap does not release it; a held press does", async ({ page }) => {
-    await mockBackend(page);
+    const writes = await mockBackend(page);
     await page.goto("/settings");
 
     await stopButton(page).click();
     await expect(stopButton(page)).toHaveAttribute("aria-pressed", "true");
 
-    // A second tap, and a press let go early: both leave it engaged.
+    // A second tap, and a press let go early: both leave it engaged, and
+    // neither sends a release.
     await stopButton(page).click();
     await holdStop(page, 300);
     await expect(stopButton(page)).toHaveAttribute("aria-pressed", "true");
+    expect(writes.map((w) => w.body)).toEqual([{ locked: true }]);
 
     // Positive control: the same press held past the second releases it.
     await holdStop(page, 1300);
     await expect(stopButton(page)).toHaveAttribute("aria-pressed", "false");
-    await expect(stopButton(page)).not.toHaveAttribute("title", /motors/);
+    expect(writes.map((w) => w.body)).toEqual([{ locked: true }, { locked: false }]);
   });
 
   test("Shift+Space engages it from anywhere on the page", async ({ page }) => {
@@ -102,7 +132,7 @@ test.describe("the emergency stop", () => {
 
     await expect(stopButton(page)).toHaveAttribute("aria-pressed", "true");
     await expect
-      .poll(() => writes.filter((w) => w.path === "/api/v1/robot/set_motion_key"))
+      .poll(() => writes.filter((w) => w.path === "/api/v1/robot/estop"))
       .toHaveLength(1);
   });
 
@@ -129,18 +159,24 @@ test.describe("the emergency stop", () => {
     await expect(arm).toHaveAttribute("aria-checked", "true");
   });
 
-  test("shows a stop the robot reports, and does not offer to release it", async ({
+  test("shows a lock the robot reports, and releases it from here", async ({
     page,
   }) => {
     const writes = await mockBackend(page, {
-      state: robotState({ low_level_mode: { policy: "PPO", motion: "ESTOP" } }),
+      state: robotState({
+        low_level_mode: { policy: "PPO", motion: "LOCOMOTION", safety_locked: true },
+      }),
     });
     await page.goto("/settings");
 
+    // Engaged by another console or the driver: this tab pressed nothing.
     await expect(stopButton(page)).toHaveAttribute("aria-pressed", "true");
-    await holdStop(page, 1300);
-    await expect(stopButton(page)).toHaveAttribute("aria-pressed", "true");
-    // Pressing an engaged stop sends nothing.
+    await stopButton(page).click();
     expect(writes).toEqual([]);
+
+    // The lock is the driver's, so a release from here is a real one.
+    await holdStop(page, 1300);
+    await expect(stopButton(page)).toHaveAttribute("aria-pressed", "false");
+    expect(writes.map((w) => w.body)).toEqual([{ locked: false }]);
   });
 });

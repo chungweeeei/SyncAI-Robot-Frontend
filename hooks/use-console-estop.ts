@@ -13,23 +13,22 @@ import * as React from "react";
  * from `components/`.
  */
 export interface ConsoleEstop {
-  /** This tab's latch, or the robot reporting ESTOP — see `estopEngaged`. */
-  engaged: boolean;
   /**
-   * Only this tab's latch. Release clears it; it cannot clear a stop the robot
-   * reports, so the button keeps saying engaged while that reading stands.
+   * The robot reporting its safety lock on, or this tab's press the robot
+   * has not answered yet — see `estopEngaged`.
    */
-  latched: boolean;
-  /** Latch, then send the stop. Synchronous to the latch, never waits. */
+  engaged: boolean;
+  /** A release has been sent and has not been answered yet. */
+  releasing: boolean;
+  /** Hold the controls, then ask for the lock. Never waits on the answer. */
   engage: () => void;
-  /** Clear this tab's latch. Sends nothing — see the provider. */
+  /** Ask for the lock to be released. The reading decides when it is. */
   release: () => void;
-  /** True while the stop's requests are in flight. */
+  /** True while either request is in flight. */
   busy: boolean;
   /**
-   * What the operator needs told about the last press, or null: the backend's
-   * refusals, or that the motors were not stopped. Never a success message —
-   * the button's own face says engaged.
+   * The backend's sentence for the last request it refused, verbatim, or
+   * null. Never a success message — the button's own face says engaged.
    */
   notice: string | null;
 }

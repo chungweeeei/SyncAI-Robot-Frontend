@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
  * keyboard, and repeats of the key are not a new press.
  */
 export function EstopButton() {
-  const { engaged, latched, engage, release, notice } = useConsoleEstop();
+  const { engaged, releasing, engage, release, notice } = useConsoleEstop();
   const [holding, setHolding] = React.useState(false);
   const timerRef = React.useRef<number | null>(null);
   const pointerRef = React.useRef<number | null>(null);
@@ -60,10 +60,11 @@ export function EstopButton() {
     [],
   );
 
-  // A stop the robot reports and this tab did not latch cannot be released
-  // from here: release only clears this tab's latch. Holding would fill the
-  // bar and change nothing, so the hold is not offered.
-  const releasable = engaged && latched;
+  // Any engaged lock can be released from here, whoever engaged it — the
+  // release is the driver's, not this tab's. Not while one is already on its
+  // way: the button stays engaged until the robot reports the lock off, and a
+  // second hold would only send the same release again.
+  const releasable = engaged && !releasing;
 
   const onPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0 || pointerRef.current !== null) return;
@@ -101,15 +102,15 @@ export function EstopButton() {
 
   const label = !engaged
     ? "Emergency stop"
-    : releasable
-      ? "Emergency stop engaged. Press and hold to release"
-      : "Emergency stop engaged on the robot";
+    : releasing
+      ? "Emergency stop engaged. Releasing"
+      : "Emergency stop engaged. Press and hold to release";
 
   const title = !engaged
-    ? "Stop the robot: cancel the job and drop manual drive (Shift+Space)"
-    : releasable
-      ? "Press and hold for one second to release"
-      : "The robot reports its emergency stop. It has to be released on the robot.";
+    ? "Stop the robot: lock its motion and cancel every job (Shift+Space)"
+    : releasing
+      ? "Releasing…"
+      : "Press and hold for one second to release";
 
   return (
     <button
@@ -140,7 +141,7 @@ export function EstopButton() {
         "relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-sm border select-none [-webkit-touch-callout:none] touch-manipulation transition-colors focus-visible:outline-none",
         engaged
           ? "border-signal-warn/50 bg-signal-warn/12 text-signal-warn"
-          : "border-transparent text-muted-foreground hover:border-signal-warn/50 hover:bg-signal-warn/12 hover:text-signal-warn focus-visible:border-hairline",
+          : "border-transparent text-muted-foreground hover:border-signal-warn hover:bg-signal-warn/12 hover:text-signal-warn focus-visible:border-hairline",
       )}
     >
       {/* The release's progress, filling under the label. A width

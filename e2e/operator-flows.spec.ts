@@ -31,7 +31,7 @@ test.describe("the recorder", () => {
     await expect(
       page.getByRole("button", { name: /start recording/i }),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Stop" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
   });
 
   test("shows the live face and the robot's own elapsed clock", async ({
@@ -55,7 +55,7 @@ test.describe("the recorder", () => {
     await expect(page.getByText("Recording", { exact: true })).toBeVisible();
     // 75 s as the robot measured it, not a timer this console started.
     await expect(page.getByText("1:15")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
     await expect(
       page.getByRole("button", { name: /start recording/i }),
     ).toHaveCount(0);
