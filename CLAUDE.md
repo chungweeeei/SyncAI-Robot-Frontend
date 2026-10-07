@@ -157,6 +157,12 @@ components/
                 a glance with pause and delete, the list itself stays on
                 /tasks — then posture, locomotion and motors) and the
                 driving controls
+  drive/        the full-screen drive view (/drive, unlisted in the nav rail):
+                a blank screen with the sticks in its bottom corners, the
+                translation one locked to one axis, and the
+                arm switch and speed limit in a pill above them. The drive
+                panel links here on a phone and the strip hides the panel on
+                this route; the parts both share are dashboard/drive-parts.tsx
   mapping/      the mode switch (the rail), the run strip over the viewport
                 (Start, then a recording-style indicator beside Save and New
                 map — its face is lib/map/run-face.ts), the save dialog, the
@@ -210,8 +216,8 @@ lib/
                 robot's safety lock, or this tab's press until the lock
                 confirms it, and the release hold)
   teleop/       thumbstick maths: clamp, deadzone, key bindings, the linear
-                speed limit and the screen-to-body-frame turn the drive panel
-                commands through
+                speed limit, the drive view's one-axis lock (lockToAxis) and
+                the screen-to-body-frame turn the drive panel commands through
   video/        WHIP/WHEP signalling, and the camera window's clip capture
                 (container pick, filename rule, the recorder wrapper)
   types/        shared wire types (map, robot, pointcloud, stream), and the

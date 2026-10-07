@@ -189,6 +189,108 @@ test.describe("the console on a phone", () => {
     expect(gripBox?.height).toBeGreaterThanOrEqual(TARGET);
   });
 
+  test("opens the full-screen drive view from the panel, sticks in the bottom corners", async ({
+    page,
+  }) => {
+    // The panel's two wells sit side by side in a 16rem card, under one
+    // thumb; the drive view is where they come apart for two.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page);
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Manual drive panel" }).click();
+    await page.getByRole("link", { name: "Open the full-screen drive view" }).click();
+    await expect(page).toHaveURL(/\/drive$/);
+
+    // One drive at a time: the strip does not offer the panel over the view.
+    await expect(page.getByRole("button", { name: "Manual drive panel" })).toHaveCount(0);
+    await expect(page.getByRole("switch", { name: "Arm manual drive input" })).toBeVisible();
+    await expect(page.getByRole("slider", { name: "Max speed" })).toBeVisible();
+
+    const nav = page.getByRole("navigation", { name: "Console sections" });
+    const navBox = await nav.boundingBox();
+    const left = await page.getByRole("group", { name: "Translation stick" }).boundingBox();
+    const right = await page.getByRole("group", { name: "Rotation stick" }).boundingBox();
+    expect(navBox && left && right, "a stick or the nav has no box").toBeTruthy();
+    if (!navBox || !left || !right) return;
+    expect(left.x + left.width, "the translation stick is not on the left half").toBeLessThanOrEqual(WIDTH / 2);
+    expect(right.x, "the rotation stick is not on the right half").toBeGreaterThanOrEqual(WIDTH / 2);
+    for (const [name, box] of [["translation", left], ["rotation", right]] as const) {
+      expect(box.width, `the ${name} stick is not thumb-sized`).toBeGreaterThanOrEqual(128);
+      const bottom = box.y + box.height;
+      expect(bottom, `the ${name} stick runs under the nav`).toBeLessThanOrEqual(navBox.y);
+      expect(navBox.y - bottom, `the ${name} stick is not down by the nav`).toBeLessThan(80);
+    }
+
+    // And back to where the panel was opened.
+    await page.getByRole("button", { name: "Leave the full-screen drive view" }).click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page.getByRole("button", { name: "Manual drive panel" })).toBeVisible();
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("drives the view's translation stick one axis at a time, under its speed limit", async ({
+    page,
+  }) => {
+    // A thumb on glass has no detent for straight ahead, so the view's
+    // translation stick snaps to forward / back or strafe. Both halves: the
+    // frames the robot receives never carry vx and vy together, and the Max
+    // speed the view shows is the one they are sent at.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page);
+    const frames: { vx: number; vy: number; wz: number }[] = [];
+    await page.routeWebSocket(/\/api\/v1\/robot\/teleop$/, (ws) => {
+      ws.onMessage((message) => {
+        if (typeof message === "string") frames.push(JSON.parse(message));
+      });
+    });
+    const last = () => frames.at(-1);
+
+    await page.goto("/drive");
+    await page.getByRole("switch", { name: "Arm manual drive input" }).click();
+    await expect(page.getByText("Streaming to robot · 10 Hz")).toBeVisible();
+
+    const well = (await page.getByRole("group", { name: "Translation stick" }).boundingBox())!;
+    const cx = well.x + well.width / 2;
+    const cy = well.y + well.height / 2;
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type: "touchStart" | "touchMove" | "touchEnd", points: { x: number; y: number }[]) =>
+      cdp.send("Input.dispatchTouchEvent", {
+        type,
+        touchPoints: points.map((p) => ({ ...p, id: 1 })),
+      });
+
+    // Mostly up, a little right: forward only. The positive control is that
+    // it drives at all.
+    await touch("touchStart", [{ x: cx, y: cy }]);
+    await touch("touchMove", [{ x: cx + 15, y: cy - 45 }]);
+    await expect.poll(() => last()?.vx ?? 0).toBeGreaterThan(0);
+    expect(last()?.vy).toBe(0);
+
+    // Swung to mostly left without lifting: strafe left only.
+    await touch("touchMove", [{ x: cx - 45, y: cy - 15 }]);
+    await expect.poll(() => last()?.vy ?? 0).toBeGreaterThan(0);
+    expect(last()?.vx).toBe(0);
+
+    // Full left, then the limit halved with the thumb still down.
+    await touch("touchMove", [{ x: cx - well.width, y: cy }]);
+    await expect.poll(last).toEqual({ vx: 0, vy: 1, wz: 0 });
+    const speed = page.getByRole("slider", { name: "Max speed" });
+    await speed.focus();
+    for (let step = 0; step < 5; step += 1) await page.keyboard.press("ArrowLeft");
+    await expect(speed).toHaveAttribute("aria-valuetext", "50 percent of full speed");
+    await expect.poll(last).toEqual({ vx: 0, vy: 0.5, wz: 0 });
+
+    await touch("touchEnd", []);
+    await expect.poll(last).toEqual({ vx: 0, vy: 0, wz: 0 });
+    expect(
+      frames.filter((f) => f.vx !== 0 && f.vy !== 0),
+      "a diagonal reached the robot",
+    ).toEqual([]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
   test("drops the overheating notice inside the viewport", async ({ page }) => {
     // The sensor button is the leftmost of the strip's three, so its panel
     // hung off it would open furthest past the left edge of all of them.

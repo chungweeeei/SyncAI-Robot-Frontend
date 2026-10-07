@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { JoystickIcon } from "lucide-react";
 
 import {
@@ -7,6 +8,7 @@ import {
   droppedPanel,
 } from "@/components/console/strip-disclosure";
 import { ManualControl } from "@/components/dashboard/manual-control";
+import { DRIVE_PAGE } from "@/components/drive/drive-screen";
 
 /**
  * The drive panel's mount in the masthead, so manual drive is reachable from
@@ -38,6 +40,12 @@ import { ManualControl } from "@/components/dashboard/manual-control";
  * is the less obvious of the two.
  */
 export function DriveDisclosure() {
+  // Not on the drive view, which is the same drive full-screen: a panel
+  // opened over it would be a second teleop channel and a second key
+  // listener. Leaving the route also unmounts an open panel, so it comes back
+  // closed and disarmed.
+  const pathname = usePathname();
+  if (pathname === DRIVE_PAGE) return null;
   return (
     <StripDisclosure
       icon={JoystickIcon}
