@@ -121,18 +121,24 @@ between the read and the press, or a backend without the pause routes) appears
 under the strip as the backend's own sentence.
 
 The **emergency stop** is the first of the strip's presses, before the
-sensor, drive and camera buttons, on every screen. One press (or
-Shift+Space) engages it, firing at the press rather than the release: it sends
-the robot's emergency-stop key, cancels every job the active list names, and
-disarms the drive panel. While it is engaged, the panel cannot be armed, and
-Stand, Lie down, a navigation goal and a task's Run are greyed and refused. It
-is released only by holding the button for a second. A tap does nothing to an
-engaged stop. Releasing sends nothing, so moving again is the operator's own
-next act. The latch belongs to the tab and is not stored. A robot that
-reports `ESTOP` shows as engaged in every console, and that state can only
-be released on the robot. The backend currently accepts the stop key without
-forwarding it to the motors. The button's hover says so, without a line
-under the strip: the job and the drive stopped, the motors did not.
+sensor, drive and camera buttons, on every screen. It is the driver's
+safety lock: `POST /api/v1/robot/estop {locked}`, read back as
+`low_level_mode.safety_locked` on the robot state. One press (or Shift+Space)
+engages it, firing at the press rather than the release. The backend cancels
+every running job on the lock's rising edge, so the console sends no cancels
+of its own. It is released only by holding the button for a second, and a
+tap does nothing to an engaged stop.
+
+The button shows the lock the robot reports, so a lock engaged by another
+console or by the driver itself is engaged here too, and can be released from
+here. A press holds the controls from the instant it lands, before the next
+frame confirms the lock. A release shows only once the robot reports the lock
+off. While the stop is engaged, the drive panel disarms and cannot be armed,
+and Stand, Lie down, a navigation goal and a task's Run are greyed and
+refused. Releasing restarts nothing: moving again is the operator's own next
+act. A refused request is shown verbatim on the button's hover, not as a line
+under the strip. While the stop is engaged, the strip's bottom edge is solid
+red and the heartbeat sweep is held off.
 
 Below `sm` the strip is **two rows**: the id, mode, stop, sensor, drive, camera and battery
 on the first, the job's buttons and bar across the full width of the second.

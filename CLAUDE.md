@@ -143,9 +143,10 @@ components/
   console/      shell: nav rail, status strip, the three layout-level
                 providers (their contexts live in hooks/use-console-*.ts — see
                 Layering), the emergency stop at the head of the strip's
-                presses (one press engages, a one-second hold releases;
-                estop-provider.tsx holds the latch the drive panel and the
-                command hooks obey),
+                presses — the driver's safety lock (one press engages, a
+                one-second hold releases; estop-provider.tsx reads
+                `safety_locked` and the press the drive panel and the command
+                hooks obey),
                 the strip's running-job controls (a fixed pause / resume and
                 cancel pair, then one always-present bar: job id, step and
                 state) and its disclosures: the sensor alerts (where an
@@ -205,8 +206,9 @@ lib/
                 85 °C, re-armed only once the motor has cooled), and the
                 commanded controller's override (controller.ts: an arrival
                 at IDLE or LOCOMOTION drops a commanded MPC back to RL), and
-                when the emergency stop reads as engaged (estop.ts: this tab's
-                latch or the robot reporting ESTOP, and the release hold)
+                when the emergency stop reads as engaged (estop.ts: the
+                robot's safety lock, or this tab's press until the lock
+                confirms it, and the release hold)
   teleop/       thumbstick maths: clamp, deadzone, key bindings, the linear
                 speed limit and the screen-to-body-frame turn the drive panel
                 commands through
