@@ -42,7 +42,13 @@ it; the controls themselves are on screen.
 | `/tasks` | Task overview: the saved jobs, the registered schedules and any run in progress. A row's **Run** dispatches it, **Schedule** opens the trigger form at the top of the schedules, and **Load** opens it in the editor — asking first when it would clear unsaved steps. Every job is listed whichever map it is for: one for another map is marked and its Run and Schedule are held. A Run sends the map the job was planned on (`map_name`), so a map switched since the list was read is refused by the backend (`map_mismatch`) rather than driven on the map that replaced it. **Schedules** are built from one Repeat picker — Daily, Weekdays, Weekends, Custom, Interval — plus a time: cron is never typed and never shown, it is built on the way out and read back as a sentence on the way in, and a cron this console could not have written is shown verbatim rather than as a sentence it does not mean. Next run is on the operator's own clock (UTC in the server render, labelled as such, until the browser says which clock that is). The list is not polled — the soonest run in it is the one moment it goes stale on its own, so it re-reads itself just after that, and a row steps over a run that has already fired rather than going on naming it as the next one. |
 | `/tasks/editor` | Task editor: the step list, under a heading that is the job's name. It neither runs nor schedules a job — both are a saved job's row on `/tasks`. The header holds **Go back**, **Save** (which updates the loaded job or creates one, asking for a name in the heading first) and, for a saved job, **Delete**, which names any schedules of it and returns to `/tasks`. A step row folds to a one-line readback of what was typed and folded is the default, since a twenty-step patrol unfolded is three screens of inputs; an unfinished row shows its problem on that line and stays open. Reorder by the drag handle or the move menu — the step ids are positional, so the order shown is the order posted. A Move step is set by picking a waypoint and nothing else: there are no coordinate fields, so a job with no map, no waypoints or an unreadable list says what to do on the floor plan instead and stays unsendable. The **Map** picker says which map those waypoints come from and can be pointed at another, so a job for the second floor can be built while the robot is on the first; switching clears the waypoints already picked, behind a confirm. The map button beside a Move row opens that floor plan under the picker with every waypoint marked and the job's own lit by step number — a view, not a picker, because a name in a list is not a place. **What is in the editor stays in the tab**: the steps, the loaded template, the map choice and a new job's name survive a walk back to `/tasks` and a reload, and go away with the tab — they are unsaved work, not something on the robot. |
 | `/history` | Job history: finished runs from `GET /api/v1/task_history`, newest close first, under a dashboard of how the chosen window's jobs ended — finished / completed / failed / canceled, a success rate and one bar — from `GET /api/v1/task_history/stats`. Four pickers scope it (time window, outcome, kind, template name) and live in the address bar, so a view can be bookmarked or sent. The outcome narrows the list only: the dashboard is read without it, so it stays how the window's jobs ended rather than a tautology about the rows, and says under its tiles which outcome is listed. The endpoint pages forward only and has no total count, so the console keeps the cursors it was handed to step back and shows "Page N" without an "of M", ten jobs per page. A row is titled by the template it ran, else by its kind, and only by the job id for a run nothing labelled; the id and the per-step results are read when the row is opened. There is no poll — the list and the counts refresh when a run drops out of the console's active-task poll — and it reaches back only as far as Temporal's retention. |
+| `/drive` | The full-screen drive view for a phone — unlisted (no nav rail entry); the drive panel's ⤢ link opens it, and only below `sm`. The two sticks sit in the bottom corners of a blank screen, where the thumbs are, as translucent 144 px overlay sticks with no key hints. Above them one pill holds the way back, the **Max speed** limit and the arm switch, with the channel line under it while armed. The translation stick drives one axis at a time — forward / back or strafe, never a diagonal (`lockToAxis`), because a thumb on glass has no detent for straight ahead; the panel's stick keeps the full disc. The arm state and the limit are the view's own and start disarmed and at full, and the strip does not offer the drive panel on this route, so there is never a second teleop channel or key listener. |
 | `/webrtc-test` | The WHIP/WHEP bench — unlisted (no nav rail entry, opened by hand) but built into every image, because the robot only ever runs a production build and that is the one machine where the video path can be tested. The only consumer that exercises WHIP. |
+
+From `lg` up the nav rail opens labelled, an icon and its screen's name per
+row, and the button in its top-left corner folds it to a 56 px rail of icons
+only — no hover tooltip — and back. The fold is instant (an animated width
+resized both map canvases on every frame) and lasts until a reload.
 
 On a phone (below `lg`) the nav rail is a bottom bar of seven equal icon-only
 tabs, the masthead's drive panel and camera window anchor to the viewport
@@ -60,7 +66,9 @@ every route rather than on whichever page happens to own a viewport: the
 (`CameraDisclosure` → `CameraWindow`). Both used to be anchored inside a page —
 driving in the bottom-right corner of three viewports, the camera only on
 `/webrtc-test` — and moving them up means "can I nudge the robot from here" and
-"can I see what it sees from here" have the same answer everywhere.
+"can I see what it sees from here" have the same answer everywhere. On a phone
+the drive panel's header also links to `/drive`, the same drive taken apart for
+two thumbs; the strip hides the panel on that route.
 
 Collapsing either one **unmounts it**, and that is load-bearing in both cases.
 The drive panel's keyboard half is a window-level WASD listener, so a panel
@@ -151,7 +159,8 @@ the accessibility tree.
 ```
 app/          route shells; almost no logic ("chrome only" — a component owns the page)
 components/   console/ (shell: nav rail, status strip, shared providers, and the
-              strip's disclosures — see The masthead), dashboard/, mapping/,
+              strip's disclosures — see The masthead), dashboard/, drive/ (the
+              phone's full-screen drive view), mapping/,
               maps/, recordings/, tasks/, history/, settings/, webrtc/ (the bench),
               ui/ (shadcn primitives)
 hooks/        one hook per backend interaction (use-maps, use-active-tasks, use-teleop-sender…)
@@ -172,8 +181,9 @@ lib/task/     step, schedule and history domain helpers, the template name limit
 lib/robot/    G23 joint table (URDF link names ↔ GLB node names), how a motor is named,
               the readout thresholds (levels.ts), the overheating notice's rule
               (heat-alert.ts) and the commanded controller's fallback to RL (controller.ts)
-lib/teleop/   thumbstick maths — clamp, deadzone, key bindings, the linear speed limit
-              and the screen-to-body-frame turn the drive panel commands through
+lib/teleop/   thumbstick maths — clamp, deadzone, key bindings, the linear speed limit,
+              the drive view's one-axis lock (lockToAxis) and the screen-to-body-frame
+              turn the drive panel commands through
 lib/recording/ how a bag's duration / size / message count are read, shared by the two
               recording surfaces so one quantity never appears in two spellings
 lib/video/    WHIP/WHEP signalling, and the clip the camera window saves to the

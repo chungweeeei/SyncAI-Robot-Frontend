@@ -140,7 +140,9 @@ The stack as built. Correct this section if a choice changes.
 ```
 app/            route shells; the real content belongs to a component (see deviations)
 components/
-  console/      shell: nav rail, status strip, the three layout-level
+  console/      shell: nav rail (labelled from lg by default, folded to
+                icons only — no tooltip — from the button in its top-left
+                corner; instant, held until a reload), status strip, the three layout-level
                 providers (their contexts live in hooks/use-console-*.ts — see
                 Layering), the emergency stop at the head of the strip's
                 presses — the driver's safety lock (one press engages, a
@@ -461,6 +463,13 @@ As built:
   second. `path` stays state because it is ~0.333 Hz *and* has a consumer that
   branches on it outside the canvas. A value only a render loop reads does not
   belong in state; a value a component branches on does.
+- **A resize draws before the paint.** `renderer.setSize` reassigns the
+  canvas's width and height, which clears it, and a `ResizeObserver` fires
+  after the frame's render — so the viewport's resize callback renders a
+  frame itself, or the browser paints the cleared canvas and the scene
+  blinks out. The 2D canvases are safe by construction: they reassign the
+  size inside the draw that repaints it. The same reason keeps the nav rail's
+  fold unanimated: an eased width is a resize on every frame.
 - **three.js teardown does not reach textures.** A material's `.map` is not
   disposed by disposing the material, so anything that loads one holds it and
   frees it by hand — see the ground texture in `pointcloud-canvas.tsx` and the
