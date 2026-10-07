@@ -3,6 +3,7 @@ import { Archivo, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
 import { ActiveTaskProvider } from "@/components/console/active-task-provider";
+import { EstopProvider } from "@/components/console/estop-provider";
 import { NavRail } from "@/components/console/nav-rail";
 import { RobotStateProvider } from "@/components/console/robot-state-provider";
 import { StatusStrip } from "@/components/console/status-strip";
@@ -77,18 +78,23 @@ export default function RootLayout({
           <QueryProvider>
             <RobotStateProvider>
               <ActiveTaskProvider>
-                <div className="flex h-dvh flex-col lg:flex-row">
-                  <NavRail />
-                  <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                    <StatusStrip />
-                    {/* Pages own their own scrolling: the dashboard must not
-                     * scroll (the viewport is sized to what is left), settings
-                     * must. */}
-                    <main className="min-h-0 flex-1 overflow-hidden">
-                      {children}
-                    </main>
+                {/* Inside both polls: the stop reads the robot's own ESTOP
+                  * report from the first and the jobs to cancel from the
+                  * second. */}
+                <EstopProvider>
+                  <div className="flex h-dvh flex-col lg:flex-row">
+                    <NavRail />
+                    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                      <StatusStrip />
+                      {/* Pages own their own scrolling: the dashboard must not
+                       * scroll (the viewport is sized to what is left), settings
+                       * must. */}
+                      <main className="min-h-0 flex-1 overflow-hidden">
+                        {children}
+                      </main>
+                    </div>
                   </div>
-                </div>
+                </EstopProvider>
               </ActiveTaskProvider>
             </RobotStateProvider>
           </QueryProvider>

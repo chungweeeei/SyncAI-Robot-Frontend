@@ -129,9 +129,9 @@ test.describe("the console on a phone", () => {
     page,
   }) => {
     // The strip's one row carries the robot id, the mode, the step readout,
-    // its hold and cancel, the sensor, drive and camera buttons and the battery. The
-    // robot id is the only thing allowed to give way; the buttons must stay
-    // whole and under a finger.
+    // its hold and cancel, the emergency stop, the sensor, drive and camera
+    // buttons and the battery. The robot id is the only thing allowed to give
+    // way; the buttons must stay whole and under a finger.
     const ID = "robot01-task-1758000000-1";
     await mockBackend(page, {
       activeTasks: [activeTask()],
@@ -141,7 +141,7 @@ test.describe("the console on a phone", () => {
     const strip = page.getByRole("banner");
 
     await expect(strip.getByRole("status")).toContainText("2/3");
-    for (const name of ["Pause the job", "Cancel the job", "Sensor alerts", "Manual drive panel", "Camera window"]) {
+    for (const name of ["Emergency stop", "Pause the job", "Cancel the job", "Sensor alerts", "Manual drive panel", "Camera window"]) {
       const button = strip.getByRole("button", { name });
       const box = await button.boundingBox();
       await expectOnScreen(page, name, box);

@@ -32,6 +32,15 @@ export type RobotMode = "MAINTENANCE" | "MANUAL" | "AUTO";
 export interface RobotLowLevelMode {
   policy: string;
   motion: string;
+  /**
+   * Whether the driver's software safety lock is engaged — the emergency
+   * stop. Not the controller's, unlike the two labels above: while it is on,
+   * the driver drops manual drive and every motion key, and the backend
+   * cancelled every running job when it engaged. (`safety_state` on the
+   * robot's own topic.) False before the driver has ever published, which
+   * is indistinguishable from a real release.
+   */
+  safety_locked: boolean;
 }
 
 export interface RobotPose {
@@ -189,7 +198,11 @@ export const RobotStateSchema: z.ZodType<RobotState> = z.object({
   // Open strings, matching the interface: the backend's lookup has an
   // "UNKNOWN" fallback it legitimately hits, so an enum here would reject a
   // frame that is perfectly valid.
-  low_level_mode: z.object({ policy: z.string(), motion: z.string() }),
+  low_level_mode: z.object({
+    policy: z.string(),
+    motion: z.string(),
+    safety_locked: z.boolean(),
+  }),
   localization_valid: z.boolean(),
   localization_status: z.object({
     position: RobotPoseSchema,

@@ -19,6 +19,7 @@ import {
   type LayerOption,
 } from "@/components/dashboard/viewport-toolbar";
 import { useActiveMapVertices } from "@/hooks/use-active-map-vertices";
+import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useGoalTask } from "@/hooks/use-goal-task";
 import { useInitialPose } from "@/hooks/use-initial-pose";
 import { useMapKeepout } from "@/hooks/use-map-keepout";
@@ -93,6 +94,7 @@ export function PointCloudView({
   const runLock = useMapRunLock(stops.mapName);
   // And the other way round: no goal onto a map whose floor plan is being
   // rebuilt under the planner.
+  const { engaged: stopped } = useConsoleEstop();
   const dispatchLock = dispatchMapLock(activeMap);
   // Robot pose + joints + planned route via the telemetry WebSocket — see
   // useTelemetry on the rates and on why this is a stream and not a poll.
@@ -179,7 +181,7 @@ export function PointCloudView({
   // typed so far survives until the job ends.
   if (
     (runLock.locked && (pick?.mode === "place" || pick?.mode === "vertex")) ||
-    (dispatchLock.locked && pick?.mode === "goal")
+    ((dispatchLock.locked || stopped) && pick?.mode === "goal")
   ) {
     setPick(null);
   }
@@ -428,8 +430,8 @@ export function PointCloudView({
                 ? pick.mode
                 : null
             }
-            goalLocked={task.running || task.busy || dispatchLock.locked}
-            goalLockReason={dispatchLock.reason}
+            goalLocked={task.running || task.busy || dispatchLock.locked || stopped}
+            goalLockReason={stopped ? ESTOP_REFUSAL : dispatchLock.reason}
             onArmGoal={() => armPick("goal")}
             onArmInitialPose={() => armPick("initial-pose")}
             cameraMode={cameraMode}

@@ -79,7 +79,7 @@ export function robotState(over: Record<string, unknown> = {}) {
     robot_id: "robot01",
     map: `map/${MAP_NAME}/gridmap.yaml`,
     mode: "AUTO",
-    low_level_mode: { policy: "PPO", motion: "LOCOMOTION" },
+    low_level_mode: { policy: "PPO", motion: "LOCOMOTION", safety_locked: false },
     localization_valid: true,
     localization_status: {
       position: { x: 1.25, y: -3.5, z: 0, theta: 90 },
@@ -342,6 +342,12 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     });
 
   const state = over.state === undefined ? robotState() : over.state;
+  // The driver's safety lock, read back on every state frame. The estop
+  // write below moves it the way the driver would, so the strip's next poll
+  // sees a lock land or lift; a fixture that starts locked starts here.
+  let safetyLocked = Boolean(
+    (state?.low_level_mode as { safety_locked?: boolean } | undefined)?.safety_locked,
+  );
   const maps = over.maps ?? [mapSummary()];
   // Typed as rows rather than left to the fixture's exact shape, because the
   // POST route below appends whatever the console sent.
@@ -389,7 +395,13 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     // Reads -------------------------------------------------------------
     if (path === "/api/v1/robot/state") {
       return state
-        ? json(route, state)
+        ? json(route, {
+            ...state,
+            low_level_mode: {
+              ...(state.low_level_mode as Record<string, unknown>),
+              safety_locked: safetyLocked,
+            },
+          })
         : json(
             route,
             { detail: "The robot has not published a state frame yet." },
@@ -663,6 +675,33 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         restarting: true,
         message:
           "Restarting the live mode; poll GET /api/v1/robot/restart for the outcome.",
+      });
+    }
+    if (path === "/api/v1/robot/estop" && method === "POST") {
+      // The backend's edge rule: only an engage of a lock that was off
+      // cancels, and it cancels every running job itself.
+      const { locked } = parseBody(request.postData()) as { locked: boolean };
+      const cancelRequested = locked && !safetyLocked;
+      safetyLocked = locked;
+      if (cancelRequested) activeTasks.length = 0;
+      return json(route, {
+        locked,
+        cancel_requested: cancelRequested,
+        message: locked
+          ? cancelRequested
+            ? "Safety lock engaged; cancelling every running task."
+            : "Safety lock was already engaged."
+          : "Safety lock released.",
+      });
+    }
+    if (path === "/api/v1/robot/set_motion_key" && method === "POST") {
+      // The backend's own answer: every key is forwarded except the
+      // emergency stop, which it accepts and holds back.
+      const { key } = parseBody(request.postData()) as { key: string };
+      return json(route, {
+        key,
+        sent: key !== "4",
+        message: key === "4" ? "Emergency stop is not forwarded." : "Sent.",
       });
     }
     if (method === "DELETE") return route.fulfill({ status: 204, body: "" });

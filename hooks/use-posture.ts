@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 
+import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { ignore } from "@/lib/api/mutation-state";
 import { sendPostureTask, type Posture, type TaskStatus } from "@/lib/api/task";
@@ -35,9 +36,14 @@ export interface PostureControl {
 export function usePosture(robotId: string): PostureControl {
   const task = useTaskTracker();
   const { track, reset } = task;
+  const { engaged: stopped } = useConsoleEstop();
 
   const submit = useMutation({
-    mutationFn: (posture: Posture) => sendPostureTask(robotId, posture),
+    mutationFn: async (posture: Posture) => {
+      // Refused here as well as greyed at the button: see useGoalTask.
+      if (stopped) throw new Error(ESTOP_REFUSAL);
+      return sendPostureTask(robotId, posture);
+    },
     // Before the request, not after it: `sent` names the new command as soon as
     // it goes out, and the previous one's step failure under that name would
     // read as this command's. The buttons are gated on `running`, so there is
