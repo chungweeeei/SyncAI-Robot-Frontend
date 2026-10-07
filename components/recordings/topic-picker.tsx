@@ -26,16 +26,28 @@ const PRESETS: readonly { topic: string; hint: string }[] = [
   { topic: "livox/lidar", hint: "Laser scanner — the robot's main sensor" },
   { topic: "livox/imu", hint: "Motion sensor — needed with the scanner to rebuild a map" },
   { topic: "imu", hint: "Body motion sensor — how the robot itself tilts and turns" },
+  // The camera's picture, as the camera node publishes it: it is pinned to
+  // MJPG, which goes out on image_raw/compressed only — there is no raw image
+  // channel beside it to offer. That node is opt-in at bringup (the live
+  // camera stream holds the device otherwise), so on a robot started without
+  // it this channel records nothing, which the zero-message row will say.
+  { topic: "image_raw/compressed", hint: "Camera picture" },
   { topic: "odom", hint: "Where the robot calculates it has travelled" },
   { topic: "robot_state", hint: "Overall status: battery, mode, motor health" },
 ];
 
 /**
  * The default selection: the LIO inputs, which are the backend's own default,
- * plus the body IMU, by request. The console always sends its list, so the
- * backend's default only answers a client that sends none.
+ * plus the camera picture, by request. The body IMU used to be on by default
+ * and was taken off, also by request; it stays one tap away. The console
+ * always sends its list, so the backend's default only answers a client that
+ * sends none.
  */
-export const DEFAULT_TOPICS = ["livox/lidar", "livox/imu", "imu"];
+export const DEFAULT_TOPICS = [
+  "livox/lidar",
+  "livox/imu",
+  "image_raw/compressed",
+];
 
 /**
  * One selectable topic. The `Segmented` idiom widened to multi-select: chosen
@@ -94,8 +106,8 @@ function TopicChip({
  *
  * Presets as toggles rather than the bare text field the hand-pasted
  * `ros2 bag record` command was: the common case here is one tap (the LIO
- * pair and the body IMU, already selected), and the failure mode of typing is
- * silent — a misspelled topic records nothing and says nothing, because the
+ * pair and the camera picture, already selected), and the failure mode of
+ * typing is silent — a misspelled topic records nothing and says nothing, because the
  * recorder waits for topics rather than refusing unknown ones.
  *
  * There is no free-text row any more, by request: a channel off this list is
