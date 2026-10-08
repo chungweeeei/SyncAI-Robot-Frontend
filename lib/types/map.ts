@@ -57,6 +57,21 @@ export type GridStatus =
   | "failed"
   | "interrupted";
 
+/**
+ * How a map's 3D map stands — the backend's `OctomapStatus`. The same closed
+ * union as `GridStatus`, so the same schema checks it; a separate name because
+ * it is a separate promise, and `interrupted` is decided differently (by the
+ * age of a build the robot never reported finishing, see `octomap_status`).
+ */
+export type OctomapStatus = GridStatus;
+export const OctomapStatusSchema = GridStatusSchema;
+
+/**
+ * The two layers of a 3D map, as the route names them: `road` is the
+ * walkable floor the robot saw free, `occupied` the walls up to head height.
+ */
+export type OctomapLayer = "road" | "occupied";
+
 export interface MapSummary {
   /** Directory name under `map/` — the identity everything else keys off. */
   name: string;
@@ -98,6 +113,23 @@ export interface MapSummary {
    * also tells a failed conversion apart from a map nobody converted yet.
    */
   grid_converting: boolean;
+  /**
+   * How the map's 3D map stands — the walls and walkable floor the robot
+   * derives from the save after it ends a mapping run. Same five words as
+   * `grid_status`, but written by the robot rather than the backend, in a
+   * build that runs for minutes after the save and survives a mode switch.
+   * `interrupted` here means "stale by age": a build reported as running
+   * long after it should have finished, which the backend cannot tell apart
+   * from one that died. Display only — nothing the robot does waits for it.
+   */
+  octomap_status: OctomapStatus;
+  /** Why the last build failed. Null for every status other than `"failed"`. */
+  octomap_error: string | null;
+  /**
+   * Edge of one cell of the 3D map, in metres — what the dashboard sizes its
+   * marks by. Null unless the build finished and recorded it.
+   */
+  octomap_resolution: number | null;
   /** Size of the whole `map/<name>/` directory, dominated by the .pcd. */
   size_bytes: number;
   /** ISO 8601, most recently modified file in the directory. */

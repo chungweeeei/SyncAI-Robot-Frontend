@@ -116,6 +116,11 @@ export function mapSummary(over: Record<string, unknown> = {}) {
     grid_status: "ok",
     grid_error: null,
     grid_converting: false,
+    // No 3D map by default, so the dashboard's layer strip is what every spec
+    // written before it expects; a spec about the 3D map opts in with "ok".
+    octomap_status: "none",
+    octomap_error: null,
+    octomap_resolution: null,
     size_bytes: 24_117_248,
     modified_at: "2026-09-18T09:22:41Z",
     vertex_count: 2,
@@ -723,6 +728,15 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       status: 200,
       contentType: "application/zip",
       body: Buffer.from("PK\x05\x06", "latin1"),
+    }),
+  );
+  await page.route(/\/api\/v1\/maps\/[^/]+\/octomap\/(road|occupied)$/, (route) =>
+    // Both 3D map layers share the scan's wire format: an empty layer is four
+    // zero bytes.
+    route.fulfill({
+      status: 200,
+      contentType: "application/octet-stream",
+      body: Buffer.alloc(4),
     }),
   );
   await page.route(/\/api\/v1\/maps\/[^/]+\/pointcloud$/, (route) =>

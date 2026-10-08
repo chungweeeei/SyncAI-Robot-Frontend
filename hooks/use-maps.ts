@@ -19,19 +19,30 @@ export type MapsStatus = "loading" | "ok" | "error";
 const CONVERTING_POLL_MS = 2000;
 
 /**
+ * How often the catalogue is re-read while only a 3D map build is running.
+ *
+ * Slower than the floor plan's poll on purpose: the build runs for minutes,
+ * shows only in a receipt line and a chip, and blocks nothing, while every
+ * catalogue read walks every map directory on the robot. Five seconds still
+ * lands "ready" well inside the time an operator spends reading the receipt.
+ */
+const BUILDING_3D_POLL_MS = 5000;
+
+/**
  * The poll policy, shared by every observer of the maps query.
  *
- * The flag says when to stop, so this turns itself off with the last running
- * conversion rather than needing a timer anyone has to cancel. Factored out
- * because two hooks below mount the same query and a policy that differed
- * between them would make the poll depend on which screen happened to be open.
+ * The flags say when to stop, so this turns itself off with the last running
+ * conversion or build rather than needing a timer anyone has to cancel.
+ * Factored out because two hooks below mount the same query and a policy that
+ * differed between them would make the poll depend on which screen happened
+ * to be open. A floor plan conversion sets the pace whenever one is running.
  */
-function pollWhileConverting(
+function pollWhileBuilding(
   maps: MapSummary[] | undefined,
 ): number | false {
-  return maps?.some((map) => map.grid_status === "converting")
-    ? CONVERTING_POLL_MS
-    : false;
+  if (maps?.some((map) => map.grid_status === "converting")) return CONVERTING_POLL_MS;
+  if (maps?.some((map) => map.octomap_status === "converting")) return BUILDING_3D_POLL_MS;
+  return false;
 }
 
 export interface UseMaps {
@@ -75,7 +86,7 @@ export function useMaps(): UseMaps {
   const { data, isPending, isError } = useQuery({
     queryKey: queryKeys.maps,
     queryFn: ({ signal }) => fetchMaps(signal),
-    refetchInterval: (query) => pollWhileConverting(query.state.data),
+    refetchInterval: (query) => pollWhileBuilding(query.state.data),
   });
 
   // Invalidate rather than refetch(): the entry is shared, so a Refresh pressed
@@ -160,7 +171,7 @@ export function useMapConversion(name: string | null): MapSummary | null {
   const { data } = useQuery({
     queryKey: queryKeys.maps,
     queryFn: ({ signal }) => fetchMaps(signal),
-    refetchInterval: (query) => pollWhileConverting(query.state.data),
+    refetchInterval: (query) => pollWhileBuilding(query.state.data),
     enabled: name !== null,
   });
 

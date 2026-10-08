@@ -21,8 +21,14 @@ import { z } from "zod";
 import { requestJson, requestRaw } from "@/lib/api/http";
 import type { MapGrid } from "@/lib/map/grid";
 import { decodePointCloud } from "@/lib/ros/pointcloud-stream";
-import { GridStatusSchema } from "@/lib/types/map";
-import type { GridRecipe, GridStatus, MapSummary } from "@/lib/types/map";
+import { GridStatusSchema, OctomapStatusSchema } from "@/lib/types/map";
+import type {
+  GridRecipe,
+  GridStatus,
+  MapSummary,
+  OctomapLayer,
+  OctomapStatus,
+} from "@/lib/types/map";
 import type { PointCloudFrame } from "@/lib/types/pointcloud";
 
 /** `GridInfoResponse` — note `origin` is {x, y, yaw}, not a tuple. */
@@ -43,6 +49,9 @@ interface WireSummary {
   grid_status: GridStatus;
   grid_error: string | null;
   grid_converting: boolean;
+  octomap_status: OctomapStatus;
+  octomap_error: string | null;
+  octomap_resolution: number | null;
   size_bytes: number;
   modified_at: string;
   vertex_count: number;
@@ -69,6 +78,9 @@ const WireSummarySchema: z.ZodType<WireSummary> = z.object({
   grid_status: GridStatusSchema,
   grid_error: z.string().nullable(),
   grid_converting: z.boolean(),
+  octomap_status: OctomapStatusSchema,
+  octomap_error: z.string().nullable(),
+  octomap_resolution: z.number().nullable(),
   size_bytes: z.number(),
   modified_at: z.string(),
   vertex_count: z.number(),
@@ -228,6 +240,33 @@ export async function fetchMapPointCloud(
   // and turning the layer off and on is the retry.
   if (!frame) {
     throw new Error("The map scan arrived incomplete. Turn Map scan off and on to try again.");
+  }
+  return frame;
+}
+
+/**
+ * One layer of a stored map's 3D map, fetched once — the robot's own
+ * voxelisation of the save, already one point per cell, so unlike the scan
+ * above the backend does not thin it.
+ *
+ * Same wire format and decoder as the scan; a separate route per layer so the
+ * two are separate cache entries, and a refusal (still building: 409; not
+ * built, failed or gone: 404) is the backend's sentence through `requestRaw`.
+ */
+export async function fetchMapOctomapLayer(
+  name: string,
+  layer: OctomapLayer,
+  signal?: AbortSignal,
+): Promise<PointCloudFrame> {
+  const encoded = encodeURIComponent(name);
+  const res = await requestRaw(apiUrl(`/api/v1/maps/${encoded}/octomap/${layer}`), {
+    signal,
+  });
+  const frame = decodePointCloud(await res.arrayBuffer());
+  // As for the scan: a short 2xx body is a download cut off in transit, and
+  // the layer toggle is the retry.
+  if (!frame) {
+    throw new Error("The 3D map arrived incomplete. Turn 3D map off and on to try again.");
   }
   return frame;
 }

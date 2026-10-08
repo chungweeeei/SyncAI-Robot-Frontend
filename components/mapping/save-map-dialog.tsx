@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConversionLine } from "@/components/mapping/conversion-line";
+import { OctomapLine } from "@/components/mapping/octomap-line";
 import { MAP_NAME_RE } from "@/lib/map/name";
 import type { MapSummary } from "@/lib/types/map";
 
@@ -166,6 +167,7 @@ export function SaveMapDialog({
               * that makes the run safe to leave) and how the floor plan
               * built from it went. */}
             <ConversionLine map={conversion} />
+            <OctomapLine map={conversion} />
 
             <AlertDialogFooter>
               <Button type="button" size="sm" autoFocus onClick={close}>

@@ -97,3 +97,31 @@ describe("fetchMapPointCloud", () => {
     );
   });
 });
+
+describe("fetchMapOctomapLayer", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("reads one layer of the 3D map in the scan's wire format, from its own route", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(frame([[1, 2, -0.45]]), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { fetchMapOctomapLayer } = await import("@/lib/api/map");
+    const layer = await fetchMapOctomapLayer("dp 2f", "road");
+    expect(layer.count).toBe(1);
+    expect(Array.from(layer.positions)).toEqual([1, 2, Math.fround(-0.45)]);
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/api\/v1\/maps\/dp%202f\/octomap\/road$/);
+  });
+
+  it("says the 3D map arrived incomplete when the body is short", async () => {
+    const whole = frame([[1, 2, 3]]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(whole.slice(0, 10), { status: 200 })),
+    );
+    const { fetchMapOctomapLayer } = await import("@/lib/api/map");
+    await expect(fetchMapOctomapLayer("dp2f", "occupied")).rejects.toThrow(
+      "The 3D map arrived incomplete.",
+    );
+  });
+});

@@ -81,6 +81,29 @@ function GridStatusChip({ map }: { map: MapSummary }) {
 }
 
 /**
+ * The 3D map's state, for the two cases worth a chip: the robot is still
+ * building it, or it failed (with the robot's reason on hover). Nothing for
+ * `ok`, `none` or `interrupted`: unlike the floor plan, a missing 3D map
+ * blocks nothing and there is no control on the card to rebuild it, so a
+ * chip there would be a complaint with nothing to do about it. This is the
+ * one place a build's outcome stays visible after the save dialog closes.
+ */
+function OctomapStatusChip({ map }: { map: MapSummary }) {
+  switch (map.octomap_status) {
+    case "converting":
+      return <Chip tone="active">Building 3D map…</Chip>;
+    case "failed":
+      return (
+        <Chip tone="warn" title={map.octomap_error ?? undefined}>
+          3D map failed
+        </Chip>
+      );
+    default:
+      return null;
+  }
+}
+
+/**
  * What to do about a gridmap that is not there, or not the one that was asked
  * for — the actionable half of the chip above, next to the control that acts.
  *
@@ -265,6 +288,7 @@ export function MapCard({
             </Chip>
           )}
           <GridStatusChip map={map} />
+          <OctomapStatusChip map={map} />
 
           {/* Export at the right of the facts: the one verb that takes a copy
            * away without touching the map. Edit and Delete, which do touch

@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   BanIcon,
+  CuboidIcon,
   CrosshairIcon,
   FocusIcon,
   Grid2x2Icon,
@@ -249,7 +250,7 @@ export function MapToolbar({
 }
 
 export interface LayerOption {
-  kind: "scan" | "waypoints" | "path" | "zones";
+  kind: "scan" | "voxels" | "waypoints" | "path" | "zones";
   label: string;
   on: boolean;
   /** On, but still downloading; the viewport shows nothing yet. */
@@ -259,6 +260,9 @@ export interface LayerOption {
 
 const LAYER_ICONS = {
   scan: ScanLineIcon,
+  // A solid, where the scan is a sweep: the 3D map is the scan made into
+  // walls and floor, and the two sit side by side in the strip.
+  voxels: CuboidIcon,
   waypoints: MapPinIcon,
   path: RouteIcon,
   // The Draw list's sign for a forbidden zone, so the toggle names the same

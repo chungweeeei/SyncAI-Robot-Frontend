@@ -198,7 +198,7 @@ lib/
                 job lock (run-lock.ts) and the mapping run strip's face rule
                 (run-face.ts: what the robot's run state lets the strip offer)
   scene/        three.js scene building for the 3D viewport: theme, markers,
-                vertex layer, zone layer, path ribbon, camera policy, picking,
+                vertex layer, zone layer, the 3D map's voxel layer, path ribbon, camera policy, picking,
                 robot mesh
   theme/        the signal hues both canvases draw with
   task/         step, schedule and history domain helpers, template name limit,
@@ -370,7 +370,9 @@ touch one, prefer moving it toward the rule.
   current on the other. Never inline a key.
 - **Polling policy**: poll only while the server is changing something on its
   own, and let the status that triggered the poll switch it off (`useMaps`
-  while `grid_status === "converting"`, `useRecordings` while a bag is live).
+  while `grid_status === "converting"`, or at a slower 5 s while only an
+  `octomap_status` is — the robot's 3D map build runs for minutes and blocks
+  nothing — and `useRecordings` while a bag is live).
   Two console-wide polls are mounted once in `app/layout.tsx`:
   `RobotStateProvider` (1 Hz) and `ActiveTaskProvider` (2 s). Pages read those
   providers; they do not start their own `robotState` poll. `/mapping` adds
@@ -405,7 +407,8 @@ touch one, prefer moving it toward the rule.
   save, and a map rename or delete change the floor plan raster the task
   editor draws (`mapImage`); a mapping save and a map rename or delete also
   change the scan the dashboard's "Map scan" layer draws (`mapPointCloud`),
-  which a grid save or convert leaves alone; a map rename, delete or
+  which a grid save or convert leaves alone, and so does the 3D map's
+  (`mapOctomap`, both layers by its prefix key); a map rename, delete or
   activate also changes the forbidden zones' read (`mapKeepout`, whose
   `active` moves with a switch); a mapping start, save or reset changes the
   run state (`mappingStatus` — invalidated, never written, because the

@@ -46,12 +46,13 @@ export function useRenameMap() {
   return useMutation({
     mutationFn: ({ from, to }: { from: string; to: string }) => renameMap(from, to),
     onSuccess: (_result, { from }) => {
-      // The per-map vertex, raster and scan caches are keyed by the old name and
+      // The per-map vertex, raster, scan and 3D map caches are keyed by the old name and
       // nothing will read them again; drop them rather than let them sit
       // until eviction.
       queryClient.removeQueries({ queryKey: queryKeys.mapVertices(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(from) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(from) });
       // The zones moved with the directory; the new name reads them afresh.
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(from) });
       // The catalogue now lists the map under its new name; the refetch is
@@ -73,6 +74,7 @@ export function useDeleteMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapVertices(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(name) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(name) });
       // The catalogue no longer lists the map; the refetch is what unmounts
       // its card. Templates need nothing: the backend refuses the delete while
@@ -258,6 +260,7 @@ export function useImportMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapVertices(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(result.name) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(result.name) });
       // The catalogue has a new (or rewritten) row; the refetch mounts its card.
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });

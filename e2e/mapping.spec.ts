@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { failOnConsoleErrors, mockBackend, robotState } from "./backend";
+import { failOnConsoleErrors, mapSummary, mockBackend, robotState } from "./backend";
 
 /**
  * The mapping run strip against the robot's run state.
@@ -110,6 +110,36 @@ test.describe("the mapping run", () => {
     await expect(startButton(page)).toBeEnabled();
     await expect(resetButton(page)).toHaveCount(0);
     await expect(page.getByText(/Mapping has stopped/)).toHaveCount(0);
+  });
+
+  test("the receipt follows the robot's 3D map build to its end", async ({ page }) => {
+    // The robot builds the 3D map on its own after the save, for minutes, and
+    // the catalogue is the only place that says how it went. The fake's entry
+    // is moved from building to ready between two of the receipt's polls.
+    const entry = mapSummary({
+      name: "site_a",
+      active: false,
+      grid_status: "ok",
+      octomap_status: "converting",
+    });
+    await mockBackend(page, {
+      state: mapping(),
+      mappingStatus: { state: "mapping", key_poses: 12, loop_closures: 1 },
+      maps: [entry],
+    });
+    await page.goto("/mapping");
+    await expect(strip(page).getByRole("status")).toHaveText("Mapping");
+
+    await saveButton(page).click();
+    await dialog(page).getByLabel("Map name").fill("site_a");
+    await dialog(page).getByRole("button", { name: "Save", exact: true }).click();
+
+    await expect(dialog(page)).toContainText("Building the 3D map…");
+    entry.octomap_status = "ok";
+    // The catalogue is re-read every few seconds while only a 3D map is
+    // building, slower than a floor plan's poll.
+    await expect(dialog(page)).toContainText("3D map ready", { timeout: 15_000 });
+    await expect(dialog(page)).not.toContainText("Building the 3D map…");
   });
 
   test("a refused save stays in the dialog and never reaches the strip", async ({

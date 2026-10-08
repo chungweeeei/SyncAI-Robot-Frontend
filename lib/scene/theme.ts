@@ -66,6 +66,27 @@ export interface Theme {
    * "not here", and it has to be the same mark on both maps.
    */
   zone: number;
+  /**
+   * The 3D map's walkable floor. A muted green, off every signal hue on
+   * purpose: it is static survey data, not a live state, and it must not be
+   * read as the route (cyan), a zone (red) or a stop (teal) lying on it.
+   */
+  voxelFloor: number;
+  /**
+   * The 3D map's walls. A blue-grey near `mapCloud` but a step apart from it,
+   * so the walls and the saved scan — the same surfaces seen two ways — read
+   * as related without merging when both layers are on.
+   */
+  voxelWall: number;
+  /**
+   * The floor plan's opacity while the 3D map is shown. The robot's floor
+   * lies about half a metre under the plane the floor plan is drawn on (the
+   * map frame's zero is the body, not the ground), so at full opacity the
+   * plane hides the floor layer from every angle above it. Thinned rather
+   * than lifted out of the way: the floor plan is still the reference the
+   * stops and zones sit on.
+   */
+  groundOpacityUnderVoxels: number;
 }
 
 // Scene colours track the console surfaces so the viewport reads as a recessed
@@ -86,6 +107,9 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     vertexHover: SIGNAL.light.cmd,
     path: 0x2b86a8,
     zone: SIGNAL.light.warn,
+    voxelFloor: 0x5e9c7a,
+    voxelWall: 0x6b7a88,
+    groundOpacityUnderVoxels: 0.35,
   },
   dark: {
     background: SIGNAL.dark.background,
@@ -100,5 +124,8 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     vertexHover: SIGNAL.dark.cmd,
     path: 0x3aa8cc,
     zone: SIGNAL.dark.warn,
+    voxelFloor: 0x4f8f6e,
+    voxelWall: 0x8da0b3,
+    groundOpacityUnderVoxels: 0.3,
   },
 };

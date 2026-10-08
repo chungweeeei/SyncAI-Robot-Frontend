@@ -37,6 +37,11 @@ import {
   warnedUnknownJoints,
 } from "@/lib/scene/robot-model";
 import { THEMES } from "@/lib/scene/theme";
+import {
+  VOXEL_SIZE_FALLBACK_M,
+  createVoxelLayer,
+  thinGroundUnderVoxels,
+} from "@/lib/scene/voxel-layer";
 import { createZoneLayer } from "@/lib/scene/zone-layer";
 import {
   createVertexLayer,
@@ -50,7 +55,7 @@ import type {
   PlannedPath,
   RobotPose,
 } from "@/lib/types/robot";
-import type { PointCloudFrame } from "@/lib/types/pointcloud";
+import type { PointCloudFrame, VoxelLayerFrames } from "@/lib/types/pointcloud";
 import type { StreamStatus } from "@/lib/types/stream";
 import { createPointCloudStream } from "@/lib/ros/pointcloud-stream";
 
@@ -121,6 +126,13 @@ interface PointCloudCanvasProps {
    * useMapPointCloud).
    */
   mapCloud?: PointCloudFrame | null;
+  /**
+   * A stored map's 3D map — floor and walls — already downloaded; null or
+   * omitted draws none. Handed in for `mapCloud`'s reason (see useMapOctomap).
+   */
+  voxels?: VoxelLayerFrames | null;
+  /** Cell edge of `voxels`, in metres: the size every mark is drawn at. */
+  voxelSize?: number;
   /**
    * The planner's remaining route, from the telemetry stream. Drawn as a band on
    * the floor between the robot and its goal, so an operator can read *how* the
@@ -254,6 +266,8 @@ export function PointCloudCanvas({
   mapImageUrl,
   telemetry,
   mapCloud = null,
+  voxels = null,
+  voxelSize = VOXEL_SIZE_FALLBACK_M,
   path,
   showPath = true,
   vertices,
@@ -316,6 +330,11 @@ export function PointCloudCanvas({
      * which would re-frame the camera every time a map loads.
      */
     mapFrame: MapFrame | null;
+    /**
+     * The floor plan's plane, or null with no 2D map. Held so the 3D map's
+     * layer can thin it while it is shown (see `groundOpacityUnderVoxels`).
+     */
+    ground: THREE.Mesh | null;
     goalMarker: THREE.Group;
     initialPoseMarker: THREE.Group;
     draftMarker: THREE.Group;
@@ -561,8 +580,9 @@ export function PointCloudCanvas({
     // Ground plane textured with the 2D occupancy grid for spatial context.
     // Only drawn when a 2D map is available; a raw cloud test skips it.
     let groundTexture: THREE.Texture | null = null;
+    let ground: THREE.Mesh | null = null;
     if (meta) {
-      const ground = new THREE.Mesh(
+      ground = new THREE.Mesh(
         new THREE.PlaneGeometry(widthM, heightM),
         new THREE.MeshBasicMaterial({
           color: theme.ground,
@@ -588,7 +608,7 @@ export function PointCloudCanvas({
           // materials, and a material does not dispose the textures it points
           // at. Every theme toggle used to leak one of these.
           groundTexture = texture;
-          const mat = ground.material as THREE.MeshBasicMaterial;
+          const mat = (ground as THREE.Mesh).material as THREE.MeshBasicMaterial;
           mat.map = texture;
           mat.color.set(0xffffff);
           mat.needsUpdate = true;
@@ -824,6 +844,7 @@ export function PointCloudCanvas({
       mapPoints: null,
       streamedMapPoints: null,
       mapFrame: meta ? { cx: centerX, cy: centerY, widthM, heightM } : null,
+      ground,
       goalMarker,
       initialPoseMarker,
       draftMarker,
@@ -1204,6 +1225,28 @@ export function PointCloudCanvas({
       if (ctx.mapPoints === points) ctx.mapPoints = null;
     };
   }, [mapCloud, meta, mapImageUrl, resolvedTheme]);
+
+  // ---- Optional 3D map (toggle) -----------------------------------------
+  //
+  // Same shape as the map scan above, and the same rebuild deps for the same
+  // reason. The one thing it does beyond adding its points is thin the floor
+  // plan while it is up (see thinGroundUnderVoxels), and the cleanup puts it
+  // back, so turning the layer off restores the floor plan without a rebuild.
+  React.useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx || !voxels) return;
+
+    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
+    const layer = createVoxelLayer(voxels, voxelSize, theme);
+    ctx.scene.add(layer.group);
+    const restoreGround = thinGroundUnderVoxels(ctx.ground, theme);
+
+    return () => {
+      ctx.scene.remove(layer.group);
+      layer.dispose();
+      restoreGround();
+    };
+  }, [voxels, voxelSize, meta, mapImageUrl, resolvedTheme]);
 
   // ---- Pose picking -----------------------------------------------------
   // The anchor is the ground point the press landed on, kept alongside the raw

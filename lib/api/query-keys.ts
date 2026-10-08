@@ -6,6 +6,8 @@
 // neither hook knowing the other exists. Keep any new key here rather than
 // inline in its hook, or that property quietly stops being checkable.
 
+import type { OctomapLayer } from "@/lib/types/map";
+
 export const queryKeys = {
   /** GET /api/v1/robot/state — the console's single 1 Hz poll. */
   robotState: ["robot-state"] as const,
@@ -118,6 +120,23 @@ export const queryKeys = {
    * scan version from the backend would close that.
    */
   mapPointCloud: (name: string) => ["map-point-cloud", name] as const,
+  /**
+   * GET /api/v1/maps/<name>/octomap/<layer>, decoded — the dashboard's "3D
+   * map" layer, one entry per layer. Left without `layer`, the key is a
+   * prefix matching both, which is how the write hooks drop a map's entries.
+   *
+   * Keyed by name alone for `mapPointCloud`'s reasons, plus one of its own:
+   * the entry is only ever filled once the catalogue says the build is `ok`
+   * (the hook is not enabled before), and a refused read is not cached, so a
+   * 3D map that lands minutes after the save is picked up on the first press.
+   * What it leaves open is the robot rebuilding the layers in place under a
+   * name this tab already holds — not something the robot does on its own;
+   * only the build's finish time in the key would close that.
+   */
+  mapOctomap: (name: string, layer?: OctomapLayer) =>
+    layer === undefined
+      ? (["map-octomap", name] as const)
+      : (["map-octomap", name, layer] as const),
   /** GET /api/v1/task_templates — the operator's template library. */
   taskTemplates: ["task-templates"] as const,
   /** GET /api/v1/schedules — Temporal's schedule list. */

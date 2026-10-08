@@ -86,6 +86,9 @@ export function useSaveMap() {
       // nothing on the mapping screen shows it, so there is no reader to
       // refetch into, and the dashboard's next toggle reads the new file.
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(name) });
+      // And starts the robot's 3D map build for it; whatever this tab held
+      // under the name described the map the save replaced.
+      queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(name) });
     },
   });
 }

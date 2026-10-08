@@ -407,6 +407,32 @@ test.describe("the map library", () => {
       page.getByText("intensity/normal gate selected no ground points"),
     ).toBeVisible();
   });
+
+  test("shows a 3D map still building, or one that failed, on its card", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, {
+      maps: [
+        mapSummary({ name: "building", octomap_status: "converting" }),
+        mapSummary({
+          name: "broken",
+          active: false,
+          octomap_status: "failed",
+          octomap_error: "road layer is empty",
+        }),
+        mapSummary({ name: "done", active: false, octomap_status: "ok" }),
+      ],
+    });
+    await page.goto("/maps");
+
+    await expect(page.getByText("Building 3D map…")).toHaveCount(1);
+    const failed = page.getByText("3D map failed");
+    await expect(failed).toHaveCount(1);
+    await expect(failed).toHaveAttribute("title", "road layer is empty");
+    expect(errors, "the page logged errors").toEqual([]);
+  });
 });
 
 test.describe("the dashboard's map scan layer", () => {
@@ -538,6 +564,71 @@ test.describe("the dashboard's map scan layer", () => {
     await toggle(page).click();
     await expect(alert).toHaveCount(0);
   });
+});
+
+test.describe("the dashboard's 3D map layer", () => {
+  const layerPaths = [
+    `/api/v1/maps/${MAP_NAME}/octomap/occupied`,
+    `/api/v1/maps/${MAP_NAME}/octomap/road`,
+  ];
+  // The name carries " · loading" while the download is in flight.
+  const toggle = (page: Page) => page.getByRole("button", { name: /^3D map/ });
+
+  test("downloads both layers once, and only when asked", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, {
+      maps: [mapSummary({ octomap_status: "ok", octomap_resolution: 0.1 })],
+    });
+    const layerReads: string[] = [];
+    page.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (pathname.includes("/octomap/")) layerReads.push(pathname);
+    });
+    await page.goto("/");
+    await expect(
+      page.getByRole("region", { name: "Map viewport" }),
+    ).toBeVisible();
+
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "false");
+    expect(layerReads).toEqual([]);
+
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => [...layerReads].sort()).toEqual(layerPaths);
+
+    // Off and on again draws from the cache.
+    await toggle(page).click();
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
+    expect([...layerReads].sort()).toEqual(layerPaths);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  for (const status of ["none", "converting", "failed", "interrupted"] as const) {
+    test(`is not offered while the 3D map is "${status}"`, async ({ page }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      await mockBackend(page, {
+        maps: [
+          mapSummary({
+            octomap_status: status,
+            octomap_error: status === "failed" ? "road layer is empty" : null,
+          }),
+        ],
+      });
+      await page.goto("/");
+      await expect(
+        page.getByRole("region", { name: "Map viewport" }),
+      ).toBeVisible();
+
+      // A positive control first: the strip has rendered, so a missing
+      // toggle means "not offered" rather than "not drawn yet".
+      await expect(page.getByRole("button", { name: /^Map scan/ })).toBeVisible();
+      await expect(toggle(page)).toHaveCount(0);
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+  }
 });
 
 test.describe("the dashboard's forbidden zone layer", () => {

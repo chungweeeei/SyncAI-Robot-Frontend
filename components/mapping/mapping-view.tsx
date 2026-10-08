@@ -220,11 +220,13 @@ export function MappingView() {
   // The map whose conversion this screen is following, read off the last save:
   // "the one I just saved" is not something the catalogue can be asked, since
   // it lists every map on the robot and says nothing about which one is this
-  // operator's. Only when the backend says a conversion started — for
-  // grid_pending false there is nothing running to watch, and the line would
-  // sit on "none" saying nothing. Null until then, which is also what keeps the
-  // mapping screen from fetching a catalogue it otherwise has no use for.
-  const watching = save.data?.grid_pending ? save.data.name : null;
+  // operator's. Watched after every successful save, not only when the
+  // backend says a floor plan conversion started: the robot builds its 3D map
+  // from the same save on its own, whatever `grid_pending` says, and each
+  // receipt line renders nothing while its own status is "none". Null until a
+  // save lands, which is also what keeps the mapping screen from fetching a
+  // catalogue it otherwise has no use for.
+  const watching = save.data?.name ?? null;
   const converting = useMapConversion(watching);
 
   // No segment commands a switch directly — every one of them opens the dialog

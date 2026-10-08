@@ -12,3 +12,15 @@ export interface PointCloudFrame {
   /** flat [x0, y0, z0, x1, y1, z1, ...] in map-frame metres */
   positions: Float32Array;
 }
+
+/**
+ * The two layers of a stored map's 3D map, as the dashboard draws them. Here
+ * rather than beside the hook that assembles it so `lib/scene/` can take it
+ * without importing upward.
+ */
+export interface VoxelLayerFrames {
+  /** The walkable floor: one point per cell the robot saw free at its feet. */
+  road: PointCloudFrame;
+  /** The walls and everything else solid, from the floor to head height. */
+  occupied: PointCloudFrame;
+}
