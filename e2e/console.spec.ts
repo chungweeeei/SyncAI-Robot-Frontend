@@ -258,6 +258,17 @@ test.describe("the console shell", () => {
     await expect(page.getByText("robot01").first()).toBeVisible();
   });
 
+  test("goes back to the dashboard from the robot's name in the masthead", async ({
+    page,
+  }) => {
+    await page.goto("/maps");
+    // The mode chip that stood beside the name is gone, by request.
+    await expect(page.getByRole("banner").getByText("Navigation")).toHaveCount(0);
+    await page.getByRole("banner").getByRole("link", { name: "robot01" }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+  });
+
 });
 
 /**

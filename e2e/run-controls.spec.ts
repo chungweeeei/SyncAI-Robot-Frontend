@@ -57,7 +57,7 @@ test.describe("the running-job controls", () => {
     // that failed to render looks like, so idle has to say that it is idle.
     // Both controls stay in the row and are out, so nothing moves under a
     // finger when a job starts.
-    await expect(strip(page).getByText("Navigation")).toBeVisible();
+    await expect(strip(page).getByRole("link", { name: "robot01" })).toBeVisible();
     await expect(readout(page)).toContainText("No task message in queue");
     await expect(pauseButton(page)).toBeDisabled();
     await expect(cancelButton(page)).toBeDisabled();
