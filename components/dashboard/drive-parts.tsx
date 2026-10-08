@@ -32,14 +32,18 @@ export function ArmSwitch({
   armed,
   onArmedChange,
   stopped,
+  size,
 }: {
   armed: boolean;
   onArmedChange: (armed: boolean) => void;
   /** The emergency stop is engaged: arming is refused until it is released. */
   stopped: boolean;
+  /** `lg` on the drive view, where a thumb rather than a cursor finds it. */
+  size?: "default" | "lg";
 }) {
   return (
     <Switch
+      size={size}
       checked={armed}
       onCheckedChange={onArmedChange}
       disabled={stopped}

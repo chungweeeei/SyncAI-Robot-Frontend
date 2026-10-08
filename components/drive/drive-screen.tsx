@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Minimize2Icon } from "lucide-react";
+import { ArrowLeftIcon } from "lucide-react";
 
 import {
   ArmSwitch,
@@ -72,6 +72,9 @@ export function DriveScreen() {
           className="flex w-full max-w-72 flex-col self-center rounded-2xl border border-foreground/15 bg-panel/60 px-3 py-2 shadow-sm backdrop-blur-sm"
         >
           <div className="flex items-center gap-2.5">
+            {/* A back arrow, not the minimise glyph it used to be: the button
+              * returns to the screen the panel was opened from, and on a phone
+              * that reads as "back", not as shrinking a window. */}
             <button
               type="button"
               onClick={leave}
@@ -79,7 +82,7 @@ export function DriveScreen() {
               title="Leave full-screen drive"
               className="-m-1 flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:size-10"
             >
-              <Minimize2Icon aria-hidden className="size-4" />
+              <ArrowLeftIcon aria-hidden className="size-5" />
             </button>
             <SpeedLimit
               className="min-w-0 flex-1"
@@ -87,7 +90,12 @@ export function DriveScreen() {
               onLinearScaleChange={setLinearScale}
               armed={armed}
             />
-            <ArmSwitch armed={armed} onArmedChange={setArmed} stopped={stopped} />
+            <ArmSwitch
+              armed={armed}
+              onArmedChange={setArmed}
+              stopped={stopped}
+              size="lg"
+            />
           </div>
           {armed && (
             <div className="text-center">

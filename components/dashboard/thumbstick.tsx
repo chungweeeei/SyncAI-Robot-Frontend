@@ -17,11 +17,13 @@ const SIZES = {
 } as const;
 
 /**
- * The two faces, as classes per part. The overlay stick is the kind a phone
- * game draws over its scene: a faint fill and a light rim so the map shows
- * through, where the card's recessed, opaque well would be a 144 px hole in
- * it. The blur is light on purpose; it separates the rim from a busy map
- * without hiding what is under the stick.
+ * The two faces, as classes per part. The overlay stick sits on the drive
+ * view's bare screen, so it needs a face that stands off the background in
+ * both themes: a light, near-white well with a soft shadow, where a tint of
+ * the panel token was the background's own colour give or take a shade and
+ * left the wells all but invisible. The knob is the darker disc on it, so
+ * the hand reads against the well the same way the well reads against the
+ * screen.
  */
 const FACES = {
   card: {
@@ -32,11 +34,11 @@ const FACES = {
     dot: "bg-hairline",
   },
   overlay: {
-    well: "border-foreground/25 bg-panel/20 backdrop-blur-[2px]",
-    guide: "bg-foreground/15",
-    ring: "border-foreground/15",
-    knob: "border-foreground/40 bg-foreground/20 backdrop-blur-sm",
-    dot: "bg-foreground/40",
+    well: "border-foreground/15 bg-white/85 shadow-md dark:border-white/30 dark:bg-white/20",
+    guide: "bg-foreground/15 dark:bg-white/25",
+    ring: "border-foreground/20 dark:border-white/30",
+    knob: "border-foreground/30 bg-foreground/15 dark:border-white/50 dark:bg-white/35 backdrop-blur-sm",
+    dot: "bg-foreground/50 dark:bg-white/70",
   },
 } as const;
 
@@ -56,7 +58,7 @@ const FACES = {
  * circle, and a rectangular face would lie about where the knob can go.
  *
  * Two variants: `card`, the drive panel's, with the key hints a keyboard is
- * taught by; and `overlay`, the drive screen's, bigger and translucent, with
+ * taught by; and `overlay`, the drive screen's, bigger and light-faced, with
  * no hints because it is driven by thumbs (see FACES).
  *
  * Past the deadzone a needle is drawn from centre to knob. It is not
@@ -200,7 +202,7 @@ export function Thumbstick({
         "relative shrink-0 touch-none rounded-full border select-none",
         // The card's is recessed, not flat: the well is the one thing on the
         // console the operator's finger goes *into*, and the inset is what
-        // says so. The overlay's is see-through instead (see FACES).
+        // says so. The overlay's is a raised light disc instead (see FACES).
         face.well,
         // Dim like a disabled Segmented: the container carries the one
         // opacity, the knob and hints just stop reacting.
