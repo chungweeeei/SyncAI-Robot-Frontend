@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import * as React from "react";
 
 import { ActiveRunControls } from "@/components/console/active-run-controls";
@@ -18,23 +19,9 @@ import {
   type Tone,
 } from "@/components/console/instrument";
 import { cn } from "@/lib/utils";
-import type { RobotMode } from "@/lib/types/robot";
-
-/** The robot's own mode names, in the words the mode switch uses for them. */
-const MODE_LABEL: Record<RobotMode, string> = {
-  AUTO: "Navigation",
-  MANUAL: "Mapping",
-  MAINTENANCE: "Maintenance",
-};
-
-const MODE_TONE: Record<RobotMode, Tone> = {
-  AUTO: "live",
-  MANUAL: "caution",
-  MAINTENANCE: "warn",
-};
 
 /**
- * The console's masthead: which robot, what mode, and is the link alive. It is
+ * The console's masthead: which robot, which map, and is the link alive. It is
  * mounted in the root layout, so it is present on every screen — including
  * before the first telemetry frame, where it holds the frame with dashes rather
  * than letting a bare "connecting…" sentence stand in for the whole UI.
@@ -115,10 +102,16 @@ export function StatusStrip() {
           * of its own and make the strip three rows deep. A zero basis lets
           * the line form first and this cluster take whatever is left. */}
         <div className="flex min-w-0 shrink items-center gap-2.5 max-sm:grow max-sm:basis-0 sm:gap-3.5">
-          <span className="readout truncate text-[15px] font-medium">
+          {/* The robot's name is the way home, the way a site's logo is: one
+            * press from any screen back to the dashboard. No mode chip beside
+            * it any more, by request — the mapping screen's own switch is
+            * where the mode is read and changed. */}
+          <Link
+            href="/"
+            className="readout truncate rounded-sm text-[15px] font-medium hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
             {state?.robot_id ?? "—"}
-          </span>
-          {state && <Chip tone={MODE_TONE[state.mode]}>{MODE_LABEL[state.mode]}</Chip>}
+          </Link>
         </div>
 
         <StripDivider className="hidden sm:block" />
