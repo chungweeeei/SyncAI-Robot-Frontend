@@ -1020,7 +1020,7 @@ test.describe("words and names on the operator's screens", () => {
     page,
   }) => {
     await mockBackend(page);
-    await page.goto("/settings");
+    await page.goto("/settings/preferences");
 
     await expect(page.getByRole("combobox", { name: "Theme" })).toBeVisible();
     await expect(
