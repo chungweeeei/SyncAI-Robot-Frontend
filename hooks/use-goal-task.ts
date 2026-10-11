@@ -13,6 +13,7 @@ import {
   type GoalPose,
   type TaskStatus,
 } from "@/lib/api/task";
+import { currentStep } from "@/lib/task/run";
 
 export interface GoalTask {
   /** The goal that went out — what the marker and the read-back describe. */
@@ -23,6 +24,8 @@ export interface GoalTask {
   /** True while a submit / cancel request is in flight. */
   busy: boolean;
   error: string | null;
+  /** What the robot says it is doing for the running goal, "" otherwise. */
+  message: string;
   /** Only true while the task id is still known (see the poll effect). */
   cancelable: boolean;
   /**
@@ -153,6 +156,7 @@ export function useGoalTask(robotId: string, mapName: string | null): GoalTask {
     running: task.running,
     busy: submit.isPending || cancelRun.isPending,
     error: submit.error?.message ?? task.error ?? cancelRun.error?.message ?? null,
+    message: currentStep(task.steps)?.step.message ?? "",
     cancelable: task.cancelable,
     send,
     sendGoal,

@@ -78,6 +78,14 @@ export interface TaskStepState {
   id: string;
   status: TaskStatus;
   error_msg: string;
+  /**
+   * What the robot is doing for a running MOVE — its navigator's own sentence
+   * ("Following the path", "Path blocked; replanning", …) — and "" for every
+   * other step and state. Free text for display; nothing branches on it.
+   * Optional because a backend from before the field omits it, and the read
+   * must not fail over a nicety.
+   */
+  message?: string;
 }
 
 export interface TaskStateResponse {
@@ -94,6 +102,7 @@ const TaskStateResponseSchema: z.ZodType<TaskStateResponse> = z.object({
       id: z.string(),
       status: TaskStatusSchema,
       error_msg: z.string(),
+      message: z.string().optional(),
     }),
   ),
 });

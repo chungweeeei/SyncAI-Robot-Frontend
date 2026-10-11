@@ -37,7 +37,7 @@ export function GoalControl({
   task: GoalTask;
   className?: string;
 }) {
-  const { goal, taskStatus, error, running, busy } = task;
+  const { goal, taskStatus, error, message, running, busy } = task;
 
   // Nothing to read back yet: arming lives in the viewport toolbar now, so
   // with no pose out there is nothing for this panel to hold.
@@ -72,6 +72,12 @@ export function GoalControl({
             taskStatus && <TaskStatusChip status={taskStatus} />
           )}
         </div>
+      )}
+
+      {message && (
+        <p className="mt-1.5 text-[11px] leading-snug break-words text-muted-foreground">
+          {message}
+        </p>
       )}
 
       {error && (

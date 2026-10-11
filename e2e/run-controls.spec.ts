@@ -137,6 +137,32 @@ test.describe("the running-job controls", () => {
     await expect(pauseButton(page)).toBeEnabled();
   });
 
+  test("shows what the robot is doing beside a running move", async ({
+    page,
+  }) => {
+    await mockBackend(page, {
+      activeTasks: [activeTask()],
+      taskStates: {
+        [ID]: taskState({
+          steps: [
+            { id: "1-move", status: "COMPLETED", error_msg: "", message: "" },
+            {
+              id: "2-move",
+              status: "IN_PROGRESS",
+              error_msg: "",
+              message: "Path blocked; replanning",
+            },
+            { id: "3-speak", status: "PENDING", error_msg: "", message: "" },
+          ],
+        }),
+      },
+    });
+    await page.goto("/settings");
+
+    await expect(readout(page)).toContainText("2/3");
+    await expect(readout(page)).toContainText("Path blocked; replanning");
+  });
+
   test("renders the backend's refusal verbatim and keeps the controls", async ({
     page,
   }) => {

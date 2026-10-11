@@ -76,7 +76,16 @@ describe("stepProgress", () => {
         step("2-speak", "PAUSED"),
         step("3-move", "PENDING"),
       ]),
-    ).toEqual({ ordinal: 2, total: 3, label: "Speak" });
+    ).toEqual({ ordinal: 2, total: 3, label: "Speak", message: "" });
+  });
+
+  it("carries what the robot says it is doing for the live step", () => {
+    expect(
+      stepProgress([
+        step("1-move", "COMPLETED"),
+        { ...step("2-move", "IN_PROGRESS"), message: "Path blocked; replanning" },
+      ]),
+    ).toMatchObject({ ordinal: 2, label: "Move", message: "Path blocked; replanning" });
   });
 
   it("is null when no step is live", () => {

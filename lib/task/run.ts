@@ -64,6 +64,8 @@ export interface StepProgress {
   ordinal: number;
   total: number;
   label: string;
+  /** The live step's `message` (what the robot is doing), "" when it has none. */
+  message: string;
 }
 
 /** Where the run is in its list, or null when no step is live (see currentStep). */
@@ -74,6 +76,7 @@ export function stepProgress(steps: readonly TaskStepState[]): StepProgress | nu
     ordinal: current.index + 1,
     total: steps.length,
     label: stepLabel(current.step.id),
+    message: current.step.message ?? "",
   };
 }
 

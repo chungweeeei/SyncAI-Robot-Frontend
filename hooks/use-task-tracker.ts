@@ -49,7 +49,12 @@ export async function fetchHeldTaskState({
   const state = await fetchTaskState(queryKey[1], signal);
   if (state.steps.length) return state;
   const held = client.getQueryData<TaskStateResponse>(queryKey);
-  return held?.steps.length ? { ...state, steps: held.steps } : state;
+  // The held list keeps status and error on screen; a step's `message` is a
+  // live reading, and one from a read that has since failed would go on
+  // claiming the robot is replanning when nobody knows any more.
+  return held?.steps.length
+    ? { ...state, steps: held.steps.map((step) => ({ ...step, message: "" })) }
+    : state;
 }
 
 export interface TaskTracker {
