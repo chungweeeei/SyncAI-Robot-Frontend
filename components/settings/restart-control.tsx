@@ -22,14 +22,15 @@ import type { RobotMode } from "@/lib/types/robot";
  * robot itself, because a map not yet saved lives only in memory and a
  * restart would throw it away; saying so up front beats a press that comes
  * back with a refusal.
+ *
+ * An unreachable robot gets no sentence here, by request: the status strip
+ * already reads "No signal" when the robot is not reporting, on every screen.
  */
 function unavailableReason(
   mode: RobotMode | null,
   stateStatus: "loading" | "ok" | "error",
-): string {
-  if (stateStatus !== "ok" || mode === null) {
-    return "Cannot reach the robot right now.";
-  }
+): string | null {
+  if (stateStatus !== "ok" || mode === null) return null;
   if (mode === "MANUAL") {
     return "Available in Navigation. Save the map and switch modes first.";
   }
@@ -74,12 +75,13 @@ export function RestartControl() {
   // what the operator was waiting for, and it may claim Navigation because
   // that is what `succeeded` means: a rebuild that came up in another mode
   // is recorded as failed.
+  const unavailable = unavailableReason(reported, stateStatus);
   const hint: { text: string; failed: boolean } | null = pending
     ? { text: "Restarting. This takes about 30 seconds.", failed: false }
     : outcome?.status === "failed"
       ? { text: outcome.message, failed: true }
       : !canRestart
-        ? { text: unavailableReason(reported, stateStatus), failed: false }
+        ? unavailable ? { text: unavailable, failed: false } : null
         : outcome?.status === "succeeded"
           ? {
               text: "Restart complete. The robot is back in Navigation.",
