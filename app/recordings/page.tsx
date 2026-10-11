@@ -24,9 +24,9 @@ export default function RecordingsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      {/* /maps' width, so walking between the two libraries does not move
+      {/* Every library screen's width, so walking between them does not move
         * the header. */}
-      <div className="mx-auto w-full max-w-5xl px-4 py-4 sm:py-8">
+      <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:py-8">
         <header className="mb-6">
           <h1 className="text-xl font-semibold tracking-tight">
             Recordings

@@ -9,8 +9,10 @@ export default function MapsPage() {
 
   return (
     // Like /settings, this screen owns its scroll: the shell's <main> does not.
+    // Its width is every library screen's (/settings, /tasks, /history,
+    // /recordings), so moving between them does not move the header.
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-5xl px-4 py-4 sm:py-8">
+      <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:py-8">
         <header className="mb-6">
           <h1 className="text-xl font-semibold tracking-tight">Maps</h1>
           {/* One line, by request. What it used to spell out lives where it

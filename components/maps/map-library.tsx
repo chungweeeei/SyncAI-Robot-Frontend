@@ -7,7 +7,10 @@ import { MapImportControl } from "@/components/maps/map-import-control";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMaps } from "@/hooks/use-maps";
 
-const GRID = "grid gap-4 sm:grid-cols-2 xl:grid-cols-3";
+// More cards to a row as the window widens, like /settings: one on a phone,
+// up to four, where a card is still wide enough for its chips and Export on
+// one line.
+const GRID = "grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
 
 /** Same panel shape /settings uses when a state frame has not arrived. */
 function Notice({
