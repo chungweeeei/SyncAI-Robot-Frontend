@@ -20,7 +20,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 
 const themeOptions = [
   { value: "light", label: "Light" },
@@ -32,7 +31,6 @@ const subscribeNoop = () => () => {};
 
 export function AppearanceSettings() {
   const { theme, setTheme } = useTheme();
-  const [showWaypointLabels, setShowWaypointLabels] = React.useState(true);
   // Hydration-safe mounted check: the theme is unknown until the client mounts
   const mounted = React.useSyncExternalStore(
     subscribeNoop,
@@ -79,22 +77,6 @@ export function AppearanceSettings() {
           ) : (
             <div className="h-8 w-32 rounded-lg border border-input" />
           )}
-        </div>
-
-        <Separator />
-
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-0.5">
-            <Label htmlFor="waypoint-labels">Waypoint labels</Label>
-            <p className="text-sm text-muted-foreground">
-              Show waypoint names on the dashboard map.
-            </p>
-          </div>
-          <Switch
-            id="waypoint-labels"
-            checked={showWaypointLabels}
-            onCheckedChange={setShowWaypointLabels}
-          />
         </div>
 
         <Separator />

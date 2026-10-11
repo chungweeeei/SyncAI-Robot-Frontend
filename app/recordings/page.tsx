@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { RecorderControl } from "@/components/recordings/recorder-control";
 import { RecordingList } from "@/components/recordings/recording-list";
+import { RobotName } from "@/components/console/robot-name";
 
 /**
  * The recording screen: start a bag, watch it grow, and manage what is on disk.
@@ -23,9 +24,9 @@ export default function RecordingsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      {/* /maps' width, so walking between the two libraries does not move
+      {/* Every library screen's width, so walking between them does not move
         * the header. */}
-      <div className="mx-auto w-full max-w-5xl px-4 py-4 sm:py-8">
+      <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:py-8">
         <header className="mb-6">
           <h1 className="text-xl font-semibold tracking-tight">
             Recordings
@@ -36,7 +37,7 @@ export default function RecordingsPage() {
             * link points there. */}
           <p className="mt-1 text-sm text-muted-foreground">
             Sensor recordings from{" "}
-            <span className="readout">{state?.robot_id ?? "this robot"}</span>.
+            <RobotName id={state?.robot_id} />.
             Record a{" "}
             <Link href="/mapping" className="underline underline-offset-2">
               mapping run

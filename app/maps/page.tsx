@@ -2,14 +2,17 @@
 
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { MapLibrary } from "@/components/maps/map-library";
+import { RobotName } from "@/components/console/robot-name";
 
 export default function MapsPage() {
   const { state } = useConsoleRobotState();
 
   return (
     // Like /settings, this screen owns its scroll: the shell's <main> does not.
+    // Its width is every library screen's (/settings, /tasks, /history,
+    // /recordings), so moving between them does not move the header.
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-5xl px-4 py-4 sm:py-8">
+      <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:py-8">
         <header className="mb-6">
           <h1 className="text-xl font-semibold tracking-tight">Maps</h1>
           {/* One line, by request. What it used to spell out lives where it
@@ -17,7 +20,7 @@ export default function MapsPage() {
             * afterwards, and Rename and Delete are greyed on the map in use. */}
           <p className="mt-1 text-sm text-muted-foreground">
             Switch, edit and manage the maps{" "}
-            <span className="readout">{state?.robot_id ?? "this robot"}</span>{" "}
+            <RobotName id={state?.robot_id} />{" "}
             works in.
           </p>
         </header>

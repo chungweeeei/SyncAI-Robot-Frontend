@@ -3,6 +3,7 @@
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { CreateTaskButton } from "@/components/tasks/create-task-button";
 import { TaskOverview } from "@/components/tasks/task-overview";
+import { RobotName } from "@/components/console/robot-name";
 
 /**
  * Chrome only — TaskOverview owns the library, a row's run and the schedules;
@@ -38,7 +39,7 @@ export default function TasksPage() {
             <h1 className="text-xl font-semibold tracking-tight">Tasks</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Create tasks for{" "}
-              <span className="readout">{state?.robot_id ?? "this robot"}</span>,
+              <RobotName id={state?.robot_id} />,
               or schedule them to run on their own.
             </p>
           </div>
