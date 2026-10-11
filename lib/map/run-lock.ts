@@ -1,4 +1,5 @@
 import type { GridStatus } from "@/lib/types/map";
+import type { RobotMode } from "@/lib/types/robot";
 
 /**
  * Whether a map may be written to right now, and if not, the sentence that
@@ -68,5 +69,44 @@ export function dispatchMapLock(
   if (map?.grid_status === "converting") {
     return { locked: true, reason: DISPATCH_LOCK_CONVERTING };
   }
+  return UNLOCKED;
+}
+
+export const AUTO_LOCALIZE_NOT_NAVIGATING =
+  "The robot can only find itself on the map in Navigation mode.";
+export const AUTO_LOCALIZE_JOB_RUNNING =
+  "The robot is running a job. Cancel it or wait for it to finish before finding the robot.";
+export const AUTO_LOCALIZE_UNKNOWN =
+  "Can't confirm the robot is idle right now. Try again in a moment.";
+
+/** What `autoLocalizeLock` reads off the two console-wide polls. */
+export interface AutoLocalizeLockInput {
+  /** The robot's mode from the last state frame; null before the first. */
+  mode: RobotMode | null;
+  tasks: readonly unknown[];
+  status: "loading" | "ok" | "error";
+}
+
+/**
+ * Whether Auto localize may be pressed, and if not, why.
+ *
+ * Any job locks it, not only one on the loaded map: a match moves the whole
+ * map frame under the robot, and mid-drive that is a jump in where the
+ * planner thinks it is. Mapping mode locks it because nothing there is
+ * listening. The backend refuses both anyway; this only greys the button
+ * before a press would earn the refusal. A mode not yet known is left to the
+ * backend rather than guessed at, since its refusal is the same sentence an
+ * operator would act on.
+ */
+export function autoLocalizeLock({
+  mode,
+  tasks,
+  status,
+}: AutoLocalizeLockInput): RunLock {
+  if (mode !== null && mode !== "AUTO") {
+    return { locked: true, reason: AUTO_LOCALIZE_NOT_NAVIGATING };
+  }
+  if (status !== "ok") return { locked: true, reason: AUTO_LOCALIZE_UNKNOWN };
+  if (tasks.length > 0) return { locked: true, reason: AUTO_LOCALIZE_JOB_RUNNING };
   return UNLOCKED;
 }

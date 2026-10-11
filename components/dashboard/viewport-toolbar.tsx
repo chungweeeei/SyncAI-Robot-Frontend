@@ -10,6 +10,7 @@ import {
   LocateFixedIcon,
   MapPinIcon,
   MapPinPlusIcon,
+  RadarIcon,
   RouteIcon,
   ScanLineIcon,
   ScanSearchIcon,
@@ -61,6 +62,9 @@ export function ViewportToolbar({
   goalLockReason = null,
   onArmGoal,
   onArmInitialPose,
+  autoLocalizeBusy,
+  autoLocalizeLock = null,
+  onAutoLocalize,
   cameraMode,
   onCameraMode,
   onTopDown,
@@ -80,6 +84,11 @@ export function ViewportToolbar({
   goalLockReason?: string | null;
   onArmGoal: () => void;
   onArmInitialPose: () => void;
+  /** The robot is searching for where it stands. */
+  autoLocalizeBusy: boolean;
+  /** Why Auto localize cannot be pressed right now, or null. */
+  autoLocalizeLock?: string | null;
+  onAutoLocalize: () => void;
   cameraMode: CameraMode;
   onCameraMode: (mode: CameraMode) => void;
   onTopDown: () => void;
@@ -113,6 +122,25 @@ export function ViewportToolbar({
             tone="caution"
             pressed={pick === "initial-pose"}
             onClick={onArmInitialPose}
+          />
+          {/* Beside Set initial pose because it answers the same question —
+            * where does the robot stand — without the drag. One-shot, so never
+            * pressed; the search runs for seconds, and the read-back under the
+            * left strip is where it reports, so the icon only pulses. Same
+            * amber: it overrides the robot's estimate just as a drag does. */}
+          <ToolButton
+            label="Auto localize"
+            hint={
+              autoLocalizeLock ??
+              (autoLocalizeBusy
+                ? "searching…"
+                : "let the robot find where it stands on the map")
+            }
+            icon={RadarIcon}
+            tone="caution"
+            busy={autoLocalizeBusy}
+            disabled={autoLocalizeBusy || autoLocalizeLock !== null}
+            onClick={onAutoLocalize}
           />
         </ToolGroup>
 

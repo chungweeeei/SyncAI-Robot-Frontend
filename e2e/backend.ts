@@ -694,6 +694,21 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
           : "Safety lock released.",
       });
     }
+    if (path === "/api/v1/localization/auto" && method === "POST") {
+      // A match that held, the usual answer. A test that needs the search to
+      // fail or take its time routes it itself.
+      return json(route, {
+        localized: true,
+        message: "matched",
+        x: 1.25,
+        y: -3.5,
+        z: 0.02,
+        theta: 90,
+        fitness: 0.018,
+        inlier_ratio: 0.87,
+        candidates: 480,
+      });
+    }
     if (path === "/api/v1/robot/set_motion_key" && method === "POST") {
       // The backend's own answer: every key is forwarded except the
       // emergency stop, which it accepts and holds back.
