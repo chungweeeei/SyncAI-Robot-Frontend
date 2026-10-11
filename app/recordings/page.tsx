@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { RecorderControl } from "@/components/recordings/recorder-control";
 import { RecordingList } from "@/components/recordings/recording-list";
+import { RobotName } from "@/components/console/robot-name";
 
 /**
  * The recording screen: start a bag, watch it grow, and manage what is on disk.
@@ -36,7 +37,7 @@ export default function RecordingsPage() {
             * link points there. */}
           <p className="mt-1 text-sm text-muted-foreground">
             Sensor recordings from{" "}
-            <span className="readout">{state?.robot_id ?? "this robot"}</span>.
+            <RobotName id={state?.robot_id} />.
             Record a{" "}
             <Link href="/mapping" className="underline underline-offset-2">
               mapping run

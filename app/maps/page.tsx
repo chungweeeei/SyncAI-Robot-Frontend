@@ -2,6 +2,7 @@
 
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { MapLibrary } from "@/components/maps/map-library";
+import { RobotName } from "@/components/console/robot-name";
 
 export default function MapsPage() {
   const { state } = useConsoleRobotState();
@@ -17,7 +18,7 @@ export default function MapsPage() {
             * afterwards, and Rename and Delete are greyed on the map in use. */}
           <p className="mt-1 text-sm text-muted-foreground">
             Switch, edit and manage the maps{" "}
-            <span className="readout">{state?.robot_id ?? "this robot"}</span>{" "}
+            <RobotName id={state?.robot_id} />{" "}
             works in.
           </p>
         </header>

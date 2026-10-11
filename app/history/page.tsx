@@ -4,6 +4,7 @@ import * as React from "react";
 
 import { TaskHistory } from "@/components/history/task-history";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
+import { RobotName } from "@/components/console/robot-name";
 
 /**
  * The job history screen: what the robot finished, how it ended — counted
@@ -30,7 +31,7 @@ export default function HistoryPage() {
         <header className="mb-6">
           <h1 className="text-xl font-semibold tracking-tight">History</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Jobs <span className="readout">{state?.robot_id ?? "this robot"}</span>{" "}
+            Jobs <RobotName id={state?.robot_id} />{" "}
             has finished, newest first, over the window you pick. The robot
             keeps them for a limited time, so older ones no longer appear here.
           </p>
