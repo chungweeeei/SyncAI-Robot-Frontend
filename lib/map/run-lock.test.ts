@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AUTO_LOCALIZE_JOB_RUNNING,
+  AUTO_LOCALIZE_NOT_NAVIGATING,
+  AUTO_LOCALIZE_UNKNOWN,
   DISPATCH_LOCK_CONVERTING,
   RUN_LOCK_RUNNING,
   RUN_LOCK_UNKNOWN,
+  autoLocalizeLock,
   dispatchMapLock,
   mapRunLock,
 } from "@/lib/map/run-lock";
@@ -70,5 +74,38 @@ describe("dispatchMapLock", () => {
 
   it("does not hold a job when the map is not known", () => {
     expect(dispatchMapLock(null).locked).toBe(false);
+  });
+});
+
+describe("autoLocalizeLock", () => {
+  it("is free in Navigation mode with nothing running", () => {
+    expect(autoLocalizeLock({ mode: "AUTO", tasks: [], status: "ok" })).toEqual({
+      locked: false,
+      reason: null,
+    });
+  });
+
+  it("locks under any job, whatever map it is on", () => {
+    expect(
+      autoLocalizeLock({ mode: "AUTO", tasks: [{ map_name: null }], status: "ok" }),
+    ).toEqual({ locked: true, reason: AUTO_LOCALIZE_JOB_RUNNING });
+  });
+
+  it("locks in Mapping mode, where nothing would answer", () => {
+    expect(autoLocalizeLock({ mode: "MANUAL", tasks: [], status: "ok" })).toEqual({
+      locked: true,
+      reason: AUTO_LOCALIZE_NOT_NAVIGATING,
+    });
+  });
+
+  it("treats an unread job list as unknown, not as idle", () => {
+    expect(autoLocalizeLock({ mode: "AUTO", tasks: [], status: "error" })).toEqual({
+      locked: true,
+      reason: AUTO_LOCALIZE_UNKNOWN,
+    });
+  });
+
+  it("leaves a mode not yet reported to the backend", () => {
+    expect(autoLocalizeLock({ mode: null, tasks: [], status: "ok" }).locked).toBe(false);
   });
 });

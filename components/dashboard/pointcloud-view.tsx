@@ -4,6 +4,7 @@ import * as React from "react";
 
 import { ArmedHint } from "@/components/console/armed-hint";
 import { overlayPanel } from "@/components/console/instrument";
+import { AutoLocalizeControl } from "@/components/dashboard/auto-localize-control";
 import { GoalControl } from "@/components/dashboard/goal-control";
 import { InitialPoseControl } from "@/components/dashboard/initial-pose-control";
 import { PointCloudCanvas } from "@/components/dashboard/pointcloud-canvas";
@@ -19,6 +20,7 @@ import {
   type LayerOption,
 } from "@/components/dashboard/viewport-toolbar";
 import { useActiveMapVertices } from "@/hooks/use-active-map-vertices";
+import { useAutoLocalize } from "@/hooks/use-auto-localize";
 import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useGoalTask } from "@/hooks/use-goal-task";
 import { useInitialPose } from "@/hooks/use-initial-pose";
@@ -188,6 +190,7 @@ export function PointCloudView({
 
   const task = useGoalTask(robotId, activeMap?.name ?? null);
   const estimate = useInitialPose();
+  const localize = useAutoLocalize();
 
   // Destructured because they are the stable parts of the hooks' return objects
   // (the objects themselves are fresh every render, so depending on those would
@@ -434,6 +437,9 @@ export function PointCloudView({
             goalLockReason={stopped ? ESTOP_REFUSAL : dispatchLock.reason}
             onArmGoal={() => armPick("goal")}
             onArmInitialPose={() => armPick("initial-pose")}
+            autoLocalizeBusy={localize.busy}
+            autoLocalizeLock={localize.lock}
+            onAutoLocalize={localize.run}
             cameraMode={cameraMode}
             onCameraMode={setCameraMode}
             onTopDown={() => setTopDownNonce((n) => n + 1)}
@@ -470,6 +476,7 @@ export function PointCloudView({
             * and the dialog that follows the release carries the rest. */}
           <GoalControl task={task} className="pointer-events-auto" />
           <InitialPoseControl estimate={estimate} className="pointer-events-auto" />
+          <AutoLocalizeControl localize={localize} className="pointer-events-auto" />
           {/* Only while it is live: a re-place is entered from the map, not
             * from here. It also outlives the gesture when the write fails —
             * that sentence has to land somewhere, and the panel that armed it

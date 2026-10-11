@@ -123,6 +123,7 @@ test.describe("the console shell", () => {
     for (const name of [
       "Set goal",
       "Set initial pose",
+      "Auto localize",
       "Move",
       "Focus",
       "Top down",
