@@ -177,7 +177,9 @@ components/
   history/      finished-job dashboard and list: the filter toolbar (kept in
                 the URL), the counts and the outcome bar, cursor paging,
                 per-run step detail
-  settings/     appearance and Wi-Fi
+  settings/     the /settings landing (a card per section, and Restart) and
+                its sections, each its own route: Planner and Controller
+                (placeholders until the backend has them), Wi-Fi and Preferences
   webrtc/       WHIP/WHEP bench (unlisted developer route — see deviations)
   ui/           shadcn primitives (lint-ignored)
 hooks/          one hook per backend interaction; the only place components get data.

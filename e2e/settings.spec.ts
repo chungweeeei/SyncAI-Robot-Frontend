@@ -204,3 +204,71 @@ test.describe("restarting the robot from Settings", () => {
     expect(writes.filter((w) => w.path === "/api/v1/robot/restart")).toEqual([]);
   });
 });
+
+/**
+ * The Settings landing is a card per section, each its own route; Restart
+ * belongs to the landing alone.
+ */
+test.describe("settings sections", () => {
+  let errors: string[];
+
+  test.beforeEach(async ({ page }) => {
+    errors = [];
+    failOnConsoleErrors(page, errors);
+  });
+
+  test.afterEach(() => {
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("opens each section from its card and comes back", async ({ page }) => {
+    await mockBackend(page);
+    await page.goto("/settings");
+
+    const sections = page.getByRole("navigation", { name: "Settings sections" });
+    await sections.getByRole("link", { name: /Wi-Fi/ }).click();
+    await expect(page).toHaveURL(/\/settings\/wifi$/);
+    await expect(page.getByRole("heading", { name: "Wi-Fi", level: 1 })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Connect/ })).toBeVisible();
+    // The rail still marks Settings as the screen the operator is on.
+    await expect(
+      page.getByRole("link", { name: "Settings", exact: true }).first(),
+    ).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("button", { name: "Restart", exact: true })).toHaveCount(0);
+
+    await page.locator("main header").getByRole("link", { name: "Settings" }).click();
+    await expect(page).toHaveURL(/\/settings$/);
+
+    await sections.getByRole("link", { name: /Preferences/ }).click();
+    await expect(page).toHaveURL(/\/settings\/preferences$/);
+    await expect(page.getByRole("combobox", { name: "Theme" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Restart", exact: true })).toHaveCount(0);
+  });
+
+  test("says Planner and Controller are not available yet", async ({ page }) => {
+    await mockBackend(page);
+    await page.goto("/settings");
+
+    const sections = page.getByRole("navigation", { name: "Settings sections" });
+    // Planner and Controller lead the grid, ahead of Wi-Fi.
+    await expect(sections.getByRole("link")).toHaveText([
+      /Planner/,
+      /Controller/,
+      /Wi-Fi/,
+      /Preferences/,
+    ]);
+
+    for (const [name, path] of [
+      ["Planner", "planner"],
+      ["Controller", "controller"],
+    ]) {
+      await page.goto("/settings");
+      await sections.getByRole("link", { name: new RegExp(name) }).click();
+      await expect(page).toHaveURL(new RegExp(`/settings/${path}$`));
+      await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
+      await expect(
+        page.getByText(`${name} settings are not available on this robot yet.`),
+      ).toBeVisible();
+    }
+  });
+});
