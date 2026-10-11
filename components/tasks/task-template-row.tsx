@@ -275,6 +275,9 @@ function TemplateStepLine({
       {step.type === "WAIT" && step.resolved_params && (
         <span className="readout">{step.resolved_params.seconds} s</span>
       )}
+      {state?.message && (
+        <span className="min-w-0 truncate text-muted-foreground">{state.message}</span>
+      )}
       {state && <TaskStatusChip status={state.status} />}
     </li>
   );

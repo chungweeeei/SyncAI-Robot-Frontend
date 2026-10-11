@@ -210,6 +210,13 @@ export function StepRow({
             <span className="min-w-0 truncate text-[11px] text-signal-warn">
               {problem}
             </span>
+          ) : !open && state?.message ? (
+            // A running MOVE says what the robot is doing in place of the
+            // summary, the way a problem does, but muted: it is news about
+            // the row, not something wrong with it.
+            <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+              {state.message}
+            </span>
           ) : (
             summary && (
               <span className="readout min-w-0 truncate text-[12px] text-muted-foreground">
@@ -444,6 +451,12 @@ export function StepRow({
           className="mt-1.5 text-[11px] leading-snug break-words text-signal-warn sm:pl-[46px]"
         >
           {rowError}
+        </p>
+      )}
+
+      {open && state?.message && (
+        <p className="mt-1.5 text-[11px] leading-snug break-words text-muted-foreground sm:pl-[46px]">
+          {state.message}
         </p>
       )}
 

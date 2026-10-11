@@ -320,6 +320,15 @@ function RunControls({ run, asOf }: { run: ActiveRun; asOf: string | null }) {
                 </span>
               )}
               <span>{progress.label}</span>
+              {/* What the robot says it is doing, after the step and in the
+                * normal weight: it is the detail of the step, so it is the
+                * first thing the truncation eats, before the step itself. */}
+              {progress.message && (
+                <span className="font-normal text-muted-foreground">
+                  {" "}
+                  · {progress.message}
+                </span>
+              )}
             </>
           ) : (
             <span className="readout">—</span>

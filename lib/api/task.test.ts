@@ -117,6 +117,22 @@ describe("fetchTaskState", () => {
       steps: [{ status: "PAUSED" }],
     });
   });
+
+  it("keeps a running MOVE's message, and reads a backend without one", async () => {
+    fetchMock.mockResolvedValue(
+      ack({
+        id: "t",
+        status: "IN_PROGRESS",
+        steps: [
+          { id: "1-move", status: "IN_PROGRESS", error_msg: "", message: "Following the path" },
+          { id: "2-speak", status: "PENDING", error_msg: "" },
+        ],
+      }),
+    );
+    const state = await fetchTaskState("t");
+    expect(state.steps[0]?.message).toBe("Following the path");
+    expect(state.steps[1]?.message).toBeUndefined();
+  });
 });
 
 describe("fetchActiveTasks", () => {
