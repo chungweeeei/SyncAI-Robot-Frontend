@@ -57,7 +57,9 @@ export function SettingsIndex() {
   return (
     // Settings is the one screen that scrolls; the shell's <main> does not.
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-2xl px-4 py-4 sm:py-8">
+      {/* /tasks' and /history's width: the grid widens with the window
+        * rather than leaving a narrow column in the middle of it. */}
+      <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:py-8">
         <header className="mb-6 flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
@@ -69,9 +71,10 @@ export function SettingsIndex() {
         </header>
 
         <nav aria-label="Settings sections">
-          {/* Square tiles, two to a row on a phone and three from sm up, so
-            * the next section fills the row rather than lengthening a list. */}
-          <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          {/* Square tiles, more to a row as the window widens (two on a
+            * phone, up to five), so a section added later fills a row rather
+            * than lengthening a list. */}
+          <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {settingsSections.map(({ title, description, href, icon: Icon }) => (
               <li key={href}>
                 <Link

@@ -6,7 +6,7 @@ import { ArrowLeftIcon } from "lucide-react";
 
 /**
  * The frame every settings section sits in: the index's width and scroll, so
- * walking in and out does not move the column, and one way back up.
+ * walking in and out does not move the header, and one way back up.
  *
  * The way back is a link to /settings rather than history.back(): a section
  * opened straight from a bookmark has no Settings behind it.
@@ -20,7 +20,7 @@ export function SettingsSubpage({
 }) {
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-2xl px-4 py-4 sm:py-8">
+      <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:py-8">
         <header className="mb-6">
           <Link
             href="/settings"
@@ -31,7 +31,8 @@ export function SettingsSubpage({
           </Link>
           <h1 className="mt-2 text-xl font-semibold tracking-tight">{title}</h1>
         </header>
-        {children}
+        {/* The forms keep a reading width inside the index's wider column. */}
+        <div className="max-w-2xl">{children}</div>
       </div>
     </div>
   );
