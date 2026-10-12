@@ -22,7 +22,13 @@ import { ChevronsDownUpIcon, ChevronsUpDownIcon, PlusIcon } from "lucide-react";
 import { StepRow } from "@/components/tasks/step-row";
 import type { ActiveVerticesStatus } from "@/hooks/use-active-map-vertices";
 import type { StepType, TaskStepState } from "@/lib/api/task";
-import { STEP_TYPES, stepIdFor, type StepDraft } from "@/lib/task/step";
+import {
+  STEP_TYPES,
+  stepGroupError,
+  stepGroupPlaces,
+  stepIdFor,
+  type StepDraft,
+} from "@/lib/task/step";
 import type { MapVertex } from "@/lib/types/map";
 import type { MapMetadata } from "@/lib/types/robot";
 
@@ -103,6 +109,7 @@ export function StepList({
   };
 
   const keys = steps.map((step) => step.key);
+  const groupPlaces = stepGroupPlaces(steps);
   const allExpanded = keys.every((key) => expanded.has(key));
   const position = (id: UniqueIdentifier) => keys.indexOf(Number(id)) + 1;
 
@@ -132,7 +139,8 @@ export function StepList({
     <div className="space-y-2">
       {steps.length === 0 ? (
         <p className="text-[11px] leading-tight text-muted-foreground">
-          No steps yet. A task is the list below, run top to bottom.
+          No steps yet. A task is the list below, run top to bottom; link a
+          step to the one above to start the two together.
         </p>
       ) : (
         <DndContext
@@ -179,6 +187,8 @@ export function StepList({
                   mapGrid={mapGrid}
                   stepMarks={stepMarks}
                   disabled={disabled}
+                  groupPlace={groupPlaces[index] ?? null}
+                  groupError={stepGroupError(steps, index)}
                   state={stepStates.get(stepIdFor(index, step.type)) ?? null}
                   onPatch={(changes) => onPatch(step.key, changes)}
                   onRemove={() => onRemove(step.key)}

@@ -302,8 +302,8 @@ export function TaskEditor() {
             </Chip>
           )}
           <p className="mt-1 text-sm text-muted-foreground">
-            Steps run in order, one at a time, and if a step fails the rest are
-            skipped.
+            Steps run in order. Linked steps start together, and the next step
+            waits for all of them. If a step fails, the rest are skipped.
           </p>
         </div>
         {/* Below sm the three are icons alone, 32 px square, by request: with

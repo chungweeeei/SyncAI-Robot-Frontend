@@ -1442,6 +1442,98 @@ test.describe("the task console", () => {
     await expect(page).toHaveURL(/\/tasks$/);
   });
 
+  test("saves steps linked to the one above as one group", async ({ page }) => {
+    // The robot starts a group's steps together; the composer's link is how
+    // an operator says so, and the wire has to carry it as a shared name.
+    await mockBackend(page);
+    const posted: { steps: Record<string, unknown>[] }[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as { name: string; steps: Record<string, unknown>[] };
+      posted.push(body);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({ id: "55555555-5555-5555-5555-555555555555", name: body.name }),
+        ),
+      });
+    });
+    await page.goto("/tasks/editor");
+    await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
+    await page.getByRole("textbox", { name: "Task name" }).fill("greeting");
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByPlaceholder(/Delivery arrived/).fill("Arriving");
+    await page.getByTitle("Stand up. Nothing to set.").click();
+    await page.getByTitle("Stay put for a set time, then go on.").click();
+    await page.getByRole("textbox", { name: "Duration" }).fill("5");
+
+    // No link on the first row: there is nothing above it to run with.
+    await expect(page.getByRole("button", { name: /together with step 0/ })).toHaveCount(0);
+    const link = page.getByRole("button", { name: "Run step 2 together with step 1" });
+    await expect(link).toHaveAttribute("aria-pressed", "false");
+    await link.click();
+    await expect(link).toHaveAttribute("aria-pressed", "true");
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => posted).toHaveLength(1);
+    expect(posted[0]!.steps.map((step) => [step.id, step.group])).toEqual([
+      ["1-speak", "g1"],
+      ["2-standup", "g1"],
+      ["3-wait", undefined],
+    ]);
+  });
+
+  test("holds Save on two body steps linked together, and says why", async ({ page }) => {
+    // The robot has one body; the backend would refuse the group with a 400.
+    const writes = await mockBackend(page);
+    await page.goto("/tasks/editor");
+    await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
+    await page.getByRole("textbox", { name: "Task name" }).fill("bow");
+    await page.getByTitle("Stand up. Nothing to set.").click();
+    await page.getByTitle("Lie down. Nothing to set.").click();
+    const save = page.getByRole("button", { name: "Save", exact: true });
+    await expect(save).toBeEnabled();
+
+    await page.getByRole("button", { name: "Run step 2 together with step 1" }).click();
+    await expect(page.getByText(/one Move, Stand or Lie at a time/).first()).toBeVisible();
+    await expect(save).toBeDisabled();
+    expect(writes).toEqual([]);
+  });
+
+  test("loads a saved group back as linked steps", async ({ page }) => {
+    const speakStep = (id: string, text: string) => ({
+      id,
+      vertex_id: null,
+      vertex_name: null,
+      vertex_status: "NONE",
+      group: "g1",
+      type: "SPEAK",
+      params: { text },
+      resolved_params: { text },
+    });
+    await mockBackend(page, {
+      templates: [
+        taskTemplate({
+          map_name: null,
+          steps: [speakStep("1-speak", "Hello"), speakStep("2-speak", "World")],
+        }),
+      ],
+    });
+    await page.goto("/tasks");
+    // The library row shows the pair as one bracket.
+    await expect(page.getByText("[T T]")).toBeVisible();
+    await page
+      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .click();
+    await expect(page.getByRole("heading", { name: "Morning round" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Run step 2 together with step 1" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    // Opened and left as it was: nothing to save.
+    await expect(page.getByText("Unsaved changes")).toHaveCount(0);
+  });
+
   test("renames a saved job through Save, and Escape backs out", async ({
     page,
   }) => {

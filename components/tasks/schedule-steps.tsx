@@ -5,9 +5,11 @@ import * as React from "react";
 import { Chip } from "@/components/console/instrument";
 import { useSchedule } from "@/hooks/use-schedules";
 import type { TaskTemplate } from "@/lib/api/task-template";
+import { GroupRail } from "@/components/tasks/group-rail";
 import type { TaskStepRequest } from "@/lib/api/task";
 import { scheduleDrift } from "@/lib/task/schedule";
-import { stepGlyph } from "@/lib/task/step";
+import { stepGlyph, wireGroupPlaces } from "@/lib/task/step";
+import { cn } from "@/lib/utils";
 
 export interface ScheduleStepsProps {
   scheduleId: string;
@@ -48,6 +50,8 @@ export function ScheduleSteps({ scheduleId, source }: ScheduleStepsProps) {
   }
 
   const drift = source ? scheduleDrift(steps, source.steps) : null;
+  const groupPlaces = wireGroupPlaces(steps);
+  const railed = groupPlaces.some(Boolean);
 
   return (
     <div className="mt-1.5 space-y-1">
@@ -63,7 +67,11 @@ export function ScheduleSteps({ scheduleId, source }: ScheduleStepsProps) {
 
       <ol className="space-y-0.5">
         {steps.map((step, index) => (
-          <li key={step.id} className="flex items-baseline gap-2 text-[11px]">
+          <li
+            key={step.id}
+            className={cn("flex items-baseline gap-2 text-[11px]", railed && "relative pl-2.5")}
+          >
+            <GroupRail place={groupPlaces[index] ?? null} gap="0.5" />
             <span className="readout w-3 shrink-0 text-muted-foreground">
               {index + 1}
             </span>

@@ -11,6 +11,7 @@ import {
   ChevronRightIcon,
   EllipsisIcon,
   GripVerticalIcon,
+  Link2Icon,
   MapIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -38,6 +39,7 @@ import {
   formatDraftPosition,
   stepDraftError,
   stepSummary,
+  type GroupPlace,
   type StepDraft,
 } from "@/lib/task/step";
 import type { MapVertex } from "@/lib/types/map";
@@ -59,6 +61,10 @@ export interface StepRowProps {
   /** Vertex id → the job's step numbers that go there, lit on the floor plan. */
   stepMarks: ReadonlyMap<string, readonly number[]>;
   disabled: boolean;
+  /** Where the row sits among the steps it starts together with; see stepGroupPlaces. */
+  groupPlace: GroupPlace;
+  /** Why the row cannot run with the steps it is linked to; see stepGroupError. */
+  groupError: string | null;
   /** Tracked status + error_msg for this step, or null when nothing is tracked. */
   state: TaskStepState | null;
   onPatch: (changes: Partial<Omit<StepDraft, "key">>) => void;
@@ -79,6 +85,8 @@ export function StepRow({
   mapGrid,
   stepMarks,
   disabled,
+  groupPlace,
+  groupError,
   state,
   onPatch,
   onRemove,
@@ -86,7 +94,7 @@ export function StepRow({
   expanded: open,
   onExpandedChange,
 }: StepRowProps) {
-  const rowError = stepDraftError(step);
+  const rowError = stepDraftError(step) ?? groupError;
   // Any row folds, errors included — an unfinished row that refused to fold made
   // the fold useless exactly while a list was being built. What a folded row
   // with a problem shows instead is the problem itself, in place of the summary
@@ -108,6 +116,9 @@ export function StepRow({
   const ordinal = index + 1;
   const first = index === 0;
   const last = index === total - 1;
+  // The link is drawn on the row that holds it: it is this row's start that
+  // changes, and the row above is the same step whichever way it is set.
+  const linked = !first && step.withPrevious;
 
   // One patch, not four: two updates would render a frame whose numbers are
   // this vertex's but whose label is still the old one. normalizeTheta on the
@@ -156,9 +167,19 @@ export function StepRow({
         "relative rounded-sm border border-hairline bg-elevated/40 px-2 py-2",
         // Opaque while lifted, or the rows it slides over show through it.
         !open && problem && "border-signal-warn/50",
+        // The steps that start together share a rail down their left edge,
+        // carried across the gap between rows by the connector below, so a
+        // group reads as one block in a list of single steps.
+        groupPlace && "border-l-2 border-l-signal-cmd/70",
         isDragging && "z-10 bg-elevated shadow-lg ring-1 ring-signal-cmd/40",
       )}
     >
+      {(groupPlace === "middle" || groupPlace === "end") && !isDragging && (
+        <span
+          aria-hidden
+          className="absolute -top-[7px] -left-[2px] h-[7px] w-[2px] bg-signal-cmd/70"
+        />
+      )}
       {/* One line, folded or not: that is what keeps a twenty-step list scannable.
        * The toggle takes the slack and truncates its summary, so on a narrow
        * console the text gives way before the controls do. */}
@@ -233,6 +254,33 @@ export function StepRow({
         <StepChips step={step} state={state} className="hidden sm:contents" />
 
         <div className="flex shrink-0 items-center gap-0.5">
+          {/* Run with the step above: both start at once and the next step
+           * waits for the two. A toggle on the row rather than a group to
+           * name, so the steps that run together are always neighbours —
+           * the one thing the robot insists on. Absent on the first row,
+           * which has nothing above it. */}
+          {!first && (
+            <button
+              type="button"
+              aria-pressed={linked}
+              aria-label={`Run step ${ordinal} together with step ${ordinal - 1}`}
+              title={
+                linked
+                  ? `Starts together with step ${ordinal - 1} — press to run it after instead`
+                  : `Start together with step ${ordinal - 1}`
+              }
+              disabled={disabled}
+              onClick={() => onPatch({ withPrevious: !linked })}
+              className={cn(
+                "flex size-6 items-center justify-center rounded-sm transition-colors disabled:opacity-30 disabled:hover:bg-transparent pointer-coarse:size-10",
+                linked
+                  ? "bg-signal-cmd/12 text-signal-cmd hover:bg-signal-cmd/20"
+                  : "text-muted-foreground hover:bg-elevated hover:text-foreground",
+              )}
+            >
+              <Link2Icon className="size-3.5" aria-hidden />
+            </button>
+          )}
           {/* The one-click jumps a drag makes fiddly: to either end of a long
            * list, or a single slot without aiming at a neighbour. */}
           <DropdownMenu>
