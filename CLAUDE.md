@@ -215,8 +215,11 @@ lib/
                 the bar ends in) and the editor's unsaved draft (draft-store.ts
                 — the one place that touches browser storage)
   network/      the Wi-Fi page's saved networks: their order (the live one
-                by the state poll, then most recently joined) and the
-                "Last joined …" line, measured from the list's read time
+                by the state poll, then most recently joined), the
+                "Last joined …" line, measured from the list's read time,
+                and each card's signal, IP and MAC rows (linkReadout: the
+                state poll's, on the card of the network it reports, and a
+                blank in the value's own shape on every other card)
   recording/    bag size/duration formatting and the bag name rule
   robot/        G23 joint table (URDF link names ↔ GLB node names), how the
                 dashboard names a motor (the leg grid and its joint codes), and
