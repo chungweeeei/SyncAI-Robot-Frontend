@@ -104,13 +104,14 @@ test.describe("the console on a phone", () => {
   }) => {
     // Go back, Save and Delete with their words took most of 375 px and
     // truncated the heading to one letter. Below sm they are icons alone.
+    // The heading is the name field, so it is the field that must not clip.
     await mockBackend(page);
     await page.goto("/tasks");
     await page
       .getByRole("button", { name: 'Load "Morning round" into the editor' })
       .click();
-    const heading = page.getByRole("heading", { name: "Morning round" });
-    await expect(heading).toBeVisible();
+    const heading = page.getByRole("textbox", { name: "Task name" });
+    await expect(heading).toHaveValue("Morning round");
     expect(
       await heading.evaluate((el) => el.scrollWidth <= el.clientWidth),
       "the heading is cut off",

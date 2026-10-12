@@ -30,7 +30,7 @@ export interface TaskDraft {
   editing: { id: string; name: string } | null;
   /** The operator's map override; null follows the loaded map. */
   chosenMap: string | null;
-  /** The Save field, as typed — a half-named job is still the operator's work. */
+  /** The heading's name field, as typed — a half-named job is still the operator's work. */
   name: string;
 }
 
