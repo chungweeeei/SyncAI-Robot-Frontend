@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
  * to find it again is the one thing on screen worth keeping.
  *
  * The robot's current network and addresses are no longer read out here —
- * they lead the Wi-Fi page, one step back.
+ * they are on the live network's card on the Wi-Fi page, one step back.
  *
  * Takes no props. The card used to receive `network_status` from the page and
  * was hidden entirely until the first state frame — but scanning and joining
@@ -48,7 +48,7 @@ import { cn } from "@/lib/utils";
  *
  * There is no DHCP / static-IP block any more: the backend has no endpoint for
  * addressing (only scan + connect), and a form that looked settable but saved
- * nothing was worse than none. The IP and MAC are a readout on the Wi-Fi page.
+ * nothing was worse than none. The IP and MAC are a readout on the live card.
  *
  * The dropdown is the whole story of "which network": the backend's scan
  * skips hidden SSIDs and there is deliberately no free-text entry — an
