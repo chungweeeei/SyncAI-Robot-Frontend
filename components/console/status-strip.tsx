@@ -19,12 +19,27 @@ import {
   type Tone,
 } from "@/components/console/instrument";
 import { cn } from "@/lib/utils";
+import type { RobotMode } from "@/lib/types/robot";
+
+/** The robot's own mode names, in the words the mode switch uses for them. */
+const MODE_LABEL: Record<RobotMode, string> = {
+  AUTO: "Navigation",
+  MANUAL: "Mapping",
+  MAINTENANCE: "Maintenance",
+};
+
+const MODE_TONE: Record<RobotMode, Tone> = {
+  AUTO: "live",
+  MANUAL: "caution",
+  MAINTENANCE: "warn",
+};
 
 /**
- * The console's masthead: which robot, which map, and is the link alive. It is
- * mounted in the root layout, so it is present on every screen — including
- * before the first telemetry frame, where it holds the frame with dashes rather
- * than letting a bare "connecting…" sentence stand in for the whole UI.
+ * The console's masthead: which robot, what mode, which map, and is the link
+ * alive. It is mounted in the root layout, so it is present on every screen —
+ * including before the first telemetry frame, where it holds the frame with
+ * dashes rather than letting a bare "connecting…" sentence stand in for the
+ * whole UI.
  *
  * Deliberately no page title: the rail marks where you are, and repeating it
  * here would spend the widest row on the screen saying nothing measurable.
@@ -91,7 +106,7 @@ export function StatusStrip() {
         * `flex-wrap` rather than a second element: rendering the controls
         * twice and hiding one would put two Pause buttons and two live
         * readouts in the accessibility tree. */}
-      <div className="flex min-h-14 flex-wrap items-center gap-x-2.5 gap-y-0 px-3 sm:flex-nowrap sm:gap-x-3.5 sm:px-4">
+      <div className="flex min-h-14 flex-wrap items-center gap-x-2 gap-y-0 px-2.5 sm:flex-nowrap sm:gap-x-3.5 sm:px-4">
         {/* The one cluster that may shrink, and inside it the robot id is the
           * one thing that truncates: at 375 px the health cluster on the right
           * is fixed-width, and it is the part an operator cannot do without.
@@ -101,17 +116,20 @@ export function StatusStrip() {
           * ~20 px over a phone, which would put the health cluster on a line
           * of its own and make the strip three rows deep. A zero basis lets
           * the line form first and this cluster take whatever is left. */}
-        <div className="flex min-w-0 shrink items-center gap-2.5 max-sm:grow max-sm:basis-0 sm:gap-3.5">
+        <div className="flex min-w-0 shrink items-center gap-1.5 max-sm:grow max-sm:basis-0 sm:gap-3.5">
           {/* The robot's name is the way home, the way a site's logo is: one
-            * press from any screen back to the dashboard. No mode chip beside
-            * it any more, by request — the mapping screen's own switch is
-            * where the mode is read and changed. */}
+            * press from any screen back to the dashboard. */}
           <Link
             href="/"
             className="readout truncate rounded-sm text-[15px] font-medium hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             {state?.robot_id ?? "—"}
           </Link>
+          {/* Back beside the name, by request: whether the robot is building
+            * a map or driving on one changes what every screen means, so it
+            * is read here rather than only on the mapping screen's switch,
+            * which is still where it is changed. */}
+          {state && <ModeChip mode={state.mode} />}
         </div>
 
         <StripDivider className="hidden sm:block" />
@@ -143,14 +161,22 @@ export function StatusStrip() {
           * flush against the health cluster instead of trailing empty space
           * after it. The auto margin lives here and nowhere else in the row —
           * two of them would halve the gap between them. */}
-        <div className="order-last -mx-3 flex w-full min-w-0 items-center gap-2 border-t border-hairline px-3 py-1.5 sm:order-none sm:mx-0 sm:ml-auto sm:w-auto sm:basis-[32rem] sm:border-0 sm:px-0 sm:py-0">
+        <div className="order-last -mx-2.5 flex w-full min-w-0 items-center gap-2 border-t border-hairline px-2.5 py-1.5 sm:order-none sm:mx-0 sm:ml-auto sm:w-auto sm:basis-[32rem] sm:border-0 sm:px-0 sm:py-0">
           <ActiveRunControls />
         </div>
 
         {/* No auto margin: on a phone the left cluster's `grow` holds this
-          * against the right edge, and from `sm` the job block's does. */}
-        <div className="flex shrink-0 items-center gap-2.5 sm:gap-3.5">
-          <StripDivider />
+          * against the right edge, and from `sm` the job block's does.
+          *
+          * Below `sm` it drops its two rules and the battery meter, by
+          * request: at full dress it is 326 px of a 375 px phone, which left
+          * the robot id and the mode chip ~14 px between them. The presses
+          * keep their 40 px and the battery keeps its figure — the rules
+          * only separate, and the meter repeats the number beside it. The
+          * row's gaps and gutter are a notch tighter there for the same
+          * reason; the e2e phone test holds the id whole beside the mode. */}
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3.5">
+          <StripDivider className="hidden sm:block" />
           {/* A 2 px gap rather than the strip's usual spacing: with their
             * frames hidden until hovered, the drive and camera buttons and
             * the link chip read as one cluster, and the sliver is what keeps
@@ -187,7 +213,7 @@ export function StatusStrip() {
               * belong to. */}
           </div>
 
-          <StripDivider />
+          <StripDivider className="hidden sm:block" />
 
           {/* No "Batt" label: the segment meter and the percent sign name the
             * quantity between them, and the row is worth more than a word that
@@ -198,7 +224,11 @@ export function StatusStrip() {
               <span className="readout text-[13px] text-muted-foreground">—</span>
             ) : (
               <>
-                <SegmentMeter value={battery} tone={batteryTone(battery)} />
+                <SegmentMeter
+                  value={battery}
+                  tone={batteryTone(battery)}
+                  className="hidden sm:flex"
+                />
                 <span
                   className={cn(
                     "readout text-[13px] font-medium",
@@ -249,5 +279,32 @@ export function StatusStrip() {
         )}
       </div>
     </header>
+  );
+}
+
+/**
+ * The robot's mode, which a phone gets as a dot in the mode's hue.
+ *
+ * At 375 px the health cluster is fixed-width and leaves the robot id and this
+ * chip under 80 px between them; the word "Navigation" alone would take that
+ * and truncate the id to nothing. The dot keeps the glance — green driving,
+ * amber mapping — and the word stays in the accessible name and the hover
+ * text, so nothing that reads the strip by name loses it. One element styled
+ * two ways rather than two elements behind `sm:hidden`, so the readout is in
+ * the accessibility tree once.
+ */
+function ModeChip({ mode }: { mode: RobotMode }) {
+  const label = MODE_LABEL[mode];
+  return (
+    <Chip
+      tone={MODE_TONE[mode]}
+      title={label}
+      // Frameless on a phone: the dot is the whole mark there, and the
+      // chip's border and padding were the last pixels the robot id needed.
+      className="max-sm:border-0 max-sm:bg-transparent max-sm:px-0"
+    >
+      <span aria-hidden className="size-2.5 rounded-full bg-current sm:hidden" />
+      <span className="max-sm:sr-only">{label}</span>
+    </Chip>
   );
 }

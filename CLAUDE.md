@@ -143,7 +143,8 @@ components/
   console/      shell: nav rail (labelled from lg by default, folded to
                 icons only — no tooltip — from the button in its top-left
                 corner; instant, held until a reload), status strip (its
-                robot id is the link home; no mode chip), the three layout-level
+                robot id is the link home, the mode chip beside it — a dot
+                in the mode's hue below sm), the three layout-level
                 providers (their contexts live in hooks/use-console-*.ts — see
                 Layering), the emergency stop at the head of the strip's
                 presses — the driver's safety lock (one press engages, a
