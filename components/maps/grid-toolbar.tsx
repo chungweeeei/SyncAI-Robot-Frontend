@@ -189,11 +189,11 @@ export type SaveState =
   | { kind: "failed"; message: string };
 
 /**
- * What a save wrote: the floor plan's cells, or the map's forbidden zones.
- * One Save button writes whichever of the two has changes, and each reports
- * in a note of its own, because either can land while the other fails.
+ * What a save wrote: the floor plan's cells, the map's forbidden zones, or
+ * its waypoints. One Save button writes whichever have changes, and each
+ * reports in a note of its own, because any can land while another fails.
  */
-export type SaveSubject = "grid" | "zones" | "zonesRemoved";
+export type SaveSubject = "grid" | "zones" | "zonesRemoved" | "waypoints";
 
 const SAVE_COPY: Record<
   SaveSubject,
@@ -218,6 +218,14 @@ const SAVE_COPY: Record<
     reloaded: "Removed · in force now",
     saved: "Removed",
     stale: "Removed — the robot is still keeping to the old zones.",
+  },
+  // A waypoint write answers with no reload to report, so the editor sends
+  // it as plain "saved" and this note carries what it wrote as the detail.
+  waypoints: {
+    failed: "Waypoints not saved",
+    reloaded: "Waypoints saved",
+    saved: "Waypoints saved",
+    stale: "Waypoints saved",
   },
 };
 
@@ -305,9 +313,9 @@ export function EditorToolBar({
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
-  /** Anything unsaved: cells, zones, or both. */
+  /** Anything unsaved: cells, zones, waypoints, or any mix. */
   dirty: boolean;
-  /** A write of either half is in flight. */
+  /** A write of any of them is in flight. */
   saving: boolean;
   /**
    * Why nothing may be written to this map right now — a job is driving on
@@ -353,7 +361,7 @@ export function EditorToolBar({
       <ToolDivider />
 
       <ToolGroup label="History">
-        <ToolButton label="Undo" hint="take back the last stroke" icon={Undo2Icon} disabled={!canUndo} onClick={onUndo} />
+        <ToolButton label="Undo" hint="take back the last edit" icon={Undo2Icon} disabled={!canUndo} onClick={onUndo} />
         <ToolButton label="Redo" hint="put it back" icon={Redo2Icon} disabled={!canRedo} onClick={onRedo} />
       </ToolGroup>
 

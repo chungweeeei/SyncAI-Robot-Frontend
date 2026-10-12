@@ -248,11 +248,18 @@ function bump(counts: ValueCounts, value: GridValue, by: number): void {
   else counts.free += by;
 }
 
-export interface UndoStack {
-  undo: GridPatch[];
-  redo: GridPatch[];
+/**
+ * The editor's history. Generic in what an entry is, because a stroke is not
+ * the only thing the operator takes back: the floor plan editor also files its
+ * waypoint edits here (lib/map/history.ts), so one Ctrl+Z steps back over
+ * whichever came last. `size` is how the byte budget weighs an entry.
+ */
+export interface UndoStack<T = GridPatch> {
+  undo: T[];
+  redo: T[];
   /** Running total of both stacks, maintained incrementally. */
   bytes: number;
+  size: (entry: T) => number;
 }
 
 /**
@@ -263,37 +270,41 @@ export interface UndoStack {
 export const UNDO_BUDGET_BYTES = 32 * 1024 * 1024;
 export const UNDO_MAX_ENTRIES = 100;
 
-export function createUndoStack(): UndoStack {
-  return { undo: [], redo: [], bytes: 0 };
+export function createUndoStack(): UndoStack<GridPatch>;
+export function createUndoStack<T>(size: (entry: T) => number): UndoStack<T>;
+export function createUndoStack<T>(
+  size: (entry: T) => number = patchBytes as unknown as (entry: T) => number,
+): UndoStack<T> {
+  return { undo: [], redo: [], bytes: 0, size };
 }
 
 /** Push a new edit. Clears the redo stack — a new edit discards the redone future. */
-export function pushPatch(stack: UndoStack, patch: GridPatch): void {
-  stack.bytes += patchBytes(patch);
-  for (const dropped of stack.redo) stack.bytes -= patchBytes(dropped);
+export function pushPatch<T>(stack: UndoStack<T>, entry: T): void {
+  stack.bytes += stack.size(entry);
+  for (const dropped of stack.redo) stack.bytes -= stack.size(dropped);
   stack.redo = [];
-  stack.undo.push(patch);
+  stack.undo.push(entry);
 
   while (
     stack.undo.length > UNDO_MAX_ENTRIES ||
     (stack.bytes > UNDO_BUDGET_BYTES && stack.undo.length > 1)
   ) {
     const evicted = stack.undo.shift();
-    if (!evicted) break;
-    stack.bytes -= patchBytes(evicted);
+    if (evicted === undefined) break;
+    stack.bytes -= stack.size(evicted);
   }
 }
 
-export function popUndo(stack: UndoStack): GridPatch | null {
-  const patch = stack.undo.pop();
-  if (!patch) return null;
-  stack.redo.push(patch);
-  return patch;
+export function popUndo<T>(stack: UndoStack<T>): T | null {
+  const entry = stack.undo.pop();
+  if (entry === undefined) return null;
+  stack.redo.push(entry);
+  return entry;
 }
 
-export function popRedo(stack: UndoStack): GridPatch | null {
-  const patch = stack.redo.pop();
-  if (!patch) return null;
-  stack.undo.push(patch);
-  return patch;
+export function popRedo<T>(stack: UndoStack<T>): T | null {
+  const entry = stack.redo.pop();
+  if (entry === undefined) return null;
+  stack.undo.push(entry);
+  return entry;
 }

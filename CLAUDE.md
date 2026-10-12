@@ -194,7 +194,10 @@ lib/
   map/          gridmap maths: view transforms, patches, session, vertex helpers,
                 name rule, the 2D drawing (draw.ts), the editor's vocabulary,
                 the forbidden zone rules (zone.ts: corner count, close-on-first,
-                point-in-polygon pick) and
+                point-in-polygon pick), the editor's staged waypoints
+                (vertex-stage.ts: local ids, the save plan, the rebase after
+                a partial save), the editor's one undo history over strokes
+                and waypoint edits (history.ts, on patch.ts's stack) and
                 the task editor's floor plan preview (preview.ts: fit, markers,
                 hit test), the gesture rules both map surfaces share
                 (gesture.ts: press intent, drag deadzone, heading, band), the
@@ -320,9 +323,13 @@ touch one, prefer moving it toward the rule.
   `mutate(vars, { onSuccess })`, which only fires while the caller is mounted.
   Components read `isPending` / `error?.message` / `data` off the mutation and
   call `reset()` where they used to clear a local error. The list hooks
-  (`use-map-vertices`, `use-task-templates`, `use-schedules`) keep their
+  (`use-task-templates`, `use-schedules`) keep their
   `busy` / `error` / `create` / `remove` surface, folded from their mutations
-  by `lib/api/mutation-state.ts`.
+  by `lib/api/mutation-state.ts`. `use-map-vertices` is the exception: the
+  floor plan editor stages waypoints beside its cells and zones, so the hook
+  is one `save(plan)` mutation that sends deletes, updates and one batch
+  create in series and resolves with what landed rather than rejecting. The
+  diff and the rebase after a partial save are `lib/map/vertex-stage.ts`.
 - **Command hooks are mutations too**, but they answer to the robot rather
   than to the cache: `use-goal-task`, `use-posture`, `use-task-dispatch`,
   `use-initial-pose`, `use-locomotion`, `use-mode-switch`, `use-wifi-connect`,
@@ -370,7 +377,9 @@ touch one, prefer moving it toward the rule.
 - **Query keys** all live in `lib/api/query-keys.ts`, one object, documented per
   key. Cache *sharing* is deliberate and visible there: `mapVertices(name)` is
   read by both the gridmap editor and the dashboard so a vertex moved on one is
-  current on the other. Never inline a key.
+  current on the other — at once from the dashboard, which writes through, and
+  on Save from the editor, which stages its edits and seeds itself from the
+  key once. Never inline a key.
 - **Polling policy**: poll only while the server is changing something on its
   own, and let the status that triggered the poll switch it off (`useMaps`
   while `grid_status === "converting"`, `useRecordings` while a bag is live).

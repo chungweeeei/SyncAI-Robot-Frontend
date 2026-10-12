@@ -352,6 +352,7 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   // Typed as rows rather than left to the fixture's exact shape, because the
   // POST route below appends whatever the console sent.
   const vertices: Record<string, unknown>[] = over.vertices ?? [vertex()];
+  let createdSerial = 0;
   const recordings = over.recordings ?? [recording()];
   const activeRecording =
     over.activeRecording === undefined ? null : over.activeRecording;
@@ -537,14 +538,36 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       // and splices into the list the layer draws.
       const name = decodeURIComponent(verticesMatch[1]);
       const drafts = parseBody(request.postData()) as Record<string, unknown>[];
-      const stored = drafts.map((draft, index) => ({
+      // Numbered across the fake's whole life, not per request: the editor
+      // matches rows by id, and a second save that reissued the first one's
+      // ids would leave two stops answering to one.
+      const stored = drafts.map((draft) => ({
         ...draft,
-        id: `33333333-3333-3333-3333-${String(index).padStart(12, "0")}`,
+        id: `33333333-3333-3333-3333-${String(createdSerial++).padStart(12, "0")}`,
         map_name: name,
       }));
       // Kept, so a later GET lists it the way the robot's would.
       vertices.push(...stored);
       return json(route, stored);
+    }
+    const vertexMatch = /^\/api\/v1\/maps\/([^/]+)\/vertices\/([^/]+)$/.exec(path);
+    if (vertexMatch && method === "PUT") {
+      // The stored row with the changes merged, which is what the editor's
+      // save splices into the shared list.
+      const id = decodeURIComponent(vertexMatch[2]);
+      const index = vertices.findIndex((entry) => entry.id === id);
+      if (index < 0) return json(route, { detail: "Waypoint not found." }, 404);
+      vertices[index] = {
+        ...vertices[index],
+        ...(parseBody(request.postData()) as Record<string, unknown>),
+      };
+      return json(route, vertices[index]);
+    }
+    if (vertexMatch && method === "DELETE") {
+      const id = decodeURIComponent(vertexMatch[2]);
+      const index = vertices.findIndex((entry) => entry.id === id);
+      if (index >= 0) vertices.splice(index, 1);
+      return json(route, { message: "Deleted." });
     }
     if (keepoutMatch && method === "PUT") {
       // The whole list replaces the old one, and the running planner reloads
