@@ -186,10 +186,14 @@ export function TaskEditor() {
 
   /**
    * One Save: an update when a template is loaded, a new one otherwise. The
-   * answer becomes the loaded template either way, so a second press updates
-   * what the first created instead of making another copy. The name goes
-   * with the steps, so a rename is a Save like any other edit. A job with no
-   * name yet sends the operator to the heading's field instead.
+   * name goes with the steps, so a rename is a Save like any other edit. A job
+   * with no name yet sends the operator to the heading's field instead.
+   *
+   * A new job's Save also leaves for /tasks, by request: the job is done being
+   * authored and its row there is where it runs and is scheduled. The draft
+   * is emptied first, since it now duplicates a saved row and Create task
+   * would otherwise ask before clearing it. An update stays put, so a second
+   * press updates what the first saved instead of making another copy.
    */
   const canSave = stepsOk && saveReason === null && !library.busy;
   const save = () => {
@@ -207,6 +211,11 @@ export function TaskEditor() {
     void (editing ? library.update(editing.id, body) : library.create(body)).then(
       (saved) => {
         if (!saved) return;
+        if (!editing) {
+          clearDraft();
+          router.push("/tasks");
+          return;
+        }
         updateDraft((current) => ({
           ...current,
           editing: { id: saved.id, name: saved.name },

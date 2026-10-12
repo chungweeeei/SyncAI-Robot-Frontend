@@ -1270,13 +1270,14 @@ test.describe("the task console", () => {
     await expect(page.getByText(/^dock · \(/)).toHaveCount(0);
   });
 
-  test("saves over the loaded job, and over the one it just created", async ({
+  test("saves over the loaded job, and leaves for Tasks after a new one", async ({
     page,
   }) => {
     // One Save now does both writes Update and Save as new used to split. The
     // rule it has to keep: a loaded template is updated in place, never
-    // copied, and a job saved for the first time becomes the loaded one, so a
-    // second press does not make a second row.
+    // copied, and stays open; a job saved for the first time sends the
+    // operator back to /tasks with the draft emptied, so Create task does not
+    // ask about a job that is already a row.
     const loaded = "22222222-2222-2222-2222-222222222222";
     const created = "44444444-4444-4444-4444-444444444444";
     await mockBackend(page);
@@ -1326,15 +1327,6 @@ test.describe("the task console", () => {
     expect(writes).toHaveLength(1);
     await field.fill("greeting");
     await expect(page.getByText("Name this task to save it.")).toHaveCount(0);
-    await page.keyboard.press("Enter");
-    await expect(page.getByRole("heading", { name: "greeting" })).toBeVisible();
-    await save.click();
-    await expect
-      .poll(() => writes.slice(1))
-      .toEqual([
-        { method: "POST", path: "/api/v1/task_templates" },
-        { method: "PUT", path: `/api/v1/task_templates/${created}` },
-      ]);
     // Nothing in the editor runs the robot any more.
     await expect(page.getByRole("button", { name: "Dispatch" })).toHaveCount(0);
     await expect(
@@ -1343,6 +1335,24 @@ test.describe("the task console", () => {
     await expect(
       page.getByRole("button", { name: "Create schedule" }),
     ).toHaveCount(0);
+    await page.keyboard.press("Enter");
+    await expect
+      .poll(() => writes.slice(1))
+      .toEqual([{ method: "POST", path: "/api/v1/task_templates" }]);
+    await expect(page).toHaveURL(/\/tasks$/);
+
+    // The draft went with the save: Create task opens a blank editor without
+    // asking first.
+    let asked = false;
+    page.once("dialog", (dialog) => {
+      asked = true;
+      void dialog.dismiss();
+    });
+    await page.getByRole("button", { name: "Create task" }).click();
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
+    await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
+    expect(asked).toBe(false);
+    expect(writes).toHaveLength(2);
   });
 
   test("names a new job in the heading and saves it in one press", async ({
@@ -1374,7 +1384,7 @@ test.describe("the task console", () => {
     await expect.poll(() => posted).toHaveLength(1);
     expect(posted[0]!.name).toBe("greeting");
     expect(posted[0]!.steps).toHaveLength(1);
-    await expect(page.getByRole("heading", { name: "greeting" })).toBeAttached();
+    await expect(page).toHaveURL(/\/tasks$/);
   });
 
   test("renames a saved job through Save, and Escape backs out", async ({
@@ -1953,6 +1963,27 @@ test.describe("the manual drive panel", () => {
     await expect(
       page.getByRole("link", { name: "Open the full-screen drive view" }),
     ).toBeHidden();
+  });
+
+  test("stands the robot up from any screen, without arming", async ({
+    page,
+  }) => {
+    // /settings has no rail, so the panel's button is the only Stand on
+    // screen, and the posture task on the wire can only have come from it.
+    // The arm switch is the sticks' and stays off.
+    const writes = await mockBackend(page);
+    const postures = () =>
+      writes
+        .filter((w) => w.path === "/api/v1/tasks")
+        .map((w) => (w.body as { kind: string }).kind);
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Manual drive panel" }).click();
+    await expect(
+      page.getByRole("switch", { name: "Arm manual drive input" }),
+    ).not.toBeChecked();
+
+    await page.getByRole("button", { name: "Stand", exact: true }).click();
+    await expect.poll(postures).toEqual(["standup"]);
   });
 
   test("limits translation to the Max speed it shows, and never rotation", async ({
