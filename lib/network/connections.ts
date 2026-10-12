@@ -1,4 +1,41 @@
 import type { WifiConnection } from "@/lib/api/network";
+import type { RobotNetworkStatus } from "@/lib/types/robot";
+
+/**
+ * What a card shows in place of a value it has no reading for. Each blank is
+ * in the shape of the value it stands in for, so a card off the network reads
+ * as "no address" at a glance rather than as a readout that failed to render.
+ */
+export const RSSI_BLANK = "-- dBm";
+export const IP_BLANK = "--.--.--.--";
+export const MAC_BLANK = "--:--:--:--:--:--";
+
+/** What a saved network's card reads out of the robot's link; null is a blank. */
+export interface LinkReadout {
+  /** dBm. */
+  rssi: number | null;
+  ip: string | null;
+  mac: string | null;
+}
+
+/**
+ * The state poll's signal and addresses for the card whose SSID the poll
+ * reports, and nothing for every other card. Matched on the poll alone, never
+ * on the list's `active`: a card the list still flags after the robot roamed
+ * must not show the new network's address as its own. An address the poll
+ * reports empty (still waiting on DHCP) is nothing too.
+ */
+export function linkReadout(
+  ssid: string,
+  current: RobotNetworkStatus | null,
+): LinkReadout {
+  const on = current && current.ssid !== "" && current.ssid === ssid ? current : null;
+  return {
+    rssi: on?.rssi ?? null,
+    ip: on?.ip_address || null,
+    mac: on?.mac_address || null,
+  };
+}
 
 /**
  * The order the Wi-Fi page lays its saved networks out in: the one the robot
