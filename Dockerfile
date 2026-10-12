@@ -7,7 +7,20 @@
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# The robot's uplink is a few MB/s. npm's default 15 parallel sockets share it
+# with the ~120 MB Next compiler tarballs, starve the small ones until they hit
+# a TCP read timeout, and the build sits silent for minutes before failing
+# with ETIMEDOUT; 4 sockets mostly finishes on the same link. Mostly: a
+# timeout in the middle of a tarball's body is not one npm's own retries
+# cover, so the whole command is retried. The cache mount is what makes that
+# cheap — it keeps every tarball already fetched (outside the image), so a
+# second attempt downloads only what the first one lost, and a lockfile
+# change re-runs `npm ci` without fetching all ~900 MB again.
+RUN --mount=type=cache,target=/root/.npm \
+    for attempt in 1 2 3; do \
+      npm ci --maxsockets=4 --fetch-retries=5 && exit 0; \
+      echo "npm ci attempt $attempt failed, retrying from cache" >&2; \
+    done; exit 1
 
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
