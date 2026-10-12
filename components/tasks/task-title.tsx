@@ -1,87 +1,63 @@
 "use client";
 
 import * as React from "react";
-import { CheckIcon, SettingsIcon, XIcon } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TASK_TEMPLATE_NAME_MAX, taskTemplateNameOk } from "@/lib/task/template";
 
 export interface TaskTitleProps {
-  /** What the heading reads while it is not being edited. */
-  title: string;
-  /** The name the field opens on. */
-  name: string;
-  /** Whether the heading is the input. The editor owns it, because Save opens it too. */
-  naming: boolean;
+  /** The name as typed, which is the draft's. */
+  value: string;
+  /** The loaded template's saved name, or null for a job not saved yet. */
+  savedName: string | null;
   busy: boolean;
+  /** Set when Save was pressed without a usable name; cleared by typing. */
+  missing: boolean;
   /** Names already in the library, for the duplicate hint. */
   existingNames: readonly string[];
-  onStartNaming: () => void;
-  onCancel: () => void;
-  onSubmit: (name: string) => void;
+  onChange: (name: string) => void;
+  /** Escape: back to the saved name, with nothing sent. */
+  onRevert: () => void;
+  /** Enter: the same Save as the header's button. */
+  onSubmit: () => void;
+  ref?: React.Ref<HTMLInputElement>;
 }
 
 /**
- * The editor's heading, and the one place a job is named.
+ * The editor's heading, and the one place a job is named: an input that is
+ * always open, in the heading's face.
  *
- * Edited in place, the way a map card's title is: the settings button turns
- * the heading into an input of the same face, with confirm and cancel beside
- * it, Enter to confirm and Escape to back out. Not a modal, because every name
- * edit in this console is an inline form. What confirming *does* is the
- * editor's call — rename a saved job straight away, or name a new one — so it
- * is handed up rather than decided here.
+ * The name is part of the draft and goes to the robot with the steps, on the
+ * one Save. It used to be a field behind a settings button with its own
+ * confirm, and confirming renamed a saved job on the spot — so a new job took
+ * a confirm before Save would take it, and a saved one had two moments that
+ * wrote and two rules for what each wrote. One Save is the rule everything
+ * else on this page already follows, so the name follows it too; what that
+ * gives up is renaming without also saving step edits, which nobody missed
+ * next to being able to just type.
  *
- * Remounted per opening (the editor keys it), which is what starts the field
- * from the current name rather than from whatever was typed and abandoned.
+ * Enter saves, since a name is usually the last thing typed before saving;
+ * Escape puts back the saved name. The visible heading is this field, so a
+ * screen reader's heading is kept beside it, out of sight.
  */
 export function TaskTitle({
-  title,
-  name,
-  naming,
+  value,
+  savedName,
   busy,
+  missing,
   existingNames,
-  onStartNaming,
-  onCancel,
+  onChange,
+  onRevert,
   onSubmit,
+  ref,
 }: TaskTitleProps) {
-  const [value, setValue] = React.useState(name);
-  const settingsRef = React.useRef<HTMLButtonElement>(null);
-  const wasNaming = React.useRef(naming);
-
-  // Focus goes back to the button that opened the field, so a keyboard
-  // operator is not dropped at the top of the page by a confirm or an Escape.
-  React.useEffect(() => {
-    if (wasNaming.current && !naming) settingsRef.current?.focus();
-    wasNaming.current = naming;
-  }, [naming]);
-
-  if (!naming) {
-    return (
-      <div className="flex min-w-0 items-center gap-1.5">
-        <h1 className="truncate text-xl font-semibold tracking-tight">{title}</h1>
-        <Button
-          ref={settingsRef}
-          variant="ghost"
-          size="icon-sm"
-          onClick={onStartNaming}
-          aria-label="Rename task"
-          title="Rename task"
-          className="shrink-0 text-muted-foreground"
-        >
-          <SettingsIcon aria-hidden />
-        </Button>
-      </div>
-    );
-  }
-
+  const hintId = React.useId();
   const trimmed = value.trim();
-  const ok = taskTemplateNameOk(value);
   // A warning, not a gate: duplicate names are allowed by design (the id is the
   // identity, exactly as for map vertices). Saying so beats refusing.
   const duplicate =
-    ok &&
-    trimmed !== name.trim() &&
+    taskTemplateNameOk(value) &&
+    trimmed !== savedName?.trim() &&
     existingNames.some((existing) => existing.toLowerCase() === trimmed.toLowerCase());
 
   return (
@@ -89,51 +65,44 @@ export function TaskTitle({
       className="min-w-0 space-y-1"
       onSubmit={(event) => {
         event.preventDefault();
-        if (ok && !busy) onSubmit(trimmed);
+        if (!busy) onSubmit();
       }}
     >
-      <div className="flex min-w-0 items-center gap-1.5">
-        <Input
-          autoFocus
-          value={value}
-          disabled={busy}
-          maxLength={TASK_TEMPLATE_NAME_MAX}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              onCancel();
-            }
-          }}
-          aria-label="Task name"
-          placeholder="Morning patrol"
-          className="h-8 min-w-0 flex-1 text-xl font-semibold tracking-tight md:text-xl"
-        />
-        <Button
-          type="submit"
-          size="icon-sm"
-          disabled={!ok || busy}
-          aria-label="Confirm name"
-          title="Confirm name"
-        >
-          <CheckIcon aria-hidden />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          onClick={onCancel}
-          aria-label="Cancel renaming"
-          title="Cancel renaming"
-        >
-          <XIcon aria-hidden />
-        </Button>
-      </div>
-      {duplicate && (
-        <p className="text-[11px] leading-tight text-signal-caution">
-          Another task already has this name. That is allowed — the two are told
-          apart by id, not by name.
+      {/* The job's own name, not "Editing …": being on this page already
+        * says it is being edited. The saved name rather than the typed one, so
+        * the heading does not move with every keystroke. */}
+      <h1 className="sr-only">{savedName ?? "New task"}</h1>
+      <Input
+        ref={ref}
+        value={value}
+        // Read-only rather than disabled while a save is out: disabling drops
+        // the focus, and Enter is how most saves from here are made.
+        readOnly={busy}
+        maxLength={TASK_TEMPLATE_NAME_MAX}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onRevert();
+          }
+        }}
+        aria-label="Task name"
+        aria-invalid={missing || undefined}
+        aria-describedby={missing || duplicate ? hintId : undefined}
+        placeholder="Name this task"
+        className="h-9 -ml-2.5 border-transparent bg-transparent text-xl font-semibold tracking-tight hover:border-input md:text-xl dark:bg-transparent"
+      />
+      {missing ? (
+        <p id={hintId} className="text-[11px] leading-tight text-signal-warn">
+          Name this task to save it.
         </p>
+      ) : (
+        duplicate && (
+          <p id={hintId} className="text-[11px] leading-tight text-signal-caution">
+            Another task already has this name. That is allowed — the two are told
+            apart by id, not by name.
+          </p>
+        )
       )}
     </form>
   );

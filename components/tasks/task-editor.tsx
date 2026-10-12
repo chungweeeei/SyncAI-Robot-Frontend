@@ -40,7 +40,8 @@ const HEADER_BUTTON = "sm:pointer-coarse:min-h-10 max-sm:size-8 max-sm:px-0!";
 /**
  * The task editor, on a page of its own (/tasks/editor): the steps being
  * authored and the job's name. Go back, Save and Delete sit in the header, and
- * the name is the heading itself, edited in place (TaskTitle).
+ * the name is the heading itself, an always-open field that Save writes with
+ * the steps (TaskTitle).
  *
  * **It does not run or schedule anything.** Both used to be panes here. A job
  * runs from its row on /tasks and is scheduled there too, where the schedule
@@ -112,20 +113,15 @@ export function TaskEditor() {
   const stepMarks = React.useMemo(() => stepWaypointOrdinals(drafts.steps), [drafts.steps]);
 
   /**
-   * Whether the heading is the name field, and whether confirming it should
-   * go on to save — true when Save was pressed on a job with no name yet, so
-   * naming it is one step of saving rather than a detour before it.
-   *
-   * The heading is keyed by a count bumped on each *opening*, so every
-   * opening starts from the current name. Only opening: a key that changed on
-   * closing too would remount the heading as it closed, and it would lose the
-   * focus it hands back to the Rename button.
+   * Set when Save is pressed on a job with no usable name, which turns Save
+   * into a pointer at the field rather than a dead button: the name is the one
+   * thing the step list's captions cannot say is missing. Typing clears it.
    */
-  const [naming, setNaming] = React.useState<{ thenSave: boolean } | null>(null);
-  const [namingKey, setNamingKey] = React.useState(0);
-  const openNaming = (thenSave: boolean) => {
-    setNamingKey((key) => key + 1);
-    setNaming({ thenSave });
+  const [nameMissing, setNameMissing] = React.useState(false);
+  const nameRef = React.useRef<HTMLInputElement>(null);
+  const setName = (name: string) => {
+    setNameMissing(false);
+    updateDraft((current) => ({ ...current, name }));
   };
 
   const stepsOk = stepDraftsSubmittable(drafts.steps);
@@ -191,18 +187,20 @@ export function TaskEditor() {
   /**
    * One Save: an update when a template is loaded, a new one otherwise. The
    * answer becomes the loaded template either way, so a second press updates
-   * what the first created instead of making another copy. A job with no
-   * name yet opens the heading to be named, and confirming it saves.
+   * what the first created instead of making another copy. The name goes
+   * with the steps, so a rename is a Save like any other edit. A job with no
+   * name yet sends the operator to the heading's field instead.
    */
   const canSave = stepsOk && saveReason === null && !library.busy;
-  const save = (name: string = draftName) => {
+  const save = () => {
     if (!canSave) return;
-    if (!taskTemplateNameOk(name)) {
-      openNaming(true);
+    if (!taskTemplateNameOk(draftName)) {
+      setNameMissing(true);
+      nameRef.current?.focus();
       return;
     }
     const body = {
-      name: name.trim(),
+      name: draftName.trim(),
       map_name: draftMapName,
       steps: toTemplateSteps(drafts.steps),
     };
@@ -216,31 +214,6 @@ export function TaskEditor() {
         }));
       },
     );
-  };
-
-  /**
-   * Confirming the heading. A saved job is renamed at once and by name alone
-   * — the PUT is partial, so step edits not yet saved stay unsaved, which is
-   * what a rename should leave alone. A new job only takes the name into the
-   * draft, unless Save is what asked for it.
-   */
-  const confirmName = (name: string) => {
-    const thenSave = naming?.thenSave ?? false;
-    if (editing && !thenSave) {
-      void library.update(editing.id, { name }).then((renamed) => {
-        if (!renamed) return;
-        setNaming(null);
-        updateDraft((current) => ({
-          ...current,
-          editing: { id: renamed.id, name: renamed.name },
-          name: renamed.name,
-        }));
-      });
-      return;
-    }
-    setNaming(null);
-    updateDraft((current) => ({ ...current, name }));
-    if (thenSave) save(name);
   };
 
   /**
@@ -277,17 +250,15 @@ export function TaskEditor() {
       <header className="mb-6 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <TaskTitle
-            key={namingKey}
-            // The job's own name, not "Editing …": being on this page
-            // already says it is being edited.
-            title={editing?.name ?? (draftName.trim() || "New task")}
-            name={draftName}
-            naming={naming !== null}
+            ref={nameRef}
+            value={draftName}
+            savedName={editing?.name ?? null}
             busy={library.busy}
+            missing={nameMissing}
             existingNames={library.templates.map((template) => template.name)}
-            onStartNaming={() => openNaming(false)}
-            onCancel={() => setNaming(null)}
-            onSubmit={confirmName}
+            onChange={setName}
+            onRevert={() => setName(editing?.name ?? "")}
+            onSubmit={save}
           />
           {/* The library's write error — a refused save, rename or delete —
             * in the backend's own words, under the name it was about. */}
@@ -319,7 +290,7 @@ export function TaskEditor() {
             <span className="max-sm:hidden">Go back</span>
           </Button>
           <Button
-            onClick={() => save()}
+            onClick={save}
             disabled={!canSave}
             // The step list says which rows are unfinished; this is for the
             // operator whose eyes are on the button.
