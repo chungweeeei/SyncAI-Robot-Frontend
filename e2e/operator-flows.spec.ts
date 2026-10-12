@@ -1111,7 +1111,7 @@ test.describe("the task console", () => {
     });
     await page.getByRole("button", { name: "Create task" }).click();
     await expect(page).toHaveURL(/\/tasks\/editor$/);
-    expect(asked).toMatch(/unsaved steps/);
+    expect(asked).toMatch(/unsaved changes/);
     // Rows come back folded, read back as the line they say.
     await expect(page.getByText("\u201cArrived\u201d")).toBeVisible();
 
@@ -1122,6 +1122,61 @@ test.describe("the task console", () => {
     await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
     await expect(page.getByText("\u201cArrived\u201d")).toHaveCount(0);
     expect(writes).toEqual([]);
+  });
+
+  test("does not ask about a saved job opened and left as it was", async ({ page }) => {
+    // A loaded job is only unsaved once it differs from its row: asking about
+    // nothing teaches the operator to press OK through the prompt that
+    // guards real work.
+    await mockBackend(page);
+    await page.goto("/tasks");
+    await page
+      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .click();
+    await expect(page.getByRole("heading", { name: "Morning round" })).toBeVisible();
+    await page.getByRole("button", { name: "Go back" }).click();
+    await expect(page).toHaveURL(/\/tasks$/);
+
+    const asked: string[] = [];
+    page.on("dialog", (dialog) => {
+      asked.push(dialog.message());
+      void dialog.accept();
+    });
+    await page.getByRole("button", { name: "Create task" }).click();
+    await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
+    expect(asked).toEqual([]);
+  });
+
+  test("asks before the tab closes on unsaved work, and only then", async ({ page }) => {
+    // The draft survives a trip to another screen but not the tab. Positive
+    // control first: an untouched saved job closes without a question.
+    await mockBackend(page);
+    await page.goto("/tasks");
+    await page
+      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .click();
+    await expect(page.getByRole("heading", { name: "Morning round" })).toBeVisible();
+
+    const kinds: string[] = [];
+    page.on("dialog", (dialog) => {
+      kinds.push(dialog.type());
+      void dialog.dismiss();
+    });
+    // Chromium only honours beforeunload on a page the user has touched.
+    await page.getByText(/^Steps run in order/).click();
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Morning round" })).toBeVisible();
+    expect(kinds).toEqual([]);
+    // Waited for through the rows, so the library has answered by the time
+    // the chip's absence is read.
+    await expect(page.getByText(/^dock · \(/)).toBeVisible();
+    await expect(page.getByText("Unsaved changes")).toHaveCount(0);
+
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
+    await expect(page.getByText("Unsaved changes")).toBeVisible();
+    await page.close({ runBeforeUnload: true });
+    await expect.poll(() => kinds).toEqual(["beforeunload"]);
   });
 
   test("counts a job's paused schedules, and points at them in the list", async ({
