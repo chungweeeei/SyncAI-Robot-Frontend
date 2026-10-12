@@ -6,6 +6,7 @@ import {
   createTaskDraftStore,
   decodeTaskDraft,
   draftFromTemplate,
+  draftIsUnsaved,
   draftWouldBeLost,
   isEmptyTaskDraft,
   type DraftStorage,
@@ -213,19 +214,118 @@ describe("draftFromTemplate", () => {
   });
 });
 
-describe("draftWouldBeLost", () => {
-  it("is false for an empty editor, whatever replaces it", () => {
-    expect(draftWouldBeLost(draft({ steps: [] }), null)).toBe(false);
-    expect(draftWouldBeLost(draft({ steps: [] }), "t2")).toBe(false);
+/** A stored job with a waypoint Move and a Speak, as the library lists it. */
+function savedRound(over: Partial<TaskTemplate> = {}): TaskTemplate {
+  return template({
+    id: "t1",
+    name: "Morning round",
+    map_name: "wh1",
+    steps: [
+      {
+        id: "s1",
+        type: "MOVE",
+        params: { x: 1, y: 2, theta: 0 },
+        resolved_params: { x: 1, y: 2, theta: 0 },
+        vertex_id: "v1",
+        vertex_name: "Dock",
+        vertex_status: "CURRENT",
+      },
+      {
+        id: "s2",
+        type: "SPEAK",
+        params: { text: "arrived" },
+        resolved_params: { text: "arrived" },
+        vertex_id: null,
+        vertex_name: null,
+        vertex_status: "NONE",
+      },
+    ],
+    ...over,
+  });
+}
+
+describe("draftIsUnsaved", () => {
+  const library = [savedRound()];
+  const opened = () => draftFromTemplate(EMPTY_TASK_DRAFT, savedRound());
+
+  it("counts a fresh job with a step or only a name, and not an empty one", () => {
+    const fresh = { ...EMPTY_TASK_DRAFT, chosenMap: "wh1" };
+    expect(draftIsUnsaved(fresh, library)).toBe(false);
+    expect(draftIsUnsaved({ ...fresh, name: "  " }, library)).toBe(false);
+    expect(draftIsUnsaved({ ...fresh, name: "night run" }, library)).toBe(true);
+    expect(draftIsUnsaved({ ...fresh, steps: [newStepDraft("SPEAK")] }, library)).toBe(true);
   });
 
-  it("is true when steps would be replaced by a new job or another template", () => {
-    expect(draftWouldBeLost(draft(), null)).toBe(true);
-    expect(draftWouldBeLost(draft(), "t2")).toBe(true);
-    expect(draftWouldBeLost(draft({ editing: null }), "t1")).toBe(true);
+  it("does not count a saved job opened and left as it was", () => {
+    expect(draftIsUnsaved(opened(), library)).toBe(false);
+  });
+
+  it("does not count a waypoint moved on the map since the job was opened", () => {
+    // The load re-resolves the Move from the waypoint's current pose; the
+    // operator changed nothing, so nothing of theirs is at risk.
+    const moved = savedRound();
+    moved.steps[0] = {
+      ...moved.steps[0],
+      resolved_params: { x: 5, y: 6, theta: 90 },
+    } as TaskTemplate["steps"][number];
+    expect(draftIsUnsaved(opened(), [moved])).toBe(false);
+  });
+
+  it("counts an edit to the steps, the name or the map", () => {
+    const base = opened();
+    const [move, speak] = base.steps;
+    expect(draftIsUnsaved({ ...base, name: "Evening round" }, library)).toBe(true);
+    expect(draftIsUnsaved({ ...base, chosenMap: "wh2" }, library)).toBe(true);
+    expect(draftIsUnsaved({ ...base, steps: [move] }, library)).toBe(true);
+    expect(draftIsUnsaved({ ...base, steps: [speak, move] }, library)).toBe(true);
+    expect(
+      draftIsUnsaved({ ...base, steps: [move, { ...speak, text: "here" }] }, library),
+    ).toBe(true);
+    expect(
+      draftIsUnsaved({ ...base, steps: [{ ...move, vertexId: "v2" }, speak] }, library),
+    ).toBe(true);
+  });
+
+  it("does not count whitespace Save would trim", () => {
+    const base = opened();
+    const [move, speak] = base.steps;
+    expect(
+      draftIsUnsaved(
+        { ...base, name: "Morning round ", steps: [move, { ...speak, text: "arrived  " }] },
+        library,
+      ),
+    ).toBe(false);
+  });
+
+  it("counts a loaded job the library cannot vouch for", () => {
+    // Still loading, or deleted from another console: a false alarm costs a
+    // click, a missed one costs the job.
+    expect(draftIsUnsaved(opened(), null)).toBe(true);
+    expect(draftIsUnsaved(opened(), [])).toBe(true);
+  });
+});
+
+describe("draftWouldBeLost", () => {
+  const library = [savedRound()];
+
+  it("is false for an empty editor, whatever replaces it", () => {
+    expect(draftWouldBeLost(EMPTY_TASK_DRAFT, null, library)).toBe(false);
+    expect(draftWouldBeLost(EMPTY_TASK_DRAFT, "t2", library)).toBe(false);
+  });
+
+  it("is true when unsaved work would be replaced by a new job or another template", () => {
+    expect(draftWouldBeLost(draft(), null, library)).toBe(true);
+    expect(draftWouldBeLost(draft(), "t2", library)).toBe(true);
+    expect(draftWouldBeLost(draft({ editing: null }), "t1", library)).toBe(true);
+  });
+
+  it("is false when the loaded job is unchanged, so nothing is lost", () => {
+    const opened = draftFromTemplate(EMPTY_TASK_DRAFT, savedRound());
+    expect(draftWouldBeLost(opened, null, library)).toBe(false);
+    expect(draftWouldBeLost(opened, "t2", library)).toBe(false);
   });
 
   it("is false when reopening the template already loaded", () => {
-    expect(draftWouldBeLost(draft(), "t1")).toBe(false);
+    expect(draftWouldBeLost(draft(), "t1", library)).toBe(false);
   });
 });

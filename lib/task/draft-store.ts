@@ -94,15 +94,78 @@ export function draftFromTemplate(current: TaskDraft, template: TaskTemplate): T
 }
 
 /**
- * Whether replacing the draft with `templateId` (or with nothing, for a new
- * job) would throw away steps the operator built. The editor is a page of its
- * own now, so the draft is off-screen whenever this is asked: replacing it
- * silently would be data loss nobody saw happen. Reopening the template that
- * is already loaded is not a replacement.
+ * What a step would save as, for telling an edited row from a loaded one.
+ *
+ * A Move bound to a waypoint is that waypoint and nothing else: its numbers
+ * are re-resolved from the waypoint's current pose on every load, so a
+ * waypoint moved on the map since this draft was opened must not read as an
+ * edit the operator made. Only the fields a type actually saves count — a row
+ * switched from Move to Speak keeps its stale coordinates in the draft.
  */
-export function draftWouldBeLost(draft: TaskDraft, templateId: string | null): boolean {
-  if (draft.steps.length === 0) return false;
-  return templateId === null || draft.editing?.id !== templateId;
+function stepFingerprint(step: StepDraft): string {
+  switch (step.type) {
+    case "MOVE":
+      return step.vertexId !== null
+        ? `MOVE@${step.vertexId}`
+        : `MOVE ${step.x} ${step.y} ${step.theta}`;
+    case "SPEAK":
+      // Trimmed because Save trims: trailing spaces are not a change to the job.
+      return `SPEAK ${step.text.trim()}`;
+    case "WAIT":
+      return `WAIT ${step.seconds}`;
+    default:
+      return step.type;
+  }
+}
+
+/**
+ * Whether the draft holds work that is not on the robot.
+ *
+ * A fresh job is unsaved as soon as it has a step or a name. A loaded one is
+ * unsaved only once it differs from the stored row — steps, name or map — so
+ * opening a job and walking away is not reported as work at risk. Asking
+ * about nothing trains the operator to press OK, and then the one confirm
+ * that guards real work is pressed through too.
+ *
+ * `templates` is the library as read; a loaded row it does not hold (still
+ * loading, deleted elsewhere) cannot be compared against and counts as
+ * unsaved, since a false alarm costs a click and a missed one costs the job.
+ */
+export function draftIsUnsaved(
+  draft: TaskDraft,
+  templates: readonly TaskTemplate[] | null,
+): boolean {
+  if (draft.editing === null) {
+    return draft.steps.length > 0 || draft.name.trim() !== "";
+  }
+  const editingId = draft.editing.id;
+  const saved = templates?.find((template) => template.id === editingId);
+  if (!saved) return true;
+  if (draft.name.trim() !== saved.name) return true;
+  if (saved.map_name !== null && draft.chosenMap !== saved.map_name) return true;
+  const savedSteps = fromTemplateSteps(saved.steps);
+  return (
+    draft.steps.length !== savedSteps.length ||
+    draft.steps.some(
+      (step, index) => stepFingerprint(step) !== stepFingerprint(savedSteps[index]),
+    )
+  );
+}
+
+/**
+ * Whether replacing the draft with `templateId` (or with nothing, for a new
+ * job) would throw away unsaved work. The editor is a page of its own now, so
+ * the draft is off-screen whenever this is asked: replacing it silently would
+ * be data loss nobody saw happen. Reopening the template that is already
+ * loaded is not a replacement.
+ */
+export function draftWouldBeLost(
+  draft: TaskDraft,
+  templateId: string | null,
+  templates: readonly TaskTemplate[] | null,
+): boolean {
+  if (templateId !== null && draft.editing?.id === templateId) return false;
+  return draftIsUnsaved(draft, templates);
 }
 
 /**
