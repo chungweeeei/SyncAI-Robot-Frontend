@@ -50,35 +50,46 @@ export function listVertices(
 }
 
 /**
- * Create one vertex.
+ * Create several vertices in one request — the endpoint's own shape.
  *
- * The endpoint is a *batch* one — it takes an array and answers with an array —
- * and this wraps a single draft rather than exposing that. The console places
- * one vertex per gesture, so a list-taking client would have every caller
- * writing `[draft]` and `result[0]`, and the day a real batch UI exists it can
- * call `requestJson` directly rather than inherit a shape nothing used.
+ * The floor plan editor stages every waypoint placed before a Save and sends
+ * them here together. The answer is read in the order sent: the editor swaps
+ * each staged row's local id for the echo at the same index.
+ */
+export async function createVertices(
+  name: string,
+  drafts: readonly VertexDraft[],
+): Promise<MapVertex[]> {
+  // The echo is checked like any other read: it is the row as stored, and both
+  // the editor and the dashboard splice it straight into their cache.
+  const created = await requestJson<MapVertex[]>(vertexPath(name), {
+    method: "POST",
+    body: JSON.stringify(
+      drafts.map((draft) => ({ ...draft, theta: normalizeTheta(draft.theta) })),
+    ),
+    schema: z.array(MapVertexSchema),
+  });
+
+  // As many out as went in. A response that does not hold that is the backend
+  // having changed shape, and failing here beats pairing an echo with the
+  // wrong staged row — or returning `undefined` typed as a MapVertex.
+  if (created.length !== drafts.length) {
+    throw new Error(
+      "The robot saved the waypoints but did not send them all back. Reload the page to see them.",
+    );
+  }
+  return created;
+}
+
+/**
+ * Create one vertex: the dashboard places one per gesture and writes it at
+ * once, so it is spared writing `[draft]` and `result[0]`.
  */
 export async function createVertex(
   name: string,
   draft: VertexDraft,
 ): Promise<MapVertex> {
-  // The echo is checked like any other read: it is the row as stored, and both
-  // the editor and the dashboard splice it straight into their cache.
-  const created = await requestJson<MapVertex[]>(vertexPath(name), {
-    method: "POST",
-    body: JSON.stringify([{ ...draft, theta: normalizeTheta(draft.theta) }]),
-    schema: z.array(MapVertexSchema),
-  });
-
-  // One in, one out. A response that does not hold exactly that is the backend
-  // having changed shape, and failing here beats returning `undefined` typed as
-  // a MapVertex and crashing wherever it is first dereferenced.
-  const vertex = created[0];
-  if (!vertex) {
-    throw new Error(
-      "The robot saved the waypoint but did not send it back. Reload the page to see it.",
-    );
-  }
+  const [vertex] = await createVertices(name, [draft]);
   return vertex;
 }
 
