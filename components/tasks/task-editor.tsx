@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeftIcon, MapPinPlusIcon, SaveIcon, Trash2Icon } from "lucide-react";
 
-import { InstrumentGroup } from "@/components/console/instrument";
+import { Chip, InstrumentGroup } from "@/components/console/instrument";
 import { ActiveRunBanner } from "@/components/tasks/active-run-banner";
 import { MapPicker } from "@/components/tasks/map-picker";
 import { StepList } from "@/components/tasks/step-list";
@@ -19,7 +19,7 @@ import { useStepDrafts } from "@/hooks/use-step-drafts";
 import { useTaskDraft } from "@/hooks/use-task-draft";
 import { waypointEditorHref } from "@/lib/map/links";
 import type { TaskStepState } from "@/lib/api/task";
-import type { TaskDraft } from "@/lib/task/draft-store";
+import { draftIsUnsaved, type TaskDraft } from "@/lib/task/draft-store";
 import { stepDraftsSubmittable, stepWaypointOrdinals, toTemplateSteps } from "@/lib/task/step";
 import { taskTemplateNameOk } from "@/lib/task/template";
 
@@ -78,6 +78,20 @@ export function TaskEditor() {
   const library = useTaskTemplates();
   const { maps, status: mapsStatus } = useMaps();
   const activeMapName = maps?.find((map) => map.active)?.name ?? null;
+
+  /**
+   * Leaving for another screen keeps the draft, so only the tab going away
+   * is asked about: sessionStorage ends with it, and a reload is asked about
+   * too because the browser cannot tell the two apart. Only while there is
+   * work to lose — the same stance as a clip being recorded.
+   */
+  const unsaved = draftIsUnsaved(draft, library.templates);
+  React.useEffect(() => {
+    if (!unsaved) return;
+    const guard = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [unsaved]);
 
   /**
    * The map the editor is authoring for. `chosenMap` null means "follow the
@@ -275,6 +289,17 @@ export function TaskEditor() {
             <p role="alert" className="mt-1 text-[11px] leading-snug break-words text-signal-warn">
               {library.error}
             </p>
+          )}
+          {/* Said on the page, not only in a prompt on the way out: the draft
+            * survives leaving, so nothing else here tells the operator that
+            * what they see is not yet what the robot holds. Held back until
+            * the library answers for a loaded job — before then it would
+            * flash on every open, which is the false alarm the comparison
+            * exists to avoid. */}
+          {unsaved && (draft.editing === null || library.status === "ok") && (
+            <Chip tone="caution" className="mt-1">
+              Unsaved changes
+            </Chip>
           )}
           <p className="mt-1 text-sm text-muted-foreground">
             Steps run in order, one at a time, and if a step fails the rest are

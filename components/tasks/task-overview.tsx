@@ -77,9 +77,9 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
   const openInEditor = (template: TaskTemplate) => {
     const keep =
       draft.editing?.id === template.id ||
-      (draftWouldBeLost(draft, template.id) &&
+      (draftWouldBeLost(draft, template.id, library.templates) &&
         !window.confirm(
-          `Open "${template.name}"? The unsaved steps in the editor will be replaced.`,
+          `Open "${template.name}"? The unsaved changes in the editor will be replaced.`,
         ));
     if (!keep) updateDraft((current) => draftFromTemplate(current, template));
     router.push("/tasks/editor");
