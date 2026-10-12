@@ -241,7 +241,7 @@ test.describe("settings sections", () => {
     ).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("button", { name: "Restart", exact: true })).toHaveCount(0);
 
-    await page.locator("main header").getByRole("link", { name: "Settings" }).click();
+    await page.locator("main header").getByRole("link", { name: "Go back" }).click();
     await expect(page).toHaveURL(/\/settings$/);
 
     await sections.getByRole("link", { name: /Preferences/ }).click();
