@@ -46,6 +46,14 @@ import {
 import type { GridSession } from "@/lib/map/session";
 import { DEFAULT_VERTEX_TYPE } from "@/lib/map/vertex";
 import {
+  localVertexId,
+  planVertexSave,
+  rebaseVertices,
+  sameVertices,
+  vertexSaveFailure,
+  vertexSaveSummary,
+} from "@/lib/map/vertex-stage";
+import {
   canCloseZone,
   mergeIntoZone,
   newZoneId,
@@ -57,7 +65,7 @@ import {
   type ZonePoint,
   type ZonePolygon,
 } from "@/lib/map/zone";
-import type { VertexType } from "@/lib/types/map";
+import type { MapVertex, VertexType } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 import { cn } from "@/lib/utils";
 
@@ -91,10 +99,10 @@ const DEFAULT_TOOL: EditTool = "pan";
  * state at all. Every press on bare map was a placement.
  *
  * The one more: unlike a stray brush stroke, a stray vertex is not undoable.
- * The vertex layer writes through to the backend and has no history (see
- * hooks/use-map-vertices.ts), so the only reason the old behaviour was
- * survivable is that a draft still needs a name typed before it becomes a row.
- * That is a confirmation step, not a safe default.
+ * The vertex layer is staged until Save but has no history, so the only
+ * reason the old behaviour was survivable is that a draft still needs a name
+ * typed before it becomes a row. That is a confirmation step, not a safe
+ * default.
  *
  * Placing therefore costs one click on the Tool row, and Escape gives the map
  * back — the same trade grid mode makes for its brush.
@@ -139,8 +147,10 @@ export function MapGridEditor({
    * Loaded here rather than inside EditorSurface, and that placement is the
    * point of the split. EditorSurface is keyed on the session, so it remounts
    * whenever the grid is reloaded; the vertex list belongs to the *map*, not to
-   * one buffer of its cells, and would otherwise be refetched — and any staged
-   * edit thrown away — by something that has nothing to do with it.
+   * one buffer of its cells, and would otherwise be refetched by something
+   * that has nothing to do with it. Handed down as the surface's starting
+   * list, like the zones below: a save writes what landed into the cache, so a
+   * remount starts from what the robot holds.
    */
   const vertices = useMapVertices(name);
   /**
@@ -162,10 +172,11 @@ export function MapGridEditor({
     );
   }
 
-  // Held until the zones answer, not only the grid: a surface that opened
-  // with none and took the answer later would have to merge it into edits
-  // already made. A failed read does not hold it — see `initialZones`.
-  if (!session || keepout.status === "loading") {
+  // Held until the zones and the waypoints answer, not only the grid: a
+  // surface that opened with none and took the answer later would have to
+  // merge it into edits already made. A failed read does not hold it — see
+  // `initialZones` and `initialVertices`.
+  if (!session || keepout.status === "loading" || vertices.status === "loading") {
     return (
       <p className="instrument-label flex h-full items-center justify-center text-muted-foreground">
         Loading {name}…
@@ -177,7 +188,9 @@ export function MapGridEditor({
     <EditorSurface
       key={session.id}
       session={session}
-      vertices={vertices}
+      initialVertices={vertices.status === "ok" ? vertices.vertices : null}
+      verticesError={vertices.error}
+      saveVertices={vertices.save}
       initialZones={keepout.zones}
       zonesError={keepout.error}
       initialMode={initialMode}
@@ -196,14 +209,24 @@ export function MapGridEditor({
  */
 function EditorSurface({
   session,
-  vertices,
+  initialVertices,
+  verticesError,
+  saveVertices,
   initialZones,
   zonesError,
   initialMode,
   onDirtyChange,
 }: {
   session: GridSession;
-  vertices: UseMapVertices;
+  /**
+   * The map's waypoints as saved, or null when they could not be read. Null
+   * locks the waypoint layer, for `initialZones`'s reason: a Save writes the
+   * difference from this list, and a difference from "unknown" is nothing
+   * anyone meant to send.
+   */
+  initialVertices: MapVertex[] | null;
+  verticesError: string | null;
+  saveVertices: UseMapVertices["save"];
   /**
    * The map's zones as saved, or null when they could not be read. Null
    * locks the zone layer rather than starting it empty: a save is the whole
@@ -253,11 +276,23 @@ function EditorSurface({
   const historyRef = React.useRef(createUndoStack());
 
   /*
-   * Vertex-layer state. None of it feeds `dirty`, and that is the whole point of
-   * the write-through design in useMapVertices: the page's back-button guard and
-   * the toolbar's Unsaved chip keep describing the gridmap only, so a staged
-   * vertex can never be mistaken for unsaved cells.
+   * Vertex-layer state. The waypoints are staged like the zones: Create,
+   * Apply and Delete change `vertexList`, the list on screen, and Save writes
+   * its difference from `savedVertices`, the rows as last loaded or saved —
+   * see useMapVertices for why, and lib/map/vertex-stage.ts for the diff. So
+   * they feed the Save dot and the back-button guard through `verticesDirty`.
    */
+  const verticesLocked = initialVertices === null;
+  const [vertexList, setVertexList] = React.useState<MapVertex[]>(initialVertices ?? []);
+  const [savedVertices, setSavedVertices] = React.useState<MapVertex[]>(
+    initialVertices ?? [],
+  );
+  const verticesDirty = !verticesLocked && !sameVertices(savedVertices, vertexList);
+  /** What the last waypoint save did, kept apart for `zoneSave`'s reason. */
+  const [vertexSave, setVertexSave] = React.useState<SaveState>({ kind: "idle" });
+  const vertexWriting = vertexSave.kind === "saving";
+  /** Numbers the local ids of waypoints placed here and not yet saved. */
+  const localSerialRef = React.useRef(0);
   const [vertexType, setVertexType] = React.useState<VertexType>(DEFAULT_VERTEX_TYPE);
   const [draft, setDraft] = React.useState<PlanarPose | null>(null);
   /**
@@ -361,26 +396,19 @@ function EditorSurface({
   const runLock = useMapRunLock(session.name);
   const writeLocked = runLock.locked;
 
-  // Destructured because the hook returns a fresh object each render: passing
-  // `vertices.create` inline would give GridCanvas a new callback identity every
-  // time and defeat its React.memo, which exists so a pan cannot re-render the
-  // toolbar. The list itself is state, so its identity is stable between changes.
-  //
-  // status / error / busy are the panel's three, and deliberately reach nothing
-  // else — GridCanvas never sees them, so a vertex write in flight cannot
-  // re-render the canvas. All eight are prefixed because `save` and `dirty` in
-  // this same scope describe the *gridmap*: a bare `error` or `busy` beside them
-  // reads as if it did too.
-  const {
-    vertices: vertexList,
-    status: vertexStatus,
-    error: vertexError,
-    busy: vertexBusy,
-    create: createVertex,
-    update: updateVertex,
-    remove: removeVertex,
-    clearError: clearVertexError,
-  } = vertices;
+  /**
+   * The rows on screen that Save would write: placed here, or changed or
+   * re-aimed since the last save. The panel marks them, since the canvas
+   * draws a stored stop and a staged one alike.
+   */
+  const pendingVertexIds = React.useMemo(() => {
+    if (verticesLocked) return new Set<string>();
+    const plan = planVertexSave(savedVertices, vertexList);
+    return new Set([
+      ...plan.creates.map(({ localId }) => localId),
+      ...plan.updates.map(({ id }) => id),
+    ]);
+  }, [savedVertices, vertexList, verticesLocked]);
 
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
   const selected = vertexList.find((vertex) => vertex.id === selectedId) ?? null;
@@ -644,9 +672,8 @@ function EditorSurface({
     (id: string | null) => {
       clearVertexEdit();
       setSelectedIds(id ? [id] : []);
-      clearVertexError();
     },
-    [clearVertexEdit, clearVertexError],
+    [clearVertexEdit],
   );
 
   /**
@@ -661,14 +688,13 @@ function EditorSurface({
     (id: string) => {
       setDraft(null);
       setStagedPose(null);
-      clearVertexError();
       setSelectedIds((current) =>
         current.includes(id)
           ? current.filter((other) => other !== id)
           : [...current, id],
       );
     },
-    [clearVertexError],
+    [],
   );
 
   /** A finished band. `additive` is Shift: union rather than replace. */
@@ -676,14 +702,13 @@ function EditorSurface({
     (ids: string[], additive: boolean) => {
       setDraft(null);
       setStagedPose(null);
-      clearVertexError();
       setSelectedIds((current) =>
         additive
           ? [...current, ...ids.filter((id) => !current.includes(id))]
           : ids,
       );
     },
-    [clearVertexError],
+    [],
   );
 
   const handleVertexGesture = React.useCallback(
@@ -724,51 +749,57 @@ function EditorSurface({
     setFocus({ x: robotPose.x, y: robotPose.y });
   }, [robotPose]);
 
+  /**
+   * Stage the draft as a waypoint. Nothing is sent: Save writes it, with the
+   * rest of the edits. A held map (a job driving on it) stages all the same,
+   * for the reason given at `runLock` — only Save waits.
+   */
   const createFromDraft = React.useCallback(
-    async (name: string, type: VertexType) => {
-      if (!draft || writeLocked) return;
-      const created = await createVertex({ name, type, ...draft });
+    (name: string, type: VertexType) => {
+      if (!draft || verticesLocked) return;
+      localSerialRef.current += 1;
+      const staged: MapVertex = {
+        id: localVertexId(localSerialRef.current),
+        map_name: session.name,
+        name,
+        type,
+        x: draft.x,
+        y: draft.y,
+        theta: draft.theta,
+      };
+      setVertexList((current) => [...current, staged]);
       // Cleared rather than selected: placing a run of stops is the common case,
       // and the list view is where the next one starts.
-      if (created) setDraft(null);
+      setDraft(null);
     },
-    [createVertex, draft, writeLocked],
+    [draft, verticesLocked, session.name],
   );
 
-  const saveSelected = React.useCallback(
-    async (changes: VertexChanges) => {
-      if (!selectedId || writeLocked) return;
-      if (await updateVertex(selectedId, changes)) setStagedPose(null);
+  const applySelected = React.useCallback(
+    (changes: VertexChanges) => {
+      if (!selectedId || verticesLocked) return;
+      setVertexList((current) =>
+        current.map((vertex) => (vertex.id === selectedId ? { ...vertex, ...changes } : vertex)),
+      );
+      setStagedPose(null);
     },
-    [selectedId, updateVertex, writeLocked],
+    [selectedId, verticesLocked],
   );
 
   /**
-   * Delete everything selected — one vertex from the form, or a whole band.
-   *
-   * One request per id, run in series. Not caution about the LAN: useMapVertices
-   * has a single `busy` flag and a single `error` slot for the whole hook, so
-   * concurrent writes would race the flag and leave the panel showing whichever
-   * failure happened to land last. In series, the first failure stops the run
-   * with the rest still selected, which is both an honest report and the state a
-   * retry wants. There is no batch endpoint to use instead — only create takes a
-   * list; PUT and DELETE are per id (see lib/api/vertex.ts).
+   * Take everything selected off the screen — one waypoint from the form, or
+   * a whole band. A stored one is deleted on Save; one placed since the last
+   * save simply never gets sent.
    */
-  const deleteSelected = React.useCallback(async () => {
-    if (writeLocked) return;
-    for (let index = 0; index < selectedIds.length; index += 1) {
-      if (!(await removeVertex(selectedIds[index]))) {
-        // The failed one stays selected with everything after it, so the count in
-        // the panel is what is left to do rather than what was asked for.
-        setSelectedIds(selectedIds.slice(index));
-        return;
-      }
-    }
+  const deleteSelected = React.useCallback(() => {
+    if (verticesLocked) return;
+    const gone = new Set(selectedIds);
+    setVertexList((current) => current.filter((vertex) => !gone.has(vertex.id)));
     clearVertexEdit();
-  }, [selectedIds, removeVertex, clearVertexEdit, writeLocked]);
+  }, [selectedIds, clearVertexEdit, verticesLocked]);
 
-  /** Anything Save would write: cells, zones, or both. */
-  const anyDirty = dirty || zonesDirty;
+  /** Anything Save would write: cells, zones, waypoints, or any mix. */
+  const anyDirty = dirty || zonesDirty || verticesDirty;
 
   React.useEffect(() => {
     onDirtyChange?.(anyDirty);
@@ -818,12 +849,12 @@ function EditorSurface({
   const { mutate: saveGrid } = useSaveMapGrid();
 
   /**
-   * Write back whatever changed — the buffer, the zones, or both — and report
-   * what the running stack made of each.
+   * Write back whatever changed — the buffer, the zones, the waypoints — and
+   * report what the running stack made of each.
    *
-   * Two requests, sent side by side rather than one after the other: they
-   * write different files and reload different things on the robot, so
-   * neither's outcome says anything about the other's, and each has a note.
+   * Three writes, sent side by side rather than one after the other: they
+   * change different things on the robot, so no one's outcome says anything
+   * about another's, and each has a note.
    *
    * The grid is not refetched afterwards, deliberately (useSaveMapGrid says
    * why): the local buffer *is* what was written, byte for byte. The outcome
@@ -857,6 +888,25 @@ function EditorSurface({
         },
       );
     }
+    if (verticesDirty && !vertexWriting) {
+      // The plan as of the press. What lands is folded into each list on its
+      // own terms (rebaseVertices), so a stop edited while this is in flight
+      // stays unsaved afterwards, as a dragged zone corner does.
+      setVertexSave({ kind: "saving" });
+      void saveVertices(planVertexSave(savedVertices, vertexList)).then(({ landed, failure }) => {
+        const { ids } = rebaseVertices([], [], landed);
+        setSavedVertices((current) => rebaseVertices(current, [], landed).saved);
+        setVertexList((current) => rebaseVertices([], current, landed).working);
+        setSelectedIds((current) => current.map((id) => ids.get(id) ?? id));
+        setVertexSave(
+          failure
+            ? { kind: "failed", message: vertexSaveFailure(landed, failure) }
+            : // A waypoint reloads nothing on the robot, so there is no
+              // "in force now" to report — the note is the plain one.
+              { kind: "saved", active: false, reloaded: false, message: vertexSaveSummary(landed) },
+        );
+      });
+    }
     if (!dirty) return;
 
     const sent = revisionRef.current;
@@ -882,7 +932,20 @@ function EditorSurface({
         },
       },
     );
-  }, [dirty, saveGrid, saveZones, session, zones, zonesDirty, writeLocked]);
+  }, [
+    dirty,
+    saveGrid,
+    saveZones,
+    session,
+    zones,
+    zonesDirty,
+    writeLocked,
+    verticesDirty,
+    vertexWriting,
+    saveVertices,
+    savedVertices,
+    vertexList,
+  ]);
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1013,10 +1076,15 @@ function EditorSurface({
 
   const vertexPanelProps = {
     vertices: vertexList,
-    status: vertexStatus,
-    error: vertexError,
-    busy: vertexBusy,
-    locked: writeLocked,
+    status: verticesLocked ? ("error" as const) : ("ok" as const),
+    error: verticesLocked
+      ? `Waypoints could not be loaded, so they cannot be edited here.${verticesError ? ` ${verticesError}` : ""}`
+      : null,
+    // Held only while a save is out: an edit made then is still staged
+    // correctly, but a Create beside a spinner reads as if it were sending.
+    busy: vertexWriting,
+    locked: verticesLocked,
+    pendingIds: pendingVertexIds,
     type: vertexType,
     onTypeChange: setVertexType,
     draft,
@@ -1033,7 +1101,7 @@ function EditorSurface({
     onCancelDraft: clearVertexEdit,
     onClearSelection: clearVertexEdit,
     onCreate: createFromDraft,
-    onSave: saveSelected,
+    onApply: applySelected,
     onDelete: deleteSelected,
   };
 
@@ -1112,7 +1180,7 @@ function EditorSurface({
             onUndo={undo}
             onRedo={redo}
             dirty={anyDirty}
-            saving={save.kind === "saving" || zoneWriting}
+            saving={save.kind === "saving" || zoneWriting || vertexWriting}
             writeLock={runLock.reason}
             onSave={onSave}
             drawKind={drawKind}
@@ -1185,6 +1253,15 @@ function EditorSurface({
               <SaveNote
                 save={zoneSave}
                 subject={zoneAction === "remove" ? "zonesRemoved" : "zones"}
+                className="pointer-events-auto max-w-72"
+              />
+            )}
+            {/* The same rule as the zones' note: only while still true of
+              * the waypoints on screen, and a failure until the next try. */}
+            {(vertexSave.kind === "failed" || !verticesDirty) && (
+              <SaveNote
+                save={vertexSave}
+                subject="waypoints"
                 className="pointer-events-auto max-w-72"
               />
             )}

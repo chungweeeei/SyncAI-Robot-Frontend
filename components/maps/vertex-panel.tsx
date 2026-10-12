@@ -27,9 +27,10 @@ import type { PlanarPose } from "@/lib/types/robot";
  * the screen. Top right, because the toolbar owns top left and GridStatus owns
  * bottom left.
  *
- * Presentation only. Every write is the shell's, and every write goes straight
- * to the backend — there is no Save-all here and no dirty chip, unlike the grid
- * this panel sits beside. See hooks/use-map-vertices.ts for why.
+ * Presentation only. Create, Apply and Delete change the shell's staged list;
+ * nothing here reaches the robot until the toolbar's Save, which writes the
+ * waypoints beside the cells and the zones. See hooks/use-map-vertices.ts for
+ * why, and `pendingIds` for how the panel says which rows are still unsaved.
  */
 
 const TYPE_OPTIONS = VERTEX_TYPES.map(({ value, label }) => ({ value, label }));
@@ -37,14 +38,18 @@ const TYPE_OPTIONS = VERTEX_TYPES.map(({ value, label }) => ({ value, label }));
 export interface VertexPanelProps {
   vertices: MapVertex[];
   status: "loading" | "ok" | "error";
-  /** Load or last-write failure. Rendered verbatim — the backend writes prose. */
+  /** Why the list cannot be edited. Rendered verbatim. */
   error: string | null;
+  /** A save is in flight; holds the staging controls until it answers. */
   busy: boolean;
   /**
-   * The map is read-only while a job drives on it. Holds every write — Create,
-   * Save, Delete — but not the form: what was typed stays for when it ends.
+   * The list could not be loaded, so nothing may be staged against it. Holds
+   * Create, Apply and Delete. A job driving on the map does *not* set this:
+   * that holds the toolbar's Save, and staging goes on.
    */
   locked?: boolean;
+  /** Rows Save would write — placed or changed since the last save. */
+  pendingIds: ReadonlySet<string>;
 
   /** The type the next placed vertex gets. */
   type: VertexType;
@@ -82,7 +87,8 @@ export interface VertexPanelProps {
   /** Drop the band selection without touching anything on the map. */
   onClearSelection: () => void;
   onCreate: (name: string, type: VertexType) => void;
-  onSave: (changes: VertexChanges) => void;
+  /** Stage the form's changes on the selected row. */
+  onApply: (changes: VertexChanges) => void;
   /** Deletes everything in `selectedIds` — one vertex from the form, or a band. */
   onDelete: () => void;
   className?: string;
@@ -165,6 +171,7 @@ export function VertexPanel(props: VertexPanelProps) {
         <BandBlock
           vertices={vertices}
           selectedIds={selectedIds}
+          pendingIds={props.pendingIds}
           busy={props.busy}
           locked={props.locked}
           onSelect={props.onSelect}
@@ -191,7 +198,7 @@ export function VertexPanel(props: VertexPanelProps) {
               changes.y = props.stagedPose.y;
               changes.theta = props.stagedPose.theta;
             }
-            props.onSave(changes);
+            props.onApply(changes);
           }}
           onCancel={() => props.onSelect(null)}
           onDelete={props.onDelete}
@@ -272,6 +279,7 @@ export function VertexPanel(props: VertexPanelProps) {
                 <VertexList
                   vertices={vertices}
                   selectedIds={selectedIds}
+                  pendingIds={props.pendingIds}
                   onSelect={props.onSelect}
                   empty={null}
                 />
@@ -294,13 +302,14 @@ export function VertexPanel(props: VertexPanelProps) {
  * Deliberately not a cut-down copy of VertexForm. A name, a type and a heading
  * are each one value, and offering them over a set would mean either a "mixed"
  * state for every field or silently flattening five vertices onto one operator's
- * last keystroke — and the vertex layer writes through with no undo (see
- * hooks/use-map-vertices.ts), so flattening would be permanent. Narrowing to one
- * vertex is a click on any row, and that is where editing lives.
+ * last keystroke — and the vertex layer has no undo, so flattening would stick
+ * unless every stop were put back by hand. Narrowing to one vertex is a click
+ * on any row, and that is where editing lives.
  */
 function BandBlock({
   vertices,
   selectedIds,
+  pendingIds,
   busy,
   locked = false,
   onSelect,
@@ -309,6 +318,7 @@ function BandBlock({
 }: {
   vertices: MapVertex[];
   selectedIds: readonly string[];
+  pendingIds: ReadonlySet<string>;
   busy: boolean;
   locked?: boolean;
   onSelect: (id: string) => void;
@@ -340,6 +350,7 @@ function BandBlock({
       <VertexList
         vertices={vertices}
         selectedIds={selectedIds}
+        pendingIds={pendingIds}
         onSelect={onSelect}
         empty={null}
       />
@@ -352,7 +363,7 @@ function BandBlock({
           // take: a count alone is not enough to check a band against, since the
           // band was drawn on the map and the map is behind this panel.
           const listed = names.length > 6 ? `${names.slice(0, 6).join(", ")}, …` : names.join(", ");
-          if (window.confirm(`Delete ${count} waypoints (${listed})? This cannot be undone.`)) {
+          if (window.confirm(`Delete ${count} waypoints (${listed})? They are removed from the robot when you save.`)) {
             onDelete();
           }
         }}
@@ -368,12 +379,15 @@ function BandBlock({
 function VertexList({
   vertices,
   selectedIds,
+  pendingIds,
   onSelect,
   empty,
 }: {
   vertices: MapVertex[];
   /** Every highlighted row, so a band lights all of its members here too. */
   selectedIds: readonly string[];
+  /** Rows Save would write, marked with the toolbar Save's caution dot. */
+  pendingIds: ReadonlySet<string>;
   /** Picking a row always narrows to that one vertex, band or not. */
   onSelect: (id: string) => void;
   empty: string | null;
@@ -436,6 +450,14 @@ function VertexList({
                 <span className="readout min-w-0 flex-1 truncate text-[12px]">
                   {vertex.name}
                 </span>
+                {pendingIds.has(vertex.id) && (
+                  // The same dot the toolbar's Save carries, so the eye links
+                  // the two; the words are for a screen reader.
+                  <span className="flex shrink-0 items-center" title="Unsaved">
+                    <span aria-hidden className="size-1.5 rounded-full bg-signal-caution" />
+                    <span className="sr-only">(unsaved)</span>
+                  </span>
+                )}
                 <span className="readout shrink-0 text-[11px] text-muted-foreground">
                   {vertex.x.toFixed(1)}, {vertex.y.toFixed(1)}
                 </span>
@@ -559,7 +581,9 @@ function VertexForm({
           disabled={!submittable || !dirty}
           className="instrument-label h-7 flex-1 rounded-sm bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          {kind === "create" ? "Create" : "Save"}
+          {/* Apply, not Save: this stages the change, and Save is the
+            * toolbar's button that sends it. */}
+          {kind === "create" ? "Create" : "Apply"}
         </button>
         <button
           type="button"
@@ -576,10 +600,10 @@ function VertexForm({
             aria-label="Delete waypoint"
             title="Delete waypoint"
             onClick={() => {
-              // A confirm rather than an undo: this panel writes through, so
-              // there is no local history to step back over, and the page's back
-              // button already asks the same way.
-              if (window.confirm(`Delete "${initialName}"? This cannot be undone.`)) {
+              // A confirm rather than an undo: the waypoint layer keeps no
+              // history to step back over, and the page's back button already
+              // asks the same way.
+              if (window.confirm(`Delete "${initialName}"? It is removed from the robot when you save.`)) {
                 onDelete?.();
               }
             }}

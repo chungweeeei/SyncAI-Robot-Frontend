@@ -2923,12 +2923,140 @@ test.describe("the floor plan editor", () => {
 
     await page.getByRole("textbox", { name: "Name" }).fill("north-door");
     await page.getByRole("button", { name: "Create" }).click();
+    // Staged, not sent: the toolbar's Save is what writes it.
+    expect(created).toEqual([]);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
 
     await expect.poll(() => created).toHaveLength(1);
     const sent = created[0] as { name: string; theta: number };
     expect(sent.name).toBe("north-door");
     expect(sent.theta).toBeCloseTo(90, 5);
     expect(errors, "the page logged errors").toEqual([]);
+  });
+});
+
+test.describe("the floor plan editor's staged waypoints", () => {
+  const verticesPath = `/api/v1/maps/${MAP_NAME}/vertices`;
+  const save = (page: Page) => page.getByRole("button", { name: "Save", exact: true });
+
+  /** Place a waypoint at an offset from the canvas centre and name it. */
+  const place = async (page: Page, name: string, dx: number) => {
+    const box = (await page.locator("canvas").boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2 + dx, box.y + box.height / 2);
+    await page.getByRole("textbox", { name: "Name" }).fill(name);
+    await page.getByRole("button", { name: "Create" }).click();
+  };
+
+  /** Open the list and make `name` the form's subject. */
+  const open = async (page: Page, name: string) => {
+    // Apply keeps the form on its stop, as Save used to; Close is the way
+    // back to the list.
+    const close = page.getByRole("button", { name: "Close", exact: true });
+    if (await close.isVisible()) await close.click();
+    const toggle = page.getByRole("button", { name: /^Waypoints/ });
+    if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
+    await page.getByRole("button", { name: new RegExp(name) }).click();
+  };
+
+  test("sends every waypoint placed in one request, only on Save", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+    await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
+    await expect(save(page)).toBeDisabled();
+
+    await page.getByRole("button", { name: "Place" }).click();
+    await place(page, "shelf-a", -40);
+    await place(page, "shelf-b", 40);
+
+    // Both on screen and lit as unsaved; nothing has reached the robot.
+    await expect(page.getByRole("button", { name: /^Waypoints/ })).toContainText("3");
+    await expect(save(page)).toBeEnabled();
+    expect(writes.filter((w) => w.path.startsWith(verticesPath))).toEqual([]);
+
+    await save(page).click();
+    await expect(page.getByText("Waypoints saved")).toBeVisible();
+    await expect(page.getByText("2 added")).toBeVisible();
+    const posts = writes.filter((w) => w.path === verticesPath);
+    expect(posts).toHaveLength(1);
+    expect(posts[0].method).toBe("POST");
+    expect((posts[0].body as { name: string }[]).map((d) => d.name)).toEqual([
+      "shelf-a",
+      "shelf-b",
+    ]);
+    await expect(save(page)).toBeDisabled();
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("holds a rename and a delete until Save, and deletes first", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const bay = vertex({ id: "22222222-2222-2222-2222-222222222222", name: "bay" });
+    const writes = await mockBackend(page, { vertices: [vertex(), bay] });
+    page.on("dialog", (dialog) => void dialog.accept());
+    await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
+
+    await open(page, "dock");
+    await page.getByRole("textbox", { name: "Name" }).fill("dock-a");
+    await page.getByRole("button", { name: "Apply" }).click();
+    await open(page, "bay");
+    await page.getByRole("button", { name: "Delete waypoint" }).click();
+
+    expect(writes.filter((w) => w.path.startsWith(verticesPath))).toEqual([]);
+    await save(page).click();
+    await expect(page.getByText("1 changed · 1 deleted")).toBeVisible();
+
+    const sent = writes.filter((w) => w.path.startsWith(verticesPath));
+    expect(sent.map((w) => `${w.method} ${w.path}`)).toEqual([
+      `DELETE ${verticesPath}/${bay.id}`,
+      `PUT ${verticesPath}/${vertex().id}`,
+    ]);
+    expect(sent[1].body).toEqual({ name: "dock-a" });
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("keeps what was refused unsaved, and does not resend what landed", async ({ page }) => {
+    const bay = vertex({ id: "22222222-2222-2222-2222-222222222222", name: "bay" });
+    const writes = await mockBackend(page, { vertices: [vertex(), bay] });
+    let refuse = true;
+    await page.route(/\/api\/v1\/maps\/[^/]+\/vertices\/[^/]+$/, (route) => {
+      if (route.request().method() !== "PUT" || !refuse) return route.fallback();
+      return route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "A waypoint named dock-a already exists." }),
+      });
+    });
+    page.on("dialog", (dialog) => void dialog.accept());
+    await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
+
+    await open(page, "dock");
+    await page.getByRole("textbox", { name: "Name" }).fill("dock-a");
+    await page.getByRole("button", { name: "Apply" }).click();
+    await open(page, "bay");
+    await page.getByRole("button", { name: "Delete waypoint" }).click();
+    await save(page).click();
+
+    // The backend's sentence verbatim, after what did land.
+    await expect(page.getByText("Waypoints not saved")).toBeVisible();
+    await expect(
+      page.getByText(
+        "Saved first: 1 deleted. The rest are still unsaved. A waypoint named dock-a already exists.",
+      ),
+    ).toBeVisible();
+    await expect(save(page)).toBeEnabled();
+
+    refuse = false;
+    const before = writes.length;
+    await save(page).click();
+    await expect(page.getByText("1 changed")).toBeVisible();
+    // The retry is the rename alone: the delete already landed.
+    expect(
+      writes
+        .slice(before)
+        .filter((w) => w.path.startsWith(verticesPath))
+        .map((w) => w.method),
+    ).toEqual(["PUT"]);
   });
 });
 
