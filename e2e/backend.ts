@@ -546,6 +546,25 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       vertices.push(...stored);
       return json(route, stored);
     }
+    const vertexMatch = /^\/api\/v1\/maps\/([^/]+)\/vertices\/([^/]+)$/.exec(path);
+    if (vertexMatch && method === "PUT") {
+      // The stored row with the changes merged, which is what the editor's
+      // save splices into the shared list.
+      const id = decodeURIComponent(vertexMatch[2]);
+      const index = vertices.findIndex((entry) => entry.id === id);
+      if (index < 0) return json(route, { detail: "Waypoint not found." }, 404);
+      vertices[index] = {
+        ...vertices[index],
+        ...(parseBody(request.postData()) as Record<string, unknown>),
+      };
+      return json(route, vertices[index]);
+    }
+    if (vertexMatch && method === "DELETE") {
+      const id = decodeURIComponent(vertexMatch[2]);
+      const index = vertices.findIndex((entry) => entry.id === id);
+      if (index >= 0) vertices.splice(index, 1);
+      return json(route, { message: "Deleted." });
+    }
     if (keepoutMatch && method === "PUT") {
       // The whole list replaces the old one, and the running planner reloads
       // it only when this is the map it is on — the two answers the save

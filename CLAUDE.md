@@ -194,7 +194,9 @@ lib/
   map/          gridmap maths: view transforms, patches, session, vertex helpers,
                 name rule, the 2D drawing (draw.ts), the editor's vocabulary,
                 the forbidden zone rules (zone.ts: corner count, close-on-first,
-                point-in-polygon pick) and
+                point-in-polygon pick), the editor's staged waypoints
+                (vertex-stage.ts: local ids, the save plan, the rebase after
+                a partial save) and
                 the task editor's floor plan preview (preview.ts: fit, markers,
                 hit test), the gesture rules both map surfaces share
                 (gesture.ts: press intent, drag deadzone, heading, band), the
@@ -320,9 +322,13 @@ touch one, prefer moving it toward the rule.
   `mutate(vars, { onSuccess })`, which only fires while the caller is mounted.
   Components read `isPending` / `error?.message` / `data` off the mutation and
   call `reset()` where they used to clear a local error. The list hooks
-  (`use-map-vertices`, `use-task-templates`, `use-schedules`) keep their
+  (`use-task-templates`, `use-schedules`) keep their
   `busy` / `error` / `create` / `remove` surface, folded from their mutations
-  by `lib/api/mutation-state.ts`.
+  by `lib/api/mutation-state.ts`. `use-map-vertices` is the exception: the
+  floor plan editor stages waypoints beside its cells and zones, so the hook
+  is one `save(plan)` mutation that sends deletes, updates and one batch
+  create in series and resolves with what landed rather than rejecting. The
+  diff and the rebase after a partial save are `lib/map/vertex-stage.ts`.
 - **Command hooks are mutations too**, but they answer to the robot rather
   than to the cache: `use-goal-task`, `use-posture`, `use-task-dispatch`,
   `use-initial-pose`, `use-locomotion`, `use-mode-switch`, `use-wifi-connect`,
