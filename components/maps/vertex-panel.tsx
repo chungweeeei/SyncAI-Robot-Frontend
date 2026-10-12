@@ -27,9 +27,10 @@ import type { PlanarPose } from "@/lib/types/robot";
  * the screen. Top right, because the toolbar owns top left and GridStatus owns
  * bottom left.
  *
- * Presentation only. Create, Apply and Delete change the shell's staged list;
- * nothing here reaches the robot until the toolbar's Save, which writes the
- * waypoints beside the cells and the zones. See hooks/use-map-vertices.ts for
+ * Presentation only. Create, Apply and Delete change the shell's staged list,
+ * each one a step the toolbar's Undo can take back; nothing here reaches the
+ * robot until the toolbar's Save, which writes the waypoints beside the cells
+ * and the zones. See hooks/use-map-vertices.ts for
  * why, and `pendingIds` for how the panel says which rows are still unsaved.
  */
 
@@ -302,9 +303,8 @@ export function VertexPanel(props: VertexPanelProps) {
  * Deliberately not a cut-down copy of VertexForm. A name, a type and a heading
  * are each one value, and offering them over a set would mean either a "mixed"
  * state for every field or silently flattening five vertices onto one operator's
- * last keystroke — and the vertex layer has no undo, so flattening would stick
- * unless every stop were put back by hand. Narrowing to one vertex is a click
- * on any row, and that is where editing lives.
+ * last keystroke. Narrowing to one vertex is a click on any row, and that is
+ * where editing lives.
  */
 function BandBlock({
   vertices,
@@ -326,12 +326,6 @@ function BandBlock({
   onDelete: () => void;
 }) {
   const count = selectedIds.length;
-  // The band holds ids; the names are what the confirm has to show, and a
-  // selection can outlive a row another screen deleted (the list is shared with
-  // the dashboard — see lib/api/query-keys.ts), so it is resolved, not assumed.
-  const names = vertices
-    .filter((vertex) => selectedIds.includes(vertex.id))
-    .map((vertex) => vertex.name);
 
   return (
     <div className="flex flex-col gap-2">
@@ -358,15 +352,9 @@ function BandBlock({
       <button
         type="button"
         disabled={busy || locked || count === 0}
-        onClick={() => {
-          // The same confirm the single delete uses, listing what it is about to
-          // take: a count alone is not enough to check a band against, since the
-          // band was drawn on the map and the map is behind this panel.
-          const listed = names.length > 6 ? `${names.slice(0, 6).join(", ")}, …` : names.join(", ");
-          if (window.confirm(`Delete ${count} waypoints (${listed})? They are removed from the robot when you save.`)) {
-            onDelete();
-          }
-        }}
+        // No confirm, as for the single delete: it is staged, Undo brings
+        // the whole band back, and nothing reaches the robot before Save.
+        onClick={onDelete}
         className="instrument-label flex h-7 items-center justify-center gap-1.5 rounded-sm border border-signal-warn/50 text-signal-warn transition-colors hover:bg-signal-warn/12 disabled:opacity-50"
       >
         <Trash2Icon className="size-3.5" aria-hidden />
@@ -599,14 +587,9 @@ function VertexForm({
             disabled={busy || locked}
             aria-label="Delete waypoint"
             title="Delete waypoint"
-            onClick={() => {
-              // A confirm rather than an undo: the waypoint layer keeps no
-              // history to step back over, and the page's back button already
-              // asks the same way.
-              if (window.confirm(`Delete "${initialName}"? It is removed from the robot when you save.`)) {
-                onDelete?.();
-              }
-            }}
+            // No confirm: the delete is staged like every other edit here, so
+            // Undo is the way back and Save is the step that commits it.
+            onClick={onDelete}
             className="instrument-label flex h-7 items-center rounded-sm border border-signal-warn/50 px-2 text-signal-warn transition-colors hover:bg-signal-warn/12 disabled:opacity-50"
           >
             <Trash2Icon className="size-3.5" aria-hidden />

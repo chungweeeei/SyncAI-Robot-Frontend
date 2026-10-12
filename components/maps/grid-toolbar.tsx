@@ -361,7 +361,7 @@ export function EditorToolBar({
       <ToolDivider />
 
       <ToolGroup label="History">
-        <ToolButton label="Undo" hint="take back the last stroke" icon={Undo2Icon} disabled={!canUndo} onClick={onUndo} />
+        <ToolButton label="Undo" hint="take back the last edit" icon={Undo2Icon} disabled={!canUndo} onClick={onUndo} />
         <ToolButton label="Redo" hint="put it back" icon={Redo2Icon} disabled={!canRedo} onClick={onRedo} />
       </ToolGroup>
 

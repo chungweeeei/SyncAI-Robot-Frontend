@@ -43,6 +43,7 @@ import {
   pushPatch,
   type GridPatch,
 } from "@/lib/map/patch";
+import { editBytes, remapWaypointIds, type EditorEdit } from "@/lib/map/history";
 import type { GridSession } from "@/lib/map/session";
 import { DEFAULT_VERTEX_TYPE } from "@/lib/map/vertex";
 import {
@@ -98,11 +99,10 @@ const DEFAULT_TOOL: EditTool = "pan";
  * — a whole staged draft, panel and all — because vertex mode had no unarmed
  * state at all. Every press on bare map was a placement.
  *
- * The one more: unlike a stray brush stroke, a stray vertex is not undoable.
- * The vertex layer is staged until Save but has no history, so the only
- * reason the old behaviour was survivable is that a draft still needs a name
- * typed before it becomes a row. That is a confirmation step, not a safe
- * default.
+ * The one more: a press on bare map in Place stages a whole draft, panel and
+ * name field included, and Escape is then the only way out of it. A placed
+ * waypoint can be taken back with Undo, but a draft is not an edit yet, and
+ * opening on one by accident is still a step the operator did not ask for.
  *
  * Placing therefore costs one click on the Tool row, and Escape gives the map
  * back — the same trade grid mode makes for its brush.
@@ -273,7 +273,8 @@ function EditorSurface({
   const [fitNonce, setFitNonce] = React.useState(0);
   const [spacePan, setSpacePan] = React.useState(false);
 
-  const historyRef = React.useRef(createUndoStack());
+  /** Strokes and waypoint edits, in the order made; see lib/map/history.ts. */
+  const historyRef = React.useRef(createUndoStack<EditorEdit>(editBytes));
 
   /*
    * Vertex-layer state. The waypoints are staged like the zones: Create,
@@ -750,6 +751,21 @@ function EditorSurface({
   }, [robotPose]);
 
   /**
+   * Make `next` the staged list, as one step Undo can take back. Every
+   * waypoint edit goes through here; a save's rebase does not, since it
+   * changes ids rather than anything the operator did.
+   */
+  const recordWaypoints = React.useCallback(
+    (next: MapVertex[]) => {
+      pushPatch(historyRef.current, { kind: "waypoints", before: vertexList, after: next });
+      setVertexList(next);
+      setCanUndo(true);
+      setCanRedo(false);
+    },
+    [vertexList],
+  );
+
+  /**
    * Stage the draft as a waypoint. Nothing is sent: Save writes it, with the
    * rest of the edits. A held map (a job driving on it) stages all the same,
    * for the reason given at `runLock` — only Save waits.
@@ -767,36 +783,36 @@ function EditorSurface({
         y: draft.y,
         theta: draft.theta,
       };
-      setVertexList((current) => [...current, staged]);
+      recordWaypoints([...vertexList, staged]);
       // Cleared rather than selected: placing a run of stops is the common case,
       // and the list view is where the next one starts.
       setDraft(null);
     },
-    [draft, verticesLocked, session.name],
+    [draft, verticesLocked, session.name, vertexList, recordWaypoints],
   );
 
   const applySelected = React.useCallback(
     (changes: VertexChanges) => {
       if (!selectedId || verticesLocked) return;
-      setVertexList((current) =>
-        current.map((vertex) => (vertex.id === selectedId ? { ...vertex, ...changes } : vertex)),
+      recordWaypoints(
+        vertexList.map((vertex) => (vertex.id === selectedId ? { ...vertex, ...changes } : vertex)),
       );
       setStagedPose(null);
     },
-    [selectedId, verticesLocked],
+    [selectedId, verticesLocked, vertexList, recordWaypoints],
   );
 
   /**
    * Take everything selected off the screen — one waypoint from the form, or
    * a whole band. A stored one is deleted on Save; one placed since the last
-   * save simply never gets sent.
+   * save simply never gets sent. Undo brings either back.
    */
   const deleteSelected = React.useCallback(() => {
     if (verticesLocked) return;
     const gone = new Set(selectedIds);
-    setVertexList((current) => current.filter((vertex) => !gone.has(vertex.id)));
+    recordWaypoints(vertexList.filter((vertex) => !gone.has(vertex.id)));
     clearVertexEdit();
-  }, [selectedIds, clearVertexEdit, verticesLocked]);
+  }, [selectedIds, clearVertexEdit, verticesLocked, vertexList, recordWaypoints]);
 
   /** Anything Save would write: cells, zones, waypoints, or any mix. */
   const anyDirty = dirty || zonesDirty || verticesDirty;
@@ -806,7 +822,7 @@ function EditorSurface({
   }, [anyDirty, onDirtyChange]);
 
   const commitPatch = React.useCallback((patch: GridPatch) => {
-    pushPatch(historyRef.current, patch);
+    pushPatch(historyRef.current, { kind: "grid", patch });
     setCanUndo(true);
     setCanRedo(false);
     setDirty(true);
@@ -820,21 +836,31 @@ function EditorSurface({
   const step = React.useCallback(
     (direction: "undo" | "redo") => {
       const stack = historyRef.current;
-      const patch = direction === "undo" ? popUndo(stack) : popRedo(stack);
-      if (!patch) return;
-
-      const side = direction === "undo" ? "before" : "after";
-      applyPatch(session.grid, patch, side);
-      session.repaint?.(patch.bounds);
+      const edit = direction === "undo" ? popUndo(stack) : popRedo(stack);
+      if (!edit) return;
       setCanUndo(stack.undo.length > 0);
       setCanRedo(stack.redo.length > 0);
+
+      const side = direction === "undo" ? "before" : "after";
+      if (edit.kind === "waypoints") {
+        // The list either side of the edit, as it was then. Whatever is open
+        // in the panel is dropped: the stop it was about may be the one that
+        // just went, and a form over a row that changed under it would
+        // write its old values back on Apply. Whether Save has anything to
+        // do is the diff's to say (`verticesDirty`), not this.
+        setVertexList([...edit[side]]);
+        clearVertexEdit();
+        return;
+      }
+      applyPatch(session.grid, edit.patch, side);
+      session.repaint?.(edit.patch.bounds);
       // Still dirty after undoing to the start: the stack is byte-capped, so an
       // empty undo stack does not prove the buffer matches what was loaded.
       setDirty(true);
       revisionRef.current += 1;
       setSaveState({ kind: "idle" });
     },
-    [session],
+    [session, clearVertexEdit],
   );
 
   const undo = React.useCallback(() => step("undo"), [step]);
@@ -898,6 +924,7 @@ function EditorSurface({
         setSavedVertices((current) => rebaseVertices(current, [], landed).saved);
         setVertexList((current) => rebaseVertices([], current, landed).working);
         setSelectedIds((current) => current.map((id) => ids.get(id) ?? id));
+        remapWaypointIds(historyRef.current, ids);
         setVertexSave(
           failure
             ? { kind: "failed", message: vertexSaveFailure(landed, failure) }

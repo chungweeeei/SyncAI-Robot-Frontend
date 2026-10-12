@@ -196,7 +196,8 @@ lib/
                 the forbidden zone rules (zone.ts: corner count, close-on-first,
                 point-in-polygon pick), the editor's staged waypoints
                 (vertex-stage.ts: local ids, the save plan, the rebase after
-                a partial save) and
+                a partial save), the editor's one undo history over strokes
+                and waypoint edits (history.ts, on patch.ts's stack) and
                 the task editor's floor plan preview (preview.ts: fit, markers,
                 hit test), the gesture rules both map surfaces share
                 (gesture.ts: press intent, drag deadzone, heading, band), the

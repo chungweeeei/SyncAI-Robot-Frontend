@@ -2993,7 +2993,6 @@ test.describe("the floor plan editor's staged waypoints", () => {
     failOnConsoleErrors(page, errors);
     const bay = vertex({ id: "22222222-2222-2222-2222-222222222222", name: "bay" });
     const writes = await mockBackend(page, { vertices: [vertex(), bay] });
-    page.on("dialog", (dialog) => void dialog.accept());
     await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
 
     await open(page, "dock");
@@ -3015,6 +3014,53 @@ test.describe("the floor plan editor's staged waypoints", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
+  test("takes a delete and a placement back with Undo, and Save sends what is left", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const bay = vertex({ id: "22222222-2222-2222-2222-222222222222", name: "bay" });
+    const writes = await mockBackend(page, {
+      gridImage: floorPlanPng(400, 300, 254),
+      vertices: [vertex(), bay],
+    });
+    await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
+    const count = page.getByRole("button", { name: /^Waypoints/ });
+    const undo = page.getByRole("button", { name: "Undo", exact: true });
+    const redo = page.getByRole("button", { name: "Redo", exact: true });
+    await expect(undo).toBeDisabled();
+
+    // A delete, with no confirm in the way: it is staged, and Undo is the
+    // way back.
+    await open(page, "bay");
+    await page.getByRole("button", { name: "Delete waypoint" }).click();
+    await expect(count).toContainText("1");
+    await expect(save(page)).toBeEnabled();
+
+    await undo.click();
+    await expect(count).toContainText("2");
+    // Back to what the robot holds, so there is nothing to save.
+    await expect(save(page)).toBeDisabled();
+    await redo.click();
+    await expect(count).toContainText("1");
+
+    // A placement after it, then Undo takes back only the placement.
+    await page.getByRole("button", { name: "Place" }).click();
+    await place(page, "shelf-a", 0);
+    await expect(count).toContainText("2");
+    await page.keyboard.press("Control+z");
+    await expect(count).toContainText("1");
+
+    await save(page).click();
+    await expect(page.getByText("1 deleted")).toBeVisible();
+    expect(
+      writes
+        .filter((w) => w.path.startsWith(verticesPath))
+        .map((w) => `${w.method} ${w.path}`),
+    ).toEqual([`DELETE ${verticesPath}/${bay.id}`]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
   test("keeps what was refused unsaved, and does not resend what landed", async ({ page }) => {
     const bay = vertex({ id: "22222222-2222-2222-2222-222222222222", name: "bay" });
     const writes = await mockBackend(page, { vertices: [vertex(), bay] });
@@ -3027,7 +3073,6 @@ test.describe("the floor plan editor's staged waypoints", () => {
         body: JSON.stringify({ detail: "A waypoint named dock-a already exists." }),
       });
     });
-    page.on("dialog", (dialog) => void dialog.accept());
     await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
 
     await open(page, "dock");
