@@ -308,6 +308,27 @@ export interface BackendOverrides {
    * navigating robot says; a mapping test hands in `idle` or `mapping`.
    */
   mappingStatus?: Record<string, unknown>;
+  /**
+   * GET /network/wifi/connections. By default the network the state fixture
+   * is on (`site-wifi`) and one other; a forget removes its row.
+   */
+  wifiConnections?: Record<string, unknown>[];
+  /** GET /network/wifi/scan's networks. */
+  wifiNetworks?: Record<string, unknown>[];
+}
+
+/** A saved network, as GET /network/wifi/connections lists one. */
+export function wifiConnection(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    uuid: "5f2c-site",
+    name: "site-wifi",
+    ssid: "site-wifi",
+    active: true,
+    last_used_at: "2026-09-18T09:00:00Z",
+    ...over,
+  };
 }
 
 /**
@@ -375,6 +396,23 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     key_poses: 0,
     loop_closures: 0,
   };
+  // Copied for the same reason as `keepout`: the DELETE below removes rows.
+  const wifiConnections: Record<string, unknown>[] = [
+    ...(over.wifiConnections ?? [
+      wifiConnection(),
+      wifiConnection({
+        uuid: "9a1e-lab",
+        name: "lab-5g",
+        ssid: "lab-5g",
+        active: false,
+        last_used_at: "2026-09-10T15:30:00Z",
+      }),
+    ]),
+  ];
+  const wifiNetworks = over.wifiNetworks ?? [
+    { bssid: "aa:bb:cc:dd:ee:ff", ssid: "site-wifi", rssi: -52 },
+    { bssid: "aa:bb:cc:dd:ee:01", ssid: "guest", rssi: -70 },
+  ];
   // The backend's record of the latest restart; the POST below moves it on.
   let restart: Record<string, unknown> = over.restart ?? {
     status: "idle",
@@ -414,6 +452,41 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     }
     if (path === "/api/v1/mapping" && method === "GET") {
       return json(route, mappingStatus);
+    }
+    if (path === "/api/v1/network/wifi/scan") {
+      return json(route, { networks: wifiNetworks });
+    }
+    if (path === "/api/v1/network/wifi/connect" && method === "POST") {
+      const { ssid } = parseBody(request.postData()) as { ssid: string };
+      return json(route, { message: `Successfully connected to ${ssid}` });
+    }
+    if (path === "/api/v1/network/wifi/connections" && method === "GET") {
+      return json(route, { connections: wifiConnections });
+    }
+    const savedNetwork = path.match(
+      /^\/api\/v1\/network\/wifi\/connections\/([^/]+)(\/activate)?$/,
+    );
+    if (savedNetwork) {
+      const uuid = decodeURIComponent(savedNetwork[1]);
+      const index = wifiConnections.findIndex((c) => c.uuid === uuid);
+      if (index < 0) {
+        return json(route, { detail: "That saved network no longer exists" }, 400);
+      }
+      const row = wifiConnections[index];
+      if (savedNetwork[2] && method === "POST") {
+        return json(route, { message: `Successfully connected to ${row.ssid}` });
+      }
+      if (method === "DELETE") {
+        if (row.active) {
+          return json(
+            route,
+            { detail: `Cannot forget ${row.ssid} while the robot is connected to it` },
+            400,
+          );
+        }
+        wifiConnections.splice(index, 1);
+        return route.fulfill({ status: 204, body: "" });
+      }
     }
     if (path === "/api/v1/active_tasks") {
       return json(route, { tasks: activeTasks, as_of: "2026-09-18T09:45:00Z" });
