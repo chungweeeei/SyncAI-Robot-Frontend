@@ -3,7 +3,8 @@
 // useMapVertices (the gridmap editor) and useActiveMapVertices (the dashboard
 // and task screens) deliberately read the same key, which is what makes a
 // vertex placed or moved on one screen already current on the other — with
-// neither hook knowing the other exists. Keep any new key here rather than
+// neither hook knowing the other exists. The editor stages its edits, so for
+// it "placed" means saved: its Save writes what landed here. Keep any new key here rather than
 // inline in its hook, or that property quietly stops being checkable.
 
 export const queryKeys = {

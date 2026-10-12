@@ -377,7 +377,9 @@ touch one, prefer moving it toward the rule.
 - **Query keys** all live in `lib/api/query-keys.ts`, one object, documented per
   key. Cache *sharing* is deliberate and visible there: `mapVertices(name)` is
   read by both the gridmap editor and the dashboard so a vertex moved on one is
-  current on the other. Never inline a key.
+  current on the other — at once from the dashboard, which writes through, and
+  on Save from the editor, which stages its edits and seeds itself from the
+  key once. Never inline a key.
 - **Polling policy**: poll only while the server is changing something on its
   own, and let the status that triggered the poll switch it off (`useMaps`
   while `grid_status === "converting"`, `useRecordings` while a bag is live).
