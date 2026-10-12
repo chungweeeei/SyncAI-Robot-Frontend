@@ -352,6 +352,7 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   // Typed as rows rather than left to the fixture's exact shape, because the
   // POST route below appends whatever the console sent.
   const vertices: Record<string, unknown>[] = over.vertices ?? [vertex()];
+  let createdSerial = 0;
   const recordings = over.recordings ?? [recording()];
   const activeRecording =
     over.activeRecording === undefined ? null : over.activeRecording;
@@ -537,9 +538,12 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       // and splices into the list the layer draws.
       const name = decodeURIComponent(verticesMatch[1]);
       const drafts = parseBody(request.postData()) as Record<string, unknown>[];
-      const stored = drafts.map((draft, index) => ({
+      // Numbered across the fake's whole life, not per request: the editor
+      // matches rows by id, and a second save that reissued the first one's
+      // ids would leave two stops answering to one.
+      const stored = drafts.map((draft) => ({
         ...draft,
-        id: `33333333-3333-3333-3333-${String(index).padStart(12, "0")}`,
+        id: `33333333-3333-3333-3333-${String(createdSerial++).padStart(12, "0")}`,
         map_name: name,
       }));
       // Kept, so a later GET lists it the way the robot's would.

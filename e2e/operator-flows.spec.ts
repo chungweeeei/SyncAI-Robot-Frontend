@@ -2988,6 +2988,37 @@ test.describe("the floor plan editor's staged waypoints", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
+  test("keeps the first save's waypoints apart from the next save's", async ({ page }) => {
+    // Two saves, each with a create. Every stop is matched by its id, so a
+    // second create that came back under an id already on screen would fold
+    // two stops into one and leave Save lit with nothing it could fix.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
+    await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
+    const count = page.getByRole("button", { name: /^Waypoints/ });
+
+    await page.getByRole("button", { name: "Place" }).click();
+    await place(page, "first", -40);
+    await save(page).click();
+    await expect(page.getByText("1 added")).toBeVisible();
+
+    await place(page, "second", 40);
+    await save(page).click();
+    await expect(page.getByText("1 added")).toBeVisible();
+    await expect(count).toContainText("3");
+    await expect(save(page)).toBeDisabled();
+
+    // Only the two creates went out; no update chased a stop that collided.
+    expect(
+      writes.filter((w) => w.path.startsWith(verticesPath)).map((w) => w.method),
+    ).toEqual(["POST", "POST"]);
+    await count.click();
+    await expect(page.getByRole("button", { name: /first/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /second/ })).toBeVisible();
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
   test("holds a rename and a delete until Save, and deletes first", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
