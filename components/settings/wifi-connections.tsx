@@ -30,15 +30,23 @@ import {
   useWifiConnections,
 } from "@/hooks/use-wifi-connections";
 import type { WifiConnection } from "@/lib/api/network";
-import { lastUsedLabel, orderConnections } from "@/lib/network/connections";
+import {
+  IP_BLANK,
+  MAC_BLANK,
+  RSSI_BLANK,
+  lastUsedLabel,
+  linkReadout,
+  orderConnections,
+  type LinkReadout,
+} from "@/lib/network/connections";
 import { cn } from "@/lib/utils";
 
 /** Where Add network goes; the page's header and the empty state both link it. */
 export const ADD_NETWORK_HREF = "/settings/wifi/new";
 
 /**
- * The Wi-Fi page: the network the robot is on, then every network it has
- * saved as a card that rejoins or forgets it.
+ * The Wi-Fi page: every network the robot has saved, as a card that rejoins
+ * or forgets it, the one it is on first and carrying its signal and addresses.
  *
  * Saved networks lead, and the scan sits a page further in (Add network),
  * because switching between known sites is the common case and a scan costs
@@ -60,8 +68,6 @@ export function WifiConnections() {
 
   return (
     <div className="space-y-6">
-      <CurrentNetwork wifi={wifi} />
-
       <section aria-labelledby="saved-networks" className="space-y-3">
         <h2 id="saved-networks" className="instrument-label text-muted-foreground">
           Saved networks
@@ -121,56 +127,11 @@ export function WifiConnections() {
 }
 
 /**
- * The robot's own reading of its network: what it is on, and the addresses an
- * engineer reaches it by. A readout, not a control — moving it is the cards'.
- */
-function CurrentNetwork({ wifi }: { wifi: WifiConnect }) {
-  const current = wifi.current;
-  const currentSsid = current?.ssid || null;
-
-  return (
-    <Card>
-      <CardContent className="space-y-2">
-        <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
-          <div className="min-w-0 space-y-0.5">
-            <dt className="text-muted-foreground">Connected to</dt>
-            <dd className="flex min-w-0 items-center gap-2 font-medium">
-              {currentSsid && current ? (
-                <>
-                  <SignalBars bars={rssiToBars(current.rssi)} tone="live" />
-                  <span className="truncate">{current.ssid}</span>
-                  <span className="readout text-[11px] text-muted-foreground">
-                    {current.rssi} dBm
-                  </span>
-                </>
-              ) : (
-                "—"
-              )}
-            </dd>
-          </div>
-          <div className="space-y-0.5">
-            <dt className="text-muted-foreground">Current IP</dt>
-            <dd className="font-medium tabular-nums">{current?.ip_address || "—"}</dd>
-          </div>
-          <div className="space-y-0.5">
-            <dt className="text-muted-foreground">MAC address</dt>
-            <dd className="font-medium tabular-nums">{current?.mac_address || "—"}</dd>
-          </div>
-        </dl>
-        {!current && (
-          <Hint>
-            {wifi.stateStatus === "loading"
-              ? "Waiting for the robot to report in."
-              : "This console cannot reach the robot, so its current network is unknown."}
-          </Hint>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-/**
  * One saved network. Connect rejoins it; Forget deletes it behind a dialog.
+ *
+ * Every card has the signal and address rows, filled on the network the robot
+ * is on and blank on the rest, so the grid lines up and the live card is the
+ * one place to read the address an engineer reaches the robot by.
  *
  * The live network's card has neither: it is already joined, and the robot
  * refuses to forget the network it is on — forgetting it would take the robot
@@ -226,24 +187,34 @@ function SavedNetworkCard({
         </CardDescription>
       </CardHeader>
 
-      {mine && (pending || wifi.message || wifi.error) && (
-        <CardContent className="space-y-1">
-          {/* In place rather than a toast, as on Add network: the operator is
-              watching this card until the robot lands. */}
-          {pending && (
-            <Hint className="text-signal-caution">
-              Connecting to <span className="readout">{wifi.pending}</span>… the
-              robot reports its network once a second.
-            </Hint>
-          )}
-          {wifi.message && <Hint className="text-signal-live">{wifi.message}</Hint>}
-          {wifi.error && (
-            <Hint role="alert" className="text-signal-warn">
-              {wifi.error}
-            </Hint>
-          )}
-        </CardContent>
-      )}
+      <CardContent className="space-y-2">
+        <LinkDetails readout={linkReadout(connection.ssid, wifi.current)} />
+
+        {/* Live by the list's flag with no state frame yet: say why the rows
+            are blank, which is otherwise what a card off the network reads. */}
+        {live && !wifi.current && (
+          <Hint>
+            {wifi.stateStatus === "loading"
+              ? "Waiting for the robot to report in."
+              : "This console cannot reach the robot, so its signal and addresses are unknown."}
+          </Hint>
+        )}
+
+        {/* In place rather than a toast, as on Add network: the operator is
+            watching this card until the robot lands. */}
+        {pending && (
+          <Hint className="text-signal-caution">
+            Connecting to <span className="readout">{wifi.pending}</span>… the
+            robot reports its network once a second.
+          </Hint>
+        )}
+        {mine && wifi.message && <Hint className="text-signal-live">{wifi.message}</Hint>}
+        {mine && wifi.error && (
+          <Hint role="alert" className="text-signal-warn">
+            {wifi.error}
+          </Hint>
+        )}
+      </CardContent>
 
       {!live && (
         <CardFooter className="mt-auto justify-end gap-2">
@@ -318,6 +289,56 @@ function SavedNetworkCard({
         </AlertDialogContent>
       </AlertDialog>
     </Card>
+  );
+}
+
+/** The card's link rows: label on the left, the reading or its blank on the right. */
+function LinkDetails({ readout }: { readout: LinkReadout }) {
+  return (
+    <dl className="space-y-1.5 text-sm">
+      <LinkRow label="Signal">
+        {readout.rssi === null ? (
+          <Blank>
+            <SignalBars bars={0} tone="neutral" />
+            {RSSI_BLANK}
+          </Blank>
+        ) : (
+          <>
+            <SignalBars bars={rssiToBars(readout.rssi)} tone="live" />
+            {readout.rssi} dBm
+          </>
+        )}
+      </LinkRow>
+      <LinkRow label="Current IP">{readout.ip ?? <Blank>{IP_BLANK}</Blank>}</LinkRow>
+      <LinkRow label="MAC address">{readout.mac ?? <Blank>{MAC_BLANK}</Blank>}</LinkRow>
+    </dl>
+  );
+}
+
+function LinkRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    // Wraps rather than truncates: a three-column grid at lg leaves a card
+    // just short of a MAC address beside its label, and a clipped address is
+    // worse than one on the next line.
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="readout ml-auto flex items-center gap-2 whitespace-nowrap">{children}</dd>
+    </div>
+  );
+}
+
+/**
+ * A value's blank. Hidden from a screen reader, which would otherwise spell
+ * out every dash and colon, and said there as the one fact it stands for.
+ */
+function Blank({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <span aria-hidden className="flex items-center gap-2 text-muted-foreground">
+        {children}
+      </span>
+      <span className="sr-only">Not connected</span>
+    </>
   );
 }
 

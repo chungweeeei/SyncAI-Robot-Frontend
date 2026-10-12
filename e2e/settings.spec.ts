@@ -321,12 +321,22 @@ test.describe("Wi-Fi saved networks", () => {
     await expect(live).toContainText("site-wifi");
     await expect(live).toContainText("Connected");
     await expect(live.getByRole("button")).toHaveCount(0);
+    // The robot's link is read out on the live card itself.
+    await expect(live).toContainText("-52 dBm");
+    await expect(live).toContainText("10.8.140.138");
+    await expect(live).toContainText("11:22:33:44:55:66");
 
     const other = saved(page).nth(1);
     await expect(other).toContainText("lab-5g");
     await expect(other).toContainText("Never joined");
     await expect(other).toContainText("Saved as Lab");
     await expect(other.getByRole("button", { name: "Connect to lab-5g" })).toBeEnabled();
+    // Off the network, every row is a blank in its value's shape — never the
+    // live network's address.
+    await expect(other).toContainText("-- dBm");
+    await expect(other).toContainText("--.--.--.--");
+    await expect(other).toContainText("--:--:--:--:--:--");
+    await expect(other).not.toContainText("10.8.140.138");
   });
 
   test("rejoins a saved network by its id, with no password", async ({ page }) => {

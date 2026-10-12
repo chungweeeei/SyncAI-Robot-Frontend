@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import type { WifiConnection } from "@/lib/api/network";
-import { lastUsedLabel, orderConnections } from "@/lib/network/connections";
+import {
+  IP_BLANK,
+  MAC_BLANK,
+  RSSI_BLANK,
+  lastUsedLabel,
+  linkReadout,
+  orderConnections,
+} from "@/lib/network/connections";
+import type { RobotNetworkStatus } from "@/lib/types/robot";
 
 const saved = (
   ssid: string,
@@ -41,6 +49,48 @@ describe("orderConnections", () => {
     const copy = [...list];
     orderConnections(list, "on");
     expect(list).toEqual(copy);
+  });
+});
+
+describe("linkReadout", () => {
+  const current: RobotNetworkStatus = {
+    ssid: "site-wifi",
+    bssid: "aa:bb:cc:dd:ee:ff",
+    rssi: -52,
+    ip_address: "10.8.140.138",
+    mac_address: "11:22:33:44:55:66",
+  };
+  const blank = { rssi: null, ip: null, mac: null };
+
+  it("reads the state poll out on the card of the network it reports", () => {
+    expect(linkReadout("site-wifi", current)).toEqual({
+      rssi: -52,
+      ip: "10.8.140.138",
+      mac: "11:22:33:44:55:66",
+    });
+  });
+
+  it("never shows one network's address on another network's card", () => {
+    expect(linkReadout("lab-5g", current)).toEqual(blank);
+  });
+
+  it("is blank before the robot has reported in, and off any network", () => {
+    expect(linkReadout("site-wifi", null)).toEqual(blank);
+    expect(linkReadout("", { ...current, ssid: "" })).toEqual(blank);
+  });
+
+  it("blanks an address the robot has not been given yet", () => {
+    expect(linkReadout("site-wifi", { ...current, ip_address: "" })).toEqual({
+      rssi: -52,
+      ip: null,
+      mac: "11:22:33:44:55:66",
+    });
+  });
+
+  it("keeps each blank in the shape of the value it stands in for", () => {
+    expect(IP_BLANK.split(".")).toHaveLength(current.ip_address.split(".").length);
+    expect(MAC_BLANK.split(":")).toHaveLength(current.mac_address.split(":").length);
+    expect(RSSI_BLANK).toMatch(/ dBm$/);
   });
 });
 
