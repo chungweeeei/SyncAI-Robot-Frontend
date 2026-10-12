@@ -80,3 +80,60 @@ export function connectWifi(
     schema: ConnectWifiResultSchema,
   });
 }
+
+export interface WifiConnection {
+  /** NetworkManager's id for the saved network; the key the two writes take. */
+  uuid: string;
+  /** The saved network's own name. Usually the SSID, but nmcli lets it differ. */
+  name: string;
+  /** The SSID the robot joins with it — what the console shows and compares. */
+  ssid: string;
+  /** True for the one the robot is on right now. */
+  active: boolean;
+  /** ISO 8601 (UTC) of the last time the robot joined it; null if never. */
+  last_used_at: string | null;
+}
+
+const WifiConnectionSchema: z.ZodType<WifiConnection> = z.object({
+  uuid: z.string(),
+  name: z.string(),
+  ssid: z.string(),
+  active: z.boolean(),
+  last_used_at: z.string().nullable(),
+});
+
+/**
+ * The networks the robot has saved — every one it has joined before, with its
+ * password kept on the robot. Cheap (a profile read, no radio scan), so unlike
+ * scanWifiNetworks it takes the query's signal.
+ */
+export function listWifiConnections(signal?: AbortSignal): Promise<WifiConnection[]> {
+  return requestJson<{ connections: WifiConnection[] }>(
+    apiUrl("/api/v1/network/wifi/connections"),
+    { signal, schema: z.object({ connections: z.array(WifiConnectionSchema) }) },
+  ).then((body) => body.connections);
+}
+
+/**
+ * Rejoin a saved network with the password the robot kept. Same timing and
+ * same two outcomes as connectWifi: a 200 only once the robot is on it, or a
+ * fetch TypeError when the console was reaching the robot over the network it
+ * just left — which is the switch *working*, and has to be read that way.
+ */
+export function activateWifiConnection(uuid: string): Promise<ConnectWifiResult> {
+  return requestJson<ConnectWifiResult>(
+    apiUrl(`/api/v1/network/wifi/connections/${encodeURIComponent(uuid)}/activate`),
+    { method: "POST", schema: ConnectWifiResultSchema },
+  );
+}
+
+/**
+ * Forget a saved network. A 204; the robot refuses (400, its own sentence) to
+ * forget the one it is on, since that would take it off the network.
+ */
+export function forgetWifiConnection(uuid: string): Promise<void> {
+  return requestJson<void>(
+    apiUrl(`/api/v1/network/wifi/connections/${encodeURIComponent(uuid)}`),
+    { method: "DELETE", parse: false },
+  );
+}
