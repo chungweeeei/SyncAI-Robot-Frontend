@@ -64,6 +64,11 @@ interface TemplateStepBase {
   /** Live name when CURRENT, the snapshot label when MISSING, else null. */
   vertex_name: string | null;
   vertex_status: VertexRefStatus;
+  /**
+   * Adjacent steps sharing a group run side by side. Null for a step on its
+   * own; absent (read as null) from a backend that predates groups.
+   */
+  group: string | null;
 }
 
 /**
@@ -139,6 +144,7 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     vertex_id: z.string().nullable(),
     vertex_name: z.string().nullable(),
     vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
+    group: z.string().nullish().transform((group) => group ?? null),
     type: z.literal("MOVE"),
     params: MoveStepParamsSchema.nullable(),
     resolved_params: MoveStepParamsSchema.nullable(),
@@ -148,6 +154,7 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     vertex_id: z.string().nullable(),
     vertex_name: z.string().nullable(),
     vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
+    group: z.string().nullish().transform((group) => group ?? null),
     type: z.literal("SPEAK"),
     params: SpeakStepParamsSchema.nullable(),
     resolved_params: SpeakStepParamsSchema.nullable(),
@@ -157,6 +164,7 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     vertex_id: z.string().nullable(),
     vertex_name: z.string().nullable(),
     vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
+    group: z.string().nullish().transform((group) => group ?? null),
     type: z.literal("WAIT"),
     params: WaitStepParamsSchema.nullable(),
     resolved_params: WaitStepParamsSchema.nullable(),
@@ -166,6 +174,7 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     vertex_id: z.string().nullable(),
     vertex_name: z.string().nullable(),
     vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
+    group: z.string().nullish().transform((group) => group ?? null),
     type: z.enum(["STANDUP", "LIEDOWN"]),
     params: z.null(),
     resolved_params: z.null(),

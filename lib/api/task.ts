@@ -86,6 +86,11 @@ export interface TaskStepState {
    * must not fail over a nicety.
    */
   message?: string;
+  /**
+   * The step's group as dispatched: steps sharing one ran side by side.
+   * Absent from a backend that predates groups, null for a step on its own.
+   */
+  group?: string | null;
 }
 
 export interface TaskStateResponse {
@@ -103,6 +108,7 @@ const TaskStateResponseSchema: z.ZodType<TaskStateResponse> = z.object({
       status: TaskStatusSchema,
       error_msg: z.string(),
       message: z.string().optional(),
+      group: z.string().nullish(),
     }),
   ),
 });
@@ -181,11 +187,20 @@ export interface WaitStepParams {
  * dropped by JSON.stringify, but it is one careless refactor away from
  * `params: null`, which the MOVE branch rejects in turn.)
  */
-export type TaskStepRequest =
+export type TaskStepRequest = (
   | { id: string; type: "MOVE"; params: MoveStepParams }
   | { id: string; type: "SPEAK"; params: SpeakStepParams }
   | { id: string; type: "WAIT"; params: WaitStepParams }
-  | { id: string; type: Posture };
+  | { id: string; type: Posture }
+) & {
+  /**
+   * Adjacent steps with the same group start together, and the next step
+   * waits for all of them. Never sent for a step that runs on its own, so a
+   * backend from before groups reads the same body it always did; a schedule
+   * read back answers null there.
+   */
+  group?: string | null;
+};
 
 export const MoveStepParamsSchema: z.ZodType<MoveStepParams> = z.object({
   x: z.number(),
@@ -209,10 +224,29 @@ export const WaitStepParamsSchema: z.ZodType<WaitStepParams> = z.object({
  * one because the posture branch's discriminator is itself a pair of literals.
  */
 export const TaskStepRequestSchema: z.ZodType<TaskStepRequest> = z.union([
-  z.object({ id: z.string(), type: z.literal("MOVE"), params: MoveStepParamsSchema }),
-  z.object({ id: z.string(), type: z.literal("SPEAK"), params: SpeakStepParamsSchema }),
-  z.object({ id: z.string(), type: z.literal("WAIT"), params: WaitStepParamsSchema }),
-  z.object({ id: z.string(), type: z.enum(["STANDUP", "LIEDOWN"]) }),
+  z.object({
+    id: z.string(),
+    type: z.literal("MOVE"),
+    params: MoveStepParamsSchema,
+    group: z.string().nullish(),
+  }),
+  z.object({
+    id: z.string(),
+    type: z.literal("SPEAK"),
+    params: SpeakStepParamsSchema,
+    group: z.string().nullish(),
+  }),
+  z.object({
+    id: z.string(),
+    type: z.literal("WAIT"),
+    params: WaitStepParamsSchema,
+    group: z.string().nullish(),
+  }),
+  z.object({
+    id: z.string(),
+    type: z.enum(["STANDUP", "LIEDOWN"]),
+    group: z.string().nullish(),
+  }),
 ]);
 
 /**

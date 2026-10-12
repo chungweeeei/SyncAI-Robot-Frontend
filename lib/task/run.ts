@@ -31,9 +31,7 @@ import { STEP_TYPES } from "@/lib/task/step";
 export function currentStep(
   steps: readonly TaskStepState[],
 ): { index: number; step: TaskStepState } | null {
-  const index = steps.findIndex(
-    (step) => step.status === "IN_PROGRESS" || step.status === "PAUSED",
-  );
+  const index = steps.findIndex(live);
   return index === -1 ? null : { index, step: steps[index]! };
 }
 
@@ -63,20 +61,38 @@ export interface StepProgress {
   /** 1-based, the way the composer numbers its rows. */
   ordinal: number;
   total: number;
+  /** One step's label, or the live ones of a group joined: "Move + Speak". */
   label: string;
   /** The live step's `message` (what the robot is doing), "" when it has none. */
   message: string;
 }
 
-/** Where the run is in its list, or null when no step is live (see currentStep). */
+function live(step: TaskStepState): boolean {
+  return step.status === "IN_PROGRESS" || step.status === "PAUSED";
+}
+
+/**
+ * Where the run is in its list, or null when no step is live (see currentStep).
+ *
+ * Steps that share a group run at once, so "the" step can be several: the
+ * label names every member still live, and the ordinal is the first one's,
+ * which is where the group sits in the list. Only members still running are
+ * named — a Speak that has finished beside a long Move is no longer news. The
+ * message is the first a member has; only a Move carries one, and a group
+ * holds at most one Move.
+ */
 export function stepProgress(steps: readonly TaskStepState[]): StepProgress | null {
   const current = currentStep(steps);
   if (!current) return null;
+  const group = current.step.group;
+  const members = group
+    ? steps.filter((step) => step.group === group && live(step))
+    : [current.step];
   return {
     ordinal: current.index + 1,
     total: steps.length,
-    label: stepLabel(current.step.id),
-    message: current.step.message ?? "",
+    label: members.map((step) => stepLabel(step.id)).join(" + "),
+    message: members.find((step) => step.message)?.message ?? "",
   };
 }
 

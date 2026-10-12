@@ -88,6 +88,27 @@ describe("stepProgress", () => {
     ).toMatchObject({ ordinal: 2, label: "Move", message: "Path blocked; replanning" });
   });
 
+  it("names every live member of a group the run is in", () => {
+    expect(
+      stepProgress([
+        step("1-move", "COMPLETED"),
+        { ...step("2-move", "IN_PROGRESS"), group: "g2", message: "Following the path" },
+        { ...step("3-speak", "IN_PROGRESS"), group: "g2" },
+        { ...step("4-wait", "COMPLETED"), group: "g2" },
+        step("5-standup", "PENDING"),
+      ]),
+    ).toEqual({ ordinal: 2, total: 5, label: "Move + Speak", message: "Following the path" });
+  });
+
+  it("drops a member once it has finished beside a longer one", () => {
+    expect(
+      stepProgress([
+        { ...step("1-speak", "COMPLETED"), group: "g1" },
+        { ...step("2-move", "IN_PROGRESS"), group: "g1" },
+      ]),
+    ).toMatchObject({ ordinal: 2, label: "Move" });
+  });
+
   it("is null when no step is live", () => {
     expect(stepProgress([])).toBeNull();
   });

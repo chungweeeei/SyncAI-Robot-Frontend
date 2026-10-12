@@ -11,12 +11,18 @@ import {
   newStepDraft,
   stepDraftError,
   stepDraftsSubmittable,
+  stepGroupError,
+  stepGroupNames,
+  stepGroupPlaces,
   stepIdFor,
+  stepShape,
   stepSummary,
   stepWaypointOrdinals,
   toDispatchSteps,
   toStepRequests,
   toTemplateSteps,
+  unlinkStep,
+  wireLinked,
   type StepDraft,
 } from "@/lib/task/step";
 
@@ -307,6 +313,7 @@ function stored(over: Partial<TemplateStep> = {}): TemplateStep {
     vertex_id: "v-1",
     vertex_name: "dock",
     vertex_status: "CURRENT",
+    group: null,
     type: "MOVE",
     params: { x: 1, y: 1, theta: 0 },
     resolved_params: { x: 4.2, y: -3.7, theta: 45 },
@@ -373,5 +380,109 @@ describe("toDispatchSteps", () => {
       stored({ type: "STANDUP", params: null, resolved_params: null }),
     ]);
     expect(steps).toEqual([{ id: "1-move", type: "STANDUP" }]);
+  });
+});
+
+/**
+ * Steps that start together. The composer stores a link on each row; the
+ * backend wants a shared name on adjacent steps and refuses two body steps
+ * in one group. Everything below is the translation between the two.
+ */
+describe("step groups", () => {
+  const linked = (draft: StepDraft): StepDraft => ({ ...draft, withPrevious: true });
+
+  it("names a chain of links as one group and leaves single rows unnamed", () => {
+    const drafts = [move(), linked(speak("hi")), linked(wait("5")), newStepDraft("STANDUP")];
+    expect(stepGroupPlaces(drafts)).toEqual(["start", "middle", "end", null]);
+    expect(stepGroupNames(drafts)).toEqual(["g1", "g1", "g1", null]);
+  });
+
+  it("ignores a link on the first row, which has nothing above it", () => {
+    expect(stepGroupNames([linked(speak("hi")), move()])).toEqual([null, null]);
+  });
+
+  it("sends a group only on the steps in one, so an ungrouped job is the body it was", () => {
+    const [a, b, c] = toStepRequests([speak("a"), linked(move()), wait("1")]);
+    expect(a).toMatchObject({ group: "g1" });
+    expect(b).toMatchObject({ group: "g1" });
+    expect(c).not.toHaveProperty("group");
+    for (const step of toStepRequests([speak("a"), move()])) {
+      expect(step).not.toHaveProperty("group");
+    }
+  });
+
+  it("keeps the group beside a MOVE's vertex reference when saving", () => {
+    const [, step] = toTemplateSteps([speak("a"), linked(move({ vertexId: "v-1" }))]);
+    expect(step).toMatchObject({ group: "g1", vertex_id: "v-1" });
+  });
+
+  it("round-trips links through a saved template", () => {
+    const saved: TemplateStep[] = [
+      stored({ id: "1-move" }),
+      stored({ id: "2-speak", type: "SPEAK", params: { text: "hi" }, resolved_params: { text: "hi" }, vertex_id: null, vertex_status: "NONE", group: "g2" }),
+      stored({ id: "3-wait", type: "WAIT", params: { seconds: 2 }, resolved_params: { seconds: 2 }, vertex_id: null, vertex_status: "NONE", group: "g2" }),
+    ];
+    const drafts = fromTemplateSteps(saved);
+    expect(drafts.map((draft) => draft.withPrevious)).toEqual([false, false, true]);
+    expect(toTemplateSteps(drafts).map((step) => step.group ?? null)).toEqual([null, "g2", "g2"]);
+  });
+
+  it("dispatches a saved template's groups as stored", () => {
+    const steps = toDispatchSteps([
+      stored({ group: "a" }),
+      stored({ id: "2-speak", type: "SPEAK", params: { text: "hi" }, resolved_params: { text: "hi" }, group: "a" }),
+    ]);
+    expect(steps.map((step) => step.group)).toEqual(["a", "a"]);
+  });
+
+  it("refuses a second Move, Stand or Lie in one group, on the later row", () => {
+    // The robot has one body: the backend would answer 400.
+    const drafts = [move(), linked(speak("hi")), linked(newStepDraft("STANDUP"))];
+    expect(stepGroupError(drafts, 0)).toBeNull();
+    expect(stepGroupError(drafts, 1)).toBeNull();
+    expect(stepGroupError(drafts, 2)).toMatch(/one Move, Stand or Lie at a time/);
+    expect(stepDraftsSubmittable(drafts)).toBe(false);
+  });
+
+  it("allows one body step beside any number of others, and body steps in turn", () => {
+    expect(stepDraftsSubmittable([move(), linked(speak("hi")), linked(wait("3"))])).toBe(true);
+    // Not linked: two Moves one after the other is an ordinary job.
+    expect(stepDraftsSubmittable([move(), move()])).toBe(true);
+    expect(stepDraftsSubmittable([move(), speak("x"), linked(move())])).toBe(true);
+  });
+
+  describe("unlinkStep", () => {
+    it("keeps the rest of a group together when its middle leaves", () => {
+      const drafts = [speak("a"), linked(speak("b")), linked(speak("c"))];
+      const after = unlinkStep(drafts, 1).filter((_, index) => index !== 1);
+      expect(stepGroupPlaces(after)).toEqual(["start", "end"]);
+    });
+
+    it("does not join the row below a departing head to whatever was above it", () => {
+      const drafts = [move(), speak("a"), linked(speak("b"))];
+      const after = unlinkStep(drafts, 1).filter((_, index) => index !== 1);
+      expect(stepGroupPlaces(after)).toEqual([null, null]);
+    });
+
+    it("lands a moved row on its own", () => {
+      const drafts = [speak("a"), linked(speak("b"))];
+      expect(unlinkStep(drafts, 1)[1]!.withPrevious).toBe(false);
+    });
+  });
+
+  it("reads links off wire steps by shared, adjacent names", () => {
+    const steps = [{ group: null }, { group: "g2" }, { group: "g2" }, { group: undefined }];
+    expect(steps.map((_, index) => wireLinked(steps, index))).toEqual([false, false, true, false]);
+  });
+
+  it("brackets the glyphs of steps that start together", () => {
+    expect(
+      stepShape([
+        { type: "MOVE" },
+        { type: "MOVE", group: "g2" },
+        { type: "SPEAK", group: "g2" },
+        { type: "STANDUP" },
+      ]),
+    ).toBe("M [M T] S");
   });
 });

@@ -20,7 +20,7 @@
 import type { ScheduleState, ScheduleTrigger } from "@/lib/api/schedule";
 import type { TaskStepRequest } from "@/lib/api/task";
 import type { TemplateStep } from "@/lib/api/task-template";
-import { toDispatchSteps } from "@/lib/task/step";
+import { toDispatchSteps, wireLinked } from "@/lib/task/step";
 
 /**
  * The seven days in the order an operator expects them, each with its cron
@@ -478,6 +478,9 @@ export function schedulesByTemplate(
  *   old sentence, the same mechanism as a moved waypoint.
  * - A WAIT drifts when its duration was edited.
  * - A step whose type changed drifts. Two posture steps of one type never do.
+ * - A step linked to the one above (or unlinked from it) drifts: the robot
+ *   would start it at a different moment. Compared as links, not names, so
+ *   a group renamed in place is the same job.
  *
  * Moved here from schedule-steps.tsx, where it had no test.
  */
@@ -496,6 +499,7 @@ export function scheduleDrift(
   return frozen.reduce((count, step, index) => {
     const now = current[index];
     if (!now || now.type !== step.type) return count + 1;
+    if (wireLinked(frozen, index) !== wireLinked(current, index)) return count + 1;
     if (step.type === "SPEAK" && now.type === "SPEAK") {
       return step.params.text === now.params.text ? count : count + 1;
     }

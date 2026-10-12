@@ -188,6 +188,7 @@ function template(over: Partial<TaskTemplate> = {}): TaskTemplate {
         vertex_id: null,
         vertex_name: null,
         vertex_status: "NONE",
+        group: null,
       },
     ],
     map_matches_active: true,
@@ -229,6 +230,7 @@ function savedRound(over: Partial<TaskTemplate> = {}): TaskTemplate {
         vertex_id: "v1",
         vertex_name: "Dock",
         vertex_status: "CURRENT",
+        group: null,
       },
       {
         id: "s2",
@@ -238,6 +240,7 @@ function savedRound(over: Partial<TaskTemplate> = {}): TaskTemplate {
         vertex_id: null,
         vertex_name: null,
         vertex_status: "NONE",
+        group: null,
       },
     ],
     ...over,
@@ -284,6 +287,18 @@ describe("draftIsUnsaved", () => {
     expect(
       draftIsUnsaved({ ...base, steps: [{ ...move, vertexId: "v2" }, speak] }, library),
     ).toBe(true);
+  });
+
+  it("counts linking a step to the one above, and not a link on the first row", () => {
+    // Starting the line with the drive changes when it is said.
+    const base = opened();
+    const [move, speak] = base.steps;
+    expect(
+      draftIsUnsaved({ ...base, steps: [move, { ...speak, withPrevious: true }] }, library),
+    ).toBe(true);
+    expect(
+      draftIsUnsaved({ ...base, steps: [{ ...move, withPrevious: true }, speak] }, library),
+    ).toBe(false);
   });
 
   it("does not count whitespace Save would trim", () => {

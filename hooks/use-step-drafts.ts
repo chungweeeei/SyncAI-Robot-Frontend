@@ -5,6 +5,7 @@ import * as React from "react";
 import {
   moveStep,
   newStepDraft,
+  unlinkStep,
   type StepDraft,
 } from "@/lib/task/step";
 import type { StepType } from "@/lib/api/task";
@@ -13,11 +14,13 @@ export interface StepDrafts {
   steps: StepDraft[];
   /** Returns the new row's key, so the list can unfold the row it just added. */
   add: (type: StepType) => number;
+  /** Take the row out; the rows it ran with stay linked (see unlinkStep). */
   remove: (key: number) => void;
   /**
    * Take the row out and put it back at `index` (0-based), shifting the rows in
    * between. An out-of-range index is a no-op, so "up" on the first row and
-   * "down" on the last need no guard at the call site.
+   * "down" on the last need no guard at the call site. A row that moves leaves
+   * the group it ran with and lands on its own.
    */
   moveTo: (key: number, index: number) => void;
   patch: (key: number, changes: Partial<Omit<StepDraft, "key">>) => void;
@@ -71,20 +74,26 @@ export function useStepDrafts(
 
   const remove = React.useCallback(
     (key: number) => {
-      setSteps((current) => current.filter((step) => step.key !== key));
+      setSteps((current) => {
+        const index = current.findIndex((step) => step.key === key);
+        if (index === -1) return current;
+        return unlinkStep(current, index).filter((step) => step.key !== key);
+      });
     },
     [setSteps],
   );
 
   const moveTo = React.useCallback(
     (key: number, index: number) => {
-      setSteps((current) =>
-        moveStep(
-          current,
-          current.findIndex((step) => step.key === key),
-          index,
-        ),
-      );
+      setSteps((current) => {
+        const from = current.findIndex((step) => step.key === key);
+        // Checked before the unlink, so a drop back where the row started is
+        // still the no-op moveStep promises rather than a quiet unlink.
+        if (from === index || from === -1 || index < 0 || index >= current.length) {
+          return current;
+        }
+        return moveStep(unlinkStep(current, from), from, index);
+      });
     },
     [setSteps],
   );
