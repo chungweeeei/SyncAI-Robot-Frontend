@@ -150,4 +150,12 @@ export const queryKeys = {
    * why it is never refetched on its own.
    */
   wifiScan: ["wifi-scan"] as const,
+  /**
+   * GET /api/v1/network/wifi/connections — the networks saved on the robot.
+   * Not polled: nothing changes the list on its own but a connect, a rejoin
+   * or a forget, and all three are this console's writes, which invalidate
+   * it. (`active` also moves when the robot roams by itself; the Wi-Fi page
+   * reads which network is live from the state poll, not from here.)
+   */
+  wifiConnections: ["wifi-connections"] as const,
 };

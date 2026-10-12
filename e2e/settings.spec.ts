@@ -1,6 +1,11 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
-import { failOnConsoleErrors, mockBackend, robotState } from "./backend";
+import {
+  failOnConsoleErrors,
+  mockBackend,
+  robotState,
+  wifiConnection,
+} from "./backend";
 
 /**
  * The Settings header's restart: a press that rebuilds the robot's software,
@@ -229,7 +234,7 @@ test.describe("settings sections", () => {
     await sections.getByRole("link", { name: /Wi-Fi/ }).click();
     await expect(page).toHaveURL(/\/settings\/wifi$/);
     await expect(page.getByRole("heading", { name: "Wi-Fi", level: 1 })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Connect/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Add network" })).toBeVisible();
     // The rail still marks Settings as the screen the operator is on.
     await expect(
       page.getByRole("link", { name: "Settings", exact: true }).first(),
@@ -270,5 +275,124 @@ test.describe("settings sections", () => {
         page.getByText(`${name} settings are not available on this robot yet.`),
       ).toBeVisible();
     }
+  });
+});
+
+/**
+ * Wi-Fi opens on the networks the robot has saved; a new one is joined from
+ * Add network, one page further in. Every card that moves the robot is
+ * checked against what the console sent, not only what the screen says.
+ */
+test.describe("Wi-Fi saved networks", () => {
+  let errors: string[];
+
+  test.beforeEach(async ({ page }) => {
+    errors = [];
+    failOnConsoleErrors(page, errors);
+  });
+
+  test.afterEach(() => {
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  const saved = (page: Page) =>
+    page.getByRole("region", { name: "Saved networks" }).getByRole("listitem");
+
+  test("lists the saved networks, the live one first and not forgettable", async ({
+    page,
+  }) => {
+    await mockBackend(page, {
+      // Listed out of order on purpose: the page orders them.
+      wifiConnections: [
+        wifiConnection({
+          uuid: "9a1e-lab",
+          name: "Lab",
+          ssid: "lab-5g",
+          active: false,
+          last_used_at: null,
+        }),
+        wifiConnection(),
+      ],
+    });
+    await page.goto("/settings/wifi");
+
+    await expect(saved(page)).toHaveCount(2);
+    const live = saved(page).first();
+    await expect(live).toContainText("site-wifi");
+    await expect(live).toContainText("Connected");
+    await expect(live.getByRole("button")).toHaveCount(0);
+
+    const other = saved(page).nth(1);
+    await expect(other).toContainText("lab-5g");
+    await expect(other).toContainText("Never joined");
+    await expect(other).toContainText("Saved as Lab");
+    await expect(other.getByRole("button", { name: "Connect to lab-5g" })).toBeEnabled();
+  });
+
+  test("rejoins a saved network by its id, with no password", async ({ page }) => {
+    const writes = await mockBackend(page);
+    await page.goto("/settings/wifi");
+
+    await page.getByRole("button", { name: "Connect to lab-5g" }).click();
+
+    await expect(page.getByText("Successfully connected to lab-5g")).toBeVisible();
+    expect(writes).toContainEqual({
+      method: "POST",
+      path: "/api/v1/network/wifi/connections/9a1e-lab/activate",
+      body: null,
+    });
+  });
+
+  test("forgets a saved network only after asking", async ({ page }) => {
+    const writes = await mockBackend(page);
+    await page.goto("/settings/wifi");
+
+    await page.getByRole("button", { name: "Forget lab-5g" }).click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText("Forget lab-5g?");
+    await dialog.getByRole("button", { name: "Keep" }).click();
+    await expect(dialog).toBeHidden();
+    expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
+
+    await page.getByRole("button", { name: "Forget lab-5g" }).click();
+    await dialog.getByRole("button", { name: "Forget" }).click();
+
+    await expect(saved(page)).toHaveCount(1);
+    expect(writes.filter((w) => w.method === "DELETE")).toEqual([
+      { method: "DELETE", path: "/api/v1/network/wifi/connections/9a1e-lab", body: null },
+    ]);
+  });
+
+  test("says so when nothing is saved", async ({ page }) => {
+    await mockBackend(page, { wifiConnections: [] });
+    await page.goto("/settings/wifi");
+
+    await expect(page.getByText("No saved networks yet.")).toBeVisible();
+  });
+
+  test("adds a network from the scan and comes back to the list", async ({ page }) => {
+    const writes = await mockBackend(page);
+    await page.goto("/settings/wifi");
+
+    await page.locator("main header").getByRole("link", { name: "Add network" }).click();
+    await expect(page).toHaveURL(/\/settings\/wifi\/new$/);
+    await expect(page.getByRole("heading", { name: "Add network", level: 1 })).toBeVisible();
+
+    await page.getByRole("combobox", { name: "Network" }).click();
+    await page.getByRole("option", { name: /guest/ }).click();
+    await page.getByRole("textbox", { name: "Password" }).fill("hunter22");
+    await page.getByRole("button", { name: "Connect" }).click();
+
+    await expect(page).toHaveURL(/\/settings\/wifi$/);
+    expect(writes).toContainEqual({
+      method: "POST",
+      path: "/api/v1/network/wifi/connect",
+      body: { ssid: "guest", password: "hunter22" },
+    });
+
+    // And the way back from Add network is Wi-Fi, not Settings.
+    await page.goto("/settings/wifi/new");
+    await page.locator("main header").getByRole("link", { name: "Wi-Fi" }).click();
+    await expect(page).toHaveURL(/\/settings\/wifi$/);
   });
 });

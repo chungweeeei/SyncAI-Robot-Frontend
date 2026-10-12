@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { RefreshCwIcon, WifiIcon } from "lucide-react";
 
 import { Chip, SignalBars, rssiToBars } from "@/components/console/instrument";
@@ -22,30 +23,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { useWifiConnect } from "@/hooks/use-wifi-connect";
 import { useWifiScan } from "@/hooks/use-wifi-scan";
 import type { WifiNetwork } from "@/lib/api/network";
 import { cn } from "@/lib/utils";
 
 /**
- * The robot's WiFi: pick a network the robot can see, give it a password, join.
+ * Add network: pick a network the robot can see, give it a password, join.
+ * The robot saves what it joins, so a success goes back to the Wi-Fi page,
+ * where the new network is now one of the cards.
+ *
+ * A dropped connection stays here instead: it is the join probably working,
+ * but this console may have just lost the robot, and the notice saying how
+ * to find it again is the one thing on screen worth keeping.
+ *
+ * The robot's current network and addresses are no longer read out here —
+ * they lead the Wi-Fi page, one step back.
  *
  * Takes no props. The card used to receive `network_status` from the page and
  * was hidden entirely until the first state frame — but scanning and joining
  * do not depend on the state poll, and a console that has *never* heard from
  * the robot is exactly the one that needs to fix its WiFi. So the card always
- * renders, and only the current-network readout degrades to dashes.
+ * renders; the state poll only decides which network the dropdown opens on.
  *
  * There is no DHCP / static-IP block any more: the backend has no endpoint for
  * addressing (only scan + connect), and a form that looked settable but saved
- * nothing was worse than none. The IP and MAC stay as a readout.
+ * nothing was worse than none. The IP and MAC are a readout on the Wi-Fi page.
  *
  * The dropdown is the whole story of "which network": the backend's scan
  * skips hidden SSIDs and there is deliberately no free-text entry — an
  * operator typing an SSID by hand was the bug the picker replaces.
  */
 export function NetworkSettings() {
+  const router = useRouter();
   const scan = useWifiScan();
   const wifi = useWifiConnect();
 
@@ -86,6 +96,7 @@ export function NetworkSettings() {
     // A secret should not sit in React state once it has been used. Kept only
     // on a refusal, so a typo can be fixed and resubmitted without retyping.
     if (outcome !== "error") setPassword("");
+    if (outcome === "ok") router.push("/settings/wifi");
   };
 
   const placeholder = scan.scanning
@@ -102,8 +113,8 @@ export function NetworkSettings() {
           Network
         </CardTitle>
         <CardDescription>
-          Choose a WiFi network for the robot. The password is optional for an
-          open network.
+          Choose a WiFi network the robot can see. The password is optional for
+          an open network. The robot saves the network once it joins.
         </CardDescription>
       </CardHeader>
       <form
@@ -181,46 +192,6 @@ export function NetworkSettings() {
               onChange={(event) => setPassword(event.target.value)}
             />
           </div>
-
-          <Separator />
-
-          <dl className="space-y-1 text-sm">
-            <div className="flex items-center justify-between gap-4">
-              <dt className="text-muted-foreground">Connected to</dt>
-              <dd className="flex min-w-0 items-center gap-2 font-medium">
-                {currentSsid && current ? (
-                  <>
-                    <SignalBars bars={rssiToBars(current.rssi)} />
-                    <span className="truncate">{current.ssid}</span>
-                    <span className="readout text-[11px] text-muted-foreground">
-                      {current.rssi} dBm
-                    </span>
-                  </>
-                ) : (
-                  "—"
-                )}
-              </dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Current IP</dt>
-              <dd className="font-medium tabular-nums">
-                {current?.ip_address || "—"}
-              </dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">MAC address</dt>
-              <dd className="font-medium tabular-nums">
-                {current?.mac_address || "—"}
-              </dd>
-            </div>
-          </dl>
-          {!current && (
-            <Hint>
-              {wifi.stateStatus === "loading"
-                ? "Waiting for the robot to report in."
-                : "This console cannot reach the robot, so its current network is unknown."}
-            </Hint>
-          )}
 
           {/* Result lines, in place rather than a toast: the operator is
               looking at this card for the next minute anyway. */}

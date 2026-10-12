@@ -179,7 +179,9 @@ components/
                 per-run step detail
   settings/     the /settings landing (a card per section, and Restart) and
                 its sections, each its own route: Planner and Controller
-                (placeholders until the backend has them), Wi-Fi and Preferences
+                (placeholders until the backend has them), Wi-Fi (the robot's
+                saved networks as cards that rejoin or forget, and Add network
+                one page in: the scan and password form) and Preferences
   webrtc/       WHIP/WHEP bench (unlisted developer route — see deviations)
   ui/           shadcn primitives (lint-ignored)
 hooks/          one hook per backend interaction; the only place components get data.
@@ -212,6 +214,9 @@ lib/
                 live, what to call it, whether a hold is offered, and the state
                 the bar ends in) and the editor's unsaved draft (draft-store.ts
                 — the one place that touches browser storage)
+  network/      the Wi-Fi page's saved networks: their order (the live one
+                by the state poll, then most recently joined) and the
+                "Last joined …" line, measured from the list's read time
   recording/    bag size/duration formatting and the bag name rule
   robot/        G23 joint table (URDF link names ↔ GLB node names), how the
                 dashboard names a motor (the leg grid and its joint codes), and
@@ -335,7 +340,9 @@ touch one, prefer moving it toward the rule.
   `use-initial-pose`, `use-locomotion`, `use-mode-switch`, `use-wifi-connect`,
   `use-task-hold`.
   They invalidate nothing — there is no cached resource a motion key or a pose
-  estimate makes stale — and instead compose a *reader* that reports what the
+  estimate makes stale (the one exception is `use-wifi-connect`, whose join by
+  SSID or rejoin of a saved network changes `wifiConnections`, invalidated on
+  settle because a dropped request has probably joined) — and instead compose a *reader* that reports what the
   robot did with the command: `useTaskTracker` for anything dispatched as a
   Temporal task, and the console's shared 1 Hz robot-state poll for the two
   that command the machine directly. Read the epistemics note in

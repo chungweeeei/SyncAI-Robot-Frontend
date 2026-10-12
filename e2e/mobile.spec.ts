@@ -99,6 +99,39 @@ test.describe("the console on a phone", () => {
     ).toBe(true);
   });
 
+  test("stacks the saved Wi-Fi networks in one column, Add network in reach", async ({
+    page,
+  }) => {
+    await mockBackend(page);
+    await page.goto("/settings/wifi");
+
+    const add = page.locator("main header").getByRole("link", { name: "Add network" });
+    const addBox = await add.boundingBox();
+    await expectOnScreen(page, "Add network", addBox);
+    expect(addBox!.height).toBeGreaterThanOrEqual(TARGET);
+
+    const cards = page.getByRole("region", { name: "Saved networks" }).getByRole("listitem");
+    await expect(cards).toHaveCount(2);
+    const first = (await cards.first().boundingBox())!;
+    const second = (await cards.nth(1).boundingBox())!;
+    // One column: the second card starts below the first, not beside it.
+    expect(second.y).toBeGreaterThanOrEqual(first.y + first.height);
+
+    // The page scrolls, so a card below the fold is fine; past the side is not.
+    for (const name of ["Connect to lab-5g", "Forget lab-5g"]) {
+      const button = page.getByRole("button", { name });
+      await button.scrollIntoViewIfNeeded();
+      const box = await button.boundingBox();
+      await expectOnScreen(page, name, box);
+      expect(box!.height).toBeGreaterThanOrEqual(TARGET);
+    }
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  });
+
   test("keeps a loaded task's name readable beside the editor's buttons", async ({
     page,
   }) => {
