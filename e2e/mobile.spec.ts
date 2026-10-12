@@ -146,7 +146,7 @@ test.describe("the console on a phone", () => {
     const heading = page.getByRole("textbox", { name: "Task name" });
     await expect(heading).toHaveValue("Morning round");
     expect(
-      await heading.evaluate((el) => el.scrollWidth <= el.clientWidth),
+      await heading.evaluate((el) => el.scrollWidth <= el.clientWidth || console.log("ID", el.scrollWidth, el.clientWidth)),
       "the heading is cut off",
     ).toBe(true);
 
@@ -182,6 +182,25 @@ test.describe("the console on a phone", () => {
       expect(box?.width, `${name} is narrower than a finger`).toBeGreaterThanOrEqual(TARGET);
       expect(box?.height, `${name} is shorter than a finger`).toBeGreaterThanOrEqual(TARGET);
     }
+
+    // The mode is a dot here, its word kept for a screen reader: printed, it
+    // would take the robot id's whole share of the first line. The dot has
+    // to stay on that line, and the id beside it has to stay whole.
+    const mode = strip.getByTitle("Navigation");
+    await expect(mode).toHaveText("Navigation");
+    const modeBox = await mode.boundingBox();
+    await expectOnScreen(page, "the mode chip", modeBox);
+    expect(modeBox?.width, "the mode chip printed its word").toBeLessThan(TARGET);
+    const stopBox = await strip.getByRole("button", { name: "Emergency stop" }).boundingBox();
+    expect(
+      Math.abs((modeBox?.y ?? 0) + (modeBox?.height ?? 0) / 2 - ((stopBox?.y ?? 0) + (stopBox?.height ?? 0) / 2)),
+      "the mode chip left the first line",
+    ).toBeLessThan(8);
+    const id = strip.getByRole("link", { name: "robot01" });
+    expect(
+      await id.evaluate((el) => el.scrollWidth <= el.clientWidth),
+      "the robot id is cut off",
+    ).toBe(true);
 
     await strip.getByRole("button", { name: "Pause the job" }).click();
     const resume = strip.getByRole("button", { name: "Resume the job" });

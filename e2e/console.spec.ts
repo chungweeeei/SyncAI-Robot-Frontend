@@ -263,13 +263,34 @@ test.describe("the console shell", () => {
     page,
   }) => {
     await page.goto("/maps");
-    // The mode chip that stood beside the name is gone, by request.
-    await expect(page.getByRole("banner").getByText("Navigation")).toHaveCount(0);
     await page.getByRole("banner").getByRole("link", { name: "robot01" }).click();
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
   });
 
+});
+
+test.describe("the masthead's mode chip", () => {
+  test("names the robot's mode on every screen and follows a switch", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    // The state object is shared with the fake by reference, so a mutation
+    // here is what the console's next 1 Hz poll reads — a switch made from
+    // another console, which this tab never asked for.
+    const state = robotState();
+    await mockBackend(page, { state });
+    await page.goto("/settings");
+
+    const strip = page.getByRole("banner");
+    await expect(strip.getByText("Navigation", { exact: true })).toBeVisible();
+
+    state.mode = "MANUAL";
+    await expect(strip.getByText("Mapping", { exact: true })).toBeVisible();
+    await expect(strip.getByText("Navigation", { exact: true })).toHaveCount(0);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
 });
 
 /**
