@@ -1317,10 +1317,15 @@ test.describe("the task console", () => {
     await page.getByTitle("Say a line on the robot speaker (TTS).").click();
     await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
     const save = page.getByRole("button", { name: "Save", exact: true });
-    // No name yet: Save opens the heading to name it, and confirming saves.
+    // No name yet: Save sends nothing and points at the name field, and
+    // Enter there is the same Save.
+    const field = page.getByRole("textbox", { name: "Task name" });
     await save.click();
+    await expect(field).toBeFocused();
+    await expect(page.getByText("Name this task to save it.")).toBeVisible();
     expect(writes).toHaveLength(1);
-    await page.getByRole("textbox", { name: "Task name" }).fill("greeting");
+    await field.fill("greeting");
+    await expect(page.getByText("Name this task to save it.")).toHaveCount(0);
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { name: "greeting" })).toBeVisible();
     await save.click();
@@ -1340,17 +1345,49 @@ test.describe("the task console", () => {
     ).toHaveCount(0);
   });
 
-  test("renames a saved job by name alone, and backs out without a write", async ({
+  test("names a new job in the heading and saves it in one press", async ({
     page,
   }) => {
-    // The PUT is partial on purpose: a rename must not also save step edits
-    // the operator has not saved yet.
+    // The name used to need its own confirm before Save would take it. Now
+    // it is typed straight into the heading and Save sends it with the steps.
+    await mockBackend(page);
+    const posted: { name: string; steps: unknown[] }[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as { name: string; steps: unknown[] };
+      posted.push(body);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({ id: "44444444-4444-4444-4444-444444444444", name: body.name }),
+        ),
+      });
+    });
+    await page.goto("/tasks/editor");
+    await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
+    await page.getByRole("textbox", { name: "Task name" }).fill("greeting");
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+
+    await expect.poll(() => posted).toHaveLength(1);
+    expect(posted[0]!.name).toBe("greeting");
+    expect(posted[0]!.steps).toHaveLength(1);
+    await expect(page.getByRole("heading", { name: "greeting" })).toBeAttached();
+  });
+
+  test("renames a saved job through Save, and Escape backs out", async ({
+    page,
+  }) => {
+    // A rename is a Save like any other edit: the name goes with the steps,
+    // so a step edit made beside it is saved with it rather than left behind.
     const template = "22222222-2222-2222-2222-222222222222";
     await mockBackend(page);
-    const puts: unknown[] = [];
+    const puts: { name: string; steps: unknown[] }[] = [];
     await page.route(`**/api/v1/task_templates/${template}`, (route) => {
       if (route.request().method() !== "PUT") return route.fallback();
-      const body = route.request().postDataJSON() as { name: string };
+      const body = route.request().postDataJSON() as { name: string; steps: unknown[] };
       puts.push(body);
       return route.fulfill({
         status: 200,
@@ -1363,29 +1400,27 @@ test.describe("the task console", () => {
       .getByRole("button", { name: 'Load "Morning round" into the editor' })
       .click();
     await expect(page).toHaveURL(/\/tasks\/editor$/);
-    // An unsaved step edit the rename must leave alone.
     await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByPlaceholder(/Delivery arrived/).last().fill("Evening");
 
-    const rename = page.getByRole("button", { name: "Rename task" });
     const field = page.getByRole("textbox", { name: "Task name" });
-    await rename.click();
     await expect(field).toHaveValue("Morning round");
     await field.fill("Evening round");
     await page.keyboard.press("Escape");
-    await expect(
-      page.getByRole("heading", { name: "Morning round" }),
-    ).toBeVisible();
-    // Back on the button that opened it.
-    await expect(rename).toBeFocused();
+    await expect(field).toHaveValue("Morning round");
     expect(puts).toEqual([]);
 
-    await rename.click();
     await field.fill("Evening round");
     await page.keyboard.press("Enter");
+    await expect.poll(() => puts).toHaveLength(1);
+    expect(puts[0]!.name).toBe("Evening round");
+    // The step added beside the rename went with it.
+    expect(puts[0]!.steps).toContainEqual(
+      expect.objectContaining({ type: "SPEAK", params: { text: "Evening" } }),
+    );
     await expect(
       page.getByRole("heading", { name: "Evening round" }),
-    ).toBeVisible();
-    expect(puts).toEqual([{ name: "Evening round" }]);
+    ).toBeAttached();
   });
 
   test("deletes the loaded job only once confirmed, and leaves", async ({
