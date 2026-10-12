@@ -1965,6 +1965,27 @@ test.describe("the manual drive panel", () => {
     ).toBeHidden();
   });
 
+  test("stands the robot up from any screen, without arming", async ({
+    page,
+  }) => {
+    // /settings has no rail, so the panel's button is the only Stand on
+    // screen, and the posture task on the wire can only have come from it.
+    // The arm switch is the sticks' and stays off.
+    const writes = await mockBackend(page);
+    const postures = () =>
+      writes
+        .filter((w) => w.path === "/api/v1/tasks")
+        .map((w) => (w.body as { kind: string }).kind);
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Manual drive panel" }).click();
+    await expect(
+      page.getByRole("switch", { name: "Arm manual drive input" }),
+    ).not.toBeChecked();
+
+    await page.getByRole("button", { name: "Stand", exact: true }).click();
+    await expect.poll(postures).toEqual(["standup"]);
+  });
+
   test("limits translation to the Max speed it shows, and never rotation", async ({
     page,
   }) => {

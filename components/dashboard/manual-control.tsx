@@ -11,9 +11,11 @@ import {
   SpeedLimit,
   TeleopFooter,
 } from "@/components/dashboard/drive-parts";
+import { PanelPostureControl } from "@/components/dashboard/posture-control";
 import { Thumbstick } from "@/components/dashboard/thumbstick";
 import { DRIVE_PAGE } from "@/components/drive/drive-screen";
 import { useConsoleEstop } from "@/hooks/use-console-estop";
+import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { useJoystick } from "@/hooks/use-joystick";
 import { LINEAR_SCALE_DEFAULT } from "@/lib/teleop/stick";
 import { isDrag } from "@/lib/map/gesture";
@@ -75,6 +77,7 @@ function clamp(value: number, min: number, max: number): number {
 export function ManualControl({ className }: { className?: string }) {
   const [armed, setArmed] = React.useState(false);
   const { engaged: stopped } = useConsoleEstop();
+  const robotId = useConsoleRobotState().state?.robot_id ?? null;
   // The emergency stop disarms the panel, and keeps it disarmed after the
   // release: arming again is the operator's own act, never a side effect of
   // lifting the stop. A render-time adjust rather than an effect, so not one
@@ -233,6 +236,11 @@ export function ManualControl({ className }: { className?: string }) {
           <ArmSwitch armed={armed} onArmedChange={setArmed} stopped={stopped} />
         </div>
       </header>
+      {/* Stand and Lie down, above the sticks because that is the order they
+        * are used in: the robot has to be standing before driving it means
+        * anything. Absent until the robot state has named the robot, as the
+        * rail's are, since the task has to say which robot it is for. */}
+      {robotId !== null && <PanelPostureControl robotId={robotId} className="mb-3" />}
       <div className="flex items-start justify-center gap-4">
         <LabeledStick caption="Translate">
           <Thumbstick
