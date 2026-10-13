@@ -3,13 +3,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { failOnConsoleErrors, mockBackend, robotState } from "./backend";
 
 /**
- * The mapping run strip against the robot's run state.
- *
- * The run is bracketed by two presses — Start mapping, then Save — and the
- * strip's job is to offer only the one the robot would accept, read off
- * GET /mapping rather than off a flag this tab set. So every test here moves
- * the fake's state the way the robot's would and asserts what the strip
- * offers next, plus the one write each press promised.
+ * The mapping run strip against the robot's run state. The strip offers only
+ * the press the robot would accept (Start mapping, then Save), read off
+ * GET /mapping rather than a flag this tab set, so each test moves the fake's
+ * state and asserts what the strip offers next plus the write each press sent.
  */
 test.describe("the mapping run", () => {
   let errors: string[];
@@ -20,9 +17,8 @@ test.describe("the mapping run", () => {
   });
 
   test.afterEach(() => {
-    // A refused start is a logged resource error (the 409), the same way a
-    // refused restart is in settings.spec.ts; the sentence on screen is the
-    // assertion, not the absence of the log line.
+    // A refused start (409) logs a resource error; the sentence on screen is
+    // the assertion.
     expect(
       errors.filter((e) => !/Failed to load resource/.test(e)),
       "the page logged errors",
@@ -45,8 +41,7 @@ test.describe("the mapping run", () => {
     await page.goto("/mapping");
 
     await expect(startButton(page)).toBeEnabled();
-    // Not greyed: absent. An idle robot has nothing to save or discard, and a
-    // held Save under a Start button would be the old rail in a smaller box.
+    // Not greyed: absent. An idle robot has nothing to save or discard.
     await expect(saveButton(page)).toHaveCount(0);
     await expect(resetButton(page)).toHaveCount(0);
     await expect(strip(page).getByRole("status")).toHaveCount(0);

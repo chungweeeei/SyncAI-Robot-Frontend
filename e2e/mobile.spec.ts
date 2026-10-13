@@ -11,13 +11,10 @@ import {
 } from "./backend";
 
 /**
- * The console on a phone: 375 px wide, driven by a finger.
- *
- * Only the `mobile` project runs this file (see playwright.config.ts), and
- * only what a phone changes is checked here: whether the chrome fits, whether
- * a panel opens on screen, and whether a second finger on the viewport is
- * treated as the pinch it is rather than as a second press. Everything a
- * phone does not change is already covered by the desktop suite.
+ * The console on a phone: 375 px wide, driven by a finger. Run only by the
+ * `mobile` project, and checks only what a phone changes: whether the chrome
+ * fits, whether a panel opens on screen, and whether a second finger is a
+ * pinch rather than a second press.
  */
 
 const WIDTH = 375;
@@ -59,10 +56,8 @@ test.describe("the console on a phone", () => {
   });
 
   test("reports a coarse pointer", async ({ page }) => {
-    // The guard that makes the size assertions below mean anything: every
-    // 40 px target is a `pointer-coarse:` rule, so if Chromium's phone
-    // emulation ever stops matching that query this fails first, with a
-    // readable reason, instead of the others failing on a number.
+    // Every 40 px target is a `pointer-coarse:` rule, so if the emulation
+    // stops matching that query this fails first, with a readable reason.
     await mockBackend(page);
     await page.goto("/settings");
     expect(
@@ -71,8 +66,8 @@ test.describe("the console on a phone", () => {
   });
 
   test("keeps every rail tab and the theme switch on screen", async ({ page }) => {
-    // Seven icon-plus-label tabs used to need ~780 px inside a body that
-    // cannot scroll, so Dashboard and Settings were cut off at both ends.
+    // Seven icon-plus-label tabs need ~780 px, and the body cannot scroll,
+    // so the end tabs must not be cut off.
     await mockBackend(page);
     await page.goto("/settings");
 
@@ -135,9 +130,8 @@ test.describe("the console on a phone", () => {
   test("keeps a loaded task's name readable beside the editor's buttons", async ({
     page,
   }) => {
-    // Go back, Save and Delete with their words took most of 375 px and
-    // truncated the heading to one letter. Below sm they are icons alone.
-    // The heading is the name field, so it is the field that must not clip.
+    // With their words, Go back, Save and Delete would truncate the heading
+    // (the name field) to one letter, so below sm they are icons alone.
     await mockBackend(page);
     await page.goto("/tasks");
     await page
@@ -162,10 +156,8 @@ test.describe("the console on a phone", () => {
   test("keeps the running job's controls on screen beside the health cluster", async ({
     page,
   }) => {
-    // The strip's one row carries the robot id, the mode, the step readout,
-    // its hold and cancel, the emergency stop, the sensor, drive and camera
-    // buttons and the battery. The robot id is the only thing allowed to give
-    // way; the buttons must stay whole and under a finger.
+    // Of everything on the strip's row, only the robot id may give way; the
+    // buttons must stay whole and under a finger.
     const ID = "robot01-task-1758000000-1";
     await mockBackend(page, {
       activeTasks: [activeTask()],
@@ -184,8 +176,7 @@ test.describe("the console on a phone", () => {
     }
 
     // The mode is a dot here, its word kept for a screen reader: printed, it
-    // would take the robot id's whole share of the first line. The dot has
-    // to stay on that line, and the id beside it has to stay whole.
+    // would take the robot id's share of the first line.
     const mode = strip.getByTitle("Navigation");
     await expect(mode).toHaveText("Navigation");
     const modeBox = await mode.boundingBox();
@@ -211,8 +202,8 @@ test.describe("the console on a phone", () => {
   test("drops the drive panel and the camera window inside the viewport", async ({
     page,
   }) => {
-    // Both hung off a button 100–240 px from the right edge, so a 256–320 px
-    // panel opened past the left edge of the screen.
+    // Both hang off a button 100–240 px from the right edge, so a 256–320 px
+    // panel anchored to it would open past the left edge.
     await mockBackend(page);
     await page.goto("/settings");
 
@@ -285,10 +276,9 @@ test.describe("the console on a phone", () => {
   test("drives the view's translation stick one axis at a time, under its speed limit", async ({
     page,
   }) => {
-    // A thumb on glass has no detent for straight ahead, so the view's
-    // translation stick snaps to forward / back or strafe. Both halves: the
-    // frames the robot receives never carry vx and vy together, and the Max
-    // speed the view shows is the one they are sent at.
+    // A thumb on glass has no detent for straight ahead, so the translation
+    // stick snaps to forward / back or strafe: frames never carry vx and vy
+    // together, and the Max speed shown is the one they are sent at.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page);
@@ -345,8 +335,8 @@ test.describe("the console on a phone", () => {
   });
 
   test("drops the overheating notice inside the viewport", async ({ page }) => {
-    // The sensor button is the leftmost of the strip's three, so its panel
-    // hung off it would open furthest past the left edge of all of them.
+    // The sensor button is the leftmost of the three, so its panel would open
+    // furthest past the left edge.
     await mockBackend(page, {
       state: robotState({
         motor_status: [{ name: "HL_Knee_joint", temperature: 90, error: 0 }],
@@ -364,14 +354,11 @@ test.describe("the console on a phone", () => {
   });
 
   test("drops a goal draft when a second finger lands", async ({ page }) => {
-    // A pinch on the viewport with Set goal armed used to re-enter the press
-    // handler with the second finger, and the first finger's lift committed
-    // whatever it was aiming — a MOVE task to a spot nobody chose.
+    // A pinch with Set goal armed must not commit the first finger's aim —
+    // a MOVE task to a spot nobody chose.
     //
-    // The fake answers POST /tasks with a bare {message}, which the ack
-    // schema refuses (and rightly: the id is a poll target). This test wants
-    // the positive control to succeed, so it answers with a real ack and a
-    // finished task for the poll that follows.
+    // The fake's bare {message} fails the ack schema, so for the positive
+    // control this answers a real ack and a finished task for the poll.
     const ID = "robot01-goal-e2e";
     await mockBackend(page, {
       taskStates: {
@@ -402,9 +389,8 @@ test.describe("the console on a phone", () => {
     const cx = box.x + box.width / 2;
     const cy = box.y + box.height / 2;
 
-    // Touch events are dispatched over CDP rather than page.touchscreen,
-    // which only knows a single tap; a pinch is two fingers, and it is the
-    // second one that used to do the damage.
+    // Over CDP: page.touchscreen only knows a single tap, and the second
+    // finger is the one under test.
     const cdp = await page.context().newCDPSession(page);
     const finger = (x: number, y: number, id: number) => ({ x, y, id });
     const touch = (type: "touchStart" | "touchMove" | "touchEnd", touchPoints: { x: number; y: number; id: number }[]) =>
@@ -442,9 +428,8 @@ test.describe("the console on a phone", () => {
   test("lays the floor plan editor's panels out without one covering the other", async ({
     page,
   }) => {
-    // At 375 px the 224 px toolbar and the 240 px waypoint panel used to hang
-    // from the top corners and overlap by ~110 px, with the panel on top of
-    // the toolbar's Save.
+    // At 375 px a 224 px toolbar and a 240 px waypoint panel hung from the
+    // top corners would overlap, covering the toolbar's Save.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
     await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
     await expect(page.getByRole("toolbar", { name: "Draw" })).toBeVisible();
@@ -459,9 +444,8 @@ test.describe("the console on a phone", () => {
       "the waypoint panel starts above the toolbar's Save",
     ).toBeGreaterThan(save!.y + save!.height);
 
-    // The tools are compact icons under a finger: still named, for a screen
-    // reader, but with no label printed under them (innerText skips what is
-    // not rendered, where toContainText would read it anyway).
+    // Compact icons under a finger: named, but no printed label (innerText
+    // skips what is not rendered; toContainText would not).
     const place = page.getByRole("button", { name: "Place" });
     await expect(place).toBeVisible();
     expect(await place.evaluate((el) => (el as HTMLElement).innerText.trim())).toBe("");
@@ -470,14 +454,10 @@ test.describe("the console on a phone", () => {
   test("zooms the floor plan with two fingers instead of painting between them", async ({
     page,
   }) => {
-    // With Brush armed a second finger used to replace the stroke and the
-    // next move painted a line from one finger to the other. Now two
-    // fingers are a pinch, and the only mark on the map is the first
-    // finger's own press.
-    // A real grid, matching the catalogue's 400 x 300: the 1 px default is
-    // one cell the size of the canvas, and a pinch shrinks it out from under
-    // the fingers, which would make both halves of this test touch nothing.
-    // Unknown cells, so painting Floor is a change worth saving.
+    // With Brush armed, two fingers are a pinch, not a line painted from one
+    // finger to the other.
+    // A real 400 x 300 grid, since a pinch shrinks the 1 px default out from
+    // under the fingers. Unknown cells, so painting Floor is a real change.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
     await page.goto(`/maps/${MAP_NAME}/edit`);
     await expect(page.getByRole("toolbar", { name: "Draw" })).toBeVisible();
@@ -495,9 +475,7 @@ test.describe("the console on a phone", () => {
       touchPoints: { x: number; y: number; id: number }[],
     ) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
 
-    // A pan press, then the pinch: the editor opens with nothing chosen to
-    // draw and only Pan offered, so this is the gesture a phone makes to look
-    // around before painting.
+    // A pan press, then the pinch: how a phone looks around before painting.
     // exact: "Manual drive panel" in the strip contains the word.
     await page.getByRole("button", { name: "Pan", exact: true }).click();
     await touch("touchStart", [finger(cx - 30, cy, 1)]);
@@ -505,18 +483,15 @@ test.describe("the console on a phone", () => {
     await touch("touchMove", [finger(cx - 80, cy, 1), finger(cx + 80, cy, 2)]);
     await touch("touchEnd", [finger(cx - 80, cy, 1)]);
     await touch("touchEnd", []);
-    // Nothing was painted, so there is nothing to save — and the map did
-    // zoom, or "nothing painted" would be true of a canvas that ignored the
-    // second finger, which is what it did before it had a pinch. Nothing on
-    // screen shows the zoom, so it is read off the editor's data-zoom, which
-    // is 94 at fit on this phone.
+    // Nothing to save — and the map did zoom, or "nothing painted" would
+    // also be true of a canvas that ignored the second finger. The zoom is
+    // read off data-zoom, 94 at fit on this phone.
     await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
     const zoom = page.locator("[data-zoom]");
     await expect.poll(async () => Number(await zoom.getAttribute("data-zoom"))).toBeGreaterThan(94);
 
-    // The positive control: one finger with Brush armed does paint. Brush is
-    // only offered once something is chosen to draw, and Floor on these
-    // Unknown cells is a change worth saving.
+    // Positive control: one finger with Brush armed does paint. Brush is
+    // only offered once something is chosen to draw.
     await page.getByRole("combobox", { name: "Draw" }).click();
     await page.getByRole("option", { name: "Floor", exact: true }).click();
     await page.getByRole("button", { name: "Brush" }).click();
@@ -527,9 +502,8 @@ test.describe("the console on a phone", () => {
   });
 
   test("zooms the task editor's floor plan with two fingers", async ({ page }) => {
-    // A phone has no wheel, so the pinch is how the job's floor plan is read
-    // up close. The same real grid as above, or the pinch would shrink the
-    // 1 px default out from under the fingers.
+    // A phone has no wheel, so a pinch is how the floor plan is read up
+    // close. A real grid, as above.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
     await page.goto("/tasks/editor");
     await page.getByTitle("Drive to a pose in the map frame.").click();
@@ -542,8 +516,7 @@ test.describe("the console on a phone", () => {
     const fitted = await readZoom();
 
     // Centred first: the plan opens low on a phone, and its middle can sit
-    // under the nav bar, where a finger lands on the bar instead. How low
-    // depends on the copy above it, which is not what this test is about.
+    // under the nav bar.
     await plan.evaluate((element) => element.scrollIntoView({ block: "center" }));
     const box = (await plan.boundingBox())!;
     const cx = box.x + box.width / 2;
@@ -555,9 +528,7 @@ test.describe("the console on a phone", () => {
       touchPoints: { x: number; y: number; id: number }[],
     ) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
 
-    // One finger pans and nothing else: the zoom it leaves is the one it
-    // found. This is the control for the pinch below — a panel that read
-    // the second finger as a second pan would also leave the zoom alone.
+    // Control for the pinch below: one finger pans and leaves the zoom alone.
     await touch("touchStart", [finger(cx, cy, 1)]);
     await touch("touchMove", [finger(cx + 30, cy + 20, 1)]);
     await touch("touchEnd", []);

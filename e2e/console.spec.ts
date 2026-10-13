@@ -30,9 +30,8 @@ test.describe("the console shell", () => {
   test("opens the drive panel from the masthead on a screen with no viewport", async ({
     page,
   }) => {
-    // The panel used to be mounted by the three viewport screens, so /settings
-    // was one of the places an operator could not nudge the robot from. It
-    // comes up collapsed and disarmed: opening it must not start anything.
+    // Reachable from a non-viewport screen too. It comes up collapsed and
+    // disarmed: opening it must not start anything.
     await page.goto("/settings");
     const toggle = page.getByRole("button", { name: "Manual drive panel" });
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -51,9 +50,8 @@ test.describe("the console shell", () => {
   test("offers no way to save a clip before there is a picture", async ({
     page,
   }) => {
-    // The fake backend cannot complete an ICE handshake, so the window never
-    // reaches a live picture -- which is exactly the state worth pinning: a
-    // control that offered to save one would be offering to save nothing.
+    // The fake cannot complete ICE, so there is never a live picture — the
+    // state worth pinning, since a save offered now would save nothing.
     await page.goto("/settings");
     const toggle = page.getByRole("button", { name: "Camera window" });
     await toggle.click();
@@ -62,8 +60,7 @@ test.describe("the console shell", () => {
     await expect(clip).toBeDisabled();
     await expect(clip).toHaveAttribute("aria-pressed", "false");
 
-    // And the disclosure still closes the way it did before the window grew a
-    // second control: Escape is scoped to this subtree, not to the window.
+    // Escape is scoped to this subtree, not to the window.
     await page.keyboard.press("Escape");
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
@@ -71,8 +68,8 @@ test.describe("the console shell", () => {
   test("moves the camera window from the keyboard and puts it back", async ({
     page,
   }) => {
-    // Resizing already had a keyboard path. Moving did not, so a keyboard user
-    // who made the window bigger could not put it out of the way.
+    // Moving has a keyboard path, so a keyboard user who made the window
+    // bigger can put it out of the way.
     await page.goto("/settings");
     await page.getByRole("button", { name: "Camera window" }).click();
     const handle = page.getByRole("button", { name: "Move the camera window" });
@@ -132,8 +129,7 @@ test.describe("the console shell", () => {
     ]) {
       await expect(toolbar.getByRole("button", { name })).toBeVisible();
     }
-    // The left strip is what is done to the map itself; the stream pill that
-    // used to sit opposite the toolbar is gone.
+    // The left strip is what is done to the map itself.
     const mapTools = page.getByRole("toolbar", { name: "Map" });
     for (const name of ["Recenter", "Add waypoint"]) {
       await expect(mapTools.getByRole("button", { name })).toBeVisible();
@@ -166,11 +162,9 @@ test.describe("the console shell", () => {
   });
 
   test("keeps one pick mode across both strips", async ({ page }) => {
-    // Add waypoint sits in the other strip but is the same kind of tool as
-    // Set goal, and one pick mode still means one: arming either disarms the
-    // other. Its own test because every click on this page costs the
-    // software-rendered viewport a couple of seconds, and the icon test above
-    // is already close to the budget.
+    // Add waypoint is in the other strip but shares Set goal's pick mode:
+    // arming either disarms the other. Its own test because each click costs
+    // the software-rendered viewport seconds and the test above is near budget.
     await page.goto("/");
     const goal = page.getByRole("toolbar", { name: "Viewport" }).getByRole("button", { name: "Set goal" });
     const place = page.getByRole("toolbar", { name: "Map" }).getByRole("button", { name: "Add waypoint" });
@@ -191,9 +185,8 @@ test.describe("the console shell", () => {
 
   test("reaches every operator screen from the rail", async ({ page }) => {
     await page.goto("/");
-    // Wait for the dashboard to be up before the first click. A click that
-    // lands while the page is still hydrating can be swallowed, leaving the
-    // test on "/", and each link added to the rail made that window wider.
+    // Wait for the dashboard before the first click: one that lands while
+    // the page is hydrating can be swallowed, leaving the test on "/".
     await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
     await expect(page.getByText("robot01").first()).toBeVisible();
 
@@ -276,9 +269,8 @@ test.describe("the masthead's mode chip", () => {
   }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    // The state object is shared with the fake by reference, so a mutation
-    // here is what the console's next 1 Hz poll reads — a switch made from
-    // another console, which this tab never asked for.
+    // Shared with the fake by reference: mutating it is a switch made from
+    // another console, read by the next 1 Hz poll.
     const state = robotState();
     await mockBackend(page, { state });
     await page.goto("/settings");
@@ -294,9 +286,8 @@ test.describe("the masthead's mode chip", () => {
 });
 
 /**
- * Outside the console-error guard above on purpose: navigating to a 404 makes
- * the browser log a failed document load, which is the correct behaviour being
- * asserted rather than noise to suppress.
+ * Outside the console-error guard on purpose: navigating to a 404 logs a
+ * failed document load, which is the behaviour being asserted.
  */
 test.describe("when a motor overheats", () => {
   let errors: string[];
@@ -318,8 +309,7 @@ test.describe("when a motor overheats", () => {
   test("drops a notice from the masthead's sensor button only above 85°, naming the joint", async ({
     page,
   }) => {
-    // The state object is shared with the fake by reference, so a mutation
-    // here is what the console's next 1 Hz poll reads.
+    // Shared with the fake by reference, so the next poll reads the mutation.
     const state = robotState({ motor_status: hot(85) });
     await mockBackend(page, { state });
     await page.goto("/");
@@ -341,15 +331,14 @@ test.describe("when a motor overheats", () => {
     await expect(
       strip.getByRole("button", { name: "Sensor alerts: a motor is overheating" }),
     ).toBeVisible();
-    // Off the dashboard too: the dashboard's own corner no longer carries it.
+    // Off the dashboard too: it lives in the strip, not the viewport's corner.
     await expect(
       page.getByRole("region", { name: "Map viewport" }).getByText("A motor is overheating"),
     ).toHaveCount(0);
   });
 
   test("interrupts on a screen other than the dashboard", async ({ page }) => {
-    // The notice used to live in the dashboard's viewport, so a motor running
-    // hot while an operator edited a job said nothing.
+    // Raised on every screen, not only the dashboard.
     const state = robotState({ motor_status: hot(41) });
     await mockBackend(page, { state });
     await page.goto("/tasks");
@@ -419,11 +408,9 @@ test.describe("routes that must not exist on the robot", () => {
 });
 
 /**
- * Also outside the console-error guard: the bench talks to a WebRTC backend
- * this suite does not fake, so it logs what a missing one looks like. What is
- * asserted here is only that the route exists in a production build — it used
- * to 404 in one, which put it out of reach on the robot, the only machine that
- * can exercise the video path.
+ * Also outside the console-error guard: the bench logs the WebRTC backend this
+ * suite does not fake. Asserts only that the route exists in a production
+ * build, since the robot (which runs one) is the only place to test video.
  */
 test.describe("the WebRTC bench", () => {
   test("renders in a production build", async ({ page }) => {
@@ -490,9 +477,8 @@ test.describe("the dashboard's schedules", () => {
     await expect
       .poll(() => writes.map((w) => `${w.method} ${w.path}`))
       .toContain("POST /api/v1/schedules/morning/pause");
-    // The flip is the hook's optimistic one. The row sorts below the ones
-    // that will still fire, and stays on the rail with the Resume that undoes
-    // the press.
+    // The hook's optimistic flip: the row sorts below the ones that will
+    // still fire, and keeps the Resume that undoes the press.
     await expect(rail.getByRole("listitem")).toHaveText([
       /Up next: Night patrol/,
       /loose-steps/,
@@ -584,8 +570,8 @@ test.describe("when the backend answers in a shape the console does not know", (
   test("fails loudly at the boundary instead of rendering nonsense", async ({
     page,
   }) => {
-    // The whole point of the zod layer: a renamed field used to arrive as
-    // `undefined` and surface pages later as a blank readout.
+    // A renamed field must fail at the schema, not surface as a blank
+    // readout pages later.
     await mockBackend(page, {
       state: { ...robotState(), battery_status: { percentage: 88 } },
     });

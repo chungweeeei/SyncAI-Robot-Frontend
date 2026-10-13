@@ -10,11 +10,9 @@ import {
 
 /**
  * The masthead's emergency stop — the driver's safety lock: one press
- * engages it, only a held press releases it, and what the button shows is
- * the lock the robot reports. Each test asserts both halves — what the strip says and what
- * the console sent — and every "nothing happened" carries a positive control,
- * because a button that never received the press also leaves the stop where
- * it was.
+ * engages it, only a held press releases it, and the button shows the lock
+ * the robot reports. Every "nothing happened" carries a positive control,
+ * because a button that never received the press also leaves it as it was.
  */
 
 const ID = "robot01-task-1758000000-1";
@@ -41,9 +39,8 @@ test.describe("the emergency stop", () => {
     failOnConsoleErrors(page, errors);
   });
 
-  // A 502 makes Chromium log "Failed to load resource", and one test here
-  // answers the lock with exactly that on purpose (run-controls.spec.ts
-  // records the same exception). A thrown render still fails.
+  // One test answers the lock with a 502 on purpose, which Chromium logs as
+  // "Failed to load resource". A thrown render still fails.
   test.afterEach(() => {
     expect(
       errors.filter((text) => !/Failed to load resource/.test(text)),
@@ -140,10 +137,9 @@ test.describe("the emergency stop", () => {
     page,
   }) => {
     await mockBackend(page);
-    // The teleop channel answered here, as operator-flows does: an armed
-    // panel whose channel fails disarms itself, and that would pass the
-    // assertion below for the wrong reason (or, with no socket at all, fail
-    // the positive control).
+    // The teleop channel is answered: an armed panel whose channel fails
+    // disarms itself, which would pass the assertion below for the wrong
+    // reason.
     const frames: { vx: number; vy: number; wz: number }[] = [];
     await page.routeWebSocket(/\/api\/v1\/robot\/teleop$/, (ws) => {
       ws.onMessage((message) => {

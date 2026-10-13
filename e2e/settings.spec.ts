@@ -8,13 +8,11 @@ import {
 } from "./backend";
 
 /**
- * The Settings header's restart: a press that rebuilds the robot's software,
- * whose outcome only the backend's restart record can report — the state
- * poll keeps answering with the last frame throughout.
+ * The Settings restart: its outcome only the backend's restart record can
+ * report, since the state poll keeps answering with the last frame.
  *
- * The console-error guard stays on, with one exception: a 409 makes Chromium
- * log "Failed to load resource", and here that refusal is the behaviour being
- * tested. A thrown render or a schema failure still fails the test.
+ * A 409 logs "Failed to load resource", and here that refusal is the
+ * behaviour under test; a thrown render or schema failure still fails.
  */
 test.describe("restarting the robot from Settings", () => {
   let errors: string[];
@@ -36,10 +34,7 @@ test.describe("restarting the robot from Settings", () => {
   const restartButton = (page: Page) =>
     page.locator("main header").getByRole("button", { name: "Restart", exact: true });
 
-  /**
-   * Answer GET /robot/restart with `record` once it is set, standing in for
-   * the robot reporting back when its rebuild is over.
-   */
+  /** Answer GET /robot/restart with `record` once set: the rebuild is over. */
   async function finishRestartWith(page: Page) {
     const finish: { record: Record<string, unknown> | null } = { record: null };
     await page.route("**/api/v1/robot/restart", (route: Route) =>
@@ -280,8 +275,7 @@ test.describe("settings sections", () => {
 
 /**
  * Wi-Fi opens on the networks the robot has saved; a new one is joined from
- * Add network, one page further in. Every card that moves the robot is
- * checked against what the console sent, not only what the screen says.
+ * Add network, one page further in.
  */
 test.describe("Wi-Fi saved networks", () => {
   let errors: string[];

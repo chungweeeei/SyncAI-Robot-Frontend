@@ -10,9 +10,8 @@ import {
 
 /**
  * The dashboard's Auto localize: one press asks the robot to find itself on
- * the map, and the read-back under the left strip says how that went. Each
- * test asserts both halves — what the panel says and what the console sent —
- * and every greyed button is checked against a write log that stayed empty.
+ * the map, and the read-back under the left strip says how that went. Every
+ * greyed button is checked against a write log that stayed empty.
  */
 
 const button = (page: Page) =>
