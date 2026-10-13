@@ -19,17 +19,16 @@ import {
 export type TaskTemplatesStatus = "loading" | "ok" | "error";
 
 export interface UseTaskTemplates {
-  /** Every template on the robot, by name. Scoping is the caller's business. */
+  /** Every template on the robot, by name; scoping is the caller's. */
   templates: TaskTemplate[];
   status: TaskTemplatesStatus;
-  /** The load failure, or the most recent write failure. Rendered verbatim. */
+  /** The load failure or the latest write failure, rendered verbatim. */
   error: string | null;
   /**
    * The wire id of the step the last refused write named (`3-move`), or null.
    * Beside `error`, never instead of it: the sentence still says why.
    */
   refusedStepId: string | null;
-  /** True while a create / update / delete is in flight. */
   busy: boolean;
   /** The stored row, or null if the request failed (see `error`). */
   create: (draft: TaskTemplateDraft) => Promise<TaskTemplate | null>;
@@ -42,22 +41,13 @@ export interface UseTaskTemplates {
 }
 
 /**
- * The operator's library of re-dispatchable templates, written through on every
- * change.
+ * The library of re-dispatchable templates. POST and PUT answer with the
+ * stored row, so the list is spliced rather than refetched (unlike
+ * useSchedules).
  *
- * Shaped after useMapVertices rather than useSchedules, and the difference is the
- * response body: POST and PUT here answer with the stored row, so the list is
- * spliced instead of refetched — a GET would cost a round trip to learn nothing.
- * (useSchedules must refetch because its writes answer `{id, message}` and the
- * next run times are computed by Temporal.)
- *
- * `refresh` exists even though nothing here mutates behind our back, because
- * something else does: a stored MOVE step's coordinates are resolved server-side
- * against the vertex's *current* pose, so editing a vertex on /maps changes what
- * these rows say. The vertex hooks now mark this key stale themselves, so a
- * fresh mount re-reads; this is the in-page escape hatch for a long-open tab.
- * Write failures live in the mutations rather than the query, so the reload a
- * refresh triggers cannot clear a sentence the operator still needs to read.
+ * MOVE steps resolve against a vertex's *current* pose server-side, so vertex
+ * writes mark this key stale; `refresh` is the escape hatch for a long-open
+ * tab. Write failures live on the mutations so a reload cannot clear them.
  */
 export function useTaskTemplates(): UseTaskTemplates {
   const queryClient = useQueryClient();
@@ -86,8 +76,7 @@ export function useTaskTemplates(): UseTaskTemplates {
   const createMutation = useMutation({
     mutationFn: (draft: TaskTemplateDraft) => createTaskTemplate(draft),
     onSuccess: (created) => {
-      // Inserted in the server's order (name, then created_at) rather than
-      // appended, so the row does not jump on the next refresh.
+      // In the server's order, so the row does not jump on the next refresh.
       setTemplates((current) => sortByName([...current, created]));
     },
   });
@@ -115,9 +104,8 @@ export function useTaskTemplates(): UseTaskTemplates {
   const { mutateAsync: updateAsync } = updateMutation;
   const { mutateAsync: removeAsync } = removeMutation;
 
-  // Rejections are swallowed rather than rethrown because every caller is wired
-  // straight to an onClick — a rethrow would be an unhandled rejection, and the
-  // components read the outcome off `error` and the returned value.
+  // Rejections are swallowed: every caller is an onClick, which reads `error`
+  // and the return value, and a rethrow would be an unhandled rejection.
   const create = React.useCallback(
     (draft: TaskTemplateDraft) => createAsync(draft).catch(() => null),
     [createAsync],

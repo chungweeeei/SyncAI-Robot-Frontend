@@ -8,23 +8,16 @@ import type { MapSummary } from "@/lib/types/map";
 export type MapsStatus = "loading" | "ok" | "error";
 
 /**
- * How often the catalogue is re-read while a gridmap conversion is running.
- *
- * Two seconds against a conversion that takes tens of seconds: fast enough that
- * "done" feels immediate, slow enough that the request is invisible next to the
- * telemetry socket. There is no push channel for this — the backend has no job
- * resource and a conversion finishing is not a ROS topic — and the poll is also
- * what makes the answer survive a reload, which a one-shot event would not.
+ * Catalogue re-read interval while a floor plan conversion runs (tens of
+ * seconds). There is no push channel for a conversion finishing, and a poll
+ * also survives a reload where a one-shot event would not.
  */
 const CONVERTING_POLL_MS = 2000;
 
 /**
- * The poll policy, shared by every observer of the maps query.
- *
- * The flag says when to stop, so this turns itself off with the last running
- * conversion rather than needing a timer anyone has to cancel. Factored out
- * because two hooks below mount the same query and a policy that differed
- * between them would make the poll depend on which screen happened to be open.
+ * The poll policy for every observer of the maps query; it switches itself off
+ * with the last running conversion. Shared so the poll cannot depend on which
+ * of the two hooks below happens to be mounted.
  */
 function pollWhileConverting(
   maps: MapSummary[] | undefined,
@@ -37,38 +30,17 @@ function pollWhileConverting(
 export interface UseMaps {
   /** Latest successfully fetched catalogue, or null before the first success. */
   maps: MapSummary[] | null;
-  /**
-   * "loading" until the first response, then "ok"/"error" for the most recent
-   * fetch. A transient error keeps the last good `maps` — same contract as
-   * useRobotState.
-   */
+  /** A transient error keeps the last good `maps`, as in useRobotState. */
   status: MapsStatus;
-  /**
-   * Re-fetch. The map write hooks (hooks/use-map-actions.ts) invalidate this
-   * key themselves rather than call it; this is for a caller holding the
-   * hook's result.
-   */
   refresh: () => void;
 }
 
 /**
  * The map catalogue, through the shared query cache.
  *
- * Not polled, unlike useRobotState — with one exception. The set of directories
- * under `map/` only changes when someone saves or converts a map, which is a
- * deliberate act and never happens while an operator is looking at this screen,
- * so `refresh()` is the escape hatch instead of a timer. The exception is a
- * running gridmap conversion: it is the one server-side process that changes
- * the catalogue on its own (`grid_status` leaves "converting", `grid` appears
- * or an error does), it has no other status surface, and the status itself says
- * when to stop — so the poll runs only while some map is converting and turns
- * itself off with the last one.
- *
- * Every observer shares one cache entry and one in-flight request — the
- * dashboard mounting useActiveMap in two components used to cost two GETs; now
- * the second render reads the first's answer. A fresh mount still refetches
- * (staleTime 0), which keeps the old picked-up-on-next-visit behaviour, just
- * with the cached copy painted while the request runs.
+ * Polled only while a conversion runs — the one server-side process that
+ * changes the catalogue on its own. Otherwise it changes only on a deliberate
+ * save or convert, and a fresh mount refetches (staleTime 0).
  */
 export function useMaps(): UseMaps {
   const queryClient = useQueryClient();
@@ -78,8 +50,7 @@ export function useMaps(): UseMaps {
     refetchInterval: (query) => pollWhileConverting(query.state.data),
   });
 
-  // Invalidate rather than refetch(): the entry is shared, so a Refresh pressed
-  // on one screen must update every mounted observer, not just this one.
+  // Invalidate rather than refetch(): the entry is shared by every observer.
   const refresh = React.useCallback(
     () => void queryClient.invalidateQueries({ queryKey: queryKeys.maps }),
     [queryClient],
@@ -93,13 +64,9 @@ export function useMaps(): UseMaps {
 }
 
 /**
- * One map's catalogue entry, or null before the catalogue answers, with no
- * name, or for a name it does not list.
- *
- * What the per-map file caches read their version from. Another observer of
- * the same query, so it costs no request of its own and inherits the
- * converting poll: a conversion another console started is seen here the next
- * time the catalogue is read, and so is its end.
+ * One map's catalogue entry, or null (no name, no answer yet, not listed).
+ * The per-map file caches read their version from it; as another observer of
+ * the same query it inherits the converting poll.
  */
 export function useMapEntry(name: string | null): MapSummary | null {
   const { maps } = useMaps();
@@ -110,22 +77,13 @@ export function useMapEntry(name: string | null): MapSummary | null {
 }
 
 /**
- * The map the running stack loaded, or null until the catalogue answers.
+ * The map the running stack loaded, or null until the catalogue answers. The
+ * server-derived `active` flag is the only source; never parse
+ * `RobotState.map`'s path.
  *
- * The `active` flag is the only way to ask this question: the backend resolves
- * it from the INI, and dropping the live `map` topic left no endpoint that
- * means "the current one". Wrapped in a hook rather than left as a `.find()` at
- * each call site so the answer has one definition — the same reason the flag is
- * server-derived instead of the UI parsing `RobotState.map`'s path.
- *
- * Inherits useMaps' refetch-on-mount policy, so a map swapped underneath a
- * long-open dashboard is not picked up until something calls `refresh()`. That
- * used to be free: a swap meant restarting the stack, which dropped the
- * telemetry socket next to this anyway. A live switch drops nothing, so two
- * things call it now. MapActivateControl invalidates this key after a switch
- * made here, since it is the only control that moves `active`. The status
- * strip calls `refresh()` when the robot's own 1 Hz report of its map changes,
- * which is how a switch made from another console is picked up.
+ * A live switch drops no socket, so nothing refetches on its own: a switch
+ * made here invalidates the key, and the status strip calls `refresh()` when
+ * the robot's 1 Hz report of its map changes (a switch from another console).
  */
 export function useActiveMap(): { map: MapSummary | null; status: MapsStatus } {
   const { maps, status } = useMaps();
@@ -137,24 +95,12 @@ export function useActiveMap(): { map: MapSummary | null; status: MapsStatus } {
 }
 
 /**
- * Watch one map's gridmap conversion, for a screen that started it.
+ * Watch the floor plan conversion of a map this screen just saved.
  *
- * The mapping screen's reason for existing: a save kicks off a conversion that
- * takes tens of seconds, and until this hook the only place its outcome showed
- * up was the Maps screen — so an operator who saved a map and stayed put was
- * told "converting in the background" and then nothing, ever. What they needed
- * was not a new channel but an observer of the catalogue that already knows,
- * which is all this is.
- *
- * Mounts the same query entry as useMaps rather than a per-map endpoint (there
- * isn't one) — so the two share one request, and this hook inherits the
- * conversion poll without restating it. `enabled` is what keeps the mapping
- * screen from fetching a catalogue it has no other use for: nothing goes out
- * until a name is passed, i.e. until something has actually been saved.
- *
- * Returns null while no name is being watched, before the first response, and
- * for a name the catalogue does not list. All three mean "nothing to say yet",
- * which is what a caller renders as nothing.
+ * The same query entry as useMaps (there is no per-map endpoint), so it shares
+ * the request and the conversion poll. Disabled until a name is passed, so the
+ * mapping screen fetches no catalogue before a save. Null means "nothing to
+ * say yet".
  */
 export function useMapConversion(name: string | null): MapSummary | null {
   const { data } = useQuery({

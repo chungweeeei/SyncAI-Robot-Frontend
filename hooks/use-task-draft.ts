@@ -10,10 +10,8 @@ import {
 } from "@/lib/task/draft-store";
 
 /**
- * One store per tab, created on first use. `sessionStorage` is read behind a
- * guard: on the server there is no window, and in a browser the accessor
- * itself can throw (blocked site data), which must read as "no storage", not
- * as a crashed page.
+ * One store per tab. The `sessionStorage` accessor itself can throw (blocked
+ * site data), which must read as "no storage", not a crashed page.
  */
 let store: TaskDraftStore | null = null;
 
@@ -34,13 +32,9 @@ function taskDraftStore(): TaskDraftStore {
 const serverSnapshot = () => EMPTY_TASK_DRAFT;
 
 /**
- * The task editor's unsaved work, as a subscription rather than as state.
- *
- * The draft is browser-side and the page is server-rendered, so the first
- * client render has to agree with the server's empty one; useSyncExternalStore
- * is what then swaps the tab's draft in without a hydration mismatch and
- * without a setState in an effect. Read lib/task/draft-store.ts for what is
- * kept and for how long.
+ * The task editor's unsaved work, as a subscription: the first client render
+ * must match the server's empty one, and useSyncExternalStore swaps the draft
+ * in without a mismatch or a setState in an effect. See lib/task/draft-store.ts.
  */
 export function useTaskDraft(): [
   draft: TaskDraft,

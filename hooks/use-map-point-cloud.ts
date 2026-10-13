@@ -7,33 +7,20 @@ import type { PointCloudFrame } from "@/lib/types/pointcloud";
 export type MapPointCloudStatus = "idle" | "loading" | "ok" | "error";
 
 export interface UseMapPointCloud {
-  /** The decoded scan, or null while idle, loading or failed. */
   cloud: PointCloudFrame | null;
   status: MapPointCloudStatus;
-  /** The backend's own sentence when the read was refused, verbatim. */
+  /** The backend's sentence when the read was refused, verbatim. */
   error: string | null;
 }
 
 /**
- * One stored map's scan, for the dashboard's "Map scan" layer. Pass null to
- * leave it unfetched, which is what the layer being off means: weak clients
- * never pay for the download unless someone asks to see it.
+ * One stored map's scan, for the dashboard's "Map scan" layer. Null leaves it
+ * unfetched (the layer is off), so nobody pays for the download unasked.
  *
- * A query rather than a fetch in the viewport's effect, which is where it used
- * to be: a refusal there went to `console.error` and nowhere else, so the
- * operator saw the toggle lit over an empty floor with nothing saying why.
- * Here the refusal is `error`, and the view can put it beside the toggle.
- *
- * `staleTime: Infinity` because a name's scan does not change in place, and
- * the writes that retire it drop the entry (see `queryKeys.mapPointCloud`,
- * which also says why this key is not versioned like the floor plan's). An
- * error is not cached as an answer: with no data the query is stale, so
- * turning the layer off and on again is the retry.
- *
- * The frame's Float32Array is handed straight to three.js as a buffer
- * attribute, which references it rather than copying. That is safe to share
- * because nothing writes to it, and it is left to GC for the same reason
- * `useMapImage` leaves its bitmap: no one reader knows it was the last.
+ * `staleTime: Infinity`: a scan does not change in place and the writes that
+ * retire it drop the entry (see `queryKeys.mapPointCloud`). An error is not
+ * cached, so toggling the layer is the retry. The Float32Array goes to
+ * three.js uncopied — safe because nothing writes it — and is left to GC.
  */
 export function useMapPointCloud(name: string | null): UseMapPointCloud {
   const { data, isPending, error } = useQuery({

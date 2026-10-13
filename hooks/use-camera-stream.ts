@@ -8,34 +8,20 @@ export type CameraPhase = "connecting" | "live" | "failed";
 
 export interface CameraStream {
   phase: CameraPhase;
-  /** The backend's own sentence when it refused, rendered verbatim. */
+  /** The backend's sentence when it refused, verbatim. */
   error: string | null;
-  /** Attach to a <video> element's srcObject. Null until the answer lands. */
+  /** For a <video>'s srcObject; null until the answer lands. */
   stream: MediaStream | null;
-  /** Tear the session down and negotiate a new one. */
   retry: () => void;
 }
 
 /**
- * The hook layer `lib/video/` never had.
+ * The camera window's WHEP session. Not a query: the RTCPeerConnection is the
+ * source of truth, as the WebSocket is for telemetry.
  *
- * WHIP/WHEP was built, deferred, and left with `components/webrtc/webrtc-bench`
- * driving sessions itself — the one backend interaction in this codebase a
- * component reached for directly, recorded in CLAUDE.md as debt to be paid
- * "when camera streaming comes back as a dashboard panel". This is that panel's
- * half of the bargain; the bench is still its own thing, because what it exists
- * to show is the negotiation, and a hook that hides the negotiation is no use
- * to it.
- *
- * Not a TanStack Query: there is no URL to refetch and no response to cache.
- * The RTCPeerConnection is the source of truth, exactly as the WebSocket is for
- * telemetry, and the same rule applies — a stream is not a read.
- *
- * **Mounted is watching.** The session opens on mount and closes on unmount,
- * so the caller controls the camera by rendering this or not. The robot's
- * worker holds one viewer slot, which is the reason it works that way: a hook
- * that kept a session alive for a hidden panel would be holding the camera away
- * from whoever opens the next one.
+ * **Mounted is watching.** The session opens on mount and closes on unmount:
+ * the robot holds one viewer slot, and a session kept alive for a hidden panel
+ * would hold the camera away from the next viewer.
  */
 export function useCameraStream(): CameraStream {
   const [phase, setPhase] = React.useState<CameraPhase>("connecting");
@@ -46,9 +32,8 @@ export function useCameraStream(): CameraStream {
 
   React.useEffect(() => {
     let cancelled = false;
-    // Held outside the promise so the cleanup can close a session that
-    // finished negotiating after the effect was already torn down — which is
-    // every Strict Mode remount, and a fast navigation on the robot too.
+    // Outside the promise, so cleanup can close a session that finished
+    // negotiating after teardown (every Strict Mode remount).
     let opened: WhepSession | null = null;
 
     void (async () => {
@@ -76,20 +61,16 @@ export function useCameraStream(): CameraStream {
     };
   }, [attempt]);
 
-  // Closing the tab is not an unmount, and the worker has no callback that
-  // would tell it the viewer went away: without this the camera stays held on
-  // the robot until something else preempts the session. It closes rather than
-  // reconnects — `close()` is idempotent, so the unmount that follows is free.
+  // Closing the tab is not an unmount, and the robot never learns the viewer
+  // left, so the slot would stay held. `close()` is idempotent.
   React.useEffect(() => {
     const onPageHide = () => void sessionRef.current?.close();
     window.addEventListener("pagehide", onPageHide);
     return () => window.removeEventListener("pagehide", onPageHide);
   }, []);
 
-  // The reset lives here rather than at the top of the effect: the initial
-  // state already is connecting/null/null, so the only run that needs clearing
-  // is the one a retry asks for -- and a setState in an effect body is a
-  // cascading render the compiler rightly refuses.
+  // Reset here, not in the effect: only a retry needs it, and a setState in an
+  // effect body is a cascading render the compiler refuses.
   const retry = React.useCallback(() => {
     setPhase("connecting");
     setError(null);

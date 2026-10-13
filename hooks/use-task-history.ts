@@ -11,25 +11,18 @@ import {
 } from "@/lib/api/task";
 import { historyQueryKey } from "@/lib/task/history";
 
-/**
- * Rows per page. Half the backend's default of 20: with the rows expandable, ten
- * keeps a page — and the pager under it — on one screen.
- */
+/** Half the backend's default, so a page of expandable rows and its pager fit one screen. */
 const HISTORY_PAGE_SIZE = 10;
 
 export interface UseTaskHistory {
-  /** This page's jobs, in the backend's order: newest close first. */
+  /** Newest close first. */
   entries: TaskHistoryEntry[];
-  /** 1-based. There is no page count to go with it; see fetchTaskHistory. */
+  /** 1-based; there is no page count (see fetchTaskHistory). */
   page: number;
-  /**
-   * "loading" until this filter's first answer. A page change keeps the
-   * previous page on screen while the next one loads (`switching`), so paging
-   * does not flash the skeleton.
-   */
+  /** "loading" until this filter's first answer. */
   status: "loading" | "ok" | "error";
+  /** A page change keeps the previous page on screen while the next loads. */
   switching: boolean;
-  /** The backend's sentence for a failed read, verbatim. */
   error: string | null;
   hasNext: boolean;
   hasPrev: boolean;
@@ -39,23 +32,15 @@ export interface UseTaskHistory {
 }
 
 /**
- * Finished jobs on this robot, one page at a time, with Previous and Next.
+ * Finished jobs on this robot, one page at a time.
  *
- * The backend only pages forward, so going back is done here: `tokens[i]` is
- * the cursor that reaches page i + 1, and stepping back is reading an earlier
- * cursor again — usually straight from the cache. The stack belongs to one
- * filter set — outcome, window, kind and name — and a different one starts a
- * fresh stack at page one, because the backend's cursor is only valid under
- * the filter it was issued with. The window's anchored `since` is part of
- * that set, so the caller must hold it still across page turns (see
- * useHistoryFilter); a `since` that moved with the clock would start every
- * page over.
+ * The backend only pages forward, so `tokens[i]` is the cursor for page i + 1
+ * and going back re-reads an earlier one, usually from cache. A cursor is only
+ * valid under the filter it was issued with, so a new filter starts over at
+ * page one — which is why the caller must hold the window's `since` still
+ * across page turns (see useHistoryFilter).
  *
- * No poll. The list only changes when a run finishes, and the one place in the
- * console that sees every run finish — whoever started it — is the active-task
- * poll, which invalidates `queryKeys.taskHistory` when an id drops out of it
- * (see useActiveTasks). Polling here as well would spend a request every few
- * seconds to learn what that poll already knows.
+ * No poll: the active-task poll invalidates `taskHistory` when a run finishes.
  */
 export function useTaskHistory(filter: TaskHistoryFilterQuery): UseTaskHistory {
   const filterKey = historyQueryKey(filter);
@@ -65,9 +50,8 @@ export function useTaskHistory(filter: TaskHistoryFilterQuery): UseTaskHistory {
     tokens: (string | null)[];
   }>({ filterKey, tokens: [null] });
 
-  // Derived rather than reset in an effect: a stack left over from another
-  // filter is simply not this filter's, so the first render after a change
-  // already asks for page one instead of sending a foreign cursor.
+  // Derived, not reset in an effect, so the first render after a filter change
+  // never sends a foreign cursor.
   const tokens = React.useMemo(
     () => (cursor.filterKey === filterKey ? cursor.tokens : [null]),
     [cursor, filterKey],
@@ -85,8 +69,7 @@ export function useTaskHistory(filter: TaskHistoryFilterQuery): UseTaskHistory {
         },
         signal,
       ),
-    // Only across pages of the same filter. Holding another filter's rows on
-    // screen under a new filter would show jobs the filter excludes.
+    // Only across pages of one filter, or excluded jobs would show.
     placeholderData: (previous, previousQuery) =>
       previousQuery?.queryKey[2] === filterKey
         ? keepPreviousData(previous)

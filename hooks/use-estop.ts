@@ -6,18 +6,12 @@ import { queryKeys } from "@/lib/api/query-keys";
 import { setSafetyLock } from "@/lib/api/robot";
 
 /**
- * POST /api/v1/robot/estop — engage or release the driver's safety lock.
+ * POST /api/v1/robot/estop — engage or release the safety lock (one switch,
+ * one mutation).
  *
- * One mutation for both directions, because they are one switch and the
- * console never sends them at once: the button engages, a held press on the
- * same button releases.
- *
- * The answer echoes the request, so it is not what the console shows. What
- * the lock is doing is `low_level_mode.safety_locked` on the shared robot
- * state, and that read is invalidated here so the reading catches up on the
- * next round trip rather than on the next 1 Hz tick. When the request engaged
- * the lock, the backend has also started cancelling every running job, so the
- * active list goes too — the rows leaving it is the honest sign they stopped.
+ * The answer only echoes the request; the lock's state is
+ * `low_level_mode.safety_locked`, invalidated so it catches up at once. An
+ * engage also cancels every running job, so the active list is re-read too.
  */
 export function useEstop() {
   const queryClient = useQueryClient();

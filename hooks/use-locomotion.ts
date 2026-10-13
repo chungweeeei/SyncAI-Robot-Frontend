@@ -18,11 +18,7 @@ export type { Controller } from "@/lib/robot/controller";
 /** Which learned policy the RL controller should load. */
 export type Policy = "PPO" | "HIMLOCO";
 
-/**
- * The motion keys that select a controller. Stand / lie down / damping are the
- * other three and are not this control's business — they are postures, and
- * the drive panel's PanelPostureControl owns them.
- */
+/** The motion keys that select a controller; postures are PanelPostureControl's. */
 const CONTROLLER_KEY: Record<Controller, MotionKey> = {
   RL: "1",
   MPC: "5",
@@ -34,11 +30,8 @@ const POLICY_MODE: Record<Policy, PolicyMode> = {
 };
 
 /**
- * The reported policy labels this control can light a segment for.
- *
- * The backend can also report `CHAMP`, `ISSAC` or `UNKNOWN` — policies the
- * command surface deliberately does not expose. Those map to no segment, which is
- * honest: the robot is running something this control cannot ask for.
+ * Reported policies this control can light. `CHAMP`, `ISSAC` or `UNKNOWN` light
+ * nothing: the robot is running something this control cannot ask for.
  */
 const REPORTED_POLICY: Record<string, Policy> = {
   PPO: "PPO",
@@ -53,12 +46,8 @@ export interface LocomotionControl {
   controller: Controller;
   /** The policy to light: the reported one, or a pending request. */
   policy: Policy | null;
-  /**
-   * Set while a policy request has gone out and the robot has not yet reported
-   * it. `policy` shows this value optimistically; the label says it is unconfirmed.
-   */
+  /** A requested policy the robot has not reported yet; shown as unconfirmed. */
   pendingPolicy: Policy | null;
-  /** True while either request is in flight. */
   busy: boolean;
   error: string | null;
   selectController: (controller: Controller) => Promise<void>;
@@ -70,43 +59,29 @@ export interface LocomotionControl {
  *
  * **The two halves have different epistemics, and the UI has to reflect that.**
  *
- * `policy` is MEASURED: `RobotState.low_level_mode.policy` is the controller's own
- * answer, so the lit segment is what the robot says it is running rather than what
- * we asked for. A request that never takes effect stays visibly unconfirmed
- * instead of silently looking applied.
+ * `policy` is MEASURED: `low_level_mode.policy` is the controller's own answer,
+ * so the lit segment is what the robot runs, and a request that never takes
+ * effect stays visibly unconfirmed.
  *
- * `controller` is COMMANDED and defaults to `RL`, because it cannot be read back
- * at all: `low_level_mode.motion` reports STAND / LOCOMOTION / LIE_DOWN /
- * DAMPING / ESTOP, and **MPC has no known motion code** — this workspace added the
- * `MODE M` command without knowing what the controller reports for it. RL is the
- * default because it is the normal operating mode and the one a policy switch is
- * meaningful under; it is a starting assumption, not a reading.
+ * `controller` is COMMANDED and defaults to RL, because it cannot be read
+ * back: **MPC has no known motion code**. RL is a starting assumption, not a
+ * reading. An arrival at IDLE (the controller restarts under RL) or LOCOMOTION
+ * (RL's gait) overrules a commanded MPC — see `controllerAfterMotion` for why
+ * on the edge, not the level.
  *
- * Two readings do overrule it: an arrival at IDLE (motion code 8, the motors
- * not driven by anything), because the controller comes back up under RL, and
- * at LOCOMOTION (code 1), which is RL's own gait — an MPC pressed while lying
- * down is followed by a stand that comes up there. Either ends a commanded MPC,
- * since a lit MPC would then claim a mode the robot has dropped. The
- * rule is `controllerAfterMotion`, applied on the motion's *change* — see there
- * for why the edge and not the level.
- *
- * The pending window matters because the two sides run at different rates: the
- * POST returns as soon as a UDP datagram is written, while `robot_state` is polled
- * at 1 Hz. Without it, clicking HIMLOCO would leave PPO lit for up to a second and
- * then jump. `pendingPolicy` is DERIVED (request !== report) rather than cleared
- * by an effect, so it resolves itself the moment a frame confirms — and if no
- * frame ever does, it stays pending, which is the truth.
+ * The POST returns once a UDP datagram is written while `robot_state` polls at
+ * 1 Hz, so `pendingPolicy` bridges the gap. It is DERIVED (request !== report),
+ * not cleared by an effect: it resolves the moment a frame confirms, and stays
+ * pending if none ever does, which is the truth.
  */
 export function useLocomotion(
   reported: RobotLowLevelMode | null,
 ): LocomotionControl {
   const [controller, setController] = React.useState<Controller>("RL");
   const motion = reported?.motion ?? null;
-  // The motion the controller rule last saw, so it can act on the change. A
-  // render-time adjust rather than an effect, the same as the heat notice: an
-  // effect would paint one frame of a stale MPC, and a synchronous setState in
-  // one is what the compiler lint rejects. It settles because the rule hands
-  // back the same controller when nothing changes.
+  // The motion the rule last saw, adjusted at render time: an effect would
+  // paint one frame of a stale MPC, and the compiler lint rejects a sync
+  // setState in one.
   const [seenMotion, setSeenMotion] = React.useState(motion);
   if (motion !== seenMotion) {
     setSeenMotion(motion);
@@ -119,19 +94,15 @@ export function useLocomotion(
     ? REPORTED_POLICY[reported.policy] ?? null
     : null;
 
-  // Derived, not stored: as soon as a robot_state frame agrees with what we asked
-  // for, this is null again and `policy` falls through to the reported value.
+  // Derived: null as soon as a frame agrees with the request.
   const pendingPolicy =
     requestedPolicy && requestedPolicy !== reportedPolicy ? requestedPolicy : null;
 
   const controllerRequest = useMutation({
     mutationFn: async (next: Controller) => {
       const result = await setMotionKey(CONTROLLER_KEY[next]);
-      // `sent` is always true for these two keys -- only "4" is refused -- but
-      // honouring it means a future backend that declines something else cannot
-      // leave this control claiming a switch that never left the process. Thrown
-      // rather than returned as a flag, so a refusal lands in `error` by the same
-      // route an HTTP failure does.
+      // `sent` is always true for these keys today, but honouring it keeps a
+      // future refusal from looking applied; thrown so it lands in `error`.
       if (!result.sent) throw new Error(result.message);
       return next;
     },
@@ -143,8 +114,7 @@ export function useLocomotion(
       await setPolicyMode(POLICY_MODE[next]);
       return next;
     },
-    // Records the request only. What gets lit is still driven by the report;
-    // this just keeps the click visible across the 1 Hz poll gap.
+    // Records the request only; the report still decides what is lit.
     onSuccess: (next) => setRequestedPolicy(next),
   });
 
@@ -165,8 +135,7 @@ export function useLocomotion(
     [requestPolicy],
   );
 
-  // One busy flag and one error line for two segmented rows that are never
-  // pressed at once — the same fold the list hooks make.
+  // One busy flag and error line for two rows never pressed at once.
   const write = writeState([controllerRequest, policyRequest]);
 
   return {

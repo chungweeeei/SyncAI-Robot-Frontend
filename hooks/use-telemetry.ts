@@ -6,58 +6,36 @@ import { createTelemetryStream } from "@/lib/ros/telemetry-stream";
 import type { PlannedPath, RobotPose } from "@/lib/types/robot";
 
 /**
- * Pose and joints as refs: a live feed a renderer reads once per drawn frame,
- * rather than props that arrive as a render.
- *
- * Both are replaced on a fresh object every message, so a consumer tells "the
- * same frame again" from "a new one" by identity — which is what lets a 60 Hz
- * draw loop poll a 20 Hz feed for free.
- *
- * The refs are stable for the hook's lifetime and so is this object, so it can
- * sit in a dependency array without re-running anything.
+ * Pose and joints as refs, read once per drawn frame. Each message is a fresh
+ * object, so a 60 Hz draw loop tells a new frame by identity. The object is
+ * stable for the hook's lifetime.
  */
 export interface TelemetryFeed {
-  /** Map-frame pose. Undefined until the first frame. */
+  /** Map-frame pose. */
   readonly pose: React.RefObject<RobotPose | undefined>;
-  /** Joint angles in radians, by URDF name. Undefined until the first frame. */
+  /** Joint angles in radians, by URDF name. */
   readonly joints: React.RefObject<Record<string, number> | undefined>;
 }
 
 export interface Telemetry {
   feed: TelemetryFeed;
   /**
-   * The planner's route, on the same stream as the pose. Undefined until the
-   * first plan; an empty `points` arrives when the run ends, which is what takes
-   * the band back off the floor — see the backend's TelemetryRepo.get_path on why
-   * that clear has to be sent rather than inferred from silence.
+   * The planner's route. An empty `points` arrives when the run ends — the
+   * clear is sent, not inferred from silence (see the backend's get_path).
    */
   path: PlannedPath | undefined;
 }
 
 /**
- * The telemetry WebSocket: one socket per mounted caller, opened on mount and
- * closed on unmount, reconnection owned by the stream. Pose and joints replaced
- * polling GET /api/v1/robot/state for the 3D viewer: that endpoint's timestamp
- * has whole-second resolution and it is a polled, frozen third-party contract,
- * so no amount of client-side polling or easing could make the motion
- * continuous.
- *
- * Not a query, even though every other server read here goes through TanStack
- * Query: there is no request/response to cache, and the library's vocabulary
- * (stale, refetch, invalidate) has no meaning for a push stream.
+ * The telemetry WebSocket: one socket per mounted caller, reconnection owned
+ * by the stream. Not a query — a push stream has nothing to cache.
  *
  * **The two rates are split, and that split is the point.** Pose and joints
- * arrive as separate messages at ~20 Hz each, so routing them through state
- * meant up to ~40 renders a second of the whole viewport subtree — a tree with
- * almost no memoisation, holding a three.js canvas that does not want to be
- * re-rendered at all. They are refs now, drained by the canvas's own frame loop
- * (see PointCloudCanvas's `telemetry` prop), which is the same treatment the
- * point cloud has always had for the same reason.
- *
- * `path` stays React state, and that is not an oversight: it is ~8 kB once per
- * replan (~0.333 Hz), and it has a consumer outside the canvas — the viewport's
- * route readout renders on whether a route exists at all. A value a component
- * branches on belongs in state; a value only a render loop reads does not.
+ * are ~20 Hz each; as state they re-rendered the viewport subtree ~40 times a
+ * second, so they are refs drained by the canvas's frame loop. `path` stays
+ * state: it is ~0.333 Hz and a component outside the canvas branches on it.
+ * A value a component branches on belongs in state; one only a render loop
+ * reads does not.
  */
 export function useTelemetry(): Telemetry {
   const pose = React.useRef<RobotPose | undefined>(undefined);

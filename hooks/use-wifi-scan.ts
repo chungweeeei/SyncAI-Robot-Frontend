@@ -7,41 +7,28 @@ import { queryKeys } from "@/lib/api/query-keys";
 export type WifiScanStatus = "loading" | "ok" | "error";
 
 export interface UseWifiScan {
-  /** The last successful scan, or null before the first. A failed rescan keeps it. */
+  /** The last successful scan; a failed rescan keeps it. */
   networks: WifiNetwork[] | null;
-  /** "loading" until the first answer, then "ok"/"error" for the latest scan. */
   status: WifiScanStatus;
-  /** True while any scan — the first or a rescan — is in flight. */
+  /** Any scan, first or rescan, is in flight. */
   scanning: boolean;
-  /** The backend's 502 sentence for the latest scan, or null. */
   error: string | null;
-  /** Start another scan (~45 s). A no-op while one is already running. */
+  /** Start another scan (~45 s); a no-op while one runs. */
   rescan: () => void;
 }
 
 /**
- * The networks the robot can see, through the shared query cache.
+ * The networks the robot can see. A scan costs up to 45 s on the robot, so it
+ * is fetched once on first mount and then only by `rescan()` (`staleTime:
+ * Infinity`); opening the page is already the explicit act. `gcTime` is raised
+ * so a detour does not evict a 45 s list.
  *
- * A scan costs up to 45 s of nmcli on the robot, so the policy is the inverse
- * of the other queries here: fetch once when the Settings card first mounts,
- * then never on its own again. `staleTime: Infinity` is what makes that true —
- * a remount paints the cached list immediately with no background refetch, and
- * only `rescan()` starts another. It was preferred over `enabled: false` with a
- * Scan button because navigating to Settings is already the explicit act; an
- * operator opening this card almost always wants the list, and asking for a
- * second click buys nothing that the stale-time rule does not. `gcTime` is
- * raised so a detour to another screen does not evict a list that took 45 s to
- * build (the default 5 min is tuned for cheap GETs).
- *
- * `rescan` uses `refetch()` rather than the `invalidateQueries` the other hooks
- * prefer: there is exactly one observer of this key and the button means
- * "start now", not "mark stale and let observers decide".
+ * `rescan` uses `refetch()`: one observer, and the button means "start now".
  */
 export function useWifiScan(): UseWifiScan {
   const { data, isPending, isError, isFetching, error, refetch } = useQuery({
     queryKey: queryKeys.wifiScan,
-    // No `({ signal })` on purpose — see scanWifiNetworks for why an abort on
-    // unmount would only waste the scan the robot is already running.
+    // No `signal` on purpose: see scanWifiNetworks.
     queryFn: scanWifiNetworks,
     staleTime: Infinity,
     gcTime: 30 * 60_000,

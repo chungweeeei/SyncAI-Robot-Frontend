@@ -16,7 +16,7 @@ export type MapVerticesStatus = "loading" | "ok" | "error";
 /** What one Save did: everything that landed, and why it stopped, if it did. */
 export interface VertexSaveOutcome {
   landed: VertexSaveLanded;
-  /** The backend's sentence for the write that failed, or null. Verbatim. */
+  /** The backend's sentence for the write that failed, verbatim. */
   failure: string | null;
 }
 
@@ -24,7 +24,6 @@ export interface UseMapVertices {
   /** The rows as the robot holds them — the editor's `saved`, not its screen. */
   vertices: MapVertex[];
   status: MapVerticesStatus;
-  /** Why the list could not be read. Rendered verbatim. */
   error: string | null;
   /**
    * Send a staged plan. Never rejects: a save that stops halfway is an
@@ -34,29 +33,17 @@ export interface UseMapVertices {
 }
 
 /**
- * One map's vertices, for the floor plan editor, which stages every change and
- * writes them on Save — the same Save, and the same reason, as the forbidden
- * zones beside them: a run of stops is laid out as one piece of work, and an
- * operator who places five, renames two and drops one wants that to reach the
- * robot as one decision rather than eight. The dashboard's own create still
- * writes at once (useActiveMapVertices); it has no Save to wait for.
+ * One map's vertices for the floor plan editor, which stages every change and
+ * writes them on Save, so a layout reaches the robot as one decision.
  *
- * The backend has a batch create but per-id PUT and DELETE, so a Save is up to
- * three kinds of request, sent in series: deletes, then updates, then one
- * create. Deletes first so a name freed by one is free for the rename or the
- * new stop that wants it. In series, and stopping at the first refusal, so the
- * outcome is a clean prefix — what landed and what did not — which the editor
- * folds into its two lists (rebaseVertices) to leave the rest lit for a retry.
- * That partial-failure state is the cost of staging, and it is why `save`
- * resolves with what landed rather than rejecting: a rejection would lose it.
+ * A Save is sent in series — deletes (freeing names), then updates, then one
+ * batch create — stopping at the first refusal, so the outcome is a clean
+ * prefix the editor folds back in (rebaseVertices). That is why `save`
+ * resolves with what landed rather than rejecting.
  *
- * The list lives in the query cache under the map's name, shared with
- * useActiveMapVertices, so a save is current on the dashboard at once — see
- * lib/api/query-keys.ts. The hook-level `onSuccess` writes whatever landed
- * into that entry (the responses *are* the stored rows, so a GET would cost a
- * round trip to learn nothing) and marks the two other keys a vertex change
- * touches: the catalogue's `vertex_count`, and the task templates whose MOVE
- * steps resolve against these poses.
+ * The entry is shared with useActiveMapVertices; what landed is spliced in
+ * (the responses are the stored rows), and `vertex_count` and the templates'
+ * MOVE resolution are invalidated.
  */
 export function useMapVertices(name: string): UseMapVertices {
   const queryClient = useQueryClient();
@@ -114,8 +101,7 @@ export function useMapVertices(name: string): UseMapVertices {
     },
   });
 
-  // `mutateAsync` is bound once per observer, so `save` keeps its identity —
-  // the editor's onSave lists it in its deps.
+  // `mutateAsync` is stable, so `save` keeps its identity for the editor's deps.
   const { mutateAsync } = saveMutation;
   const save = React.useCallback(
     (plan: VertexSavePlan) => mutateAsync(plan),

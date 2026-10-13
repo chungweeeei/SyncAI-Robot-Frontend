@@ -10,37 +10,28 @@ import { ignore } from "@/lib/api/mutation-state";
 import { autoLocalizeLock } from "@/lib/map/run-lock";
 
 /**
- * How long a match stays on screen before it clears itself.
- *
- * Longer than the initial pose's receipt: that one echoes numbers the operator
- * placed by eye a moment ago, while these are new — where the robot decided it
- * is, and how well the match held — and are worth a second read.
+ * How long a match stays on screen. Longer than the initial pose's receipt:
+ * these numbers are new to the operator and worth a second read.
  */
 const CLEAR_AFTER_MATCH_MS = 5000;
 
 export interface AutoLocalize {
-  /** The last match, until it clears itself; null otherwise. */
+  /** The last match, until it clears itself. */
   result: AutoLocalizeResult | null;
-  /** True while the robot is searching — up to ~15 s. */
+  /** The robot is searching (up to ~15 s). */
   busy: boolean;
-  /** The backend's sentence for the last failure, verbatim. */
   error: string | null;
-  /** Why the button is greyed right now, or null when it may be pressed. */
+  /** Why the button is greyed, or null when it may be pressed. */
   lock: string | null;
   run: () => Promise<void>;
   clear: () => void;
 }
 
 /**
- * Auto localize: ask the robot to find itself on the loaded map with no hint.
- *
- * A command, so it invalidates nothing — the 1 Hz robot-state poll and the
- * telemetry pose are what show the robot snapping to where it was found. The
- * response is still read, because unlike an initial pose this request
- * *answers*: a 200 is a match that held, and its numbers are the read-back.
- *
- * Only a success clears itself; a failure stays, because its panel is the one
- * place the sentence and the Retry live.
+ * Ask the robot to find itself on the loaded map with no hint. A command, so
+ * it invalidates nothing; unlike an initial pose it *answers* — a 200 is a
+ * match that held, and its numbers are the read-back. Only a success clears
+ * itself; a failure stays beside its Retry.
  */
 export function useAutoLocalize(): AutoLocalize {
   const { state } = useConsoleRobotState();

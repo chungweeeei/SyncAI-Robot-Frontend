@@ -10,15 +10,13 @@ export interface UseMapGrid {
   /** The editable session, or null while loading and on failure. */
   session: GridSession | null;
   status: MapGridStatus;
-  /** Why the load failed — shown verbatim, the messages are operator-facing. */
+  /** Why the load failed, shown verbatim. */
   error: string | null;
 }
 
 /**
- * One name's load outcome. Stored together so the hook can tell a result for the
- * *current* name from a leftover result for the previous one by comparing, rather
- * than by clearing state at the top of the effect — a synchronous setState in an
- * effect body is a cascading render, and the compiler lint rejects it.
+ * One name's load outcome, keyed by name so a leftover for the previous name
+ * is told apart by comparison rather than a setState in the effect body.
  */
 interface Loaded {
   name: string;
@@ -27,13 +25,9 @@ interface Loaded {
 }
 
 /**
- * Loads one map's grid and wraps it in a session.
- *
- * The session (buffer + mirror canvas) is built inside the effect, never during
- * render: it touches `document.createElement`, and this page is prerendered. That
- * also makes a React 19 strict-mode double mount harmless — the second run
- * allocates a fresh buffer and the first is disposed on the way out, so no effect
- * ever mutates a grid it did not create.
+ * Loads one map's grid into a session, built in the effect because it touches
+ * `document` and the page is prerendered. A strict-mode double mount disposes
+ * the first, so no effect mutates a grid it did not create.
  */
 export function useMapGrid(name: string): UseMapGrid {
   const [loaded, setLoaded] = React.useState<Loaded | null>(null);

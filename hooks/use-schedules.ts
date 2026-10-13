@@ -26,37 +26,26 @@ import { nextScheduleRefetchMs, sameTrigger } from "@/lib/task/schedule";
 export type SchedulesStatus = "loading" | "ok" | "error";
 
 /**
- * How long to wait before re-reading the list after a pause / resume.
- *
- * Measured against a live backend: `POST .../pause` answers 200, but the very
- * next `GET /api/v1/schedules` still reports `paused: false` — Temporal's
- * describe lags the patch by a second or two. An immediate refresh therefore
- * shows the row exactly as it was, and the operator concludes the button did
- * nothing. Create and a trigger edit wait for the list too, but through
- * `settleSchedules` below, which can tell when the write has arrived.
+ * Delay before re-reading the list after a pause / resume. Temporal's describe
+ * lags the 200 by a second or two, so an immediate refresh shows the row
+ * unchanged and the button looks dead. Create and trigger edits use
+ * `settleSchedules` instead, which can tell when the write has arrived.
  */
 const PAUSE_SETTLE_MS = 2000;
 
-/** How often, and how many times, `settleSchedules` re-reads the list. */
 const SETTLE_STEP_MS = 500;
 const SETTLE_ATTEMPTS = 10;
 
 /**
- * Re-read the list after a write until it shows that write, then hand it to
- * the cache.
+ * Re-read the list until it shows a write, then hand it to the cache.
  *
- * The list comes from Temporal's visibility store, which is a second or two
- * behind a create or an edit. A single refresh after either therefore raced
- * it: a new schedule was missing until the next read, which is a day away
- * when nothing else is due, and an edited row read back its old trigger. So
- * the first read goes out at once and the reads repeat until `shows` says the
- * write is there. A read that does not yet show it never reaches the cache —
- * that is what keeps an edited row from flipping back to its old rule
- * mid-wait. Past the last attempt, the list is taken as it is: it is still the
- * backend's word, and the operator's Refresh stays the escape hatch.
+ * Temporal's visibility store trails a create or edit by a second or two, so a
+ * single refresh raced it: a new schedule stayed missing until the next read
+ * (possibly a day away) and an edited row read back its old trigger. A read
+ * that does not yet show the write never reaches the cache, so the row cannot
+ * flip back mid-wait; after the last attempt the list is taken as is.
  *
- * Outside any component on purpose, so the reads still land after the form
- * that made the write has closed.
+ * Outside any component so the reads still land after the form has closed.
  */
 async function settleSchedules(
   queryClient: QueryClient,
@@ -85,20 +74,16 @@ async function settleSchedules(
 export interface UseSchedules {
   schedules: ScheduleState[];
   /**
-   * When this snapshot was read, in epoch ms — what a row measures "next"
-   * against (see `upcomingRun`). The read time rather than `Date.now()` in
-   * render, so the readout is a pure function of the data it came with and
-   * moves exactly when the list does.
+   * When this snapshot was read (epoch ms), what `upcomingRun` measures
+   * against — not `Date.now()`, so the readout moves only with the list.
    */
   readAtMs: number;
   status: SchedulesStatus;
-  /** The load failure, or the most recent write failure. Rendered verbatim. */
+  /** The load failure or the latest write failure, rendered verbatim. */
   error: string | null;
   /**
-   * True while a pause / resume / delete is in flight. Registering one is
-   * useScheduleTaskTemplate: a schedule is only ever made from a saved job,
-   * so the loose-steps POST /api/v1/schedules this hook used to wrap has no
-   * caller.
+   * True while a pause / resume / delete is in flight. Creating one is
+   * useScheduleTaskTemplate: a schedule is only ever made from a saved job.
    */
   busy: boolean;
   pause: (id: string) => Promise<boolean>;
@@ -109,44 +94,25 @@ export interface UseSchedules {
 }
 
 /**
- * The schedules registered on this robot, written through on every change.
+ * The schedules registered on this robot.
  *
- * Shaped after useMapVertices, with two deliberate differences.
+ * Every write ends in a refresh, success or failure: the responses are a bare
+ * `{id, message}` and `next_run_times` is Temporal's to compute, so the list
+ * always comes from the backend. Refreshing after a failure is what turns a
+ * DELETE 404 (already gone) into the row disappearing. The one local write is
+ * the optimistic paused flag (see PAUSE_SETTLE_MS).
  *
- * Every mutation ends in a refresh, success or failure, and the authoritative
- * list always comes from the backend. useMapVertices splices because its POST/PUT
- * response *is* the stored row; here the responses are a bare `{id, message}`,
- * and `next_run_times` is computed by Temporal — when a resumed schedule fires
- * next is knowable only by asking. Refreshing after a *failure* too is what makes
- * a 404 from DELETE (Temporal had already dropped it) resolve into the row
- * disappearing, rather than sitting there next to an error about it. The one local
- * write is the optimistic paused flag, and PAUSE_SETTLE_MS explains why.
+ * Write failures live on the mutations, not the query, because the refresh
+ * after a rejected write *succeeds* and would otherwise clear the sentence the
+ * operator needs to read.
  *
- * Write failures live in the mutations rather than the query, and the
- * refresh-on-every-write above is the reason: a rejected create triggers a
- * reload that *succeeds*, and if the failure lived where the query keeps its
- * error, that success would clear the very sentence the operator needs to read.
- * Splitting them, and preferring the write, is what makes "Schedule X already
- * exists" survive the reload that follows it.
- *
- * There is no poll. `next_run_times` moves only when a schedule fires, while
- * the list endpoint costs a Temporal list RPC plus a memo decode per schedule —
- * a 1 Hz poll would spend a request a second on data that changes hourly. But
- * the moment it moves is in the data itself, so the interval is *derived*: one
- * read just after the soonest run, and the answer sets the next one
- * (nextScheduleRefetchMs). Before this the row kept showing a time that had
- * passed until someone pressed Refresh, which still exists as the escape hatch.
- * The interval is measured from the snapshot's own `dataUpdatedAt` so that it
- * is the same number on every render — the library restarts the timer when the
- * number changes, and this screen re-renders with the 2 s job poll. The read
- * goes ahead in a hidden tab too: the library would otherwise skip that tick
- * and wait a whole interval more, and one request at fire time is cheap.
- *
- * The interval alone does not keep a row true, which is why `readAtMs` goes out
- * with the list: between the run and the read that follows it — and after that
- * read too, while Temporal's describe still reports the run it has just
- * started — the head of `next_run_times` is a time that has passed, and
- * `upcomingRun` is what steps over it.
+ * No poll — the list is a Temporal RPC plus a memo decode per row. The
+ * interval is derived from the soonest run instead (nextScheduleRefetchMs),
+ * measured from `dataUpdatedAt` so it is the same number on every render (the
+ * library restarts the timer when it changes). It runs in a hidden tab too, or
+ * the library would skip that tick for a whole interval. Between a run and the
+ * read after it the head of `next_run_times` has passed; `upcomingRun` steps
+ * over it using `readAtMs`.
  */
 export function useSchedules(): UseSchedules {
   const queryClient = useQueryClient();
@@ -163,10 +129,7 @@ export function useSchedules(): UseSchedules {
     [queryClient],
   );
 
-  /**
-   * The pending settle refresh, so it can be cleared on unmount and so a second
-   * pause inside the window replaces the timer rather than stacking one.
-   */
+  /** The pending settle refresh: cleared on unmount, replaced (not stacked) by a second pause. */
   const settleRef = React.useRef<number | null>(null);
   React.useEffect(
     () => () => {
@@ -176,11 +139,9 @@ export function useSchedules(): UseSchedules {
   );
 
   /**
-   * Pause / resume: flip the row in the cache, then reconcile once Temporal has
-   * caught up. The optimistic flip is what makes the button feel like it did
-   * something during the PAUSE_SETTLE_MS window, and it is safe to trust because
-   * the write already returned 200 — this is a display lag, not an unconfirmed
-   * write. A failure skips the flip and refreshes at once, so the row snaps back.
+   * Flip the row in the cache, then reconcile once Temporal catches up. Safe
+   * because the write already returned 200 — a display lag, not an unconfirmed
+   * write. A failure skips the flip and refreshes at once.
    */
   const settlePaused = React.useCallback(
     (id: string, paused: boolean) => {
@@ -215,9 +176,8 @@ export function useSchedules(): UseSchedules {
   const { mutateAsync: pauseAsync } = pauseMutation;
   const { mutateAsync: resumeAsync } = resumeMutation;
 
-  // Rejections are swallowed rather than rethrown because every caller is wired
-  // straight to an onClick — a rethrow would be an unhandled rejection, and the
-  // components read the outcome off `error` and the returned boolean.
+  // Rejections are swallowed: every caller is an onClick, which reads `error`
+  // and the boolean, and a rethrow would be an unhandled rejection.
   const pause = React.useCallback((id: string) => pauseAsync(id).then(ok, no), [pauseAsync]);
   const resume = React.useCallback(
     (id: string) => resumeAsync(id).then(ok, no),
@@ -259,13 +219,9 @@ export interface UseSchedule {
 }
 
 /**
- * One schedule, **including its frozen step list** — the per-row describe the
- * list endpoint cannot afford (see lib/api/schedule.ts).
- *
- * Fetched on a deliberate gesture — the caller mounts this when the row is
- * expanded — so the extra RPC is paid once, for the one schedule the operator
- * asked about. Under its own key rather than the list's so that the list's
- * refresh-on-every-write does not re-describe every open row.
+ * One schedule including its frozen step list — the per-row describe the list
+ * endpoint cannot afford. Mounted when a row is expanded, and under its own key
+ * so the list's refresh-on-every-write does not re-describe every open row.
  */
 export function useSchedule(id: string): UseSchedule {
   const query = useQuery({
@@ -287,16 +243,12 @@ export interface ScheduleTaskTemplateVariables {
 
 /**
  * POST /api/v1/task_templates/{id}/schedule — freeze a template's current
- * resolution into a schedule.
+ * resolution into a schedule. The backend re-resolves, records provenance in
+ * the memo, and refuses a run against another map or a deleted vertex.
  *
- * A separate hook from useSchedules' `create`, because it is a different path
- * on purpose: it re-resolves server-side, records the provenance in the
- * schedule memo (so the row can later be told it has gone stale), and refuses
- * an unattended run against another map or a deleted vertex. On success the
- * list is re-read until the new schedule is in it (settleSchedules), so its
- * row appears without a Refresh. On a refusal the template library is re-read
- * too — the reason is a `vertex_status` or a `map_matches_active` the rows may
- * be showing stale.
+ * On success the list is settled until the new row is in it. On a refusal the
+ * template library is re-read: the reason is a `vertex_status` or
+ * `map_matches_active` its rows may show stale.
  */
 export function useScheduleTaskTemplate() {
   const queryClient = useQueryClient();
@@ -320,23 +272,14 @@ export interface UpdateScheduleTriggerVariables {
 }
 
 /**
- * PATCH /api/v1/schedules/{id} — change when a registered schedule fires.
+ * PATCH /api/v1/schedules/{id} — change when a schedule fires. Its own
+ * mutation so the refusal shows under the edit form, not as the list's error.
  *
- * Its own mutation rather than a verb on useSchedules, like
- * useScheduleTaskTemplate: the edit form shows its own refusal under its own
- * fields, and a failure here should not become the list's error line.
- *
- * The row is patched in the cache on success, the same way pause flips it:
- * the write already returned 200, so the new trigger is a fact. Its
- * `next_run_times` is cleared rather than kept — those were computed from the
- * rule just replaced, and "—" is honest where a stale time would not be. Then
- * the list is re-read until it carries the new trigger (settleSchedules), which
- * is what brings the next run in, without a read of the old rule ever
- * overwriting the patch. A row that is gone by then counts as settled: someone
- * deleted it, and the list should say so. The expanded row's describe carries
- * the trigger too, so it is dropped. A failure re-reads at once: a 404 is a
- * schedule someone else deleted, and the row should go rather than sit beside
- * the error.
+ * On success the row is patched (the 200 makes the trigger a fact) with
+ * `next_run_times` cleared, since those came from the replaced rule. The list
+ * is then settled until it carries the new trigger; a row gone by then counts
+ * as settled (someone deleted it). A failure re-reads at once, so a 404'd row
+ * goes rather than sitting beside the error.
  */
 export function useUpdateScheduleTrigger() {
   const queryClient = useQueryClient();

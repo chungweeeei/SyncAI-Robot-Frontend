@@ -11,12 +11,9 @@ import {
 } from "@/lib/api/recording";
 
 /**
- * POST /api/v1/recordings — start the bag recorder.
- *
- * The response is the live entry `GET /recordings/active` would answer with,
- * so it is written straight into that key rather than waiting for the next
- * poll: the panel switches face on the press, not a second later. The
- * catalogue gains a row from the same event and is refetched.
+ * POST /api/v1/recordings — start the recorder. The response is the live
+ * entry, so it is written straight into that key and the panel switches on
+ * the press.
  */
 export function useStartRecording() {
   const queryClient = useQueryClient();
@@ -30,13 +27,9 @@ export function useStartRecording() {
 }
 
 /**
- * POST /api/v1/recordings/stop — end the live recorder and wait for the bag
- * to be closed (slow on purpose; see the fetcher).
- *
- * A 409 here means the recorder was already gone — reaped after a crash, or
- * stopped from somewhere else — so the failure path re-reads the live entry:
- * the catalogue is what says which, and the panel must not keep offering Stop
- * against a recorder that no longer exists.
+ * POST /api/v1/recordings/stop — end the recorder and wait for the file to
+ * close (slow; see the fetcher). A 409 means it was already gone, so a failure
+ * re-reads the live entry rather than keep offering Stop.
  */
 export function useStopRecording() {
   const queryClient = useQueryClient();

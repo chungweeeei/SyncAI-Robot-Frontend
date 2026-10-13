@@ -16,30 +16,21 @@ import {
 import { currentStep } from "@/lib/task/run";
 
 export interface GoalTask {
-  /** The goal that went out — what the marker and the read-back describe. */
+  /** The goal that went out, which the marker and the read-back describe. */
   goal: GoalPose | null;
   taskStatus: TaskStatus | null;
-  /** A submitted task that has not reached a terminal state yet. */
   running: boolean;
-  /** True while a submit / cancel request is in flight. */
+  /** A submit or cancel request is in flight. */
   busy: boolean;
   error: string | null;
   /** What the robot says it is doing for the running goal, "" otherwise. */
   message: string;
-  /** Only true while the task id is still known (see the poll effect). */
   cancelable: boolean;
-  /**
-   * Re-send the pose already on screen. Not a step in the ordinary flow — the
-   * drag dispatches — but the only way back from a submit that failed, since by
-   * then the gesture that produced the pose is over and there is nothing left to
-   * release.
-   */
+  /** Re-send the pose on screen: the only way back from a failed submit. */
   send: () => Promise<void>;
   /**
-   * Stage a pose and dispatch it as a one-step MOVE task. The only door in: both
-   * a finished drag and a confirmed tap on a stored vertex arrive here,
-   * so however the pose was chosen there is one running task, one read-back and
-   * one Cancel.
+   * Dispatch a pose as a one-step MOVE task. The only door in (a drag or a
+   * tapped waypoint), so there is one running task, read-back and Cancel.
    */
   sendGoal: (goal: GoalPose) => Promise<void>;
   cancel: () => Promise<void>;
@@ -48,33 +39,17 @@ export interface GoalTask {
 
 /**
  * The drag-a-goal state machine: dispatch a pose as a one-step MOVE task, then
- * track that task until it is terminal.
+ * track it until terminal.
  *
- * Firing on pointer-up rather than staging for a Send press is deliberate, and
- * it is the argument the initial-pose flow already makes (see `useInitialPose`):
- * the arrow drawn under the drag *is* the preview, so a confirm step only asks
- * the operator to re-read as numbers what they just aimed by eye — and a button
- * that has to be pressed on every goal stops being read by the tenth one.
+ * Fires on pointer-up with no Send step: the arrow under the drag is the
+ * preview, and a button pressed on every goal stops being read. Deliberateness
+ * lives upstream (the tool is armed by a press, one drag disarms it), and a
+ * misplaced goal is recoverable with Cancel. Which drag the viewport collects
+ * is PointCloudView's single pick mode, not this hook's.
  *
- * What keeps a real robot movement deliberate lives upstream instead: the tool
- * has to be armed by an explicit press, one drag disarms it again, and a press
- * outside the map extent never becomes a pose at all. And a goal, unlike a pose
- * estimate, is recoverable after the fact — Cancel stops the robot, which is a
- * better answer to a misplaced goal than a pre-flight read-back would have been.
- *
- * Which drag the viewport is currently collecting is NOT owned here: a goal and
- * an initial-pose estimate are two things one drag gesture can produce, and only
- * one of them can be armed at a time. The view owns that single pick mode (see
- * PointCloudView) and hands the finished pose to whichever flow asked for it.
- *
- * Two mutations and a tracker: the requests own their own in-flight and failure
- * state, useTaskTracker owns everything about the task once it has an id.
- *
- * Their three error slots are read in a deliberate order. A failed submit wins
- * because there is then no task to report on at all. The *task's* own failure
- * comes next and outranks a failed cancel: "navigation aborted" is what
- * actually stopped the robot, and a cancel that was refused because the
- * workflow had already closed must not stand in front of the reason it closed.
+ * Error order is deliberate: a failed submit (no task at all), then the task's
+ * own failure, then a failed cancel — a cancel refused because the workflow
+ * already closed must not hide why it closed.
  */
 export function useGoalTask(robotId: string, mapName: string | null): GoalTask {
   const [goal, setGoal] = React.useState<GoalPose | null>(null);
@@ -84,20 +59,16 @@ export function useGoalTask(robotId: string, mapName: string | null): GoalTask {
   const { engaged: stopped } = useConsoleEstop();
 
   const submit = useMutation({
-    // The map the goal was aimed on travels with it: the backend refuses the
-    // goal if the robot has been switched to another map since, which is the
-    // one way a pose drawn here could be driven somewhere nobody aimed.
+    // The map travels with the goal, so the backend refuses it if the robot
+    // has switched maps since it was aimed.
     mutationFn: async (staged: GoalPose) => {
-      // Refused here rather than only greyed at the button, so no path to
-      // this hook — a drag, a stored waypoint, a keyboard shortcut — can
-      // send the robot anywhere while the stop is engaged.
+      // Refused here, not only greyed at the button, so no path can send the
+      // robot while the stop is engaged.
       if (stopped) throw new Error(ESTOP_REFUSAL);
       return sendMoveTask(robotId, staged, mapName);
     },
-    // Before the request, not after it: the panel shows the new coordinates
-    // the moment the drag is released, and the last run's step failure sitting
-    // under them would read as this goal's. The button that got here is gated
-    // on `running`, so there is never a live poll to fight over the slot.
+    // Before the request: the last run's failure under the new coordinates
+    // would read as this goal's. Callers are gated on `running`.
     onMutate: () => reset(),
     onSuccess: (id) => track(id),
   });
@@ -111,20 +82,13 @@ export function useGoalTask(robotId: string, mapName: string | null): GoalTask {
 
   const sendGoal = React.useCallback(
     async (next: GoalPose) => {
-      // Normalised on the way in, not just inside sendMoveTask: the marker and
-      // the read-back are drawn from this state, and a heading they disagree
-      // with the dispatched task about would be a lie about a moving robot.
+      // Normalised here too, so the marker and read-back agree with the
+      // dispatched heading.
       const staged = { ...next, theta: normalizeTheta(next.theta) };
       setGoal(staged);
-      // The last cancel's refusal was about a task that is over; a new dispatch
-      // is not the place to keep reading it. A previous *submit* failure needs
-      // no such call — going pending drops it, and the tracker's is cleared by
-      // this mutation's onMutate.
+      // The last cancel's refusal was about a finished task.
       resetCancel();
-      // `staged`, not the `goal` state — setState is not visible until the next
-      // render, so reading it back here would submit the previous goal. The
-      // rejection is swallowed because callers are wired straight to a pointer
-      // handler; the failure is on `error`.
+      // `staged`, not `goal`: setState is not visible until the next render.
       await submitAsync(staged).catch(ignore);
     },
     [submitAsync, resetCancel],
@@ -141,9 +105,7 @@ export function useGoalTask(robotId: string, mapName: string | null): GoalTask {
   }, [taskId, cancelAsync]);
 
   const clear = React.useCallback(() => {
-    // The goal marker goes with the status: both describe the same finished
-    // task, so leaving one on the map without the other is a lie. The two
-    // mutations go with them — their errors describe the same finished task.
+    // Marker, status and both mutations' errors describe the same finished task.
     setGoal(null);
     reset();
     resetSubmit();
