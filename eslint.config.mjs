@@ -3,28 +3,17 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
 /**
- * The layering rule from CLAUDE.md, as something that fails a build rather than
- * something a reader has to remember:
- *
- *   app/ → components/ → hooks/ → lib/
- *
- * Every hop below was violated at some point before these blocks existed —
- * three hooks reached up into components/console/ for the shared robot-state
- * context, lib/ros/ reached up into a joystick hook for the type of its own
- * wire payload, and a dozen components imported constants and helpers straight
- * out of the REST clients. None of it was noticed, because prose in a markdown
- * file is not a check. The fix in each case was to move the thing being
- * imported down, never to add an exception here.
+ * The layering rule from CLAUDE.md (app/ → components/ → hooks/ → lib/) as a
+ * lint failure, because every hop was broken unnoticed while it was only prose.
+ * Fix a break by moving the imported thing down, not by adding an exception.
  */
 const restrict = (patterns) => ({
   "@typescript-eslint/no-restricted-imports": ["error", { patterns }],
 });
 
 /**
- * For the two lower hops, type imports are restricted too, deliberately. The
- * lib/ros violation was type-only, erased at compile time and free at runtime,
- * and it was still the wrong direction: a payload type that `lib/` needs
- * belongs in `lib/types/`. "It is only a type" is how the arrow gets bent.
+ * The two lower hops restrict type imports too: a type `lib/` needs belongs in
+ * `lib/types/`, and "it is only a type" is how the arrow gets bent.
  */
 const upward = (group, message) => [{ group, message }];
 
@@ -66,12 +55,9 @@ const eslintConfig = defineConfig([
     ),
   },
   {
-    // The one hop where `import type` is fine: a component renders the wire
-    // shapes, so it legitimately names them. What it may not do is reach past
-    // hooks/ for a *value* — a fetcher, a query key, or anything else that runs.
-    // lib/api/config is exempt because it is the addressing helper rather than a
-    // client: apiUrl() is what absolutises a map thumbnail's <img src>, and
-    // CLAUDE.md requires every URL to go through it.
+    // `import type` is fine here: a component renders the wire shapes. A *value*
+    // from lib/api is not. lib/api/config is exempt because apiUrl() is the
+    // addressing helper every URL, <img src> included, must go through.
     files: ["components/**/*.{ts,tsx}", "app/**/*.{ts,tsx}"],
     rules: restrict([
       {

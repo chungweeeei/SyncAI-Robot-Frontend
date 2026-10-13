@@ -1,21 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * End-to-end tests against a real Next build, with the robot faked.
+ * End-to-end tests against a real Next build, with the robot faked: every test
+ * installs its own `**\/api/v1/**` routes (e2e/backend.ts), so a run is
+ * deterministic and can hold states a robot will not (see CLAUDE.md > Tests).
  *
- * **There is no robot here, and that is the design.** Every test installs its
- * own `**\/api/v1/**` routes (see e2e/backend.ts), so a run is deterministic,
- * works on a laptop with nothing else running, and can put the console in
- * states a real robot will not hold still in — mid-conversion, unlocalized,
- * a task that fails on its third step. What it cannot cover is whether the
- * backend actually answers in these shapes; that is what the zod schemas and
- * the backend's own tests are for, and the fixtures here are written from the
- * same interfaces those schemas mirror.
- *
- * `npm run build && npm start` rather than `next dev`: the dev server
- * recompiles a route on first request, which turns the first navigation of
- * every file into a timeout on a cold cache, and the production bundle is what
- * actually ships to the robot.
+ * A production build rather than `next dev`, because dev compiles each route
+ * on first request (a timeout on a cold cache) and the bundle is what ships.
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -36,11 +27,9 @@ export default defineConfig({
     },
     {
       name: "mobile",
-      // A phone-sized Chromium rather than devices["iPhone 13"]: every iPhone
-      // descriptor defaults to WebKit, which CI does not install (see
-      // ci.yml), and what this project checks — layout at 375 px and touch
-      // pointer events — Chromium can stand in for. What it cannot stand in
-      // for is iOS zoom-on-focus, which stays a manual check on a real phone.
+      // A phone-sized Chromium, not an iPhone descriptor: those default to
+      // WebKit, which CI does not install. iOS zoom-on-focus stays a manual
+      // check on a real phone.
       use: {
         browserName: "chromium",
         viewport: { width: 375, height: 667 },

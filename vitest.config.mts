@@ -1,23 +1,15 @@
 import { defineConfig } from "vitest/config";
 
 /**
- * Unit tests. The e2e suite is Playwright's and lives in `e2e/`, which is
- * excluded here so `vitest` does not try to run a `@playwright/test` file.
+ * Unit tests only; `e2e/` is Playwright's and excluded.
  *
- * `@vitejs/plugin-react` is deliberately absent. Its only jobs here would be
- * Fast Refresh, which a test run has no use for, and the automatic JSX
- * runtime, which Vite's esbuild already takes from `jsx: "react-jsx"` in
- * tsconfig.json. Installing it pulls a Babel 8 peer that collides with the
- * Babel 7 shadcn brings, and paying a dependency conflict for nothing is how
- * a test setup starts being something people avoid touching.
- *
- * `environment: "jsdom"` is the default because the few component tests need a
- * DOM and a per-file override is one more thing to remember. Nearly everything
- * worth testing here is pure, and pure code does not mind.
+ * No `@vitejs/plugin-react`: esbuild already takes the JSX runtime from
+ * tsconfig, and the plugin pulls a Babel 8 peer that collides with shadcn's
+ * Babel 7. jsdom is the default so the few component tests need no per-file
+ * override; pure code does not mind.
  */
 export default defineConfig({
-  // Vite 8 resolves tsconfig `paths` natively; vite-tsconfig-paths is not
-  // installed for this reason.
+  // Vite 8 resolves tsconfig `paths` natively, hence no vite-tsconfig-paths.
   resolve: { tsconfigPaths: true },
   test: {
     environment: "jsdom",
