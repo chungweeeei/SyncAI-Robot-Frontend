@@ -21,6 +21,8 @@ export interface WriteState {
   busy: boolean;
   /** The last submitted write's failure, or null. Rendered verbatim. */
   error: string | null;
+  /** The same failure as thrown, for a caller that reads a typed error's fields. */
+  failure: Error | null;
 }
 
 export function writeState(mutations: readonly WriteMutation[]): WriteState {
@@ -28,6 +30,7 @@ export function writeState(mutations: readonly WriteMutation[]): WriteState {
   return {
     busy: mutations.some((mutation) => mutation.isPending),
     error: latest.error?.message ?? null,
+    failure: latest.error ?? null,
   };
 }
 

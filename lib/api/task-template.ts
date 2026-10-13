@@ -25,7 +25,7 @@
 import { z } from "zod";
 
 import { apiUrl } from "@/lib/api/config";
-import { requestJson } from "@/lib/api/http";
+import { requestJson, type ErrorBody } from "@/lib/api/http";
 import type { ScheduleTrigger } from "@/lib/api/schedule";
 import {
   MoveStepParamsSchema,
@@ -64,6 +64,11 @@ interface TemplateStepBase {
   /** Live name when CURRENT, the snapshot label when MISSING, else null. */
   vertex_name: string | null;
   vertex_status: VertexRefStatus;
+  /**
+   * Adjacent steps sharing a group run side by side. Null for a step on its
+   * own; absent (read as null) from a backend that predates groups.
+   */
+  group: string | null;
 }
 
 /**
@@ -139,6 +144,7 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     vertex_id: z.string().nullable(),
     vertex_name: z.string().nullable(),
     vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
+    group: z.string().nullish().transform((group) => group ?? null),
     type: z.literal("MOVE"),
     params: MoveStepParamsSchema.nullable(),
     resolved_params: MoveStepParamsSchema.nullable(),
@@ -148,6 +154,7 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     vertex_id: z.string().nullable(),
     vertex_name: z.string().nullable(),
     vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
+    group: z.string().nullish().transform((group) => group ?? null),
     type: z.literal("SPEAK"),
     params: SpeakStepParamsSchema.nullable(),
     resolved_params: SpeakStepParamsSchema.nullable(),
@@ -157,6 +164,7 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     vertex_id: z.string().nullable(),
     vertex_name: z.string().nullable(),
     vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
+    group: z.string().nullish().transform((group) => group ?? null),
     type: z.literal("WAIT"),
     params: WaitStepParamsSchema.nullable(),
     resolved_params: WaitStepParamsSchema.nullable(),
@@ -166,6 +174,7 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     vertex_id: z.string().nullable(),
     vertex_name: z.string().nullable(),
     vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
+    group: z.string().nullish().transform((group) => group ?? null),
     type: z.enum(["STANDUP", "LIEDOWN"]),
     params: z.null(),
     resolved_params: z.null(),
@@ -201,6 +210,26 @@ export function listTaskTemplates(signal?: AbortSignal): Promise<TaskTemplate[]>
   });
 }
 
+/**
+ * A save refused over one step, carrying the step's wire id (`3-move`) so
+ * the editor can mark the row it was sent from. The message is the backend's
+ * sentence, as for any refusal.
+ */
+export class StepRefusalError extends Error {
+  constructor(
+    message: string,
+    readonly stepId: string,
+  ) {
+    super(message);
+    this.name = "StepRefusalError";
+  }
+}
+
+/** Any refusal that names a step; everything else stays a plain Error. */
+function stepRefusal({ detail, stepId }: ErrorBody): Error | undefined {
+  return stepId ? new StepRefusalError(detail, stepId) : undefined;
+}
+
 export function createTaskTemplate(draft: TaskTemplateDraft): Promise<TaskTemplate> {
   return requestJson<TaskTemplate>(taskTemplatePath(), {
     method: "POST",
@@ -208,6 +237,7 @@ export function createTaskTemplate(draft: TaskTemplateDraft): Promise<TaskTempla
     // The echo is the stored row and is spliced into the cached list, so it is
     // checked like a read rather than trusted because we sent it.
     schema: TaskTemplateSchema,
+    mapError: stepRefusal,
   });
 }
 
@@ -219,6 +249,7 @@ export function updateTaskTemplate(
     method: "PUT",
     body: JSON.stringify(changes),
     schema: TaskTemplateSchema,
+    mapError: stepRefusal,
   });
 }
 

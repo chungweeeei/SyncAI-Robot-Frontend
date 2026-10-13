@@ -13,12 +13,14 @@ import {
 
 import { Chip } from "@/components/console/instrument";
 import { TaskStatusChip } from "@/components/console/task-chip";
+import { GroupRail } from "@/components/tasks/group-rail";
 import { IconButton } from "@/components/tasks/icon-button";
 import type { ScheduleState } from "@/lib/api/schedule";
 import type { TemplateStep, TaskTemplate } from "@/lib/api/task-template";
 import type { TaskStepState } from "@/lib/api/task";
 import { describeTrigger, scheduleChipSummary } from "@/lib/task/schedule";
-import { stepGlyph } from "@/lib/task/step";
+import { stepGlyph, stepShape, wireGroupPlaces, type GroupPlace } from "@/lib/task/step";
+import { cn } from "@/lib/utils";
 
 export interface TaskTemplateRowProps {
   template: TaskTemplate;
@@ -77,6 +79,8 @@ export function TaskTemplateRow({
   onShowSchedules,
 }: TaskTemplateRowProps) {
   const [open, setOpen] = React.useState(false);
+  const groupPlaces = wireGroupPlaces(template.steps);
+  const railed = groupPlaces.some(Boolean);
 
   /**
    * One chip for however many schedules point at this template, worded by
@@ -123,12 +127,13 @@ export function TaskTemplateRow({
           {template.name}
         </span>
 
-        {/* The step shape at a glance — M M S reads as a route without expanding. */}
+        {/* The step shape at a glance — M M S reads as a route without
+          * expanding, and [M T] as two steps that start together. */}
         <span
           className="readout min-w-0 max-w-full truncate text-[11px] tracking-wider text-muted-foreground"
           aria-label={`${template.steps.length} steps`}
         >
-          {template.steps.map((step) => stepGlyph(step.type)).join(" ")}
+          {stepShape(template.steps)}
         </span>
 
         {/* Before the map chip: whether the robot runs this by itself outranks
@@ -204,12 +209,14 @@ export function TaskTemplateRow({
       )}
 
       {open && (
-        <ol className="mt-1.5 space-y-0.5 pl-7">
+        <ol className={cn("mt-1.5 space-y-0.5", railed ? "pl-4.5" : "pl-7")}>
           {template.steps.map((step, index) => (
             <TemplateStepLine
               key={step.id}
               step={step}
               index={index}
+              place={groupPlaces[index] ?? null}
+              railed={railed}
               state={stepStates?.get(step.id) ?? null}
             />
           ))}
@@ -222,14 +229,20 @@ export function TaskTemplateRow({
 function TemplateStepLine({
   step,
   index,
+  place,
+  railed,
   state,
 }: {
   step: TemplateStep;
   index: number;
+  place: GroupPlace;
+  /** The list has a group, so every line reserves the rail's column. */
+  railed: boolean;
   state: TaskStepState | null;
 }) {
   return (
-    <li className="flex items-baseline gap-2 text-[11px]">
+    <li className={cn("flex items-baseline gap-2 text-[11px]", railed && "relative pl-2.5")}>
+      <GroupRail place={place} gap="0.5" />
       <span className="readout w-3 shrink-0 text-muted-foreground">{index + 1}</span>
       <span className="instrument-label w-3 shrink-0 text-muted-foreground">
         {stepGlyph(step.type)}

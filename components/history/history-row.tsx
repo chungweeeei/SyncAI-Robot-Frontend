@@ -4,6 +4,7 @@ import * as React from "react";
 import { ChevronDownIcon } from "lucide-react";
 
 import { TaskStatusChip } from "@/components/console/task-chip";
+import { GroupRail } from "@/components/tasks/group-rail";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";
 import { useTaskRun } from "@/hooks/use-task-run";
@@ -11,6 +12,7 @@ import type { TaskHistoryEntry } from "@/lib/api/task";
 import { formatDuration } from "@/lib/recording/format";
 import { describeRun, runSeconds } from "@/lib/task/history";
 import { formatLocalRunTime, formatUtcRunTime } from "@/lib/task/schedule";
+import { wireGroupPlaces } from "@/lib/task/step";
 import { cn } from "@/lib/utils";
 
 /** One measured value in the row's right-hand cluster, as on /recordings. */
@@ -91,10 +93,13 @@ function RunSteps({ id }: { id: string }) {
     );
   }
 
+  const groupPlaces = wireGroupPlaces(steps);
+  const railed = groupPlaces.some(Boolean);
   return (
     <ol className="space-y-1">
       {steps.map((step, index) => (
-        <li key={step.id} className="space-y-0.5">
+        <li key={step.id} className={cn("space-y-0.5", railed && "relative pl-2.5")}>
+          <GroupRail place={groupPlaces[index] ?? null} gap="1" />
           <div className="flex items-center gap-2">
             <span className="readout w-5 shrink-0 text-right text-[11px] text-muted-foreground">
               {index + 1}

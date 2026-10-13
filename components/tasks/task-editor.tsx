@@ -20,7 +20,12 @@ import { useTaskDraft } from "@/hooks/use-task-draft";
 import { waypointEditorHref } from "@/lib/map/links";
 import type { TaskStepState } from "@/lib/api/task";
 import { draftIsUnsaved, type TaskDraft } from "@/lib/task/draft-store";
-import { stepDraftsSubmittable, stepWaypointOrdinals, toTemplateSteps } from "@/lib/task/step";
+import {
+  stepDraftsSubmittable,
+  stepIdFor,
+  stepWaypointOrdinals,
+  toTemplateSteps,
+} from "@/lib/task/step";
 import { taskTemplateNameOk } from "@/lib/task/template";
 
 /**
@@ -209,6 +214,19 @@ export function TaskEditor() {
    * would otherwise ask before clearing it. An update stays put, so a second
    * press updates what the first saved instead of making another copy.
    */
+  /**
+   * Which row each step id of the last save was sent from. The ids are
+   * positional (stepIdFor), so a refusal naming `3-move` has to be read
+   * against the list as it was sent, not as it is after the operator has
+   * since moved a row — and a row deleted since marks nothing.
+   */
+  const [sentKeys, setSentKeys] = React.useState<ReadonlyMap<string, number>>(
+    () => new Map(),
+  );
+  const refusedKey = library.refusedStepId ? sentKeys.get(library.refusedStepId) : undefined;
+  const refusal =
+    refusedKey !== undefined && library.error ? { key: refusedKey, message: library.error } : null;
+
   const canSave = stepsOk && saveReason === null && !library.busy;
   const save = () => {
     if (!canSave) return;
@@ -222,6 +240,7 @@ export function TaskEditor() {
       map_name: draftMapName,
       steps: toTemplateSteps(drafts.steps),
     };
+    setSentKeys(new Map(drafts.steps.map((step, index) => [stepIdFor(index, step.type), step.key])));
     void (editing ? library.update(editing.id, body) : library.create(body)).then(
       (saved) => {
         if (!saved) return;
@@ -302,8 +321,8 @@ export function TaskEditor() {
             </Chip>
           )}
           <p className="mt-1 text-sm text-muted-foreground">
-            Steps run in order, one at a time, and if a step fails the rest are
-            skipped.
+            Steps run in order. Boxed steps start together, and the next step
+            waits for all of them. If a step fails, the rest are skipped.
           </p>
         </div>
         {/* Below sm the three are icons alone, 32 px square, by request: with
@@ -403,6 +422,8 @@ export function TaskEditor() {
             onPatch={drafts.patch}
             onRemove={drafts.remove}
             onMoveTo={drafts.moveTo}
+            onUngroup={drafts.ungroup}
+            refusal={refusal}
           />
         </InstrumentGroup>
       </div>

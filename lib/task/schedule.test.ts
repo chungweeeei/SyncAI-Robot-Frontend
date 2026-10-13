@@ -320,7 +320,7 @@ describe("nextScheduleRefetchMs", () => {
 describe("scheduleDrift", () => {
   // A schedule dispatches the steps it froze at registration. Drift is the
   // template having moved on since, which the row's "stale" badge counts.
-  const ref = { vertex_id: null, vertex_name: null, vertex_status: "NONE" as const };
+  const ref = { vertex_id: null, vertex_name: null, vertex_status: "NONE" as const, group: null };
   const moveT = (id: string, x: number, y: number, theta: number): TemplateStep => ({
     id,
     type: "MOVE",
@@ -391,6 +391,25 @@ describe("scheduleDrift", () => {
 
   it("counts a step whose type changed", () => {
     expect(scheduleDrift([speak("1", "Hi")], [moveT("1", 0, 0, 0)])).toBe(1);
+  });
+
+  it("counts a step that now starts together with the one above, or no longer does", () => {
+    const frozen = [move("1-move", 1, 2, 0), speak("2-speak", "hi")];
+    const grouped = [
+      { ...moveT("1-move", 1, 2, 0), group: "g1" },
+      { ...speakT("2-speak", "hi"), group: "g1" },
+    ];
+    expect(scheduleDrift(frozen, grouped)).toBe(1);
+    expect(
+      scheduleDrift(
+        frozen.map((step) => ({ ...step, group: "g1" })),
+        [moveT("1-move", 1, 2, 0), speakT("2-speak", "hi")],
+      ),
+    ).toBe(1);
+    // A group renamed in place is the same job.
+    expect(
+      scheduleDrift(frozen.map((step) => ({ ...step, group: "a" })), grouped),
+    ).toBe(0);
   });
 
   it("counts each drifted step once", () => {

@@ -94,6 +94,15 @@ export interface StepDraft {
    * pose. Display only; it does not stop the row being dispatched.
    */
   vertexMissing?: boolean;
+  /**
+   * Starts together with the row above instead of after it. A link rather
+   * than a group name, because the backend only runs a group whose members
+   * are adjacent: a chain of links cannot be anything else, so the one rule
+   * the composer could get wrong is unrepresentable. The names are minted on
+   * the way out (`stepGroupNames`). Ignored on the first row, which has
+   * nothing above it to run with.
+   */
+  withPrevious: boolean;
 }
 
 /**
@@ -121,6 +130,7 @@ export function newStepDraft(type: StepType): StepDraft {
     text: "",
     seconds: "",
     vertexId: null,
+    withPrevious: false,
   };
 }
 
@@ -244,6 +254,238 @@ export function moveStep<T>(list: T[], from: number, to: number): T[] {
 }
 
 /**
+ * The list with the row at `index` taken out of whatever it runs with, ready
+ * to be removed or moved elsewhere.
+ *
+ * The row itself loses its link, so it takes nothing of its old group along;
+ * where it lands decides its new one (see moveStepDraft). The row below it
+ * keeps its link only if the departing row had one too: pulling the middle
+ * out of A–B–C leaves A–C running together, but pulling the head out of A–B
+ * leaves B on its own rather than quietly joined to whatever stood above A.
+ */
+export function unlinkStep(list: readonly StepDraft[], index: number): StepDraft[] {
+  const leaving = list[index];
+  if (!leaving) return [...list];
+  return list.map((step, at) => {
+    if (at === index) return step.withPrevious ? { ...step, withPrevious: false } : step;
+    if (at === index + 1 && step.withPrevious && !leaving.withPrevious) {
+      return { ...step, withPrevious: false };
+    }
+    return step;
+  });
+}
+
+/** Where a row sits in the group it runs with, or null for a row on its own. */
+export type GroupPlace = "start" | "middle" | "end" | null;
+
+/** Whether row `index` really runs with the one above: the first row never does. */
+function linked(drafts: readonly StepDraft[], index: number): boolean {
+  return index > 0 && index < drafts.length && drafts[index]!.withPrevious;
+}
+
+export function stepGroupPlaces(drafts: readonly StepDraft[]): GroupPlace[] {
+  return drafts.map((_, index) => {
+    const up = linked(drafts, index);
+    const down = linked(drafts, index + 1);
+    if (up) return down ? "middle" : "end";
+    return down ? "start" : null;
+  });
+}
+
+/** A run of rows the editor draws as one item: a row on its own, or a group's box. */
+export interface StepSpan {
+  /** 0-based, inclusive at both ends; `start === end` for a row on its own. */
+  start: number;
+  end: number;
+}
+
+/** The list cut into the items the editor draws, top to bottom. */
+export function stepSpans(drafts: readonly StepDraft[]): StepSpan[] {
+  const spans: StepSpan[] = [];
+  drafts.forEach((_, index) => {
+    const last = spans[spans.length - 1];
+    if (last && linked(drafts, index)) last.end = index;
+    else spans.push({ start: index, end: index });
+  });
+  return spans;
+}
+
+/**
+ * `moveStep` for drafts, deciding which group the row lands in by where it
+ * lands, the way the editor's boxes show it:
+ *
+ * - Moved within its own group, it stays in the group: reordering the steps
+ *   of a box is not taking one out of it.
+ * - Anywhere else it leaves its group (see unlinkStep) and joins the one it
+ *   lands inside — between two rows that start together. Landing on either
+ *   edge of a box is landing outside it, so it starts on its own.
+ *
+ * Indexes as `moveStep`'s; the caller guards the no-op cases.
+ */
+export function moveStepDraft(list: readonly StepDraft[], from: number, to: number): StepDraft[] {
+  const span = stepSpans(list).find((each) => each.start <= from && from <= each.end);
+  if (!span || !list[to]) return [...list];
+  // The editor asks stepMoveProblem first and says why; this is the rule
+  // itself, so no path that reaches the list can build the group anyway.
+  if (stepMoveProblem(list, from, to)) return [...list];
+  if (span.end > span.start && span.start <= to && to <= span.end) {
+    // The span keeps its slots, so relinking them in their new order is the
+    // whole of it.
+    return moveStep([...list], from, to).map((step, at) =>
+      at < span.start || at > span.end ? step : { ...step, withPrevious: at > span.start },
+    );
+  }
+  const unlinked = unlinkStep(list, from);
+  const row = unlinked[from]!;
+  const rest = unlinked.filter((_, at) => at !== from);
+  const joins = linked(rest, to);
+  // The row pushed off the top becomes second, where a link it carried
+  // unread on the first row would suddenly count.
+  if (to === 0 && rest[0]?.withPrevious) rest[0] = { ...rest[0], withPrevious: false };
+  rest.splice(to, 0, joins ? { ...row, withPrevious: true } : row);
+  return rest;
+}
+
+/**
+ * The `group` each row is sent with, or null for a row on its own.
+ *
+ * Named after the ordinal of the group's first row (`g2`), positional for the
+ * reason `stepIdFor` is: unique by construction and readable in a run's step
+ * list. A group is only a group with two members, so a lone row whose link
+ * points at nothing sends no name at all.
+ */
+export function stepGroupNames(drafts: readonly StepDraft[]): (string | null)[] {
+  let current: string | null = null;
+  return stepGroupPlaces(drafts).map((place, index) => {
+    if (place === "start") current = `g${index + 1}`;
+    if (place === null) return null;
+    return current;
+  });
+}
+
+/**
+ * The steps that move the robot's body. The backend runs them one at a time,
+ * so a group holding two would only run them one after the other — it refuses
+ * that outright, and so does the composer, in a sentence on the row.
+ */
+const BODY_STEP_TYPES: ReadonlySet<StepType> = new Set(["MOVE", "STANDUP", "LIEDOWN"]);
+
+const ONE_BODY_STEP = "The robot does one Move, Stand or Lie at a time";
+
+/** Whether any row of `span` moves the robot's body. */
+function spanMoves(drafts: readonly StepDraft[], span: StepSpan | undefined): boolean {
+  if (!span) return false;
+  return drafts.slice(span.start, span.end + 1).some((draft) => BODY_STEP_TYPES.has(draft.type));
+}
+
+function spanOf(drafts: readonly StepDraft[], index: number): StepSpan | undefined {
+  return stepSpans(drafts).find((span) => span.start <= index && index <= span.end);
+}
+
+/**
+ * Why row `index` cannot run with the rows it is linked to, or null.
+ *
+ * Mirrors `step_group_problem`'s body rule, which the backend answers with a
+ * 400: the first Move, Stand or Lie in a group is fine, every later one is
+ * marked. Adjacency, the backend's other rule, is what the links guarantee.
+ *
+ * The editor no longer builds such a group (see stepLinkProblem and
+ * stepMoveProblem), so this is the backstop for one it was handed: a draft
+ * restored from before the guard, or a template written by another client.
+ */
+export function stepGroupError(drafts: readonly StepDraft[], index: number): string | null {
+  const draft = drafts[index];
+  if (!draft || !BODY_STEP_TYPES.has(draft.type) || !linked(drafts, index)) return null;
+  for (let at = index - 1; at >= 0; at -= 1) {
+    if (BODY_STEP_TYPES.has(drafts[at]!.type)) {
+      return `${ONE_BODY_STEP} — split the group above this step, or move it out.`;
+    }
+    if (!linked(drafts, at)) break;
+  }
+  return null;
+}
+
+/**
+ * Why row `index` may not start together with the row above, or null when it
+ * may (or already does).
+ *
+ * A link joins the whole item above the gap to the whole item below it, so it
+ * is refused when both bring a Move, Stand or Lie. Only a clash the link
+ * itself would make: a box that already holds two (see stepGroupError) does
+ * not stop a Speak being added to it.
+ */
+export function stepLinkProblem(drafts: readonly StepDraft[], index: number): string | null {
+  if (index <= 0 || index >= drafts.length || linked(drafts, index)) return null;
+  if (!spanMoves(drafts, spanOf(drafts, index - 1)) || !spanMoves(drafts, spanOf(drafts, index))) {
+    return null;
+  }
+  return `${ONE_BODY_STEP}, and both of these already have one.`;
+}
+
+/**
+ * Why moving row `from` to `to` would put it in a group it cannot run in, or
+ * null. Mirrors moveStepDraft's landing rule: only landing inside another box
+ * joins one, and only a Move, Stand or Lie landing in a box that already
+ * holds one is refused.
+ */
+export function stepMoveProblem(
+  list: readonly StepDraft[],
+  from: number,
+  to: number,
+): string | null {
+  const row = list[from];
+  if (!row || !list[to] || from === to || !BODY_STEP_TYPES.has(row.type)) return null;
+  const own = spanOf(list, from);
+  if (own && own.end > own.start && own.start <= to && to <= own.end) return null;
+  const rest = unlinkStep(list, from).filter((_, at) => at !== from);
+  if (!linked(rest, to)) return null;
+  const target = spanOf(rest, to)!;
+  if (!spanMoves(rest, target)) return null;
+  // Numbered as the list reads now, with the row still in it.
+  const shown = (at: number) => (at < from ? at : at + 1) + 1;
+  return `${ONE_BODY_STEP}, and steps ${shown(target.start)}–${shown(target.end)} already have one.`;
+}
+
+/**
+ * Whether a step read back from the robot started together with the one
+ * above it. Structural, for the three read surfaces that hold wire steps
+ * (a template, a schedule's frozen copy, a run's states) rather than drafts.
+ */
+export function wireLinked(
+  steps: readonly { group?: string | null }[],
+  index: number,
+): boolean {
+  const group = steps[index]?.group;
+  return index > 0 && group != null && group === steps[index - 1]?.group;
+}
+
+/** `stepGroupPlaces` for wire steps. */
+export function wireGroupPlaces(steps: readonly { group?: string | null }[]): GroupPlace[] {
+  return steps.map((_, index) => {
+    const up = wireLinked(steps, index);
+    const down = wireLinked(steps, index + 1);
+    if (up) return down ? "middle" : "end";
+    return down ? "start" : null;
+  });
+}
+
+/**
+ * The step shape at a glance, for a template row: `M [M T] S` — the glyphs in
+ * order, with the steps that run together bracketed.
+ */
+export function stepShape(steps: readonly { type: StepType; group?: string | null }[]): string {
+  const places = wireGroupPlaces(steps);
+  return steps
+    .map((step, index) => {
+      const glyph = stepGlyph(step.type);
+      if (places[index] === "start") return `[${glyph}`;
+      if (places[index] === "end") return `${glyph}]`;
+      return glyph;
+    })
+    .join(" ");
+}
+
+/**
  * The step id the backend sees: `1-move`, `2-standup`, `3-move`.
  *
  * Position plus type, because that is unique within the task by construction,
@@ -332,10 +574,13 @@ export function stepDraftError(draft: StepDraft): string | null {
  * reports COMPLETED and moved nothing, which is worse than an error.
  */
 export function stepDraftsSubmittable(drafts: readonly StepDraft[]): boolean {
-  return drafts.length > 0 && drafts.every((draft) => !stepDraftError(draft));
+  return (
+    drafts.length > 0 &&
+    drafts.every((draft, index) => !stepDraftError(draft) && !stepGroupError(drafts, index))
+  );
 }
 
-export function toStepRequest(draft: StepDraft, index: number): TaskStepRequest {
+function toStepRequest(draft: StepDraft, index: number): TaskStepRequest {
   const id = stepIdFor(index, draft.type);
   if (draft.type === "SPEAK") {
     const text = draft.text.trim();
@@ -360,10 +605,20 @@ export function toStepRequest(draft: StepDraft, index: number): TaskStepRequest 
   return { id, type: "MOVE", params };
 }
 
+/**
+ * The list in wire shape. A row in a group carries the group's name; a row on
+ * its own carries no `group` key at all, so an ungrouped job is the body it
+ * always was.
+ */
 export function toStepRequests(
   drafts: readonly StepDraft[],
 ): TaskStepRequest[] {
-  return drafts.map(toStepRequest);
+  const groups = stepGroupNames(drafts);
+  return drafts.map((draft, index) => {
+    const request = toStepRequest(draft, index);
+    const group = groups[index];
+    return group ? { ...request, group } : request;
+  });
 }
 
 /**
@@ -377,8 +632,8 @@ export function toStepRequests(
 export function toTemplateSteps(
   drafts: readonly StepDraft[],
 ): TemplateStepRequest[] {
-  return drafts.map((draft, index) => {
-    const request = toStepRequest(draft, index);
+  return toStepRequests(drafts).map((request, index) => {
+    const draft = drafts[index]!;
     if (request.type !== "MOVE") return request;
     // Only ever attached to a MOVE: the backend 422s a posture step that carries
     // one, and the union above is what makes that unrepresentable here.
@@ -399,8 +654,8 @@ export function toTemplateSteps(
  * round trip through save/load does not change what is in the fields.
  */
 export function fromTemplateSteps(steps: readonly TemplateStep[]): StepDraft[] {
-  return steps.map((step) => {
-    const draft = newStepDraft(step.type);
+  return steps.map((step, index) => {
+    const draft = { ...newStepDraft(step.type), withPrevious: wireLinked(steps, index) };
     if (step.type === "MOVE") {
       const pose = step.resolved_params;
       return {
@@ -441,26 +696,33 @@ export function fromTemplateSteps(steps: readonly TemplateStep[]): StepDraft[] {
  */
 export function toDispatchSteps(steps: readonly TemplateStep[]): TaskStepRequest[] {
   return steps.map((step): TaskStepRequest => {
-    switch (step.type) {
-      case "MOVE":
-        return {
-          id: step.id,
-          type: "MOVE",
-          // Non-null by construction: the backend always resolves a MOVE to
-          // either the vertex's pose or the snapshot. Falling back to an origin
-          // would be a silent drive to (0, 0), so this throws instead.
-          params: assertResolved(step, "no coordinates"),
-        };
-      case "SPEAK":
-        // Same construction guarantee — a SPEAK's resolved_params is its
-        // snapshot verbatim, and the backend refuses to store one without text.
-        return { id: step.id, type: "SPEAK", params: assertResolved(step, "no text") };
-      case "WAIT":
-        return { id: step.id, type: "WAIT", params: assertResolved(step, "no duration") };
-      default:
-        return { id: step.id, type: step.type };
-    }
+    const request = dispatchStep(step);
+    // The stored name verbatim: it is what the backend accepted on save, and
+    // a step on its own carries no key, as from the composer.
+    return step.group ? { ...request, group: step.group } : request;
   });
+}
+
+function dispatchStep(step: TemplateStep): TaskStepRequest {
+  switch (step.type) {
+    case "MOVE":
+      return {
+        id: step.id,
+        type: "MOVE",
+        // Non-null by construction: the backend always resolves a MOVE to
+        // either the vertex's pose or the snapshot. Falling back to an origin
+        // would be a silent drive to (0, 0), so this throws instead.
+        params: assertResolved(step, "no coordinates"),
+      };
+    case "SPEAK":
+      // Same construction guarantee — a SPEAK's resolved_params is its
+      // snapshot verbatim, and the backend refuses to store one without text.
+      return { id: step.id, type: "SPEAK", params: assertResolved(step, "no text") };
+    case "WAIT":
+      return { id: step.id, type: "WAIT", params: assertResolved(step, "no duration") };
+    default:
+      return { id: step.id, type: step.type };
+  }
 }
 
 /**

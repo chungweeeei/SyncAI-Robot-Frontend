@@ -541,6 +541,10 @@ test.describe("the console on a phone", () => {
     await expect.poll(readZoom).toBeGreaterThan(0);
     const fitted = await readZoom();
 
+    // Centred first: the plan opens low on a phone, and its middle can sit
+    // under the nav bar, where a finger lands on the bar instead. How low
+    // depends on the copy above it, which is not what this test is about.
+    await plan.evaluate((element) => element.scrollIntoView({ block: "center" }));
     const box = (await plan.boundingBox())!;
     const cx = box.x + box.width / 2;
     const cy = box.y + box.height / 2;

@@ -67,6 +67,9 @@ const StepDraftSchema: z.ZodType<StepDraft> = z.object({
   seconds: z.string().default(""),
   vertexId: z.string().nullable(),
   vertexMissing: z.boolean().optional(),
+  // Defaulted for the reason `seconds` is: a draft from before groups has
+  // every row on its own, which is exactly what false says.
+  withPrevious: z.boolean().default(false),
 });
 
 const TaskDraftSchema: z.ZodType<TaskDraft> = z.object({
@@ -102,7 +105,13 @@ export function draftFromTemplate(current: TaskDraft, template: TaskTemplate): T
  * edit the operator made. Only the fields a type actually saves count — a row
  * switched from Move to Speak keeps its stale coordinates in the draft.
  */
-function stepFingerprint(step: StepDraft): string {
+function stepFingerprint(step: StepDraft, index: number): string {
+  // The link counts: running a step alongside another changes the job as much
+  // as editing it. Not on the first row, where a link means nothing.
+  return `${index > 0 && step.withPrevious ? "&" : ""}${stepContent(step)}`;
+}
+
+function stepContent(step: StepDraft): string {
   switch (step.type) {
     case "MOVE":
       return step.vertexId !== null
@@ -147,7 +156,8 @@ export function draftIsUnsaved(
   return (
     draft.steps.length !== savedSteps.length ||
     draft.steps.some(
-      (step, index) => stepFingerprint(step) !== stepFingerprint(savedSteps[index]),
+      (step, index) =>
+        stepFingerprint(step, index) !== stepFingerprint(savedSteps[index]!, index),
     )
   );
 }

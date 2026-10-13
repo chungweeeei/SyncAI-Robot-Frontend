@@ -19,10 +19,21 @@ import {
 } from "@dnd-kit/sortable";
 import { ChevronsDownUpIcon, ChevronsUpDownIcon, PlusIcon } from "lucide-react";
 
+import { StepGroupHeader, StepSeam } from "@/components/tasks/step-group";
 import { StepRow } from "@/components/tasks/step-row";
 import type { ActiveVerticesStatus } from "@/hooks/use-active-map-vertices";
 import type { StepType, TaskStepState } from "@/lib/api/task";
-import { STEP_TYPES, stepIdFor, type StepDraft } from "@/lib/task/step";
+import {
+  STEP_TYPES,
+  stepGroupError,
+  stepGroupPlaces,
+  stepIdFor,
+  stepLinkProblem,
+  stepMoveProblem,
+  stepSpans,
+  type StepDraft,
+  type StepSpan,
+} from "@/lib/task/step";
 import type { MapVertex } from "@/lib/types/map";
 import type { MapMetadata } from "@/lib/types/robot";
 
@@ -44,6 +55,9 @@ export interface StepListProps {
   onPatch: (key: number, changes: Partial<Omit<StepDraft, "key">>) => void;
   onRemove: (key: number) => void;
   onMoveTo: (key: number, index: number) => void;
+  onUngroup: (keys: readonly number[]) => void;
+  /** The row the backend refused the last save over, and its sentence. */
+  refusal?: { key: number; message: string } | null;
 }
 
 /**
@@ -70,6 +84,8 @@ export function StepList({
   onPatch,
   onRemove,
   onMoveTo,
+  onUngroup,
+  refusal = null,
 }: StepListProps) {
   // One PointerSensor rather than Mouse + Touch: pointer events cover the mouse,
   // a pen and the tablet console alike. The distance threshold is what keeps a
@@ -102,7 +118,44 @@ export function StepList({
     setRowExpanded(onAdd(type), true);
   };
 
+  // The seams come away while a row is lifted: they ride on the rows the
+  // drag slides about, and a link offered mid-drag is a link to a row that is
+  // about to be somewhere else.
+  const [dragging, setDragging] = React.useState(false);
+  // Each row's seam by row key, so Ungroup can hand focus to the seam that
+  // would put the box back together: the header that held it goes with the box.
+  const seamRefs = React.useRef(new Map<number, HTMLButtonElement>());
+
   const keys = steps.map((step) => step.key);
+  const groupPlaces = stepGroupPlaces(steps);
+  const groupErrors = steps.map((_, index) => stepGroupError(steps, index));
+  const spanAt: StepSpan[] = [];
+  const warnSpans = new Set<StepSpan>();
+  for (const span of stepSpans(steps)) {
+    for (let index = span.start; index <= span.end; index += 1) {
+      spanAt[index] = span;
+      if (groupErrors[index]) warnSpans.add(span);
+    }
+  }
+  const showSeams = !disabled && !dragging;
+
+  // Why the last drop was refused. A drag has no control left to explain
+  // itself on once the row snaps back, so the list says it, until the next
+  // drag or a moment later.
+  const [dropRefused, setDropRefused] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!dropRefused) return;
+    const timer = setTimeout(() => setDropRefused(null), 6_000);
+    return () => clearTimeout(timer);
+  }, [dropRefused]);
+  const dropProblem = (active: UniqueIdentifier, over: UniqueIdentifier) =>
+    stepMoveProblem(steps, keys.indexOf(Number(active)), keys.indexOf(Number(over)));
+
+  const handleUngroup = (span: StepSpan) => {
+    const members = keys.slice(span.start, span.end + 1);
+    onUngroup(members);
+    seamRefs.current.get(members[1]!)?.focus();
+  };
   const allExpanded = keys.every((key) => expanded.has(key));
   const position = (id: UniqueIdentifier) => keys.indexOf(Number(id)) + 1;
 
@@ -115,16 +168,25 @@ export function StepList({
       over
         ? `Step ${position(active.id)} is over position ${position(over.id)} of ${steps.length}.`
         : `Step ${position(active.id)} is no longer over the list.`,
-    onDragEnd: ({ active, over }) =>
-      over
-        ? `Step ${position(active.id)} moved to position ${position(over.id)} of ${steps.length}.`
-        : `Step ${position(active.id)} dropped back in place.`,
+    onDragEnd: ({ active, over }) => {
+      if (!over) return `Step ${position(active.id)} dropped back in place.`;
+      const problem = dropProblem(active.id, over.id);
+      return problem
+        ? `Step ${position(active.id)} stays in place. ${problem}`
+        : `Step ${position(active.id)} moved to position ${position(over.id)} of ${steps.length}.`;
+    },
     onDragCancel: ({ active }) =>
       `Reorder cancelled. Step ${position(active.id)} is back in place.`,
   };
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    setDragging(false);
     if (!over || active.id === over.id) return;
+    const problem = dropProblem(active.id, over.id);
+    if (problem) {
+      setDropRefused(problem);
+      return;
+    }
     onMoveTo(Number(active.id), keys.indexOf(Number(over.id)));
   };
 
@@ -132,7 +194,8 @@ export function StepList({
     <div className="space-y-2">
       {steps.length === 0 ? (
         <p className="text-[11px] leading-tight text-muted-foreground">
-          No steps yet. A task is the list below, run top to bottom.
+          No steps yet. A task is the list below, run top to bottom. Point at
+          the gap between two steps to start them together.
         </p>
       ) : (
         <DndContext
@@ -145,6 +208,11 @@ export function StepList({
                 "To reorder, press space to pick the step up, use the arrow keys to move it, then press space again to drop it, or escape to cancel.",
             },
           }}
+          onDragStart={() => {
+            setDragging(true);
+            setDropRefused(null);
+          }}
+          onDragCancel={() => setDragging(false)}
           onDragEnd={handleDragEnd}
         >
           {steps.length > 1 && (
@@ -164,32 +232,75 @@ export function StepList({
             </div>
           )}
           <SortableContext items={keys} strategy={verticalListSortingStrategy}>
-            <ul className="space-y-1.5">
-              {steps.map((step, index) => (
-                <StepRow
-                  // The client key, not the derived step id: that id is positional, so
-                  // reconciling on it would move a focused input's DOM mid-reorder.
-                  key={step.key}
-                  step={step}
-                  index={index}
-                  total={steps.length}
-                  vertices={vertices}
-                  verticesStatus={verticesStatus}
-                  mapName={mapName}
-                  mapGrid={mapGrid}
-                  stepMarks={stepMarks}
-                  disabled={disabled}
-                  state={stepStates.get(stepIdFor(index, step.type)) ?? null}
-                  onPatch={(changes) => onPatch(step.key, changes)}
-                  onRemove={() => onRemove(step.key)}
-                  onMoveTo={(to) => onMoveTo(step.key, to)}
-                  expanded={expanded.has(step.key)}
-                  onExpandedChange={(open) => setRowExpanded(step.key, open)}
-                />
-              ))}
+            {/* No gap of its own: each row carries the gap above it (see
+             * StepRow), so a box's sides can run through the gaps inside it. */}
+            <ul>
+              {steps.map((step, index) => {
+                const span = spanAt[index]!;
+                const boxed = span.end > span.start;
+                const joined = groupPlaces[index] === "middle" || groupPlaces[index] === "end";
+                return (
+                  <StepRow
+                    // The client key, not the derived step id: that id is positional, so
+                    // reconciling on it would move a focused input's DOM mid-reorder.
+                    key={step.key}
+                    step={step}
+                    index={index}
+                    total={steps.length}
+                    vertices={vertices}
+                    verticesStatus={verticesStatus}
+                    mapName={mapName}
+                    mapGrid={mapGrid}
+                    stepMarks={stepMarks}
+                    disabled={disabled}
+                    groupPlace={groupPlaces[index] ?? null}
+                    groupWarn={warnSpans.has(span)}
+                    groupHeader={
+                      boxed && index === span.start ? (
+                        <StepGroupHeader
+                          first={span.start + 1}
+                          last={span.end + 1}
+                          disabled={disabled}
+                          onUngroup={() => handleUngroup(span)}
+                        />
+                      ) : undefined
+                    }
+                    seam={
+                      showSeams && index > 0 ? (
+                        <StepSeam
+                          ref={(node) => {
+                            if (node) seamRefs.current.set(step.key, node);
+                            else seamRefs.current.delete(step.key);
+                          }}
+                          kind={joined ? "split" : "join"}
+                          upper={index}
+                          blocked={joined ? null : stepLinkProblem(steps, index)}
+                          onClick={() => onPatch(step.key, { withPrevious: !joined })}
+                        />
+                      ) : undefined
+                    }
+                    groupError={groupErrors[index] ?? null}
+                    linkProblem={stepLinkProblem(steps, index)}
+                    moveProblem={(to) => stepMoveProblem(steps, index, to)}
+                    refusal={refusal?.key === step.key ? refusal.message : null}
+                    state={stepStates.get(stepIdFor(index, step.type)) ?? null}
+                    onPatch={(changes) => onPatch(step.key, changes)}
+                    onRemove={() => onRemove(step.key)}
+                    onMoveTo={(to) => onMoveTo(step.key, to)}
+                    expanded={expanded.has(step.key)}
+                    onExpandedChange={(open) => setRowExpanded(step.key, open)}
+                  />
+                );
+              })}
             </ul>
           </SortableContext>
         </DndContext>
+      )}
+
+      {dropRefused && (
+        <p role="status" className="text-[11px] leading-snug text-signal-warn">
+          {dropRefused}
+        </p>
       )}
 
       <div className="flex flex-wrap items-center gap-1.5 border-t border-hairline pt-2">

@@ -1442,6 +1442,159 @@ test.describe("the task console", () => {
     await expect(page).toHaveURL(/\/tasks$/);
   });
 
+  test("saves steps boxed together as one group", async ({ page }) => {
+    // The robot starts a group's steps together; the seam between two rows is
+    // how an operator says so, and the wire has to carry it as a shared name.
+    await mockBackend(page);
+    const posted: { steps: Record<string, unknown>[] }[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as { name: string; steps: Record<string, unknown>[] };
+      posted.push(body);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({ id: "55555555-5555-5555-5555-555555555555", name: body.name }),
+        ),
+      });
+    });
+    await page.goto("/tasks/editor");
+    await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
+    await page.getByRole("textbox", { name: "Task name" }).fill("greeting");
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByPlaceholder(/Delivery arrived/).fill("Arriving");
+    await page.getByTitle("Stand up. Nothing to set.").click();
+    await page.getByTitle("Stay put for a set time, then go on.").click();
+    await page.getByRole("textbox", { name: "Duration" }).fill("5");
+
+    // A seam in each gap and none above the first row, which has nothing to
+    // run with.
+    await expect(page.getByRole("button", { name: /^(Start together|Split here):/ })).toHaveCount(2);
+    const seam = page.getByRole("button", { name: "Start together: step 1 and step 2" });
+    await expect(page.getByRole("button", { name: /^Ungroup/ })).toHaveCount(0);
+    await seam.click();
+    // The pair is one box now, and the seam between them offers to split it.
+    await expect(page.getByRole("button", { name: "Ungroup steps 1 to 2" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Split here: run step 2 after step 1" }),
+    ).toBeFocused();
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => posted).toHaveLength(1);
+    expect(posted[0]!.steps.map((step) => [step.id, step.group])).toEqual([
+      ["1-speak", "g1"],
+      ["2-standup", "g1"],
+      ["3-wait", undefined],
+    ]);
+  });
+
+  test("refuses to start two body steps together, and says why", async ({ page }) => {
+    // The robot has one body, so the editor never builds the group the
+    // backend would refuse: the seam stays, says why, and does nothing.
+    const writes = await mockBackend(page);
+    await page.goto("/tasks/editor");
+    await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
+    await page.getByRole("textbox", { name: "Task name" }).fill("bow");
+    await page.getByTitle("Stand up. Nothing to set.").click();
+    await page.getByTitle("Lie down. Nothing to set.").click();
+    const save = page.getByRole("button", { name: "Save", exact: true });
+
+    const seam = page.getByRole("button", { name: /^Can't start together: step 1 and step 2/ });
+    await expect(seam).toHaveAttribute("aria-disabled", "true");
+    // Forced: the seam is aria-disabled, and what it does when pressed anyway
+    // is what is under test.
+    await seam.click({ force: true });
+    await expect(page.getByRole("button", { name: /^Ungroup/ })).toHaveCount(0);
+    await expect(save).toBeEnabled();
+
+    // The row's menu, a finger's way to the same link, refuses it too.
+    await page.getByRole("button", { name: "More actions for step 2" }).click();
+    await expect(
+      page.getByRole("menuitem", { name: "Start together with step 1" }),
+    ).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByText(/one Move, Stand or Lie at a time/)).toBeVisible();
+    expect(writes).toEqual([]);
+  });
+
+  test("marks the row a refused save names, in the backend's words", async ({ page }) => {
+    // For a rule the editor does not mirror: the backend names the step,
+    // and the row it was sent from carries the sentence.
+    await mockBackend(page);
+    const refusal = "Step '2-speak' cannot run here.";
+    const posted: { steps: { id: string }[] }[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      posted.push(route.request().postDataJSON() as { steps: { id: string }[] });
+      return route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: refusal, code: "invalid_step_group", step_id: "2-speak" }),
+      });
+    });
+    await page.goto("/tasks/editor");
+    await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
+    await page.getByRole("textbox", { name: "Task name" }).fill("greeting");
+    await page.getByTitle("Stay put for a set time, then go on.").click();
+    await page.getByRole("textbox", { name: "Duration" }).fill("5");
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByPlaceholder(/Delivery arrived/).fill("Arriving");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+
+    await expect.poll(() => posted.map((body) => body.steps.map((step) => step.id))).toEqual([
+      ["1-wait", "2-speak"],
+    ]);
+    const rows = page.getByRole("list").first().getByRole("listitem");
+    await expect(rows.nth(1)).toContainText(refusal);
+    await expect(rows.nth(0)).not.toContainText(refusal);
+    // Still in the heading too: the row says where, the heading says it happened.
+    await expect(page.locator("header").getByRole("alert").filter({ hasText: refusal })).toBeVisible();
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
+    // The 400 is the behaviour under test; Chromium logs every refusal it fetches.
+    errors = errors.filter((text) => !/status of 400/.test(text));
+  });
+
+  test("loads a saved group back as a box, and Ungroup takes it apart", async ({ page }) => {
+    const speakStep = (id: string, text: string) => ({
+      id,
+      vertex_id: null,
+      vertex_name: null,
+      vertex_status: "NONE",
+      group: "g1",
+      type: "SPEAK",
+      params: { text },
+      resolved_params: { text },
+    });
+    await mockBackend(page, {
+      templates: [
+        taskTemplate({
+          map_name: null,
+          steps: [speakStep("1-speak", "Hello"), speakStep("2-speak", "World")],
+        }),
+      ],
+    });
+    await page.goto("/tasks");
+    // The library row shows the pair as one bracket.
+    await expect(page.getByText("[T T]")).toBeVisible();
+    await page
+      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .click();
+    await expect(page.getByRole("heading", { name: "Morning round" })).toBeVisible();
+    const ungroup = page.getByRole("button", { name: "Ungroup steps 1 to 2" });
+    await expect(ungroup).toBeVisible();
+    // Opened and left as it was: nothing to save.
+    await expect(page.getByText("Unsaved changes")).toHaveCount(0);
+
+    // The header goes with the box, so focus lands on the seam that would put
+    // it back rather than falling to the page.
+    await ungroup.click();
+    await expect(ungroup).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Start together: step 1 and step 2" }),
+    ).toBeFocused();
+    await expect(page.getByText("Unsaved changes")).toBeVisible();
+  });
+
   test("renames a saved job through Save, and Escape backs out", async ({
     page,
   }) => {
@@ -3295,11 +3448,12 @@ test.describe("the step editor", () => {
     const rows = page
       .getByRole("listitem")
       .filter({ has: page.getByRole("button", { name: /^Reorder step/ }) });
-    // Each row's type label, top to bottom.
+    // Each row's type label, top to bottom: the one in its fold toggle, since
+    // the seam above a row carries a label of its own.
     const order = () =>
       rows.evaluateAll((items) =>
         items.map(
-          (item) => item.querySelector(".instrument-label")?.textContent,
+          (item) => item.querySelector("[aria-expanded] .instrument-label")?.textContent,
         ),
       );
     await expect.poll(order).toEqual(["Stand", "Lie", "Speak"]);
