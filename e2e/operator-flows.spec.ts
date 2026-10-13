@@ -2023,9 +2023,9 @@ test.describe("the manual drive panel", () => {
   test("stands the robot up from any screen, without arming", async ({
     page,
   }) => {
-    // /settings has no rail, so the panel's button is the only Stand on
-    // screen, and the posture task on the wire can only have come from it.
-    // The arm switch is the sticks' and stays off.
+    // The panel's button is the only Stand there is, and /settings shows it
+    // from a screen with no viewport. The arm switch is the sticks' and stays
+    // off.
     const writes = await mockBackend(page);
     const postures = () =>
       writes
@@ -4078,6 +4078,7 @@ test.describe("what a dispatch records about itself", () => {
     const writes = await mockBackend(page);
     await page.goto("/");
 
+    await page.getByRole("button", { name: "Manual drive panel" }).click();
     await page.getByRole("button", { name: "Stand", exact: true }).click();
     await expect
       .poll(() => writes.filter((w) => w.path === "/api/v1/tasks"))
@@ -4118,6 +4119,7 @@ test.describe("a map whose floor plan is being rebuilt", () => {
     await page.goto("/");
 
     await expect(page.getByRole("button", { name: "Set goal" })).toBeDisabled();
+    await page.getByRole("button", { name: "Manual drive panel" }).click();
     await page.getByRole("button", { name: "Stand", exact: true }).click();
     await expect
       .poll(() => writes.filter((w) => w.path === "/api/v1/tasks"))

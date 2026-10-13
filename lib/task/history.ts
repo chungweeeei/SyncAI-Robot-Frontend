@@ -80,7 +80,7 @@ export const HISTORY_KINDS: readonly TaskHistoryKind[] = [
   "schedule",
 ];
 
-// The posture words are the dashboard's own buttons' ("Stand", "Lie down"),
+// The posture words are the drive panel's own buttons' ("Stand", "Lie down"),
 // so a job reads the same here as where it was pressed.
 const KIND_LABEL: Record<TaskHistoryKind, string> = {
   goal: "Navigation goal",

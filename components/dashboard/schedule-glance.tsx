@@ -105,7 +105,7 @@ export function ScheduleGlance() {
       ) : (
         // Bounded rather than cut (see glanceSchedules): four rows and half of
         // a fifth, then the list scrolls, so a robot with many schedules does
-        // not push Posture off a short rail. The half row is the scroll cue;
+        // not push Locomotion off a short rail. The half row is the scroll cue;
         // a height that showed a sliver of one read as a rendering fault.
         <ul className="-mx-1 max-h-48 space-y-0.5 overflow-y-auto">
           {rows.map(({ schedule, next }, index) => (
