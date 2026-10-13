@@ -42,6 +42,12 @@ export const STEP_TYPES: readonly StepTypeSpec[] = [
 export const SPEAK_TEXT_MAX = 1000;
 
 /**
+ * Mirrors `SpeakParams.repeat`'s `le`: a slip of 100 for 10 would keep the
+ * robot talking for an hour, so the backend caps it and 422s past this.
+ */
+export const SPEAK_REPEAT_MAX = 10;
+
+/**
  * Mirrors `WaitParams.seconds`' `le` — the backend caps a WAIT at an hour so a
  * typo cannot park the robot for days with every other dispatch refused.
  */
@@ -72,6 +78,12 @@ export interface StepDraft {
    * fetch is weight the "announce arrival" use case does not carry.
    */
   text: string;
+  /**
+   * SPEAK only: how many times to say the text, back to back, as typed.
+   * Text for the reason `seconds` is; "1" by default, and a row saying its
+   * line once sends no `repeat` at all.
+   */
+  repeat: string;
   /**
    * WAIT only: the duration in seconds, as typed. Text for the reason the
    * coordinates are (see parseCoordinate), and named after the wire field
@@ -128,6 +140,7 @@ export function newStepDraft(type: StepType): StepDraft {
     y: "",
     theta: "0",
     text: "",
+    repeat: "1",
     seconds: "",
     vertexId: null,
     withPrevious: false,
@@ -200,7 +213,7 @@ export function stepSummary(
     }
     case "SPEAK": {
       const text = draft.text.trim();
-      return text ? `“${text}”` : null;
+      return text ? `“${text}”${repeatSuffix(speakRepeat(draft) ?? 1)}` : null;
     }
     case "WAIT": {
       const seconds = draft.seconds.trim();
@@ -530,6 +543,22 @@ function moveParams(draft: StepDraft): MoveStepParams | null {
   return { x, y, theta: normalizeTheta(theta) };
 }
 
+/** A SPEAK row's count, or null when what is typed is not a whole 1–10. */
+function speakRepeat(draft: StepDraft): number | null {
+  const text = draft.repeat.trim();
+  if (!/^\d+$/.test(text)) return null;
+  const repeat = Number(text);
+  return repeat >= 1 && repeat <= SPEAK_REPEAT_MAX ? repeat : null;
+}
+
+/**
+ * What a line said more than once reads with after its quote: ` ×3`, or
+ * nothing for once — the case every line had before the count existed.
+ */
+export function repeatSuffix(repeat: number | undefined): string {
+  return repeat !== undefined && repeat > 1 ? ` ×${repeat}` : "";
+}
+
 function waitParams(draft: StepDraft): WaitStepParams | null {
   const seconds = parseCoordinate(draft.seconds);
   if (seconds === null || seconds <= 0 || seconds > WAIT_SECONDS_MAX) return null;
@@ -546,6 +575,11 @@ export function stepDraftError(draft: StepDraft): string | null {
     // operator's screen.
     if (text.length > SPEAK_TEXT_MAX) {
       return `Too long — ${text.length} of ${SPEAK_TEXT_MAX} characters.`;
+    }
+    // Here for the reason the length is: past the bound the backend's 422
+    // is a validation array.
+    if (speakRepeat(draft) === null) {
+      return `Say it 1 to ${SPEAK_REPEAT_MAX} times.`;
     }
     return null;
   }
@@ -587,9 +621,13 @@ function toStepRequest(draft: StepDraft, index: number): TaskStepRequest {
     // Same contract as the coordinates below: callers gate on
     // stepDraftsSubmittable, so an empty line here is a programming error.
     if (!text) throw new Error(`Step ${id} has nothing to say.`);
+    const repeat = speakRepeat(draft);
+    if (repeat === null) throw new Error(`Step ${id} has no usable count.`);
     // No voice / speed keys at all — the backend's defaults are the decision,
     // and sending them would freeze today's defaults into saved templates.
-    return { id, type: "SPEAK", params: { text } };
+    // `repeat` likewise only above once, so a line said once is the body it
+    // was before the count existed.
+    return { id, type: "SPEAK", params: repeat > 1 ? { text, repeat } : { text } };
   }
   if (draft.type === "WAIT") {
     const params = waitParams(draft);
@@ -670,7 +708,11 @@ export function fromTemplateSteps(steps: readonly TemplateStep[]): StepDraft[] {
     if (step.type === "SPEAK") {
       // resolved_params for symmetry with MOVE, though for a SPEAK it is the
       // snapshot verbatim — there is no vertex to resolve against.
-      return { ...draft, text: step.resolved_params?.text ?? draft.text };
+      return {
+        ...draft,
+        text: step.resolved_params?.text ?? draft.text,
+        repeat: String(step.resolved_params?.repeat ?? 1),
+      };
     }
     if (step.type === "WAIT") {
       const seconds = step.resolved_params?.seconds;

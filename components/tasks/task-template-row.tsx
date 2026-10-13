@@ -19,7 +19,13 @@ import type { ScheduleState } from "@/lib/api/schedule";
 import type { TemplateStep, TaskTemplate } from "@/lib/api/task-template";
 import type { TaskStepState } from "@/lib/api/task";
 import { describeTrigger, scheduleChipSummary } from "@/lib/task/schedule";
-import { stepGlyph, stepShape, wireGroupPlaces, type GroupPlace } from "@/lib/task/step";
+import {
+  repeatSuffix,
+  stepGlyph,
+  stepShape,
+  wireGroupPlaces,
+  type GroupPlace,
+} from "@/lib/task/step";
 import { cn } from "@/lib/utils";
 
 export interface TaskTemplateRowProps {
@@ -282,7 +288,7 @@ function TemplateStepLine({
         * is vertical, and a hover title was the only way to read the rest. */}
       {step.type === "SPEAK" && step.resolved_params && (
         <span className="min-w-0 wrap-anywhere italic">
-          “{step.resolved_params.text}”
+          “{step.resolved_params.text}”{repeatSuffix(step.resolved_params.repeat)}
         </span>
       )}
       {step.type === "WAIT" && step.resolved_params && (

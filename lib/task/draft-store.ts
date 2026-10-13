@@ -65,6 +65,9 @@ const StepDraftSchema: z.ZodType<StepDraft> = z.object({
   // a build from before that has no WAIT row to need it — refusing the whole
   // draft over it would cost the operator steps that are all still valid.
   seconds: z.string().default(""),
+  // Defaulted for the same reason: a draft from before the count says every
+  // line once.
+  repeat: z.string().default("1"),
   vertexId: z.string().nullable(),
   vertexMissing: z.boolean().optional(),
   // Defaulted for the reason `seconds` is: a draft from before groups has
@@ -119,7 +122,7 @@ function stepContent(step: StepDraft): string {
         : `MOVE ${step.x} ${step.y} ${step.theta}`;
     case "SPEAK":
       // Trimmed because Save trims: trailing spaces are not a change to the job.
-      return `SPEAK ${step.text.trim()}`;
+      return `SPEAK ${step.repeat.trim()} ${step.text.trim()}`;
     case "WAIT":
       return `WAIT ${step.seconds}`;
     default:

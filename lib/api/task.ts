@@ -166,6 +166,12 @@ export interface SpeakStepParams {
   text: string;
   voice?: string;
   speed?: number;
+  /**
+   * How many times to say it, back to back; 1–10, see `SPEAK_REPEAT_MAX`.
+   * Optional because the backend defaults it to once and the composer sends
+   * it only above that, so a one-time line is the body it always was.
+   */
+  repeat?: number;
 }
 
 /**
@@ -212,6 +218,7 @@ export const SpeakStepParamsSchema: z.ZodType<SpeakStepParams> = z.object({
   text: z.string(),
   voice: z.string().optional(),
   speed: z.number().optional(),
+  repeat: z.number().optional(),
 });
 
 export const WaitStepParamsSchema: z.ZodType<WaitStepParams> = z.object({

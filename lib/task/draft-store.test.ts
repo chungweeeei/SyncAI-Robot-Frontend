@@ -99,6 +99,21 @@ describe("decodeTaskDraft", () => {
     expect(restored.steps.every((step) => step.seconds === "")).toBe(true);
   });
 
+  it("still restores a draft saved before a Speak had a count, as once", () => {
+    const stored = draft();
+    const old = {
+      ...stored,
+      steps: stored.steps.map((step) => {
+        const { repeat, ...rest } = step;
+        void repeat;
+        return rest;
+      }),
+    };
+    const restored = decodeTaskDraft(JSON.stringify(old));
+    expect(restored.steps).toHaveLength(2);
+    expect(restored.steps.every((step) => step.repeat === "1")).toBe(true);
+  });
+
   it("re-mints every restored key so a row added next cannot collide", () => {
     // Keys as a previous page load minted them: low numbers the counter in
     // this module will reach again.
@@ -283,6 +298,9 @@ describe("draftIsUnsaved", () => {
     expect(draftIsUnsaved({ ...base, steps: [speak, move] }, library)).toBe(true);
     expect(
       draftIsUnsaved({ ...base, steps: [move, { ...speak, text: "here" }] }, library),
+    ).toBe(true);
+    expect(
+      draftIsUnsaved({ ...base, steps: [move, { ...speak, repeat: "3" }] }, library),
     ).toBe(true);
     expect(
       draftIsUnsaved({ ...base, steps: [{ ...move, vertexId: "v2" }, speak] }, library),
