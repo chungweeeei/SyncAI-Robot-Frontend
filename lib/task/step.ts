@@ -257,11 +257,11 @@ export function moveStep<T>(list: T[], from: number, to: number): T[] {
  * The list with the row at `index` taken out of whatever it runs with, ready
  * to be removed or moved elsewhere.
  *
- * The row itself loses its link, so wherever it lands it starts on its own
- * until the operator links it again. The row below it keeps its link only if
- * the departing row had one too: pulling the middle out of A–B–C leaves A–C
- * running together, but pulling the head out of A–B leaves B on its own
- * rather than quietly joined to whatever stood above A.
+ * The row itself loses its link, so it takes nothing of its old group along;
+ * where it lands decides its new one (see moveStepDraft). The row below it
+ * keeps its link only if the departing row had one too: pulling the middle
+ * out of A–B–C leaves A–C running together, but pulling the head out of A–B
+ * leaves B on its own rather than quietly joined to whatever stood above A.
  */
 export function unlinkStep(list: readonly StepDraft[], index: number): StepDraft[] {
   const leaving = list[index];
@@ -290,6 +290,57 @@ export function stepGroupPlaces(drafts: readonly StepDraft[]): GroupPlace[] {
     if (up) return down ? "middle" : "end";
     return down ? "start" : null;
   });
+}
+
+/** A run of rows the editor draws as one item: a row on its own, or a group's box. */
+export interface StepSpan {
+  /** 0-based, inclusive at both ends; `start === end` for a row on its own. */
+  start: number;
+  end: number;
+}
+
+/** The list cut into the items the editor draws, top to bottom. */
+export function stepSpans(drafts: readonly StepDraft[]): StepSpan[] {
+  const spans: StepSpan[] = [];
+  drafts.forEach((_, index) => {
+    const last = spans[spans.length - 1];
+    if (last && linked(drafts, index)) last.end = index;
+    else spans.push({ start: index, end: index });
+  });
+  return spans;
+}
+
+/**
+ * `moveStep` for drafts, deciding which group the row lands in by where it
+ * lands, the way the editor's boxes show it:
+ *
+ * - Moved within its own group, it stays in the group: reordering the steps
+ *   of a box is not taking one out of it.
+ * - Anywhere else it leaves its group (see unlinkStep) and joins the one it
+ *   lands inside — between two rows that start together. Landing on either
+ *   edge of a box is landing outside it, so it starts on its own.
+ *
+ * Indexes as `moveStep`'s; the caller guards the no-op cases.
+ */
+export function moveStepDraft(list: readonly StepDraft[], from: number, to: number): StepDraft[] {
+  const span = stepSpans(list).find((each) => each.start <= from && from <= each.end);
+  if (!span || !list[to]) return [...list];
+  if (span.end > span.start && span.start <= to && to <= span.end) {
+    // The span keeps its slots, so relinking them in their new order is the
+    // whole of it.
+    return moveStep([...list], from, to).map((step, at) =>
+      at < span.start || at > span.end ? step : { ...step, withPrevious: at > span.start },
+    );
+  }
+  const unlinked = unlinkStep(list, from);
+  const row = unlinked[from]!;
+  const rest = unlinked.filter((_, at) => at !== from);
+  const joins = linked(rest, to);
+  // The row pushed off the top becomes second, where a link it carried
+  // unread on the first row would suddenly count.
+  if (to === 0 && rest[0]?.withPrevious) rest[0] = { ...rest[0], withPrevious: false };
+  rest.splice(to, 0, joins ? { ...row, withPrevious: true } : row);
+  return rest;
 }
 
 /**
@@ -328,7 +379,7 @@ export function stepGroupError(drafts: readonly StepDraft[], index: number): str
   if (!draft || !BODY_STEP_TYPES.has(draft.type) || !linked(drafts, index)) return null;
   for (let at = index - 1; at >= 0; at -= 1) {
     if (BODY_STEP_TYPES.has(drafts[at]!.type)) {
-      return "The robot does one Move, Stand or Lie at a time — unlink this step from the one it runs with.";
+      return "The robot does one Move, Stand or Lie at a time — split the group above this step, or move it out.";
     }
     if (!linked(drafts, at)) break;
   }

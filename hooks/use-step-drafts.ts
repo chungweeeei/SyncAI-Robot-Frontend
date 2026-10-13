@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import {
-  moveStep,
+  moveStepDraft,
   newStepDraft,
   unlinkStep,
   type StepDraft,
@@ -19,11 +19,13 @@ export interface StepDrafts {
   /**
    * Take the row out and put it back at `index` (0-based), shifting the rows in
    * between. An out-of-range index is a no-op, so "up" on the first row and
-   * "down" on the last need no guard at the call site. A row that moves leaves
-   * the group it ran with and lands on its own.
+   * "down" on the last need no guard at the call site. Where the row lands
+   * decides its group: see moveStepDraft.
    */
   moveTo: (key: number, index: number) => void;
   patch: (key: number, changes: Partial<Omit<StepDraft, "key">>) => void;
+  /** Every one of these rows starts after the row above it: a box's Ungroup. */
+  ungroup: (keys: readonly number[]) => void;
   /**
    * Swap the whole list, for loading a template into the editor.
    *
@@ -87,13 +89,24 @@ export function useStepDrafts(
     (key: number, index: number) => {
       setSteps((current) => {
         const from = current.findIndex((step) => step.key === key);
-        // Checked before the unlink, so a drop back where the row started is
-        // still the no-op moveStep promises rather than a quiet unlink.
+        // Checked here, so a drop back where the row started is still the
+        // no-op moveStep promises rather than a quiet unlink.
         if (from === index || from === -1 || index < 0 || index >= current.length) {
           return current;
         }
-        return moveStep(unlinkStep(current, from), from, index);
+        return moveStepDraft(current, from, index);
       });
+    },
+    [setSteps],
+  );
+
+  const ungroup = React.useCallback(
+    (keys: readonly number[]) => {
+      setSteps((current) =>
+        current.map((step) =>
+          keys.includes(step.key) && step.withPrevious ? { ...step, withPrevious: false } : step,
+        ),
+      );
     },
     [setSteps],
   );
@@ -120,5 +133,5 @@ export function useStepDrafts(
 
   const clear = React.useCallback(() => setSteps(() => []), [setSteps]);
 
-  return { steps, add, remove, moveTo, patch, replace, clear };
+  return { steps, add, remove, moveTo, patch, ungroup, replace, clear };
 }

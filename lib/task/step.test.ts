@@ -8,6 +8,7 @@ import {
   formatDraftPosition,
   fromTemplateSteps,
   moveStep,
+  moveStepDraft,
   newStepDraft,
   stepDraftError,
   stepDraftsSubmittable,
@@ -16,6 +17,7 @@ import {
   stepGroupPlaces,
   stepIdFor,
   stepShape,
+  stepSpans,
   stepSummary,
   stepWaypointOrdinals,
   toDispatchSteps,
@@ -467,6 +469,62 @@ describe("step groups", () => {
     it("lands a moved row on its own", () => {
       const drafts = [speak("a"), linked(speak("b"))];
       expect(unlinkStep(drafts, 1)[1]!.withPrevious).toBe(false);
+    });
+  });
+
+  it("cuts the list into the rows and boxes the editor draws", () => {
+    const drafts = [move(), linked(speak("a")), wait("1"), speak("b"), linked(wait("2")), linked(move())];
+    expect(stepSpans(drafts)).toEqual([
+      { start: 0, end: 1 },
+      { start: 2, end: 2 },
+      { start: 3, end: 5 },
+    ]);
+    expect(stepSpans([])).toEqual([]);
+  });
+
+  describe("moveStepDraft", () => {
+    // Labelled rows, so a result reads as the order and the boxes it draws.
+    const row = (label: string, withPrevious = false): StepDraft => ({
+      ...speak(label),
+      withPrevious,
+    });
+    const shape = (drafts: StepDraft[]) =>
+      stepSpans(drafts)
+        .map(({ start, end }) => {
+          const labels = drafts.slice(start, end + 1).map((draft) => draft.text);
+          return start === end ? labels[0] : `[${labels.join(" ")}]`;
+        })
+        .join(" ");
+
+    it("keeps a row reordered inside its own box in the box", () => {
+      // The two-row box is the case a plain unlink-and-move broke apart.
+      expect(shape(moveStepDraft([row("A"), row("B", true)], 1, 0))).toBe("[B A]");
+      expect(shape(moveStepDraft([row("X"), row("A"), row("B", true), row("C", true)], 1, 3))).toBe(
+        "X [B C A]",
+      );
+    });
+
+    it("joins the box it lands inside, between two of its rows", () => {
+      expect(shape(moveStepDraft([row("X"), row("A"), row("B", true)], 0, 1))).toBe("[A X B]");
+      expect(shape(moveStepDraft([row("A"), row("B", true), row("X")], 2, 1))).toBe("[A X B]");
+    });
+
+    it("lands on its own on either edge of a box", () => {
+      expect(shape(moveStepDraft([row("A"), row("B", true), row("X")], 2, 0))).toBe("X [A B]");
+      expect(shape(moveStepDraft([row("X"), row("A"), row("B", true), row("Y")], 0, 2))).toBe(
+        "[A B] X Y",
+      );
+    });
+
+    it("leaves its box behind, keeping the rest of it together", () => {
+      expect(
+        shape(moveStepDraft([row("A"), row("B", true), row("C", true), row("X")], 1, 3)),
+      ).toBe("[A C] X B");
+    });
+
+    it("does not link the row it pushes off the top", () => {
+      // A link carried unread on the first row must not start to count at second.
+      expect(shape(moveStepDraft([row("A", true), row("X")], 1, 0))).toBe("X A");
     });
   });
 
