@@ -1,22 +1,13 @@
 // The task editor's unsaved work, kept across a trip to another screen.
 //
-// The App Router unmounts /tasks on navigation, so without this an operator
-// who left to place the waypoint their job was missing came back to an empty
-// editor. The draft lives in sessionStorage: it survives a reload and a walk
-// to the map editor, is private to the tab, and goes away when the tab does —
-// which is exactly the lifetime of "the job I have not saved yet".
+// sessionStorage matches the lifetime of "the job I have not saved yet": it
+// survives a reload and a walk to the map editor, is private to the tab, and
+// ends with it. A `subscribe` / `getSnapshot` store for useSyncExternalStore,
+// not an effect restore, because the page is server-rendered and the first
+// client render must match the server's.
 //
-// A store with `subscribe` / `getSnapshot` rather than state restored in an
-// effect, because /tasks is server-rendered: the first client render has to
-// match the server's (which knows nothing), and the only sanctioned way to
-// swap in a browser-side value after that is useSyncExternalStore — the same
-// construction as useBrowserTimeZone. Restoring in an effect would be a
-// synchronous setState the compiler lint rejects, and a flash of an empty
-// editor besides.
-//
-// Storage is injected, never touched at module level: this runs on the server
-// too, tests hand it a Map, and every real access is wrapped — a private
-// window, blocked site data or a full quota must cost the cache, not /tasks.
+// Storage is injected (the server has none, tests pass a Map) and every access
+// is wrapped: a private window or full quota must cost the cache, not /tasks.
 
 import { z } from "zod";
 
@@ -51,9 +42,8 @@ export function isEmptyTaskDraft(draft: TaskDraft): boolean {
   );
 }
 
-// Mirrors TaskDraft so a field added there and forgotten here fails to
-// compile — the same reason the wire schemas carry the annotation. Unknown
-// keys are stripped, so a draft written by a newer build still restores.
+// Annotated so a TaskDraft field forgotten here fails to compile. Unknown keys
+// are stripped, so a draft written by a newer build still restores.
 const StepDraftSchema: z.ZodType<StepDraft> = z.object({
   key: z.number(),
   type: z.enum(["MOVE", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
@@ -61,17 +51,14 @@ const StepDraftSchema: z.ZodType<StepDraft> = z.object({
   y: z.string(),
   theta: z.string(),
   text: z.string(),
-  // Defaulted rather than required: it arrived with WAIT, and a draft saved by
-  // a build from before that has no WAIT row to need it — refusing the whole
-  // draft over it would cost the operator steps that are all still valid.
+  // Defaulted, not required: a draft from before WAIT has no row that needs
+  // it, and refusing the whole draft would cost steps that are still valid.
   seconds: z.string().default(""),
-  // Defaulted for the same reason: a draft from before the count says every
-  // line once.
+  // Defaulted likewise: a draft from before the count says every line once.
   repeat: z.string().default("1"),
   vertexId: z.string().nullable(),
   vertexMissing: z.boolean().optional(),
-  // Defaulted for the reason `seconds` is: a draft from before groups has
-  // every row on its own, which is exactly what false says.
+  // Defaulted likewise: a draft from before groups has every row on its own.
   withPrevious: z.boolean().default(false),
 });
 
@@ -83,12 +70,9 @@ const TaskDraftSchema: z.ZodType<TaskDraft> = z.object({
 });
 
 /**
- * A template opened in the editor, as a whole draft.
- *
- * `fromTemplateSteps` reads resolved_params, so a vertex moved since the save
- * shows its *current* pose, and it mints fresh keys, so no incoming row is
- * reconciled into an outgoing one. A template for another map opens on that
- * map; one with no Move step names none and leaves the current choice alone.
+ * A template opened in the editor, as a whole draft. Steps come from
+ * resolved_params (a moved vertex shows its *current* pose) with fresh keys.
+ * A template with no Move names no map and leaves the current choice alone.
  */
 export function draftFromTemplate(current: TaskDraft, template: TaskTemplate): TaskDraft {
   return {
@@ -102,15 +86,13 @@ export function draftFromTemplate(current: TaskDraft, template: TaskTemplate): T
 /**
  * What a step would save as, for telling an edited row from a loaded one.
  *
- * A Move bound to a waypoint is that waypoint and nothing else: its numbers
- * are re-resolved from the waypoint's current pose on every load, so a
- * waypoint moved on the map since this draft was opened must not read as an
- * edit the operator made. Only the fields a type actually saves count — a row
- * switched from Move to Speak keeps its stale coordinates in the draft.
+ * A Move bound to a waypoint is that waypoint alone: its numbers re-resolve on
+ * every load, so a waypoint moved on the map must not read as the operator's
+ * edit. Only the fields a type saves count — a row switched from Move to Speak
+ * keeps stale coordinates in the draft.
  */
 function stepFingerprint(step: StepDraft, index: number): string {
-  // The link counts: running a step alongside another changes the job as much
-  // as editing it. Not on the first row, where a link means nothing.
+  // The link counts as an edit, except on the first row where it means nothing.
   return `${index > 0 && step.withPrevious ? "&" : ""}${stepContent(step)}`;
 }
 
@@ -133,15 +115,12 @@ function stepContent(step: StepDraft): string {
 /**
  * Whether the draft holds work that is not on the robot.
  *
- * A fresh job is unsaved as soon as it has a step or a name. A loaded one is
- * unsaved only once it differs from the stored row — steps, name or map — so
- * opening a job and walking away is not reported as work at risk. Asking
- * about nothing trains the operator to press OK, and then the one confirm
- * that guards real work is pressed through too.
+ * A fresh job is unsaved once it has a step or a name; a loaded one only once
+ * it differs from the stored row. Asking about nothing trains the operator to
+ * press OK through the one confirm that guards real work.
  *
- * `templates` is the library as read; a loaded row it does not hold (still
- * loading, deleted elsewhere) cannot be compared against and counts as
- * unsaved, since a false alarm costs a click and a missed one costs the job.
+ * A loaded row missing from `templates` (still loading, deleted elsewhere)
+ * counts as unsaved: a false alarm costs a click, a missed one the job.
  */
 export function draftIsUnsaved(
   draft: TaskDraft,
@@ -167,10 +146,9 @@ export function draftIsUnsaved(
 
 /**
  * Whether replacing the draft with `templateId` (or with nothing, for a new
- * job) would throw away unsaved work. The editor is a page of its own now, so
- * the draft is off-screen whenever this is asked: replacing it silently would
- * be data loss nobody saw happen. Reopening the template that is already
- * loaded is not a replacement.
+ * job) would throw away unsaved work. The draft is off-screen whenever this is
+ * asked, so a silent replace would be loss nobody saw. Reopening the loaded
+ * template is not a replacement.
  */
 export function draftWouldBeLost(
   draft: TaskDraft,
@@ -182,12 +160,9 @@ export function draftWouldBeLost(
 }
 
 /**
- * What storage holds, or the empty draft when it holds nothing usable.
- *
- * Anything that does not parse is treated as nothing: a draft from a build
- * with a different shape is not worth a broken editor. The step keys are
- * re-minted on the way in — see `reissueStepKeys` on why the stored ones
- * cannot be trusted after a reload.
+ * What storage holds, or the empty draft when it holds nothing usable — a
+ * draft of another shape is not worth a broken editor. Step keys are re-minted
+ * (see `reissueStepKeys`).
  */
 export function decodeTaskDraft(raw: string | null): TaskDraft {
   if (raw === null) return EMPTY_TASK_DRAFT;
@@ -225,9 +200,8 @@ export function createTaskDraftStore(
 ): TaskDraftStore {
   const listeners = new Set<() => void>();
 
-  // Read once, up front, and never again: the snapshot is the truth from here
-  // on and storage is only a mirror of it. Reading on every getSnapshot would
-  // hand React a fresh object each call and loop it.
+  // Read once: from here on storage only mirrors the snapshot. Reading on every
+  // getSnapshot would hand React a fresh object each call and loop it.
   let snapshot: TaskDraft = decodeTaskDraft(read());
 
   function read(): string | null {
@@ -245,8 +219,8 @@ export function createTaskDraftStore(
       if (isEmptyTaskDraft(draft)) storage.removeItem(key);
       else storage.setItem(key, JSON.stringify(draft));
     } catch {
-      // Quota, a private window, blocked site data: the editor keeps working
-      // on the in-memory draft and simply stops surviving a reload.
+      // Quota, private window, blocked site data: the in-memory draft still
+      // works, it just stops surviving a reload.
     }
   }
 

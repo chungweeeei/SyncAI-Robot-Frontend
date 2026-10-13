@@ -1,12 +1,7 @@
-// The gridmap editor's 2D drawing, lifted out of components/maps/grid-canvas.tsx.
-//
-// Every function here is `(ctx, view, …) -> void` and touches no React: the
-// component owns the buffer, the gestures and the frame scheduling, this owns
-// what a frame looks like. See CLAUDE.md > Layering.
-//
-// The shared signal hues come from lib/theme/signal.ts, the same module the 3D
-// scene reads; only the hues this editor adds — the well, the map extent, the
-// cell grid and the vertex mark — are written out below.
+// The floor plan editor's 2D drawing: `(ctx, view, …) -> void`, no React. The
+// component owns the buffer, gestures and frame scheduling; this owns what a
+// frame looks like. Signal hues come from lib/theme/signal.ts; only the hues
+// this editor adds are written out below.
 
 import type { CellSink } from "@/lib/map/grid";
 import { stampLine } from "@/lib/map/grid";
@@ -38,35 +33,20 @@ export interface Palette {
   /** Brush outline and shape preview — a commanded value the operator set. */
   cmd: string;
   /**
-   * Stored map vertices. One hue for all five types (see lib/map/vertex.ts on
-   * why the type is a glyph and not a colour), and not one of the signal hues:
-   * a saved vertex is neither measured nor commanded nor faulted, so borrowing
-   * a signal colour for it would weaken the ones that do mean something. The
-   * *draft* vertex uses `cmd`, like every other value the operator is setting.
+   * Stored vertices, one hue for every type (the type is a glyph). Not a
+   * signal hue: a saved vertex is neither measured, commanded nor faulted. The
+   * draft vertex uses `cmd`.
    */
   vertex: string;
-  /**
-   * The robot's own footprint. `signal-live` by the console's rule — it is a
-   * measured, valid value, the one thing on this canvas that is neither stored
-   * nor being commanded — which is also what keeps it from being read as a
-   * vertex at a glance.
-   */
+  /** The robot's footprint: `signal-live`, the one measured value on this canvas. */
   live: string;
-  /**
-   * A forbidden zone. `signal-warn` by the console's rule — the same red as a
-   * failed task and a destructive button — and not `caution`, because a zone
-   * is a prohibition the operator drew, not a degraded reading.
-   */
+  /** A forbidden zone: `signal-warn`, not `caution` — a prohibition, not a degraded reading. */
   warn: string;
 }
 
 /*
- * Only the chrome drawn *over* the grid follows the theme. The grid itself never
- * does: a gridmap is white free space and near-black obstacles in night mode too
- * (see lib/map/render.ts on why the bytes are blitted literally), so a marker
- * picked to look right against the dark panel would be invisible where it is
- * actually drawn. Hues are the globals.css signal values — `signal-cmd` for the
- * brush and previews, because they show a value the operator is about to commit.
+ * Only the chrome drawn *over* the grid follows the theme; the grid is blitted
+ * literally (lib/map/render.ts) and stays white/near-black in dark mode too.
  */
 export const PALETTES: Record<"light" | "dark", Palette> = {
   light: {
@@ -90,14 +70,9 @@ export const PALETTES: Record<"light" | "dark", Palette> = {
 };
 
 /**
- * Drawn under every marker and label before the coloured shape.
- *
- * A vertex sits on cells the grid renders literally — white where the floor is
- * free, near-black where it is not (see lib/map/render.ts) — so no single hue is
- * legible everywhere a vertex can be placed. A translucent light halo behind the
- * mark is what makes the dark light-theme marker readable on top of an obstacle,
- * and it is drawn rather than themed because the *grid* under it never follows
- * the theme.
+ * Stroked under every mark before its colour. The grid beneath is blitted
+ * literally (white free space, near-black obstacles), so no single hue is
+ * legible over both; the halo is what makes a mark readable anywhere.
  */
 export const MARKER_HALO = "rgba(255, 255, 255, 0.85)";
 
@@ -108,36 +83,26 @@ export const PREVIEW_CELL_LIMIT = 4000;
 export const MIN_RING_PX = 6;
 
 /*
- * Vertex markers are sized in CSS pixels and do NOT scale with zoom, which is
- * the opposite of the brush ring. The ring scales because it has to be honest
- * about how many cells a click will paint; a vertex is a single pose, so scaling
- * it would only make it vanish at fit view — the zoom level where an operator is
- * most likely to be looking for it.
+ * Vertex markers are CSS pixels and do NOT scale with zoom, unlike the brush
+ * ring: a vertex is a pose with no size, and scaling it would make it vanish
+ * at fit view, where the operator is most likely looking for it.
  */
 export const VERTEX_DOT_RADIUS = 4.5;
 export const VERTEX_ARROW_PX = 18;
 
 /*
- * The robot's footprint, in metres, drawn to scale — the opposite choice from the
- * vertex markers above, and for the opposite reason: a vertex is a pose and has
- * no size, while "will this stop fit" is most of what the operator is asking when
- * they look at where the robot is standing. Full extents from the global
- * costmap's half-extents (planner_server_params.yaml, 0.35 x 0.22), which is the
- * shape the planner actually reasons with — note it disagrees with the local
- * costmap's (0.28 x 0.20); that drift is flagged in the package READMEs, and this
- * marker is a picture, not a clearance guarantee.
+ * The robot's footprint in metres, drawn to scale, because "will it fit" is
+ * what the operator is asking. From the global costmap's half-extents
+ * (0.35 x 0.22; the local costmap's differ), so it is a picture, not a
+ * clearance guarantee.
  */
 export const ROBOT_LENGTH_M = 0.7;
 export const ROBOT_WIDTH_M = 0.44;
 
 /**
- * Smallest the footprint is ever drawn, measured along the robot's length.
- *
- * Same idea as MIN_RING_PX: at fit scale on the 1602x1502 maps a 0.7 m robot is
- * about 7 px, and the one thing this marker must never do is be untraceable at
- * the zoom where you are looking for it. The aspect ratio is held, so below this
- * size the shape stops being to scale and becomes a glyph — which is honest, in
- * that at 7 px nothing could be read as a clearance anyway.
+ * Smallest the footprint is drawn, along its length: at fit scale a 0.7 m
+ * robot is ~7 px. Below this it becomes a glyph (aspect held) rather than to
+ * scale, and at that size nothing reads as a clearance anyway.
  */
 export const MIN_ROBOT_LENGTH_PX = 14;
 
@@ -176,11 +141,9 @@ export function drawCellGrid(
 /**
  * The in-progress line or rect.
  *
- * A line's preview is rasterized by the *same* stampLine that will commit it, into
- * a collector sink rather than the buffer — so the cells highlighted and the cells
- * painted cannot disagree. Approximating it with ctx.lineWidth is the tempting
- * shortcut and it is a lie: at high zoom the operator would paint cells they were
- * never shown. A rect is exempt because its cell set *is* a screen rectangle.
+ * A line's preview runs the *same* stampLine that will commit it, into a
+ * collector, so highlighted and painted cells cannot disagree; ctx.lineWidth
+ * would show different cells at high zoom. A rect's cells *are* a rectangle.
  */
 export function drawPreview(
   ctx: CanvasRenderingContext2D,
@@ -244,13 +207,7 @@ export function drawPreview(
   ctx.restore();
 }
 
-/**
- * The brush footprint, drawn at `brush * scale` CSS px.
- *
- * Brush size is in cells, which is right for a grid editor but surprising on
- * screen: a size-31 brush covers a huge area zoomed out and a small one zoomed in.
- * Scaling the ring is what keeps it honest about what a click will paint.
- */
+/** The brush footprint at `brush * scale` CSS px: scaled, so it shows what a click paints. */
 export function drawBrushRing(
   ctx: CanvasRenderingContext2D,
   view: View,
@@ -287,12 +244,8 @@ export function vertexScreen(view: View, meta: MapMetadata, wx: number, wy: numb
 
 /**
  * The vertex layer: stored vertices, the staged draft, and the one being aimed.
- *
- * Drawn in every mode, not only in vertex mode. Where the vertices are is
- * information a grid edit needs too — repainting a wall that a CHARGER stop sits
- * against is exactly when you want to see it — and hiding them would make the
- * mode switch feel like it loaded different data rather than changed what a
- * press does.
+ * Drawn in every mode: a grid edit next to a waypoint needs to see it, and the
+ * mode switch changes what a press does, not what data is shown.
  */
 export function drawVertices(
   ctx: CanvasRenderingContext2D,
@@ -303,9 +256,8 @@ export function drawVertices(
   palette: Palette,
 ): void {
   const aiming = gesture?.kind === "vertex" ? gesture : null;
-  // Rebuilt per frame rather than kept in the shell: a Set handed down as a prop
-  // would be a new identity every render and defeat this component's memo, and
-  // the selection is at most a few dozen ids.
+  // Rebuilt per frame: a Set prop would be a new identity every render and
+  // defeat the memo, and the selection is a few dozen ids at most.
   const selected = new Set(props.selectedIds);
 
   ctx.save();
@@ -330,10 +282,7 @@ export function drawVertices(
     });
   }
 
-  // A draft is drawn last and dashed: it is the one mark on screen that is not
-  // in the database yet, and dashing says so without needing a second hue —
-  // `cmd` already means "a value the operator is setting", the same as the brush
-  // ring it shares the canvas with.
+  // A draft is drawn last and dashed: the one mark not saved yet.
   const draft = aiming && aiming.id === null ? { ...aiming, x: aiming.wx, y: aiming.wy } : props.draft;
   if (draft) {
     const at = vertexScreen(view, meta, draft.x, draft.y);
@@ -352,14 +301,7 @@ export function drawVertices(
   ctx.restore();
 }
 
-/**
- * The rubber band, while one is being dragged.
- *
- * Drawn in `cmd` like the brush ring and the draft marker, because it is the
- * same kind of thing: a value the operator is in the middle of setting. The wash
- * is faint on purpose — the band's whole job is to let you see which markers are
- * about to be caught, and a solid fill would hide the ones under it.
- */
+/** The rubber band, in `cmd`; the wash is faint so the markers it catches stay visible. */
 export function drawMarquee(
   ctx: CanvasRenderingContext2D,
   gesture: Gesture | null,
@@ -388,18 +330,12 @@ export function drawMarquee(
 }
 
 /**
- * The robot where it is standing right now: its footprint, pointed at its heading.
+ * The robot where it stands: its footprint, pointed at its heading.
  *
- * A footprint outline rather than another ring-and-arrow marker, because it has to
- * be distinguishable from the vertices at a glance in a place where it will often
- * be sitting on top of one — the operator's usual reason for opening this screen
- * with the robot live is to mark the spot it is parked on. Shape, hue and size all
- * say "not a vertex": the vertices are pointed rings in the neutral vertex hue at a
- * fixed pixel size, this is a body in `live` green that grows with the zoom.
- *
- * The nose is part of the outline rather than a separate arrow so that the whole
- * mark is one shape — at the zoom levels where the body is only a dozen pixels
- * across, a detached arrowhead reads as a second object.
+ * A body, not a ring-and-arrow, so it never reads as a vertex even while
+ * parked on one (often the reason the screen is open). The nose is part of
+ * the outline because at a dozen pixels a detached arrowhead reads as a
+ * second object.
  */
 export function drawRobot(
   ctx: CanvasRenderingContext2D,
@@ -425,9 +361,8 @@ export function drawRobot(
   ctx.lineCap = "round";
   ctx.setLineDash([]);
 
-  // Body pointing down +x (i.e. +x is now "up the heading"): a rectangle whose
-  // front edge is pulled out to a nose. The nose eats a fifth of the length, so a
-  // square-on view still reads as a rectangle rather than as an arrow.
+  // A rectangle along +x (the heading) with its front pulled to a nose; the nose
+  // takes a fifth of the length so the body still reads as a rectangle.
   const nose = halfLength * 0.4;
   const body = new Path2D();
   body.moveTo(halfLength, 0);
@@ -437,15 +372,11 @@ export function drawRobot(
   body.lineTo(halfLength - nose, halfWidth);
   body.closePath();
 
-  // Haloed first, like every other mark here: the grid beneath is blitted
-  // literally, so neither hue is legible over both free space and obstacles.
   ctx.strokeStyle = MARKER_HALO;
   ctx.lineWidth = 3.5;
   ctx.stroke(body);
 
-  // A wash rather than a solid fill: this is the one mark that covers cells
-  // instead of pointing at one, and an operator has to be able to see the
-  // obstacle it is parked against through it.
+  // A wash, not a fill: the obstacle it is parked against must show through.
   ctx.fillStyle = palette.live;
   ctx.globalAlpha = 0.22;
   ctx.fill(body);
@@ -471,30 +402,15 @@ function zonePath(view: View, meta: MapMetadata, points: readonly ZonePoint[]): 
 }
 
 /**
- * The finished forbidden zones.
+ * The finished forbidden zones: halo, wash, edge, like the robot footprint,
+ * so the doorway being fenced off shows through. A selected zone is heavier,
+ * not a second hue, and drawn last so its edge is never under a neighbour's.
  *
- * The robot footprint's three passes — halo, wash, edge — for the footprint's
- * reasons: the halo because the grid under it is blitted literally and no one
- * hue is legible over both free space and obstacles, and a wash rather than a
- * solid fill because the operator has to see the doorway they are fencing off
- * through it. `warn`, because a zone is the one mark on this canvas that
- * forbids.
- *
- * A selected zone is the same shape, heavier: a thicker edge and a denser
- * wash, the way a selected marker gets emphasis rather than a second hue.
- * The selected ones are drawn last so their edges are never under a
- * neighbour's.
- *
- * Corner handles are drawn where a press on one would do something: on
- * every zone while Shape is armed and no shape is attached yet (a handle is
- * where a drag moves the corner, with nothing in flight, and where a click
- * attaches the shape to the zone), on the zone a shape in flight is
- * anchored to (its other corners are where that shape can end — filled once
- * it has a corner of its own, the way a draft's first corner fills once it
- * can close), and on the selected zones always.
- * A handle under the pointer, or one being dragged, swells the way a draft
- * corner does, and a corner mid-drag is drawn where the pointer has carried
- * it rather than where the shell still has it.
+ * Corner handles show only where a press would do something: on every zone
+ * while Shape is armed with nothing anchored, on the zone a shape is anchored
+ * to (its other corners filled once a merge is possible), and on selected
+ * zones. A hovered or dragged handle swells, and a dragged corner is drawn
+ * where the pointer has it.
  */
 export function drawZones(
   ctx: CanvasRenderingContext2D,
@@ -560,23 +476,13 @@ export function drawZones(
 }
 
 /**
- * The shape in flight: its corners, the edges between them, and a rubber
- * edge from the last corner to the pointer.
+ * The shape in flight: corners, edges, and a rubber edge to the pointer.
+ * Dashed `cmd` like the draft marker; red is for zones that already forbid.
  *
- * Dashed and in `cmd`, like the draft marker, because it is the same kind of
- * thing — a value the operator is setting that is not stored anywhere yet —
- * and the finished zones' red is reserved for shapes that already forbid.
- *
- * The first corner is drawn with emphasis exactly when pressing it closes
- * the shape (see classifyZonePress). That is the only cue the operator gets
- * that the shape can close now, and it lights at the moment it becomes true
- * rather than being explained anywhere.
- *
- * A corner under the pointer, or one being dragged, is drawn larger: the dots
- * stay on screen so a corner can be picked back up and moved, and the swell
- * is what says the pointer has found one. `hoverCorner` is the canvas's
- * hit-test of the pointer itself, not of `hover`'s cell, because at high zoom
- * a cell is wider than the dot's slop.
+ * The first corner is emphasised exactly when pressing it closes the shape
+ * (classifyZonePress) — the operator's only cue that it can close. A hovered
+ * or dragged corner swells. `hoverCorner` hit-tests the pointer, not
+ * `hover`'s cell, because at high zoom a cell is wider than the dot's slop.
  */
 export function drawZoneDraft(
   ctx: CanvasRenderingContext2D,
@@ -589,9 +495,8 @@ export function drawZoneDraft(
   palette: Palette,
 ): void {
   if (props.zoneDraft.length === 0) return;
-  // A corner mid-drag is drawn where the pointer has carried it, not where
-  // the shell still has it: the shell hears about the move on release. Only
-  // the draft's own (zoneId null); a finished zone's handle is drawZones's.
+  // A dragged corner is drawn at the pointer: the shell hears of the move on
+  // release. Only the draft's own (zoneId null); zone handles are drawZones's.
   const dragging =
     gesture?.kind === "point" && gesture.corner && gesture.corner.zoneId === null
       ? gesture.corner
@@ -606,12 +511,9 @@ export function drawZoneDraft(
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
 
-  // The rubber edge follows the hovered cell, on the same terms as the brush
-  // ring: never mid-pan or mid-drag, because the pointer is moving the map or
-  // a corner rather than choosing the next one. Nor over a corner of its
-  // own, where a click adds nothing, so an edge to it would promise one.
-  // Over a finished zone's handle it snaps to the handle instead, which is
-  // where the click would attach or end the shape.
+  // The rubber edge follows the hovered cell, but not mid-pan or mid-drag, nor
+  // over the draft's own corner (a click there adds nothing). Over a finished
+  // zone's handle it snaps to the handle, where a click would attach or end it.
   const armed = props.mode === "zone" && props.zoneTool === "shape" && !props.spacePan;
   const busy = gesture?.kind === "pan" || gesture?.kind === "point";
   const handle =
@@ -675,14 +577,7 @@ export interface MarkerSpec {
   dashed: boolean;
 }
 
-/**
- * One marker: a ring, a heading arrow, and a `G · name` caption.
- *
- * Every stroke is laid down twice — once in MARKER_HALO at +2 px width, then in
- * the marker colour. Without it a light-theme marker disappears into an obstacle
- * and a dark-theme one disappears into free space, because the grid beneath is
- * blitted literally and does not follow the theme.
- */
+/** One marker: a ring, a heading arrow, and a `G · name` caption, each over a MARKER_HALO stroke. */
 export function drawMarker(ctx: CanvasRenderingContext2D, spec: MarkerSpec): void {
   const { cx, cy, colour, emphasis, dashed } = spec;
   const radians = (spec.theta * Math.PI) / 180;

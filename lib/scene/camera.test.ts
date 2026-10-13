@@ -25,9 +25,7 @@ describe("frameMap", () => {
   });
 
   it("is the same view every time it is asked for", () => {
-    // Recenter's promise is the opening view back, whatever the operator did in
-    // between; a second call from an orbited camera must land where the first
-    // did.
+    // Recenter from an orbited camera must land on the opening view.
     const frame = { cx: 0, cy: 0, widthM: 20, heightM: 20 };
     const { camera, controls } = rig();
     frameMap(camera, controls, frame);
@@ -68,8 +66,7 @@ describe("dollyStep", () => {
   });
 
   it("never crosses the target, however often it is pressed", () => {
-    // Past the target the view flips, and a button that can flip the view on
-    // the tenth press is a button nobody presses ten times.
+    // Past the target the view would flip.
     const { camera, controls } = rig();
     camera.position.set(0, -3, 4);
     const before = camera.position.clone().normalize();

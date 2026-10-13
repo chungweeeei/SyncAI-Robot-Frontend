@@ -1,10 +1,6 @@
-// The step vocabulary and the draft model behind the /tasks composer.
-//
-// It sits here rather than in the components because two surfaces send the same
-// list — an immediate dispatch and a schedule registration — and the rule for
-// what a fillable step *is* must not have two copies. The conversion to wire
-// shape lives here too, so lib/api/task.ts never has to know what a half-typed
-// coordinate field looks like.
+// The step vocabulary and the draft model behind the /tasks composer, and the
+// conversion to wire shape. One copy, because a dispatch and a schedule
+// registration send the same list; lib/api/task.ts never sees a half-typed field.
 
 import { normalizeTheta } from "@/lib/angle";
 import type { TemplateStep, TemplateStepRequest } from "@/lib/api/task-template";
@@ -28,11 +24,9 @@ export interface StepTypeSpec {
 /** Order is the add row's order; the fillable steps first, the bare postures last. */
 export const STEP_TYPES: readonly StepTypeSpec[] = [
   { value: "MOVE", label: "Move", glyph: "M", hint: "Drive to a pose in the map frame." },
-  // "T" because STANDUP already owns "S" — the glyph reads as TTS, and the hint
-  // spells that out so it is not a riddle.
+  // "T" (for TTS) because STANDUP already owns "S".
   { value: "SPEAK", label: "Speak", glyph: "T", hint: "Say a line on the robot speaker (TTS)." },
-  // "Stay put", not "pause": Pause is the masthead's hold on a running job,
-  // and a step that shared the word would read as one.
+  // "Stay put", not "pause": Pause is the masthead's hold on a running job.
   { value: "WAIT", label: "Wait", glyph: "W", hint: "Stay put for a set time, then go on." },
   { value: "STANDUP", label: "Stand", glyph: "S", hint: "Stand up. Nothing to set." },
   { value: "LIEDOWN", label: "Lie", glyph: "L", hint: "Lie down. Nothing to set." },
@@ -41,16 +35,10 @@ export const STEP_TYPES: readonly StepTypeSpec[] = [
 /** Mirrors `SpeakParams.text`'s `max_length` — the backend 422s past this. */
 export const SPEAK_TEXT_MAX = 1000;
 
-/**
- * Mirrors `SpeakParams.repeat`'s `le`: a slip of 100 for 10 would keep the
- * robot talking for an hour, so the backend caps it and 422s past this.
- */
+/** Mirrors `SpeakParams.repeat`'s `le`: a typo must not keep the robot talking for an hour. */
 export const SPEAK_REPEAT_MAX = 10;
 
-/**
- * Mirrors `WaitParams.seconds`' `le` — the backend caps a WAIT at an hour so a
- * typo cannot park the robot for days with every other dispatch refused.
- */
+/** Mirrors `WaitParams.seconds`' `le`: a typo must not park the robot for days. */
 export const WAIT_SECONDS_MAX = 3600;
 
 const GLYPHS: Record<StepType, string> = STEP_TYPES.reduce(
@@ -66,73 +54,49 @@ export interface StepDraft {
   /** Client-only identity: the React key, and what add / remove / move address. */
   key: number;
   type: StepType;
-  /** MOVE only. Raw text — see the note below. */
+  /** MOVE only. Raw text — see parseCoordinate. */
   x: string;
   y: string;
   theta: string;
   /**
-   * SPEAK only: what to say. Trimmed on the way out, not on change — trailing
-   * spaces are a state typing legitimately passes through, same argument as the
-   * coordinates. Voice and speed are deliberately not draft fields: the backend
-   * defaults them, and a picker for a voice list the composer would have to
-   * fetch is weight the "announce arrival" use case does not carry.
+   * SPEAK only: what to say. Trimmed on the way out, not on change. Voice and
+   * speed are deliberately not draft fields: the backend defaults them.
    */
   text: string;
-  /**
-   * SPEAK only: how many times to say the text, back to back, as typed.
-   * Text for the reason `seconds` is; "1" by default, and a row saying its
-   * line once sends no `repeat` at all.
-   */
+  /** SPEAK only: how many times to say the text, as typed. Once sends no `repeat`. */
   repeat: string;
-  /**
-   * WAIT only: the duration in seconds, as typed. Text for the reason the
-   * coordinates are (see parseCoordinate), and named after the wire field
-   * rather than the "Duration" label so the conversion reads one-to-one.
-   */
+  /** WAIT only: the duration in seconds, as typed (see parseCoordinate). */
   seconds: string;
   /**
-   * The vertex the numbers were prefilled from, or null once they were hand
-   * edited.
-   *
-   * Two consumers, and the distinction matters. **Saving** sends it, so a stored
-   * task records which vertex a MOVE came from and can follow that vertex when it
-   * moves. **Dispatching** never sends it: `POST /api/v1/tasks` has no notion of
-   * provenance, and a step's coordinates are resolved before they get there.
+   * The vertex the numbers were prefilled from, or null once hand edited.
+   * **Saving** sends it, so a stored MOVE can follow its vertex; **dispatching**
+   * never does — `POST /api/v1/tasks` has no notion of provenance.
    */
   vertexId: string | null;
   /**
-   * Set when this row was loaded from a template whose vertex has since been
-   * deleted — the coordinates are the snapshot taken at save time, not a live
-   * pose. Display only; it does not stop the row being dispatched.
+   * Loaded from a template whose vertex has since been deleted: the coordinates
+   * are the save-time snapshot. Display only; it does not block dispatch.
    */
   vertexMissing?: boolean;
   /**
-   * Starts together with the row above instead of after it. A link rather
-   * than a group name, because the backend only runs a group whose members
-   * are adjacent: a chain of links cannot be anything else, so the one rule
-   * the composer could get wrong is unrepresentable. The names are minted on
-   * the way out (`stepGroupNames`). Ignored on the first row, which has
-   * nothing above it to run with.
+   * Starts together with the row above. A link rather than a group name: the
+   * backend only runs adjacent groups, and a chain of links cannot be anything
+   * else. Names are minted on the way out (`stepGroupNames`). Ignored on the
+   * first row.
    */
   withPrevious: boolean;
 }
 
 /**
- * A monotonic key per row.
- *
- * Not the backend's `step.id`, which is derived from *position* (see
- * `stepIdFor`) and therefore changes when a row is reordered or a row above it
- * is deleted. As a React key that would reconcile row 2's DOM into row 1
- * mid-reorder and the focused input would jump. Not `crypto.randomUUID` either:
- * a module counter is the shape `lib/map/session.ts` already established, and
- * strict-mode double mounting merely skips a number.
+ * A monotonic key per row. Not the positional `step.id` (see `stepIdFor`): as a
+ * React key it would reconcile one row's DOM into another mid-reorder and the
+ * focused input would jump.
  */
 let nextKey = 0;
 
 export function newStepDraft(type: StepType): StepDraft {
   nextKey += 1;
-  // theta defaults to "0" rather than "": a heading of zero is a real, common
-  // answer, whereas a position has no sensible default and must be supplied.
+  // theta defaults to "0": a zero heading is a real answer, a position has no default.
   return {
     key: nextKey,
     type,
@@ -148,13 +112,8 @@ export function newStepDraft(type: StepType): StepDraft {
 }
 
 /**
- * The same rows under keys minted now.
- *
- * For rows that come back from storage: the counter above restarts with the
- * module, so a list saved with keys 1..n and restored after a reload would
- * collide with the next row added. Every restored row therefore gets a key
- * that has never been mounted — which is also what `replace` asks of the
- * rows it is handed, for the same reason.
+ * The same rows under keys minted now. For rows back from storage: the counter
+ * restarts with the module, so stored keys would collide with the next row added.
  */
 export function reissueStepKeys(drafts: readonly StepDraft[]): StepDraft[] {
   return drafts.map((draft) => ({ ...draft, key: newStepDraft(draft.type).key }));
@@ -163,17 +122,10 @@ export function reissueStepKeys(drafts: readonly StepDraft[]): StepDraft[] {
 /**
  * Render a stored number into a draft field.
  *
- * Vertices come off the wire as raw doubles — `6.8344510000000005`,
- * `90.17178865852111` — and putting that verbatim into a 7-character-wide input
- * gives the operator a field they cannot read or edit. Rounding here does change
- * what gets dispatched, and that is the honest trade rather than a hidden one:
- * the draft is text, and what is in the box is exactly what is sent, so a field
- * showing a value it will not send would be the worse lie.
- *
- * The precisions are chosen to be irrelevant to the robot. 1 mm of position is
- * two orders of magnitude below the costmap resolution the planner works at, and
- * 0.1° of heading is far below what the gait controller tracks. `Number(...)`
- * around the `toFixed` is what drops the padding, so 0 reads "0" and not "0.000".
+ * Wire doubles (`6.8344510000000005`) are unreadable in a narrow input. Rounding
+ * does change what is dispatched, deliberately: what is in the box is exactly
+ * what is sent. 1 mm and 0.1° are far below what the planner and gait track.
+ * `Number(...)` drops the padding, so 0 reads "0", not "0.000".
  */
 function formatDraftNumber(value: number, decimals: number): string {
   return String(Number(value.toFixed(decimals)));
@@ -190,15 +142,9 @@ export function formatDraftAngle(value: number): string {
 }
 
 /**
- * The one-line readback a folded row shows in place of its fields, or null when
- * there is nothing to say yet.
- *
- * Built from the draft's own text rather than the parsed numbers, so a folded row
- * reads exactly what the operator typed; a row whose fields do not parse is never
- * folded in the first place (see StepRow). The waypoint name leads when the
- * numbers still came from one, because "dock" is what the operator recognises
- * when scanning twenty rows — the coordinates follow for telling apart two
- * waypoints that share a name.
+ * The one-line readback a folded row shows, or null when there is nothing to
+ * say yet. Built from the draft's own text, so it reads exactly what was typed.
+ * The waypoint name leads; the coordinates tell apart two that share a name.
  */
 export function stepSummary(
   draft: StepDraft,
@@ -225,15 +171,10 @@ export function stepSummary(
 }
 
 /**
- * Which waypoints the job goes to, and as which steps: vertex id → the
- * 1-based ordinals of the MOVE rows picked from it, in list order.
- *
- * For the floor plan a Move row of the task editor opens, which lights those
- * stops and captions each with its step numbers. A list rather than one
- * number because a patrol returns to `dock`, and "steps 1, 4" is exactly the
- * thing an operator reading a map wants to know about it. A MOVE whose
- * numbers were hand edited has no vertex and marks nothing: the map only
- * knows stops, and a pose that is not one has nowhere to be lit.
+ * Which waypoints the job goes to, as which steps: vertex id → the 1-based
+ * ordinals of the MOVE rows picked from it, for the editor's floor plan. A
+ * list because a patrol returns to `dock` ("steps 1, 4"). A hand-edited MOVE
+ * has no vertex and marks nothing.
  */
 export function stepWaypointOrdinals(
   drafts: readonly StepDraft[],
@@ -249,13 +190,9 @@ export function stepWaypointOrdinals(
 }
 
 /**
- * The list with the item at `from` taken out and put back at `to`.
- *
- * Splice-and-insert rather than a swap, because dragging step 16 to the top of a
- * twenty-step list means "run this first", not "trade places with step 1": every
- * row in between shifts down one and keeps its relative order. A no-op (same
- * index, or either end out of range) returns the input itself, so a drop back
- * where the row started does not re-render the list.
+ * The list with the item at `from` taken out and put back at `to` — not a swap:
+ * dragging a step to the top means "run this first". A no-op returns the input
+ * itself, so a drop back in place does not re-render.
  */
 export function moveStep<T>(list: T[], from: number, to: number): T[] {
   if (from === to) return list;
@@ -267,14 +204,10 @@ export function moveStep<T>(list: T[], from: number, to: number): T[] {
 }
 
 /**
- * The list with the row at `index` taken out of whatever it runs with, ready
- * to be removed or moved elsewhere.
- *
- * The row itself loses its link, so it takes nothing of its old group along;
- * where it lands decides its new one (see moveStepDraft). The row below it
- * keeps its link only if the departing row had one too: pulling the middle
- * out of A–B–C leaves A–C running together, but pulling the head out of A–B
- * leaves B on its own rather than quietly joined to whatever stood above A.
+ * The list with the row at `index` taken out of its group, ready to be removed
+ * or moved. The row below keeps its link only if the departing row had one:
+ * pulling B out of A–B–C leaves A–C, but pulling A out of A–B leaves B alone
+ * rather than joined to whatever stood above A.
  */
 export function unlinkStep(list: readonly StepDraft[], index: number): StepDraft[] {
   const leaving = list[index];
@@ -324,26 +257,21 @@ export function stepSpans(drafts: readonly StepDraft[]): StepSpan[] {
 }
 
 /**
- * `moveStep` for drafts, deciding which group the row lands in by where it
- * lands, the way the editor's boxes show it:
+ * `moveStep` for drafts, deciding the row's group by where it lands:
  *
- * - Moved within its own group, it stays in the group: reordering the steps
- *   of a box is not taking one out of it.
+ * - Within its own group, it stays in the group.
  * - Anywhere else it leaves its group (see unlinkStep) and joins the one it
- *   lands inside — between two rows that start together. Landing on either
- *   edge of a box is landing outside it, so it starts on its own.
+ *   lands inside; landing on a box's edge is outside it.
  *
- * Indexes as `moveStep`'s; the caller guards the no-op cases.
+ * The caller guards the no-op cases.
  */
 export function moveStepDraft(list: readonly StepDraft[], from: number, to: number): StepDraft[] {
   const span = stepSpans(list).find((each) => each.start <= from && from <= each.end);
   if (!span || !list[to]) return [...list];
-  // The editor asks stepMoveProblem first and says why; this is the rule
-  // itself, so no path that reaches the list can build the group anyway.
+  // The editor asks stepMoveProblem first; this enforces it on every path.
   if (stepMoveProblem(list, from, to)) return [...list];
   if (span.end > span.start && span.start <= to && to <= span.end) {
-    // The span keeps its slots, so relinking them in their new order is the
-    // whole of it.
+    // The span keeps its slots; relink them in their new order.
     return moveStep([...list], from, to).map((step, at) =>
       at < span.start || at > span.end ? step : { ...step, withPrevious: at > span.start },
     );
@@ -352,20 +280,15 @@ export function moveStepDraft(list: readonly StepDraft[], from: number, to: numb
   const row = unlinked[from]!;
   const rest = unlinked.filter((_, at) => at !== from);
   const joins = linked(rest, to);
-  // The row pushed off the top becomes second, where a link it carried
-  // unread on the first row would suddenly count.
+  // The row pushed off the top becomes second, where a stale link would count.
   if (to === 0 && rest[0]?.withPrevious) rest[0] = { ...rest[0], withPrevious: false };
   rest.splice(to, 0, joins ? { ...row, withPrevious: true } : row);
   return rest;
 }
 
 /**
- * The `group` each row is sent with, or null for a row on its own.
- *
- * Named after the ordinal of the group's first row (`g2`), positional for the
- * reason `stepIdFor` is: unique by construction and readable in a run's step
- * list. A group is only a group with two members, so a lone row whose link
- * points at nothing sends no name at all.
+ * The `group` each row is sent with, or null for a row on its own. Named after
+ * the group's first ordinal (`g2`), positional like `stepIdFor`.
  */
 export function stepGroupNames(drafts: readonly StepDraft[]): (string | null)[] {
   let current: string | null = null;
@@ -376,16 +299,11 @@ export function stepGroupNames(drafts: readonly StepDraft[]): (string | null)[] 
   });
 }
 
-/**
- * The steps that move the robot's body. The backend runs them one at a time,
- * so a group holding two would only run them one after the other — it refuses
- * that outright, and so does the composer, in a sentence on the row.
- */
+/** The steps that move the robot's body; the backend refuses two in one group. */
 const BODY_STEP_TYPES: ReadonlySet<StepType> = new Set(["MOVE", "STANDUP", "LIEDOWN"]);
 
 const ONE_BODY_STEP = "The robot does one Move, Stand or Lie at a time";
 
-/** Whether any row of `span` moves the robot's body. */
 function spanMoves(drafts: readonly StepDraft[], span: StepSpan | undefined): boolean {
   if (!span) return false;
   return drafts.slice(span.start, span.end + 1).some((draft) => BODY_STEP_TYPES.has(draft.type));
@@ -396,15 +314,12 @@ function spanOf(drafts: readonly StepDraft[], index: number): StepSpan | undefin
 }
 
 /**
- * Why row `index` cannot run with the rows it is linked to, or null.
+ * Why row `index` cannot run with the rows it is linked to, or null. Mirrors
+ * the backend's `step_group_problem` body rule (a 400): every Move, Stand or
+ * Lie after a group's first is marked.
  *
- * Mirrors `step_group_problem`'s body rule, which the backend answers with a
- * 400: the first Move, Stand or Lie in a group is fine, every later one is
- * marked. Adjacency, the backend's other rule, is what the links guarantee.
- *
- * The editor no longer builds such a group (see stepLinkProblem and
- * stepMoveProblem), so this is the backstop for one it was handed: a draft
- * restored from before the guard, or a template written by another client.
+ * The editor never builds such a group (stepLinkProblem, stepMoveProblem); this
+ * is the backstop for one handed in — an old draft or another client's template.
  */
 export function stepGroupError(drafts: readonly StepDraft[], index: number): string | null {
   const draft = drafts[index];
@@ -419,13 +334,9 @@ export function stepGroupError(drafts: readonly StepDraft[], index: number): str
 }
 
 /**
- * Why row `index` may not start together with the row above, or null when it
- * may (or already does).
- *
- * A link joins the whole item above the gap to the whole item below it, so it
- * is refused when both bring a Move, Stand or Lie. Only a clash the link
- * itself would make: a box that already holds two (see stepGroupError) does
- * not stop a Speak being added to it.
+ * Why row `index` may not start together with the row above, or null. A link
+ * joins the whole item above to the whole item below, so it is refused when
+ * both bring a body step — only a clash the link itself would make.
  */
 export function stepLinkProblem(drafts: readonly StepDraft[], index: number): string | null {
   if (index <= 0 || index >= drafts.length || linked(drafts, index)) return null;
@@ -437,9 +348,7 @@ export function stepLinkProblem(drafts: readonly StepDraft[], index: number): st
 
 /**
  * Why moving row `from` to `to` would put it in a group it cannot run in, or
- * null. Mirrors moveStepDraft's landing rule: only landing inside another box
- * joins one, and only a Move, Stand or Lie landing in a box that already
- * holds one is refused.
+ * null. Mirrors moveStepDraft's landing rule.
  */
 export function stepMoveProblem(
   list: readonly StepDraft[],
@@ -459,11 +368,7 @@ export function stepMoveProblem(
   return `${ONE_BODY_STEP}, and steps ${shown(target.start)}–${shown(target.end)} already have one.`;
 }
 
-/**
- * Whether a step read back from the robot started together with the one
- * above it. Structural, for the three read surfaces that hold wire steps
- * (a template, a schedule's frozen copy, a run's states) rather than drafts.
- */
+/** Whether a wire step (template, frozen schedule, run state) runs with the one above. */
 export function wireLinked(
   steps: readonly { group?: string | null }[],
   index: number,
@@ -501,30 +406,19 @@ export function stepShape(steps: readonly { type: StepType; group?: string | nul
 /**
  * The step id the backend sees: `1-move`, `2-standup`, `3-move`.
  *
- * Position plus type, because that is unique within the task by construction,
- * reads as a route in the Temporal UI and in `TaskStateResponse.steps[].id`, and
- * keeps the spirit of the single-gesture convention where the step id is the kind
- * (`goal`, `standup`). The rejected alternative — the client `key` — would call
- * the third step `7-move` because the counter had been bumped by deleted rows.
- *
- * The cost is that the ids only line up with the on-screen rows while the list
- * has not been edited, which is why the composer freezes the list for the
- * duration of a dispatched task.
+ * Position plus type: unique by construction and readable in a run's steps.
+ * The client `key` would read `7-move` after deletions. The cost is that ids
+ * match on-screen rows only while the list is unedited, so the composer
+ * freezes the list during a dispatched task.
  */
 export function stepIdFor(index: number, type: StepType): string {
   return `${index + 1}-${type.toLowerCase()}`;
 }
 
 /**
- * Why x / y / theta are stored as strings.
- *
- * The operator hand-edits them after a prefill, and "", "-", "1." and "1e" are
- * all states a text input legitimately passes through mid-typing. `Number("")`
- * is 0 and `Number("-")` is NaN, so storing numbers means a half-typed minus
- * sign silently becomes a MOVE to the origin, or a NaN that JSON.stringify
- * writes as `null` and the backend rejects as a 422 whose detail is a validation
- * *array* rather than a sentence — the exact thing the vertex panel refuses to
- * put on an operator's screen. Text in, parsed once, here.
+ * Why numeric fields are stored as strings: "", "-" and "1." are states typing
+ * passes through, and as numbers they become 0 (a MOVE to the origin) or NaN
+ * (sent as `null`, a 422 with a validation array). Text in, parsed once, here.
  */
 function parseCoordinate(raw: string): number | null {
   const trimmed = raw.trim();
@@ -538,8 +432,7 @@ function moveParams(draft: StepDraft): MoveStepParams | null {
   const y = parseCoordinate(draft.y);
   const theta = parseCoordinate(draft.theta);
   if (x === null || y === null || theta === null) return null;
-  // Folded on the way out, not on change: rewriting the field under the cursor
-  // would make typing "180" one character at a time impossible.
+  // Folded on the way out: rewriting the field under the cursor breaks typing "180".
   return { x, y, theta: normalizeTheta(theta) };
 }
 
@@ -551,10 +444,7 @@ function speakRepeat(draft: StepDraft): number | null {
   return repeat >= 1 && repeat <= SPEAK_REPEAT_MAX ? repeat : null;
 }
 
-/**
- * What a line said more than once reads with after its quote: ` ×3`, or
- * nothing for once — the case every line had before the count existed.
- */
+/** What follows a quoted line said more than once: ` ×3`, or nothing for once. */
 export function repeatSuffix(repeat: number | undefined): string {
   return repeat !== undefined && repeat > 1 ? ` ×${repeat}` : "";
 }
@@ -570,22 +460,17 @@ export function stepDraftError(draft: StepDraft): string | null {
   if (draft.type === "SPEAK") {
     const text = draft.text.trim();
     if (!text) return "Needs something to say.";
-    // Checked here rather than left to the backend: past the limit the 422's
-    // detail is a validation array, the exact shape this console keeps off an
-    // operator's screen.
+    // Checked here: the backend's 422 detail would be a validation array, not
+    // a sentence. Likewise the bounds below.
     if (text.length > SPEAK_TEXT_MAX) {
       return `Too long — ${text.length} of ${SPEAK_TEXT_MAX} characters.`;
     }
-    // Here for the reason the length is: past the bound the backend's 422
-    // is a validation array.
     if (speakRepeat(draft) === null) {
       return `Say it 1 to ${SPEAK_REPEAT_MAX} times.`;
     }
     return null;
   }
   if (draft.type === "WAIT") {
-    // Both bounds checked here for the same reason as the line length above:
-    // the backend's refusal would be a validation array, not a sentence.
     const seconds = parseCoordinate(draft.seconds);
     if (seconds === null) return "Needs a duration in seconds.";
     if (seconds <= 0) return "Needs a duration longer than 0 seconds.";
@@ -595,17 +480,13 @@ export function stepDraftError(draft: StepDraft): string | null {
     return null;
   }
   if (draft.type !== "MOVE") return null;
-  // No theta *range* check: out-of-range is what normalizeTheta is for, and
-  // refusing 270° when the answer is -90° would be inventing a constraint.
+  // No theta range check: normalizeTheta folds 270° to -90°.
   return moveParams(draft) ? null : "Pick a waypoint.";
 }
 
 /**
- * True when the whole list can be dispatched.
- *
- * The empty list is refused here rather than left to the backend, which accepts
- * `steps: []` and starts a workflow that completes immediately — a dispatch that
- * reports COMPLETED and moved nothing, which is worse than an error.
+ * True when the whole list can be dispatched. The empty list is refused: the
+ * backend accepts `steps: []` and reports COMPLETED having moved nothing.
  */
 export function stepDraftsSubmittable(drafts: readonly StepDraft[]): boolean {
   return (
@@ -618,15 +499,12 @@ function toStepRequest(draft: StepDraft, index: number): TaskStepRequest {
   const id = stepIdFor(index, draft.type);
   if (draft.type === "SPEAK") {
     const text = draft.text.trim();
-    // Same contract as the coordinates below: callers gate on
-    // stepDraftsSubmittable, so an empty line here is a programming error.
+    // Callers gate on stepDraftsSubmittable, so these throws are programming errors.
     if (!text) throw new Error(`Step ${id} has nothing to say.`);
     const repeat = speakRepeat(draft);
     if (repeat === null) throw new Error(`Step ${id} has no usable count.`);
-    // No voice / speed keys at all — the backend's defaults are the decision,
-    // and sending them would freeze today's defaults into saved templates.
-    // `repeat` likewise only above once, so a line said once is the body it
-    // was before the count existed.
+    // No voice / speed keys: sending them would freeze today's defaults into
+    // saved templates. `repeat` only above once.
     return { id, type: "SPEAK", params: repeat > 1 ? { text, repeat } : { text } };
   }
   if (draft.type === "WAIT") {
@@ -637,17 +515,12 @@ function toStepRequest(draft: StepDraft, index: number): TaskStepRequest {
   if (draft.type !== "MOVE") return { id, type: draft.type };
 
   const params = moveParams(draft);
-  // Callers gate on stepDraftsSubmittable, so this is a programming error rather
-  // than an operator one — throwing beats sending a MOVE to (0, 0).
+  // Throwing beats sending a MOVE to (0, 0).
   if (!params) throw new Error(`Step ${id} has no usable coordinates.`);
   return { id, type: "MOVE", params };
 }
 
-/**
- * The list in wire shape. A row in a group carries the group's name; a row on
- * its own carries no `group` key at all, so an ungrouped job is the body it
- * always was.
- */
+/** The list in wire shape. A row on its own carries no `group` key at all. */
 export function toStepRequests(
   drafts: readonly StepDraft[],
 ): TaskStepRequest[] {
@@ -660,12 +533,8 @@ export function toStepRequests(
 }
 
 /**
- * The authored list in the shape the task-template endpoint stores.
- *
- * Identical to `toStepRequests` except that a MOVE also carries its `vertex_id`.
- * That one extra field is the whole difference between "run this now" and "keep
- * this so it can follow the map later", which is why the two conversions sit next
- * to each other rather than one calling into the other with a flag.
+ * The authored list as the task-template endpoint stores it: `toStepRequests`
+ * plus each MOVE's `vertex_id`, so it can follow the map later.
  */
 export function toTemplateSteps(
   drafts: readonly StepDraft[],
@@ -673,8 +542,7 @@ export function toTemplateSteps(
   return toStepRequests(drafts).map((request, index) => {
     const draft = drafts[index]!;
     if (request.type !== "MOVE") return request;
-    // Only ever attached to a MOVE: the backend 422s a posture step that carries
-    // one, and the union above is what makes that unrepresentable here.
+    // MOVE only: the backend 422s a posture step that carries one.
     return { ...request, vertex_id: draft.vertexId };
   });
 }
@@ -682,14 +550,9 @@ export function toTemplateSteps(
 /**
  * Load a template's steps back into the editor.
  *
- * The numbers come from `resolved_params`, **not** `params`: the server has
- * already applied "the vertex's current pose wins, the snapshot is the fallback",
- * so this is where a dock moved on the map shows up in the composer. Using
- * `params` would put the stale snapshot on screen and then dispatch something
- * else, which is the one genuinely confusing outcome available here.
- *
- * The formatters are the same ones the vertex picker prefills through, so a
- * round trip through save/load does not change what is in the fields.
+ * From `resolved_params`, **not** `params`: the server applies "the vertex's
+ * current pose wins, the snapshot is the fallback", so a moved dock shows up
+ * here. The formatters match the vertex picker's, so save/load round-trips.
  */
 export function fromTemplateSteps(steps: readonly TemplateStep[]): StepDraft[] {
   return steps.map((step, index) => {
@@ -706,8 +569,7 @@ export function fromTemplateSteps(steps: readonly TemplateStep[]): StepDraft[] {
       };
     }
     if (step.type === "SPEAK") {
-      // resolved_params for symmetry with MOVE, though for a SPEAK it is the
-      // snapshot verbatim — there is no vertex to resolve against.
+      // For a SPEAK resolved_params is the snapshot verbatim.
       return {
         ...draft,
         text: step.resolved_params?.text ?? draft.text,
@@ -723,24 +585,13 @@ export function fromTemplateSteps(steps: readonly TemplateStep[]): StepDraft[] {
 }
 
 /**
- * Project a template's steps into the dispatch wire shape.
- *
- * `resolved_params` is what the server says to send, so this drops the
- * provenance and nothing else. A posture step gets no `params` key at all —
- * which is why the result is typed as the discriminated `TaskStepRequest` rather
- * than something with an optional `params`.
- *
- * Here rather than in lib/api/task-template.ts, where it was first written,
- * beside the other three template/draft/wire conversions this file already
- * owns: it reads no response and builds no request, so the REST client was
- * never its home, and living there meant the two components that dispatch a
- * saved template had to import a fetcher module to reach it.
+ * Project a template's steps into the dispatch wire shape: `resolved_params`
+ * minus the provenance. A posture step gets no `params` key at all.
  */
 export function toDispatchSteps(steps: readonly TemplateStep[]): TaskStepRequest[] {
   return steps.map((step): TaskStepRequest => {
     const request = dispatchStep(step);
-    // The stored name verbatim: it is what the backend accepted on save, and
-    // a step on its own carries no key, as from the composer.
+    // The stored name verbatim; a step on its own carries no key.
     return step.group ? { ...request, group: step.group } : request;
   });
 }
@@ -751,14 +602,12 @@ function dispatchStep(step: TemplateStep): TaskStepRequest {
       return {
         id: step.id,
         type: "MOVE",
-        // Non-null by construction: the backend always resolves a MOVE to
-        // either the vertex's pose or the snapshot. Falling back to an origin
-        // would be a silent drive to (0, 0), so this throws instead.
+        // Non-null by construction (vertex pose or snapshot). Falling back to
+        // an origin would be a silent drive to (0, 0), so this throws.
         params: assertResolved(step, "no coordinates"),
       };
     case "SPEAK":
-      // Same construction guarantee — a SPEAK's resolved_params is its
-      // snapshot verbatim, and the backend refuses to store one without text.
+      // Likewise: the backend refuses to store a SPEAK without text.
       return { id: step.id, type: "SPEAK", params: assertResolved(step, "no text") };
     case "WAIT":
       return { id: step.id, type: "WAIT", params: assertResolved(step, "no duration") };
@@ -767,11 +616,6 @@ function dispatchStep(step: TemplateStep): TaskStepRequest {
   }
 }
 
-/**
- * Structural rather than typed against TemplateStep, which keeps the shape it
- * needs in view and spares lib/api/task-template.ts an export of the base
- * interface for one caller's benefit.
- */
 function assertResolved<T>(
   step: { id: string; resolved_params: T | null },
   missing: string,

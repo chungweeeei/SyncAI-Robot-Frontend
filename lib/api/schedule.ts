@@ -1,19 +1,9 @@
-// Client for the backend schedule API
-// (src/syncai_backend/syncai_backend/interfaces/rest/routers/schedule.py).
+// Schedules: /api/v1/schedules. A durable registration (listed, paused,
+// deleted, never polled), unlike a task, which is dispatched and gone.
 //
-// Separate from lib/api/task.ts even though a schedule's `steps` are literally
-// the same `StepRequest`, because the two have opposite lifecycles. A task is
-// created and immediately dispatched — creation *is* dispatch — and then polled
-// once until it is terminal, after which it is gone. A schedule is a durable
-// registration that is listed, paused, resumed and deleted, and never polled.
-// Merging them would leave one file whose header has to explain both.
-//
-// snake_case throughout, and `interval_seconds` in particular. `ScheduleRequest`
-// and `ScheduleTriggerRequest` are plain pydantic BaseModels with no alias
-// generator, unlike the `BaseSchema` in gateways/workflow/schema.py that the step
-// params inherit from. So `intervalSeconds` is not an alias here: it is silently
-// ignored, `interval_seconds` stays None, and the request then fails the
-// `_exactly_one` validator with a 422 naming a field the client never sent.
+// snake_case, `interval_seconds` especially: these backend models have no
+// alias generator, so `intervalSeconds` is silently ignored and the request
+// 422s naming a field the client never sent.
 
 import { z } from "zod";
 
@@ -23,67 +13,41 @@ import { TaskStepRequestSchema } from "@/lib/api/task";
 import type { TaskStepRequest } from "@/lib/api/task";
 
 /**
- * `ScheduleTriggerRequest` / `ScheduleTriggerResponse`.
+ * Exactly one of `cron` / `interval_seconds`, or the backend refuses.
  *
- * Exactly one of `cron` / `interval_seconds` — the backend's validator rejects
- * both and neither with equal prejudice, so the two are modelled as optional
- * rather than as a union: the form that builds one only ever sets a single field.
- *
- * Every field is `| null` because the *response* is not the request shape read
- * back. `ScheduleTriggerResponse` declares all three as `Optional[...] = None`
- * and FastAPI serialises them, so an interval schedule answers with an explicit
- * `{"cron": null, "interval_seconds": 86400, "timezone": null}` rather than
- * omitting the two that do not apply. Consumers must test truthiness, not
- * `=== undefined`.
+ * `| null` because the response serialises the unused fields as explicit
+ * nulls (`{"cron": null, "interval_seconds": 86400, ...}`): test truthiness,
+ * not `=== undefined`.
  */
 export interface ScheduleTrigger {
   cron?: string | null;
-  /** Must be > 0. Cannot be combined with `cron`. */
+  /** > 0. */
   interval_seconds?: number | null;
-  /**
-   * IANA zone name. Only meaningful for `cron` — the interval path ignores it,
-   * so it is omitted rather than sent-and-ignored (see schedule-form.tsx).
-   */
+  /** IANA zone; `cron` only, so omitted for an interval. */
   timezone?: string | null;
 }
 
-/** `ScheduleStateResponse`, verbatim. */
 export interface ScheduleState {
   id: string;
-  /**
-   * The trigger as it was registered or last edited. Temporal compiles a cron
-   * string into calendar fields and forgets it, so the backend registers the
-   * cron again as the calendar's comment and reads it back from there. It used
-   * to live in the memo, which an edit cannot rewrite — so this is the current
-   * rule, not the first one.
-   */
+  /** As registered or last edited. */
   trigger: ScheduleTrigger;
   paused: boolean;
-  /** ISO-8601 **UTC**, soonest first. Empty while the schedule is paused. */
+  /** ISO-8601 **UTC**, soonest first. Empty while paused. */
   next_run_times: string[];
-  /** Map the frozen coordinates are in, from the memo. Null for older schedules. */
+  /** The map the frozen coordinates are in. Null for older schedules. */
   map_name?: string | null;
-  /** The task template this was frozen from, if it came from one. */
+  /** The template this was frozen from, if any. */
   task_template_id?: string | null;
   task_template_name?: string | null;
   /**
-   * The frozen step list — **only** populated by `getSchedule`; always `[]` from
-   * `listSchedules`, and legitimately `[]` for a schedule registered before this
-   * field existed or one whose payload could not be decoded.
-   *
-   * Frozen at registration: a schedule stores concrete steps in Temporal, and
-   * nothing re-reads them, so later vertex edits reach templates and immediate
-   * dispatches but not an already-registered schedule. Comparing these against
-   * the source template's current resolution is how that staleness becomes
-   * visible instead of silent.
+   * **Only** from `getSchedule` (`[]` from the list, and for an old or
+   * undecodable one). Frozen at registration, so later waypoint edits do not
+   * reach it; comparing against the template's current resolution shows that.
    */
   steps?: TaskStepRequest[];
 }
 
 const ScheduleTriggerSchema: z.ZodType<ScheduleTrigger> = z.object({
-  // All three are `Optional[...] = None` on the backend and FastAPI serialises
-  // them, so an interval schedule really does answer with an explicit
-  // `"cron": null`. Nullable *and* optional, matching the interface.
   cron: z.string().nullable().optional(),
   interval_seconds: z.number().nullable().optional(),
   timezone: z.string().nullable().optional(),
@@ -100,11 +64,7 @@ const ScheduleStateSchema: z.ZodType<ScheduleState> = z.object({
   steps: z.array(TaskStepRequestSchema).optional(),
 });
 
-/**
- * The operator types the id, so `encodeURIComponent` is load-bearing rather than
- * defensive here: an unescaped `/` or `#` in a name would rewrite the URL into a
- * different route instead of producing a 404. Same reason as `vertexPath`.
- */
+/** The operator types the id, so an unescaped `/` or `#` would change the route. */
 function schedulePath(id?: string, action?: "pause" | "resume"): string {
   const base = "/api/v1/schedules";
   if (!id) return apiUrl(base);
@@ -113,13 +73,8 @@ function schedulePath(id?: string, action?: "pause" | "resume"): string {
 }
 
 /**
- * Every registered schedule for this robot — but never their steps.
- *
- * `steps` is always `[]` from this endpoint, and that is a property of Temporal
- * rather than an omission: a schedule *list* element carries only the workflow
- * type name, so reaching the frozen step list would cost a `describe` RPC per
- * row, paid on first paint for data most rows never show. `getSchedule` is the
- * path that carries them.
+ * Every schedule, never their steps: those cost a describe RPC per row, so
+ * `getSchedule` carries them.
  */
 export function listSchedules(signal?: AbortSignal): Promise<ScheduleState[]> {
   return requestJson<ScheduleState[]>(schedulePath(), {
@@ -128,13 +83,7 @@ export function listSchedules(signal?: AbortSignal): Promise<ScheduleState[]> {
   });
 }
 
-/**
- * One schedule, **including its frozen step list**.
- *
- * This is the only way to see what a schedule will actually do. Fetched on a
- * deliberate gesture — expanding the row — so the extra describe is paid once,
- * for the one schedule the operator asked about.
- */
+/** One schedule **with its frozen steps**, read when its row is expanded. */
 export function getSchedule(
   id: string,
   signal?: AbortSignal,
@@ -145,11 +94,9 @@ export function getSchedule(
   });
 }
 
-// The four writes all drop the `{id, message}` envelope: it says nothing the
-// caller does not already know from the request having succeeded, which is the
-// same reasoning `deleteVertex` records. What a caller *does* need afterwards —
-// the recomputed `next_run_times` — is only knowable by asking, so every one of
-// these is followed by a list refresh rather than a local splice.
+// The writes drop the `{id, message}` envelope. The recomputed
+// `next_run_times` is only knowable by asking, so each is followed by a list
+// refresh rather than a local splice.
 
 export function pauseSchedule(id: string): Promise<void> {
   return requestJson<void>(schedulePath(id, "pause"), {
@@ -173,13 +120,8 @@ export function deleteSchedule(id: string): Promise<void> {
 }
 
 /**
- * PATCH /api/v1/schedules/{id} — replace when a schedule fires, in place.
- *
- * The trigger is replaced whole (a timed schedule may become an interval one
- * and back); the id, the frozen steps, the job it came from and the paused
- * state stay as they are. That is why this is not a delete and a create: the
- * id is what the operator recognises in the list, and a pause would otherwise
- * be lost. The id itself cannot change — Temporal has no rename.
+ * Replace the trigger whole, in place. Not a delete and create, so the id,
+ * steps and paused state survive; the id itself cannot change.
  */
 export function updateScheduleTrigger(
   id: string,

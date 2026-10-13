@@ -58,9 +58,8 @@ describe("classify", () => {
   });
 
   it("puts the three canonical values in their own bucket", () => {
-    // 205 in particular: lib/api/map.ts turns off colour management on the PNG
-    // decode precisely so this byte survives, and a 204 would read as UNKNOWN
-    // too — but a 206 would not, which is the drift that check protects.
+    // 205 is the edge: lib/api/map.ts disables colour management so it survives
+    // decode, since a drift to 206 would read as free.
     expect(classify(OCCUPIED)).toBe(OCCUPIED);
     expect(classify(UNKNOWN)).toBe(UNKNOWN);
     expect(classify(FREE)).toBe(FREE);
@@ -91,8 +90,7 @@ describe("stampDisc", () => {
   });
 
   it("paints a full 3x3 at diameter 3, not a plus sign", () => {
-    // The `r*r + r` fudge exists for this: a plain radius test renders a plus,
-    // which reads as a bug the first time someone paints with the small brush.
+    // The `r*r + r` fudge: a plain radius test renders a plus.
     expect(picture((sink) => stampDisc(size, 4, 3, 3, FREE, sink))).toBe(
       [
         ".........",
@@ -121,9 +119,7 @@ describe("stampDisc", () => {
   });
 
   it("clips at every edge instead of wrapping to the next row", () => {
-    // The failure this guards is the one that looks like a bug and is not
-    // obviously one: an unclipped index spills into row+1 and paints a stripe
-    // on the far side of the map.
+    // An unclipped index spills into row+1 and paints a stripe on the far side.
     const corner = stamped((sink) => stampDisc(size, 0, 0, 7, FREE, sink));
     expect(corner.every((key) => !key.startsWith("-"))).toBe(true);
     for (const key of corner) {
@@ -136,8 +132,7 @@ describe("stampDisc", () => {
 
 describe("stampLine", () => {
   it("leaves a continuous trail with no gaps", () => {
-    // What a fast flick at high zoom depends on: without interpolation between
-    // two pointer samples the stroke comes out dashed.
+    // Without interpolation between pointer samples a fast flick comes out dashed.
     const cells = new Set<number>();
     stampLine(size, { col: 0, row: 0 }, { col: 8, row: 6 }, 1, FREE, (index) =>
       cells.add(index),

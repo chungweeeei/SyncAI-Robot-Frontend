@@ -1,15 +1,10 @@
 // Undo/redo for grid edits. Pure: no React, no DOM.
 //
-// A patch is a **sparse cell list**, not a dirty rectangle. The rect form is the
-// obvious choice and it is wrong: a diagonal drag across a 1600-cell-wide map with
-// a size-5 brush changes ~5 000 cells but has a ~1000x1000 bounding box, so a rect
-// patch spends 2 MB recording 5 000 edits. Sparse costs 6 bytes per changed cell —
-// it loses by about 3x on a genuinely dense edit (a 200x200 rect fill: 240 KB vs
-// 80 KB) and wins by ~66x on the common one, and its worst case is bounded by the
-// work actually done rather than by how far the pointer travelled.
-//
-// Full-buffer snapshots were the other alternative: 2.4 MB each on the largest map,
-// so a useful history would be hundreds of megabytes on a Jetson.
+// A patch is a **sparse cell list** (6 bytes per changed cell), not a dirty
+// rectangle: a diagonal brush drag changes ~5 000 cells inside a ~1000x1000 box,
+// so a rect would spend 2 MB on it. Sparse loses ~3x on a dense fill and wins
+// ~66x on the common stroke. Full-buffer snapshots (2.4 MB each) would make a
+// useful history hundreds of MB on a Jetson.
 
 import {
   OCCUPIED,
@@ -42,11 +37,8 @@ export function patchBytes(patch: GridPatch): number {
 }
 
 /**
- * Write one side of a patch back into the grid.
- *
- * Undo and redo are the same function with a different side, which is the whole
- * reason `after` is stored explicitly instead of being recomputed: there is no
- * replay, no base state, and no asymmetry to get wrong.
+ * Write one side of a patch back into the grid. Undo and redo differ only in
+ * the side, which is why `after` is stored: no replay, no base state.
  */
 export function applyPatch(
   grid: MapGrid,
@@ -63,18 +55,12 @@ export function applyPatch(
 
 const INITIAL_CAPACITY = 4096;
 
-/**
- * Collects one stroke as it is drawn.
- *
- * Its `sink` is what the stamp primitives in lib/map/grid.ts write through, so a
- * stroke's bookkeeping costs one function call per painted cell and nothing else.
- */
+/** Collects one stroke as it is drawn, through the `sink` the stamp primitives write to. */
 export class StrokeAccumulator {
   private readonly grid: MapGrid;
   /**
-   * One byte per cell, allocated once for the editor's lifetime and cleared over
-   * the stroke's bounds at commit. A Map<index, value> would be simpler, but a
-   * "paint the whole map free" stroke would then be 2.4 M Map entries and >100 MB.
+   * One byte per cell, allocated once and cleared over the stroke's bounds at
+   * commit. A Map would cost >100 MB for a whole-map stroke.
    */
   private readonly touched: Uint8Array;
 
@@ -83,10 +69,8 @@ export class StrokeAccumulator {
   private after: Uint8Array = new Uint8Array(INITIAL_CAPACITY);
   private count = 0;
 
-  // Two rects, and both are needed. `bounds` accumulates over the whole stroke
-  // and becomes the patch's repaint metadata; `frame` is taken and reset after
-  // every blit. With only the first, a long drag re-blits an ever-growing region
-  // on every frame — quadratic in stroke length, and the first thing you notice.
+  // `bounds` spans the whole stroke (the patch's repaint metadata); `frame` resets
+  // after every blit. Blitting `bounds` each frame would be quadratic in length.
   private bounds: MutableRect | null = null;
   private frame: MutableRect | null = null;
 
@@ -98,9 +82,7 @@ export class StrokeAccumulator {
   readonly sink: CellSink = (index: number, value: GridValue) => {
     const { data } = this.grid;
     const current = data[index];
-    // Painting a value onto itself is not an edit. Without this guard a stroke
-    // over already-white space would push a patch that changes nothing, and the
-    // next Ctrl+Z would appear to do nothing at all.
+    // Not an edit, or a no-op patch would make the next Ctrl+Z appear to do nothing.
     if (current === value) return;
 
     if (!this.touched[index]) {
@@ -111,9 +93,7 @@ export class StrokeAccumulator {
       this.after[this.count] = value;
       this.count += 1;
     } else {
-      // A later pass of the same stroke over a cell it already changed: keep the
-      // original `before` (first write wins, so undo restores the true pre-stroke
-      // byte) but track the final value.
+      // A repeat pass: keep the first `before` (the true pre-stroke byte), update `after`.
       this.after[this.indexOf(index)] = value;
     }
 
@@ -169,10 +149,8 @@ export class StrokeAccumulator {
   }
 
   /**
-   * Linear scan back through the stroke's own log. Only reached when a stroke
-   * repaints a cell it already changed with a *different* value, which needs both
-   * an overlapping pass and a mid-stroke value change — rare enough that an index
-   * map (another 9.6 MB) would cost more than it saves.
+   * Linear scan of the stroke's log. Only reached when a stroke repaints a cell
+   * with a *different* value, rare enough that an index map (9.6 MB) is not worth it.
    */
   private indexOf(index: number): number {
     for (let i = this.count - 1; i >= 0; i -= 1) {
@@ -220,12 +198,7 @@ function toRect(rect: MutableRect): CellRect {
   };
 }
 
-/**
- * Move a cell census across a patch.
- *
- * Incremental because the alternative is a full pass over up to 2.4 M cells after
- * every stroke, and a stroke can be a single dab.
- */
+/** Move a cell census across a patch, rather than recount up to 2.4 M cells per dab. */
 export function applyCountsDelta(
   counts: ValueCounts,
   patch: GridPatch,
@@ -249,10 +222,8 @@ function bump(counts: ValueCounts, value: GridValue, by: number): void {
 }
 
 /**
- * The editor's history. Generic in what an entry is, because a stroke is not
- * the only thing the operator takes back: the floor plan editor also files its
- * waypoint edits here (lib/map/history.ts), so one Ctrl+Z steps back over
- * whichever came last. `size` is how the byte budget weighs an entry.
+ * The editor's history, generic because waypoint edits share it with strokes
+ * (lib/map/history.ts). `size` weighs an entry for the byte budget.
  */
 export interface UndoStack<T = GridPatch> {
   undo: T[];
@@ -263,9 +234,8 @@ export interface UndoStack<T = GridPatch> {
 }
 
 /**
- * Capped by bytes rather than entries: a single dab is ~1 KB and a full-map fill
- * is ~14 MB, so an entry count cannot bound memory. The entry ceiling is a second
- * guard so a thousand tiny dabs cannot grow the array without limit.
+ * Capped by bytes (a dab is ~1 KB, a full-map fill ~14 MB), with an entry
+ * ceiling so many tiny dabs cannot grow the array without limit.
  */
 export const UNDO_BUDGET_BYTES = 32 * 1024 * 1024;
 export const UNDO_MAX_ENTRIES = 100;

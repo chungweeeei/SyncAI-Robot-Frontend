@@ -190,8 +190,7 @@ describe("upcomingRun", () => {
 
   it("skips a run that has already happened rather than calling it next", () => {
     // The list is a snapshot: once 08:00 has fired, the row must not go on
-    // reporting it as the run still to come — which is what it did before, in
-    // the window between the run and the read that follows it.
+    // reporting it as the run still to come.
     expect(
       upcomingRun(
         row({ next_run_times: ["2026-09-24T08:00:00Z", "2026-09-24T10:00:00Z"] }),
@@ -457,7 +456,7 @@ describe("scheduleChipSummary", () => {
   });
 
   it("keeps a lone schedule's trigger, paused or not", () => {
-    // "paused" alone used to hide when it would have run.
+    // "paused" alone would hide when it would have run.
     expect(scheduleChipSummary([entry()])).toEqual({
       label: "every 30 min",
       tone: "active",

@@ -44,9 +44,7 @@ describe("worldToGrid / gridToWorld", () => {
   });
 
   it("puts the map origin at the grid's bottom-left, not its top-left", () => {
-    // The y flip is the one that is silently wrong if dropped: canvas rows grow
-    // downward while the ROS grid's row 0 is at the origin, so a mirrored map
-    // still looks like a map.
+    // A dropped y flip is silent: a mirrored map still looks like a map.
     const atOrigin = worldToGrid(meta.origin[0], meta.origin[1], meta);
     expect(atOrigin.px).toBeCloseTo(0, 9);
     expect(atOrigin.py).toBeCloseTo(meta.height, 9);
@@ -144,9 +142,8 @@ describe("zoomAt", () => {
   });
 
   it("zooms out to a smaller floor when the surface names one", () => {
-    // The task editor's floor plan opens fitted inside an inset, which is
-    // below the bare fit. With the default floor its first wheel notch out
-    // would land *above* where it opened; with its own it comes back exactly.
+    // The task editor's preview opens inside an inset, below the bare fit; with
+    // its own floor a notch out comes back exactly rather than above it.
     const floor = fitScale(rect, size) * 0.8;
     const opened = { scale: floor, ox: 80, oy: 60 };
     expect(zoomAt(opened, 400, 300, 0.5, rect, size, floor).scale).toBeCloseTo(floor, 9);

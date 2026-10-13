@@ -2,13 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { normalizeTheta } from "@/lib/angle";
 
-/**
- * The fold is (-180, 180], not [-180, 180), and that asymmetry is the whole
- * reason this function exists: the backend's MoveParams validates
- * `gt=-180, le=180`, so the one value the usual fold produces is the one value
- * the endpoint rejects. Everything that reaches the wire goes through here, so
- * a regression is a 422 on a real robot command.
- */
+/** (-180, 180], not [-180, 180): the backend rejects exactly -180. */
 describe("normalizeTheta", () => {
   it("leaves an in-range heading alone", () => {
     for (const deg of [0, 1, 90, 179.9, -90, -179.9]) {

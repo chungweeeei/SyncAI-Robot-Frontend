@@ -1,19 +1,10 @@
-// Client for the map catalogue: GET /api/v1/maps and everything under
-// /api/v1/maps/{name}/.
+// The map catalogue: /api/v1/maps and everything under /api/v1/maps/{name}/.
+// The wire nests `origin` as an object; it is folded into MapMetadata's tuple
+// here, once.
 //
-// The backend speaks snake_case and nests `origin` as an object; the app's
-// MapMetadata is a tuple. The wire types below are the former, the exported
-// functions return the latter, and the translation happens in one place so no
-// component has to know the difference.
-//
-// There is no /api/v1/maps/{name}/gridmap: the grid arrives as the PNG from
-// /image, which is the same cells losslessly encoded, a third smaller than the
-// P5 on the wire, and decodable by the browser instead of by a parser we would
-// have to write and keep tolerant of GIMP's `#` comment line.
-//
-// The write direction is asymmetric on purpose — `saveMapGrid` PUTs raw cell
-// bytes rather than a PNG. Read needs a format the browser can decode; write
-// needs no encoder at all, and the raw path cannot be colour-managed.
+// Asymmetric on purpose: the floor plan is read as the /image PNG (lossless,
+// smaller, browser-decodable) but written as raw cell bytes, which need no
+// encoder and cannot be colour-managed.
 
 import { apiUrl } from "@/lib/api/config";
 import { z } from "zod";
@@ -25,7 +16,6 @@ import { GridStatusSchema } from "@/lib/types/map";
 import type { GridRecipe, GridStatus, MapSummary } from "@/lib/types/map";
 import type { PointCloudFrame } from "@/lib/types/pointcloud";
 
-/** `GridInfoResponse` — note `origin` is {x, y, yaw}, not a tuple. */
 interface WireGrid {
   resolution: number;
   origin: { x: number; y: number; yaw: number };
@@ -33,7 +23,7 @@ interface WireGrid {
   height: number;
 }
 
-/** `MapSummaryResponse`. `thumbnail` is a path, not an absolute URL. */
+/** `thumbnail` is a path, not an absolute URL. */
 interface WireSummary {
   name: string;
   active: boolean;
@@ -48,11 +38,7 @@ interface WireSummary {
   vertex_count: number;
 }
 
-/**
- * The catalogue as it arrives, before `toSummary` folds the origin and
- * absolutises the thumbnail. Checked in this shape rather than after the fold,
- * so a failure names the field the backend actually sent.
- */
+/** Checked before `toSummary`, so a failure names the field the backend sent. */
 const WireSummarySchema: z.ZodType<WireSummary> = z.object({
   name: z.string(),
   active: z.boolean(),
@@ -85,8 +71,7 @@ function toSummary(wire: WireSummary): MapSummary {
           height: wire.grid.height,
         }
       : null,
-    // Absolute, because <img src> on the card resolves against the *frontend's*
-    // origin (:3001) and the backend answers on :3000.
+    // Absolute: <img src> would resolve against :3001, not the backend's :3000.
     thumbnail: wire.thumbnail ? apiUrl(wire.thumbnail) : null,
   };
 }
@@ -107,16 +92,9 @@ export interface MapGridResponse {
 /**
  * Decode the map PNG back to one byte per cell.
  *
- * `colorSpaceConversion: "none"` is load-bearing, not defensive. Canvas is RGBA
- * sRGB, and by default the browser is free to colour-manage a decoded image on
- * the way in — which for a greyscale PNG means the 205 that marks *unknown*
- * comes back as 204 or 206 and `classify` in lib/map/grid.ts reads a different
- * cell kind. It would still look like a map, which is exactly why it has to be
- * turned off here rather than noticed later.
- *
- * Row order needs no flip: the PNG carries the .pgm's rows in file order (row 0
- * is the top / max y), getImageData hands them back the same way, and that is
- * what MapGrid documents.
+ * `colorSpaceConversion: "none"` is load-bearing: colour management turns the
+ * 205 that marks *unknown* into 204 or 206, a different cell kind that still
+ * looks like a map. Rows need no flip (row 0 is the top in both).
  */
 async function decodeGrid(blob: Blob): Promise<MapGrid> {
   const bitmap = await createImageBitmap(blob, {
@@ -146,16 +124,9 @@ async function decodeGrid(blob: Blob): Promise<MapGrid> {
 }
 
 /**
- * One map's editable grid, with the summary it belongs to.
- *
- * Two requests rather than one: the geometry lives in gridmap.yaml and the cells
- * in the .pgm, and the editor needs both. They are consistent because /image's
- * ETag is a hash of the same .pgm the summary's width/height were read from — if
- * a save lands between the two calls, the mismatch is visible rather than silent.
- *
- * Rejects for a name that is not in the catalogue and for a map that has no
- * gridmap yet; the editor turns both into a guard screen rather than opening on
- * an empty canvas.
+ * One map's editable grid with its summary: two requests, since geometry and
+ * cells are separate files. Rejects for an unknown map or one with no floor
+ * plan yet; the editor shows a guard screen for both.
  */
 export async function fetchMapGrid(
   name: string,
@@ -182,13 +153,8 @@ export async function fetchMapGrid(
 }
 
 /**
- * The same PNG, decoded only to be drawn — the task editor's floor plan preview.
- *
- * None of `decodeGrid`'s flags apply: nothing reads a pixel back, so a colour-
- * managed 204 where the file says 205 is invisible, and an ImageBitmap is the
- * cheapest thing `drawImage` accepts. Returned as-is rather than wrapped in a
- * session because it is immutable, which is what lets the query cache share one
- * decode between every open MOVE row.
+ * The same PNG, decoded only to be drawn (the task editor's preview), so
+ * `decodeGrid`'s flags do not apply. Immutable, so the cache can share it.
  */
 export async function fetchMapImage(
   name: string,
@@ -202,16 +168,8 @@ export async function fetchMapImage(
 }
 
 /**
- * One stored map's scan, fetched once: its saved `map.pcd`, voxel-downsampled
- * server-side with the same numbers the live stream uses, so the two overlay.
- *
- * Here rather than beside the live stream in `lib/ros/`, where it used to sit:
- * it is a REST read, and living outside `lib/api/` is what let the viewport
- * call it straight from an effect without eslint noticing. The decoder stays
- * with the stream because the socket and this endpoint share one wire format.
- *
- * Through `requestRaw` so a refusal (no scan on disk, a map deleted under the
- * operator) is the backend's `{detail}` sentence rather than a status code.
+ * A stored map's scan, downsampled server-side like the live stream so the
+ * two overlay. Same wire format as the stream, hence its decoder.
  */
 export async function fetchMapPointCloud(
   name: string,
@@ -222,26 +180,22 @@ export async function fetchMapPointCloud(
     signal,
   });
   const frame = decodePointCloud(await res.arrayBuffer());
-  // A 2xx whose body is shorter than it says is a download cut off in
-  // transit, not a refusal, so there is no backend sentence to show. This one
-  // is written for the operator: the view renders it beside the layer toggle,
-  // and turning the layer off and on is the retry.
+  // A 2xx cut short in transit has no backend sentence, so this one is
+  // written for the operator; toggling the layer is the retry.
   if (!frame) {
     throw new Error("The map scan arrived incomplete. Turn Map scan off and on to try again.");
   }
   return frame;
 }
 
-/** `SaveGridmapResponse`. Every field is already the app's type. */
 export interface SaveGridResult {
   name: string;
-  /** Of the gridmap now on disk — the same tag /image will answer with. */
+  /** The tag /image will now answer with. */
   etag: string;
-  /** Whether this is the map the stack was launched with. */
   active: boolean;
-  /** Whether the running map_server re-read it. False for any inactive map. */
+  /** Whether the running stack re-read it. False for any inactive map. */
   reloaded: boolean;
-  /** Operator-facing sentence; render it verbatim. */
+  /** Operator-facing; render verbatim. */
   message: string;
 }
 
@@ -254,28 +208,13 @@ const SaveGridResultSchema: z.ZodType<SaveGridResult> = z.object({
 });
 
 /**
- * Persist an edited grid.
+ * Persist an edited grid as the raw cell buffer, written verbatim, so no 205
+ * can shift the way a colour-managed image would (see `decodeGrid`).
  *
- * The body is the cell buffer itself — `width * height` bytes, .pgm row order —
- * not a PNG and not base64 in JSON. It goes out with no copy and the backend
- * writes it into a P5 body verbatim, so nothing in the round trip can shift a
- * 205 to a 204 the way a colour-managed image path can (see `decodeGrid`, which
- * needed `colorSpaceConversion: "none"` for exactly that reason). ~1.6 MB per
- * save on a robot LAN, once per operator edit.
- *
- * `Content-Type` is set explicitly because a BufferSource body makes `fetch`
- * send none at all, and the endpoint's `Body(..., media_type=...)` needs it —
- * without it FastAPI falls back to parsing the bytes as JSON.
- *
- * Deliberately takes no `AbortSignal`, unlike everything else in this file:
- * aborting a PUT mid-flight is how you get a torn `gridmap.pgm`. If the operator
- * navigates away the write should still land; React 19 makes the orphaned
- * setState a no-op.
- *
- * Note `fetch` snapshots a BufferSource body synchronously at the call, so
- * painting during an in-flight save cannot corrupt the payload — but it does
- * mean the result describes the buffer as it was when Save was pressed, which is
- * what the editor's revision guard is for.
+ * No `AbortSignal`: an aborted PUT tears the file, so a navigation must not.
+ * `fetch` snapshots the body at the call, so painting mid-save is safe; the
+ * result describes the buffer as of Save, which the editor's revision guard
+ * accounts for.
  */
 export function saveMapGrid(
   name: string,
@@ -285,9 +224,7 @@ export function saveMapGrid(
     apiUrl(`/api/v1/maps/${encodeURIComponent(name)}/grid`),
     {
       method: "PUT",
-      // Explicit, so requestJson's JSON default stands down: the body is the
-      // cell buffer and `Body(..., media_type=...)` on the endpoint needs the
-      // type to match or FastAPI parses the bytes as JSON.
+      // Explicit, or FastAPI parses the bytes as JSON.
       headers: { "Content-Type": "application/octet-stream" },
       body: grid.data,
       schema: SaveGridResultSchema,
@@ -296,12 +233,8 @@ export function saveMapGrid(
 }
 
 /**
- * The convert endpoint's two distinguishable 409s, by their stable `code`.
- *
- * "gridmap_hand_edited" is the one the UI reacts to structurally — it opens the
- * overwrite confirm and retries with `overwriteEdits` — so it must be matched on
- * the code, not on the detail sentence, which exists to be reworded.
- * "conversion_running" just renders as the error it is.
+ * The convert endpoint's 409 codes. `gridmap_hand_edited` opens the overwrite
+ * confirm, so it is matched on the code, never the reword-able sentence.
  */
 export type ConvertConflictCode = "conversion_running" | "gridmap_hand_edited";
 
@@ -315,13 +248,12 @@ export class ConvertConflictError extends Error {
   }
 }
 
-/** `ConvertGridResponse`, verbatim. */
 export interface ConvertGridResult {
   name: string;
-  /** The thread started; the grid appears later or never — poll the catalogue. */
+  /** Started only; the catalogue says how it ends. */
   started: boolean;
   recipe: GridRecipe;
-  /** Operator-facing sentence; render it verbatim. */
+  /** Operator-facing; render verbatim. */
   message: string;
 }
 
@@ -333,19 +265,11 @@ const ConvertGridResultSchema: z.ZodType<ConvertGridResult> = z.object({
 });
 
 /**
- * (Re)build a map's 2D gridmap from its map.pcd.
+ * (Re)build a map's floor plan from its scan. The endpoint's tuning knobs are
+ * left out on purpose; they are not for guessing from a dropdown.
  *
- * Only `recipe` and the two flags are surfaced here: the endpoint also takes
- * per-band offsets, gap_fill_size and a debug switch, but those are
- * tune-with-the-intermediates-in-front-of-you parameters that stay curl/MCP
- * territory — a dropdown for them would invite guessing numbers the backend's
- * own comments say not to guess.
- *
- * The response only means "started": conversion runs in a background thread and
- * its status surface is the catalogue's `grid_status`, so callers invalidate the
- * maps query and let the poll carry the rest — including a failure, which lands
- * there as `"failed"` with the reason in `grid_error` rather than as a rejected
- * promise here.
+ * The answer only means "started": the outcome, failure included, arrives as
+ * the catalogue's `grid_status` / `grid_error`.
  */
 export function convertMapGrid(
   name: string,
@@ -370,13 +294,12 @@ export function convertMapGrid(
   );
 }
 
-/** `RenameMapResponse`, verbatim. */
 export interface RenameMapResult {
   old_name: string;
   name: string;
   vertices_moved: number;
   templates_moved: number;
-  /** Operator-facing sentence; render it verbatim. */
+  /** Operator-facing; render verbatim. */
   message: string;
 }
 
@@ -389,16 +312,9 @@ const RenameMapResultSchema: z.ZodType<RenameMapResult> = z.object({
 });
 
 /**
- * Rename a map: `map/<name>/` becomes `map/<newName>/` on the robot, and the
- * vertices and task templates bound to the old name follow it.
- *
- * Three refusals come back as 409s — `map_active` (the map the stack is
- * running on; the card never offers Rename for it, so seeing this means the
- * catalogue was stale), `conversion_running` and `name_taken` — plus a 400 for
- * a name the catalogue's rule rejects. None of them has a structured retry the
- * way the convert endpoint's `gridmap_hand_edited` does, so there is no error
- * class here: the backend's sentence is written to be shown, and the control
- * shows it.
+ * Rename a map; its waypoints and templates follow. 409 `map_active`,
+ * `conversion_running`, `name_taken`, or 400 for a bad name — none with a
+ * structured retry, so no error class.
  */
 export function renameMap(
   name: string,
@@ -414,11 +330,10 @@ export function renameMap(
   );
 }
 
-/** `DeleteMapResponse`, verbatim. */
 export interface DeleteMapResult {
   name: string;
   vertices_deleted: number;
-  /** Operator-facing sentence; render it verbatim. */
+  /** Operator-facing; render verbatim. */
   message: string;
 }
 
@@ -429,20 +344,10 @@ const DeleteMapResultSchema: z.ZodType<DeleteMapResult> = z.object({
 });
 
 /**
- * Delete a map: `map/<name>/` and the vertices bound to it go, together.
+ * Delete a map and its waypoints. 409 `map_active`, `conversion_running`, or
+ * `template_bound` (a template still names it); no error class, as for rename.
  *
- * Four refusals come back as 409s. Three are rename's — `map_active` (the card
- * never offers Delete for the running map, so seeing it means the catalogue was
- * stale) and `conversion_running` — plus `template_bound`, which is the only
- * one that asks the operator to do something rather than wait: a task template
- * still names this map, and a template bound to a map that is gone can neither
- * run nor be edited. As with `renameMap`, none of them has a structured retry,
- * so there is no error class; the backend's sentence names the templates and
- * the control shows it.
- *
- * Unlike the vertex and task-template deletes, this one parses its body: the
- * card unmounts on success, so the sentence and the vertex count are the only
- * record of what happened and the library renders them in the card's place.
+ * The body is parsed: the card unmounts, so its sentence is the only record.
  */
 export function deleteMap(name: string): Promise<DeleteMapResult> {
   return requestJson<DeleteMapResult>(
@@ -452,16 +357,9 @@ export function deleteMap(name: string): Promise<DeleteMapResult> {
 }
 
 /**
- * The 409s the Switch-map control reacts to structurally rather than just
- * showing.
- *
- * Unlike `renameMap`/`deleteMap`, whose refusals all reduce to "read this
- * sentence", a switch is refused for reasons that are *temporary* in different
- * ways, and the control words its retry affordance from the code: a conversion
- * or a running task clears on its own, a missing gridmap needs the operator to
- * go and build one, and `stack_not_ready` usually means the robot is in mapping
- * mode — a different page. The sentence is still what gets rendered; the code is
- * what decides whether anything is offered alongside it.
+ * The switch's 409 codes. Each is temporary in a different way (clears by
+ * itself, needs a floor plan built, needs Navigation mode), so the code decides
+ * what is offered beside the rendered sentence.
  */
 export type ActivateConflictCode =
   | "conversion_running"
@@ -492,22 +390,18 @@ export class ActivateConflictError extends Error {
   }
 }
 
-/** `ActivateMapResponse`, verbatim. */
 export interface ActivateMapResult {
   name: string;
-  /** The map the robot was on, if it was on one. */
   previous: string | null;
-  /** False when it was already active — the no-op, not a failure. */
+  /** False when already active: a no-op, not a failure. */
   switched: boolean;
   /**
-   * Whether the localizer's registration converged in the seconds after the
-   * swap. `false` means "not yet" (it retries indefinitely), `null` means it
-   * could not be asked. Do not substitute `localization_valid` from telemetry:
-   * that is TF-presence only and reads true against a map the robot was never
-   * localized in.
+   * Whether localization converged after the swap: `false` is "not yet",
+   * `null` "could not ask". Not `localization_valid`, which reads true
+   * against a map the robot was never localized in.
    */
   localized: boolean | null;
-  /** Operator-facing sentence; render it verbatim. */
+  /** Operator-facing; render verbatim. */
   message: string;
 }
 
@@ -520,17 +414,11 @@ const ActivateMapResultSchema: z.ZodType<ActivateMapResult> = z.object({
 });
 
 /**
- * Switch the robot onto another map, live.
+ * Switch the robot onto another map, live and across a restart.
  *
- * The verb the maps library lacked for most of its life. It re-points the
- * running localizer and map_server and rewrites `[map] name` in the instance
- * INI, so the swap holds now *and* survives a restart — which is also why it is
- * what lifts the `map_active` refusal on Rename and Delete.
- *
- * Two things the caller has to carry into its UI. The robot's pose is reset to
- * the map origin, because a pose measured in the old map's frame means nothing
- * in the new one; and a 200 does not mean the robot knows where it is — read
- * `localized`, and expect to tell the operator to set an initial pose.
+ * The pose resets to the map origin (the old frame means nothing here), and a
+ * 200 does not mean localized: read `localized` and expect to ask for an
+ * initial pose.
  */
 export function activateMap(name: string): Promise<ActivateMapResult> {
   return requestJson<ActivateMapResult>(
@@ -546,24 +434,16 @@ export function activateMap(name: string): Promise<ActivateMapResult> {
   );
 }
 
-/** The two archive formats `/export` writes. The console only ever asks for zip. */
+/** The console only asks for zip. */
 export type MapArchiveFormat = "zip" | "tar.gz";
 
 /**
- * Export a map: `map/<name>/` and its vertices, as one archive the robot can
- * import again.
+ * Export a map and its waypoints as an importable archive. The caller names
+ * the file: CORS exposes only `Location`, so `Content-Disposition` reads null
+ * (see `exportFilename` in lib/map/archive.ts).
  *
- * `requestRaw`, because the answer is the archive itself and not JSON. Note
- * the caller names the file: the backend does set `Content-Disposition`, but
- * the console is cross-origin to it and the CORS policy exposes only
- * `Location`, so `res.headers.get("Content-Disposition")` reads null in the
- * browser. `exportFilename` in lib/map/archive.ts mirrors what the header
- * would have said.
- *
- * Refused 409 `conversion_running` while the floor plan is being rebuilt —
- * the archive would be torn — and 404 for a name the catalogue does not
- * know. The map in use *can* be exported: reading the directory disturbs
- * nothing the stack holds open.
+ * 409 `conversion_running` (the archive would be torn). The active map can be
+ * exported.
  */
 export async function exportMap(
   name: string,
@@ -575,18 +455,16 @@ export async function exportMap(
   return res.blob();
 }
 
-/** `ImportMapResponse`, verbatim. */
 export interface ImportMapResult {
-  /** The map directory the archive became. */
   name: string;
-  /** True when a map of that name existed and was replaced. */
+  /** A map of that name existed and was replaced. */
   replaced: boolean;
   files: number;
   bytes: number;
   vertices_created: number;
-  /** The replaced map's vertices, or rows orphaned by an earlier hand delete. */
+  /** The replaced map's waypoints, or rows orphaned earlier. */
   vertices_deleted: number;
-  /** Operator-facing sentence; render it verbatim. */
+  /** Operator-facing; render verbatim. */
   message: string;
 }
 
@@ -601,32 +479,13 @@ const ImportMapResultSchema: z.ZodType<ImportMapResult> = z.object({
 });
 
 /**
- * Import a map from an archive `exportMap` (or another robot's) produced.
+ * Import a map archive as raw octet-stream (the backend sniffs the format and
+ * has no multipart parser). `name` overrides the manifest's. **A map of that
+ * name is replaced**; 409s as for delete, plus `disk_low`.
  *
- * The body is the archive's bytes as `application/octet-stream`, not a
- * multipart form: the backend ships no multipart parser and sniffs zip
- * against tar.gz from the first bytes, so there is no format to declare.
- * As with `saveMapGrid`, the explicit `Content-Type` is what stands
- * requestJson's JSON default down.
- *
- * `name` is optional and overrides the one written into the archive's
- * manifest; left out, the map lands under the name it was exported as. **A
- * map of that name is replaced**, not refused and not renamed — the import is
- * subject to the same 409s as a delete (`map_active`, `conversion_running`,
- * `template_bound`), plus `disk_low` when the archive would not fit. None of
- * them has a structured retry, so there is no error class; the control shows
- * the backend's sentence. The answer is parsed because `name` picks which
- * per-map cache entries the hook drops.
- *
- * The `signal` is the operator's Cancel and nothing else. The backend stages
- * the import and commits it whole, so a body cut short lands nothing on the
- * robot — which is what makes an explicit cancel safe to offer. It is still
- * not wired to an effect cleanup: a navigation should not be what decides
- * whether a 40 MB upload the operator started lands, so `useImportMap` holds
- * the controller and fires it only from the dialog's button. One window the
- * signal cannot close: a body that had already arrived whole may still be
- * committed after the console stopped listening, which is why a cancel also
- * refetches the catalogue.
+ * The `signal` is the operator's Cancel only, never a navigation. The import
+ * commits whole, so a cut body lands nothing — but one that already arrived
+ * may still commit, which is why a cancel also refetches the catalogue.
  */
 export function importMap(
   archive: Blob,

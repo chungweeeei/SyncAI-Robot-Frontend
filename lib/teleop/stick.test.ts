@@ -17,10 +17,8 @@ import {
 import type { TeleopVector } from "@/lib/types/robot";
 
 /**
- * The rules a sign error or a lost clamp would break. Each one is something an
- * operator would feel through the robot rather than see on a screen: a
- * diagonal that runs faster than straight ahead, a lurch off the deadzone
- * ring, a turn key that strafes.
+ * Rules an operator would feel through the robot: a diagonal faster than
+ * straight, a lurch off the deadzone, a turn key that strafes.
  */
 
 const NONE = new Set<string>();

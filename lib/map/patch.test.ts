@@ -14,10 +14,9 @@ import {
 } from "@/lib/map/patch";
 
 /**
- * The editor's history. Two properties carry the whole feature: undo and redo
- * are the same write with a different side, and the cell census is maintained
- * incrementally rather than by re-counting 2.4 M cells after every dab. A drift
- * in either is only visible as a wrong number or an un-undoable stroke.
+ * The editor's history: undo and redo are one write with a different side, and
+ * the census is kept incrementally. A drift in either shows only as a wrong
+ * number or an un-undoable stroke.
  */
 function grid(bytes: number[]): MapGrid {
   return { width: bytes.length, height: 1, data: new Uint8Array(bytes) };
@@ -87,8 +86,7 @@ describe("applyCountsDelta", () => {
   });
 
   it("classifies by byte range, not by exact value", () => {
-    // A stroke reads `before` off the buffer, which holds whatever the .pgm
-    // had — 128 is UNKNOWN even though it is not the canonical 205.
+    // `before` is whatever the file held: 128 is UNKNOWN though not the canonical 205.
     const counts = { occupied: 0, unknown: 1, free: 0 };
     const p = patch([0], [128], [FREE]);
     expect(applyCountsDelta(counts, p, "after")).toEqual({
@@ -123,8 +121,7 @@ describe("the undo stack", () => {
   });
 
   it("discards the redone future when a new edit arrives", () => {
-    // The rule every editor has, and the one that leaks memory if the byte
-    // total is not adjusted with it.
+    // The byte total must drop with the redo stack, or memory leaks.
     const stack = createUndoStack();
     pushPatch(stack, dab());
     popUndo(stack);
@@ -157,8 +154,7 @@ describe("the undo stack", () => {
   });
 
   it("never evicts the only entry, however large", () => {
-    // A full-map fill is ~14 MB; dropping it would leave a stroke that cannot
-    // be undone at all, which is worse than being over budget.
+    // Dropping a ~14 MB fill would leave it un-undoable, worse than over budget.
     const stack = createUndoStack();
     const huge = patch(
       Array.from({ length: 6_000_000 }, (_, i) => i),

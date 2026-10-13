@@ -1,20 +1,11 @@
-// How a registered trigger is written for an operator, and how the timed
-// trigger the form offers becomes the cron string the backend wants.
+// How a registered trigger is written for an operator, and how the form's timed
+// trigger becomes the cron string the backend wants.
 //
-// This lived inside schedule-list.tsx, with a note saying a lib module holding
-// one formatter would be a file whose header has nothing to say. It has
-// something to say now: the template library also has to render a trigger, so
-// that a row can be told apart from a one-time task at a glance, and two copies
-// of "every 30 min" would drift the first time the wording changed.
-//
-// Cron itself never reaches the screen. The backend's timed trigger *is* a cron
-// expression, and a scheduler needs one, but "0 9 * * 1-5" is a sentence for
-// the people who built the stack, not for the operator registering a patrol.
-// The form only ever offers a time of day and a set of weekdays, so this module
-// owns both directions: the single canonical cron the picker can produce, and
-// the reading back of any cron that stays inside that vocabulary. One written
+// Cron never reaches the screen: the form offers only a time of day and a set
+// of weekdays, so this module owns both directions — the one canonical cron the
+// picker produces, and the reading back of any cron inside that vocabulary. One
 // outside it (a `*/15`, a day of the month) is shown verbatim rather than
-// misdescribed — a wrong sentence about when a robot moves is worse than an
+// misdescribed: a wrong sentence about when a robot moves is worse than an
 // opaque one.
 
 import type { ScheduleState, ScheduleTrigger } from "@/lib/api/schedule";
@@ -36,14 +27,10 @@ export const WEEKDAYS: readonly { value: number; short: string; long: string }[]
   { value: 0, short: "Sun", long: "Sunday" },
 ];
 
-/** Short day name by cron number, for the one place a Date's getDay() is read. */
+/** Short day name by cron number, for reading a Date's getDay(). */
 const SHORT_BY_DAY: readonly string[] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/**
- * The three day sets the form offers as one click. Weekdays and weekends are
- * the two patrols every site asks for; anything else is a Custom pick from the
- * seven toggles.
- */
+/** The three day sets the form offers as one click; anything else is a Custom pick. */
 export const DAILY_DAYS: readonly number[] = [0, 1, 2, 3, 4, 5, 6];
 export const WEEKDAY_DAYS: readonly number[] = [1, 2, 3, 4, 5];
 export const WEEKEND_DAYS: readonly number[] = [0, 6];
@@ -63,9 +50,8 @@ function sortedUniqueDays(days: readonly number[]): number[] {
 /**
  * `{ hour: 9, minute: 0, days: [1..5] }` → `0 9 * * 1,2,3,4,5`.
  *
- * All seven days write `*` and anything less writes a sorted comma list. Ranges
- * are never emitted, so every trigger the console registers has exactly one
- * spelling and two schedules that fire at the same moments compare equal.
+ * Never a range, so every trigger has exactly one spelling and two schedules
+ * that fire at the same moments compare equal.
  */
 export function toCron({ hour, minute, days }: TimeOfDay): string {
   const unique = sortedUniqueDays(days);
@@ -79,10 +65,7 @@ function parseField(field: string, max: number): number | null {
   return value <= max ? value : null;
 }
 
-/**
- * Read a day-of-week field back: `*`, a comma list, or `a-b` ranges over 0–7.
- * Cron lets both 0 and 7 mean Sunday, so 7 is folded into 0.
- */
+/** Read a day-of-week field back: `*`, a comma list, or `a-b` ranges over 0–7 (7 folds into Sunday 0). */
 function parseDays(field: string): number[] | null {
   if (field === "*") return sortedUniqueDays(WEEKDAYS.map((day) => day.value));
   const days: number[] = [];
@@ -98,10 +81,8 @@ function parseDays(field: string): number[] | null {
 }
 
 /**
- * The inverse of `toCron`, for describing a registered schedule. Null for any
- * expression the picker could not have produced — a step value, a day of the
- * month, a month, a four- or six-field spec — so the caller falls back to the
- * literal text instead of inventing a reading.
+ * The inverse of `toCron`. Null for any expression the picker could not have
+ * produced, so the caller shows the literal text instead of inventing a reading.
  */
 export function fromCron(cron: string): TimeOfDay | null {
   const fields = cron.trim().split(/\s+/);
@@ -120,7 +101,7 @@ export type ScheduleRepeat = "daily" | "weekdays" | "weekends" | "custom" | "int
 
 export type IntervalUnit = "minutes" | "hours";
 
-/** What the schedule form's fields start at, as the fields hold them. */
+/** What the schedule form's fields start at. */
 export interface ScheduleFormSeed {
   repeat: ScheduleRepeat;
   /** `HH:MM`, what `<input type="time">` holds. */
@@ -131,11 +112,7 @@ export interface ScheduleFormSeed {
   unit: IntervalUnit;
 }
 
-/**
- * A new schedule's fields. Custom is seeded with the weekdays because a custom
- * pick is almost always "weekdays, minus one" rather than a build-up from
- * nothing.
- */
+/** A new schedule's fields. Custom starts at the weekdays: a custom pick is usually "weekdays, minus one". */
 export const DEFAULT_FORM_SEED: ScheduleFormSeed = {
   repeat: "daily",
   time: "09:00",
@@ -151,15 +128,12 @@ function sameDays(a: readonly number[], b: readonly number[]): boolean {
 }
 
 /**
- * The form's fields for editing a registered trigger, so it opens on the rule
- * the row describes rather than on a blank one.
+ * The form's fields for editing a registered trigger.
  *
- * A day set that is one of the presets opens as that preset, not as a Custom
- * pick of the same days, because that is how the operator made it. A trigger
- * the form could not have written — a cron outside `fromCron`'s vocabulary, an
- * interval that is not whole minutes — opens on the defaults: approximating it
- * would put a rule on screen the schedule does not follow, and one press of
- * Save would make it the rule.
+ * A preset day set opens as that preset, not as Custom. A trigger the form
+ * could not have written (a foreign cron, an interval that is not whole
+ * minutes) opens on the defaults: an approximation would show a rule the
+ * schedule does not follow, and one Save would make it the rule.
  */
 export function scheduleFormSeed(trigger: ScheduleTrigger): ScheduleFormSeed {
   if (trigger.cron) {
@@ -189,10 +163,9 @@ export function scheduleFormSeed(trigger: ScheduleTrigger): ScheduleFormSeed {
 }
 
 /**
- * Whether two triggers fire at the same moments, so an edit that changes
- * nothing is not sent. The zone counts: 09:00 in Taipei is not 09:00 in
- * Berlin, and re-registering a schedule in this browser's zone is a real
- * change even when the fields read the same.
+ * Whether two triggers fire at the same moments, so a no-op edit is not sent.
+ * The zone counts: re-registering in this browser's zone is a real change
+ * even when the fields read the same.
  */
 export function sameTrigger(a: ScheduleTrigger, b: ScheduleTrigger): boolean {
   if (a.cron || b.cron) {
@@ -202,12 +175,9 @@ export function sameTrigger(a: ScheduleTrigger, b: ScheduleTrigger): boolean {
 }
 
 /**
- * The zone this browser keeps time in, e.g. `Asia/Taipei`; empty when it
- * cannot be known (server render, or a runtime without Intl).
- *
- * Sent with every timed trigger the form registers, because a cron with no
- * zone is read by the backend in UTC, and "09:00" typed by an operator in
- * Taipei has never once meant 09:00 UTC.
+ * The zone this browser keeps time in, e.g. `Asia/Taipei`; empty when unknown
+ * (server render, no Intl). Sent with every timed trigger, because the backend
+ * reads a zoneless cron as UTC.
  */
 export function browserTimeZone(): string {
   if (typeof window === "undefined" || typeof Intl === "undefined") return "";
@@ -249,12 +219,10 @@ function startOfDay(date: Date): number {
 }
 
 /**
- * The first moment after `now` at which a timed trigger fires, in the clock
- * this JavaScript runtime keeps — which is the operator's, and the zone the
- * form sends with the trigger, so the two agree by construction. Walking day by
- * day through the Date constructor rather than adding milliseconds is what keeps
- * a daylight-saving change from shifting "09:00" to 08:00 or 10:00. Null when
- * no day is selected, since nothing can fire.
+ * The first moment after `now` a timed trigger fires, in this runtime's clock
+ * (the zone the form sends, so they agree). Walking day by day through the Date
+ * constructor rather than adding milliseconds keeps a daylight-saving change
+ * from shifting "09:00". Null when no day is selected.
  */
 export function nextTimedRun({ hour, minute, days }: TimeOfDay, now: Date): Date | null {
   if (!days.length) return null;
@@ -274,9 +242,8 @@ export function nextTimedRun({ hour, minute, days }: TimeOfDay, now: Date): Date
 }
 
 /**
- * `today 09:00` / `tomorrow 09:00` / `Thu 09:00`. Relative words for the two
- * days an operator can name without a calendar, the weekday beyond that — the
- * next timed run is always inside a week, so the weekday is never ambiguous.
+ * `today 09:00` / `tomorrow 09:00` / `Thu 09:00`. The next timed run is always
+ * inside a week, so the weekday is never ambiguous.
  */
 export function describeNextRun(next: Date, now: Date): string {
   const time = `${pad(next.getHours())}:${pad(next.getMinutes())}`;
@@ -287,10 +254,8 @@ export function describeNextRun(next: Date, now: Date): string {
 }
 
 /**
- * `2026-08-04 09:00` in this runtime's local clock — the time the operator
- * would read off the wall when the robot sets off. For a browser this is the
- * zone the form registered the trigger in, so the list answers in the same
- * numbers the form was given.
+ * `2026-08-04 09:00` in this runtime's local clock — the zone the form
+ * registered the trigger in, so the list answers in the numbers it was given.
  */
 export function formatLocalRunTime(iso: string): string {
   const date = new Date(iso);
@@ -299,10 +264,9 @@ export function formatLocalRunTime(iso: string): string {
 }
 
 /**
- * `2026-08-04 09:00` sliced straight out of the ISO string, so it is UTC and
- * needs no clock. The server render's answer: a prerendered page has no idea
- * where the operator is, and toLocaleString there would hydrate to a different
- * string in the browser. Same rule as formatTimestamp in lib/recording/format.ts.
+ * `2026-08-04 09:00` sliced out of the ISO string (UTC, no clock): the server
+ * render's answer, since a local format there would not match the hydrated
+ * string. Same rule as formatTimestamp in lib/recording/format.ts.
  */
 export function formatUtcRunTime(iso: string): string {
   return iso.slice(0, 16).replace("T", " ");
@@ -312,21 +276,14 @@ export function formatUtcRunTime(iso: string): string {
  * The run a row should call "next": the first of `next_run_times` still ahead
  * of `readAtMs`, or undefined when there is none or the schedule is paused.
  *
- * The list is a snapshot Temporal computed when it was read, so the head of the
- * array is a time that has passed for as long as the run it names has already
- * fired. `nextScheduleRefetchMs` closes most of that window by re-reading just
- * after the run, but not all of it: the read itself takes a moment, and
- * Temporal's describe can still report the run it has just started. Stepping
- * over what has passed is what keeps the readout true either side of that read
- * — without it a row showed the time it fired at as the time it will fire next.
+ * The list is a snapshot, so its head can be a time that has already fired;
+ * `nextScheduleRefetchMs` re-reads just after, but the describe can still
+ * report the run it just started. Stepping over the past keeps the readout
+ * true either side of that read. Measured against the read time so a row is a
+ * pure function of its snapshot.
  *
- * Measured against the read time rather than the current one so that a row is a
- * pure function of the snapshot it was drawn from; the two move together
- * because a re-read is what changes both.
- *
- * A paused schedule keeps reporting future times (Temporal computes them from
- * the spec and pausing does not clear them), dates that will not happen, so a
- * paused row has no next run at all.
+ * A paused schedule still reports future times that will not happen, so it
+ * has no next run.
  */
 export function upcomingRun(
   schedule: ScheduleState,
@@ -356,12 +313,9 @@ export function describeTrigger(trigger: ScheduleTrigger): string {
  * What a saved job's clock chip says about the schedules frozen from it, or
  * null when there are none.
  *
- * The count alone used to read green for three schedules with two of them
- * paused, and a single paused one said only "paused", losing when it would
- * have run — both only told apart by a hover title a finger never sees. So
- * the paused count is part of the label, and a lone schedule keeps its
- * trigger either way. The tone goes caution only when nothing will run: a row
- * with one armed schedule still runs on its own.
+ * The paused count is in the label (a hover title is invisible to a finger),
+ * and a lone schedule keeps its trigger either way. Caution only when nothing
+ * will run.
  */
 export function scheduleChipSummary(
   schedules: readonly ScheduleState[],
@@ -380,43 +334,28 @@ export function scheduleChipSummary(
 }
 
 /**
- * How long after a schedule's fire time the list is re-read. The row is only
- * wrong once the run has actually started, and Temporal recomputes
- * `next_run_times` from the spec the moment it fires, so a couple of seconds
- * is slack for the two clocks disagreeing rather than for anything settling.
+ * How long after a schedule's fire time the list is re-read: slack for the two
+ * clocks disagreeing, since `next_run_times` is recomputed the moment it fires.
  */
 export const RUN_REFETCH_SLACK_MS = 2000;
 
 /**
- * The retry when the soonest run is already in the past and the list still
- * says so — the robot missed its slot, or the browser's clock is ahead of the
- * server's. Re-reading at once would loop as fast as the backend answers.
+ * The retry when the soonest run is already past and the list still says so
+ * (a missed slot, or a browser clock ahead). Re-reading at once would loop.
  */
 export const OVERDUE_REFETCH_MS = 30_000;
 
-/**
- * The longest a refetch is ever deferred. A timer past 2^31 - 1 ms overflows
- * and fires immediately, and a schedule a month out would otherwise set one.
- */
+/** The longest a refetch is deferred: a timer past 2^31 - 1 ms overflows and fires at once. */
 export const MAX_REFETCH_MS = 86_400_000;
 
 /**
- * When to re-read the schedule list next, in ms, or false for never.
+ * When to re-read the schedule list next, in ms, or false for never: just
+ * after the soonest `next_run_times[0]` across unpaused rows (see CLAUDE.md,
+ * "A knowable moment beats a poll"). An unparseable date is skipped so it
+ * cannot become a bad timer.
  *
- * The list is not polled — see useSchedules for the cost — but it is also the
- * one thing on the screen that changes at a knowable moment: the soonest
- * `next_run_times[0]` across the unpaused rows is when one of them stops
- * being true. So the list is read exactly once, just after that moment, and
- * the answer sets the next one. Paused rows are skipped because their times
- * are hidden and will not fire; unparseable ones because a bad date must not
- * become a bad timer.
- *
- * `readAtMs` is when the list was read, not the current time, and the
- * difference is load-bearing: the value has to be a pure function of the
- * snapshot. TanStack restarts the timer whenever the interval it is handed
- * changes, and the task console re-renders every two seconds with the active
- * job poll — an interval measured from `Date.now()` was reset before it could
- * ever fire.
+ * Measured from `readAtMs`, never `Date.now()`: TanStack restarts the timer
+ * whenever the interval changes, and the page re-renders on another poll.
  */
 export function nextScheduleRefetchMs(
   schedules: readonly ScheduleState[],
@@ -437,14 +376,9 @@ export function nextScheduleRefetchMs(
 }
 
 /**
- * The registered schedules that were frozen from each template, keyed by
- * template id.
- *
- * Only schedules that carry a `task_template_id` land here — one registered
- * straight from the composer references no row and belongs to no template. That
- * is also why this is a lookup built from the schedule list rather than a field
- * on the template: the backend's template response says nothing about
- * schedules, and the provenance only exists in the Temporal memo.
+ * The schedules frozen from each template, by template id. Built from the
+ * schedule list because the template response says nothing about schedules;
+ * one registered straight from the composer has no `task_template_id`.
  */
 export function schedulesByTemplate(
   schedules: readonly ScheduleState[],
@@ -461,28 +395,16 @@ export function schedulesByTemplate(
 }
 
 /**
- * How many steps a schedule froze that its template would now dispatch
- * differently, or null when the two are not comparable.
+ * How many frozen steps the template would now dispatch differently — the
+ * schedule row's "stale" badge — or null when they are not comparable (a
+ * changed step count, or a template step with no coordinates).
  *
- * A schedule keeps the steps it was registered with, so a template edited
- * afterwards drives the robot one way from the editor and another way on the
- * schedule. This is what the schedule row's "stale" badge counts.
- *
- * - A changed step *count* makes a per-step diff meaningless — the template
- *   was restructured after registration — so that is null rather than a
- *   misleading number. So is a template step with no coordinates to compare.
- * - A MOVE is compared at the precision the console displays and dispatches
- *   at (3 decimals for x and y, 1 for the heading), so a float-representation
- *   difference is not reported as drift.
- * - A SPEAK drifts when its line was edited: the frozen copy keeps saying the
- *   old sentence, the same mechanism as a moved waypoint.
- * - A WAIT drifts when its duration was edited.
- * - A step whose type changed drifts. Two posture steps of one type never do.
- * - A step linked to the one above (or unlinked from it) drifts: the robot
- *   would start it at a different moment. Compared as links, not names, so
- *   a group renamed in place is the same job.
- *
- * Moved here from schedule-steps.tsx, where it had no test.
+ * - A MOVE compares at the precision dispatched (3 decimals x/y, 1 heading),
+ *   so float noise is not drift.
+ * - A SPEAK drifts on its line or count, a WAIT on its duration, any step on
+ *   its type.
+ * - A step linked to (or unlinked from) the one above drifts. Compared as
+ *   links, not group names, so a renamed group is the same job.
  */
 export function scheduleDrift(
   frozen: readonly TaskStepRequest[],
@@ -501,8 +423,7 @@ export function scheduleDrift(
     if (!now || now.type !== step.type) return count + 1;
     if (wireLinked(frozen, index) !== wireLinked(current, index)) return count + 1;
     if (step.type === "SPEAK" && now.type === "SPEAK") {
-      // A missing count is once, on either side: a schedule frozen before
-      // the field carries none.
+      // A missing count is once: a schedule frozen before the field has none.
       const same =
         step.params.text === now.params.text &&
         (step.params.repeat ?? 1) === (now.params.repeat ?? 1);
@@ -521,17 +442,12 @@ export function scheduleDrift(
 }
 
 /**
- * The schedules the dashboard lists, in the order the robot will act on them:
- * soonest next run first, then the ones with no next run at all — paused, or
- * past the end of the snapshot's list — so a row that will not fire never
- * stands above one that will. Ties keep the backend's order, so rows do not
- * swap places between two reads that agree.
+ * The schedules the dashboard lists, soonest next run first and those with
+ * none (paused, or past the snapshot) last. Ties keep the backend's order so
+ * rows do not swap between reads that agree.
  *
- * Not cut to a few rows: the rail can pause one, and a paused row sorts last,
- * so a cut would make the row the operator just pressed vanish — and with it
- * the Resume that undoes the press. The rail bounds the list's height instead.
- *
- * Measured against the snapshot's read time for `upcomingRun`'s reason.
+ * Not truncated: a row just paused sorts last, and a cut would hide the
+ * Resume that undoes the press.
  */
 export function glanceSchedules(
   schedules: readonly ScheduleState[],

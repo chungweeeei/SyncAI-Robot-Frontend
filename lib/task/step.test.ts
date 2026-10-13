@@ -49,8 +49,7 @@ function wait(seconds: string): StepDraft {
 
 describe("newStepDraft", () => {
   it("defaults the heading to 0 but never the position", () => {
-    // Zero is a real, common heading; a position has no sensible default and
-    // has to be supplied, so the field starts empty and the row starts invalid.
+    // Zero is a real heading; a position has no default, so the row starts invalid.
     const draft = newStepDraft("MOVE");
     expect(draft.theta).toBe("0");
     expect(draft.x).toBe("");
@@ -74,17 +73,14 @@ describe("stepDraftError", () => {
   });
 
   it("refuses a MOVE with any non-numeric field, in words about waypoints", () => {
-    // The composer shows no coordinate fields, so a sentence naming X, Y and
-    // heading would point at inputs the operator cannot see; the only way to
-    // fill a MOVE row there is to pick a waypoint.
+    // The composer shows no coordinate fields; picking a waypoint is the only way to fill one.
     for (const over of [{ x: "" }, { y: "abc" }, { theta: "" }, { x: "1,5" }]) {
       expect(stepDraftError(move(over))).toBe("Pick a waypoint.");
     }
   });
 
   it("does not invent a heading range", () => {
-    // 270 is a perfectly good way to say -90; normalizeTheta folds it on the
-    // way out, so refusing it here would be a constraint nothing asked for.
+    // normalizeTheta folds 270 to -90 on the way out.
     expect(stepDraftError(move({ theta: "270" }))).toBeNull();
     expect(stepDraftError(move({ theta: "-400" }))).toBeNull();
   });
@@ -249,9 +245,8 @@ describe("moveStep", () => {
   const twenty = Array.from({ length: 20 }, (_, i) => i + 1);
 
   it("puts a far row first and shifts the rest down in order", () => {
-    // The case the drag exists for: step 16 of 20 made the first thing run.
-    // Every row in between keeps its relative order — this is an insert, not
-    // the neighbour swap the old up/down buttons did.
+    // Step 16 of 20 made the first thing run: an insert, not a swap — every
+    // row in between keeps its relative order.
     const moved = moveStep(twenty, 15, 0);
     expect(moved).toEqual([16, ...twenty.filter((n) => n !== 16)]);
   });
@@ -376,9 +371,7 @@ function stored(over: Partial<TemplateStep> = {}): TemplateStep {
 
 describe("fromTemplateSteps", () => {
   it("loads the vertex's current pose, not the saved snapshot", () => {
-    // This is where a dock moved on the map shows up in the composer; using
-    // `params` would display the stale snapshot and then dispatch something
-    // else.
+    // Where a moved dock shows up; `params` would display the stale snapshot.
     const [draft] = fromTemplateSteps([stored()]);
     expect([draft.x, draft.y, draft.theta]).toEqual(["4.2", "-3.7", "45"]);
     expect(draft.vertexId).toBe("v-1");

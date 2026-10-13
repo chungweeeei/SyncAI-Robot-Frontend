@@ -7,22 +7,15 @@ import {
 import type { TeleopVector } from "@/lib/types/robot";
 
 /**
- * Outbound teleop channel — deliberately NOT createReconnectingSocket.
+ * Outbound teleop channel — deliberately NOT createReconnectingSocket. When
+ * the link drops mid-drive the backend watchdog stops the robot, and a silent
+ * reconnect would resume motion with no operator act. So: one socket, no
+ * retry, and any close surfaces as `onDown` so the owner disarms; re-arming
+ * is a deliberate click.
  *
- * That helper's whole purpose is the 2 s auto-reconnect, which is exactly
- * what a motion channel must not have: when the link drops mid-drive, the
- * backend watchdog stops the robot, and a silent reconnect would resume
- * motion with no operator act. The read streams' failure mode is a stale
- * pixel; this channel's is a moving robot. So: one socket, no retry, and any
- * close/error surfaces as `onDown` so the owner can drop to disarmed —
- * re-arming is one deliberate click, matching the panel's arm grammar.
- *
- * Send cadence is 10 Hz against the backend's 0.5 s stale-input watchdog
- * (five ticks of margin). Zero vectors are sent like any other — "stick
- * centered" is a command, and the stream going quiet is what the watchdog
- * treats as a fault. A background-throttled tab (intervals clamped to >= 1 s)
- * therefore trips the watchdog and stops the robot: the safe direction, and
- * useJoystick's window-blur handler zeroes the vector on alt-tab anyway.
+ * 10 Hz against the backend's 0.5 s stale-input watchdog. Zero vectors are
+ * sent too: a quiet stream is what the watchdog treats as a fault, so a
+ * background-throttled tab stops the robot, which is the safe direction.
  */
 
 const SEND_PERIOD_MS = 100;
@@ -57,7 +50,6 @@ export function createTeleopChannel(
 
   ws.onopen = () => {
     if (closed) return;
-    // First frame immediately — the first command must not wait a tick.
     ws.send(encodeTeleopFrame(vectorRef.current));
     sendTimer = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -72,17 +64,13 @@ export function createTeleopChannel(
     if (message !== null) handlers.onRefusal?.(message);
   };
 
-  // Unlike createReconnectingSocket, the final transition after an explicit
-  // close() is suppressed: the owner closes *because* it already disarmed,
-  // so echoing onDown back would be noise (there is no status badge behind
-  // this channel that could go stale).
+  // No onDown after an explicit close(): the owner closed because it disarmed.
   ws.onclose = () => {
     stopSending();
     if (!closed) handlers.onDown?.();
   };
   ws.onerror = () => {
-    // onclose follows onerror and carries the onDown; this handler exists so
-    // the browser doesn't log an unhandled error event.
+    // onclose follows and carries onDown; this only silences the browser log.
   };
 
   return {
@@ -91,10 +79,8 @@ export function createTeleopChannel(
       closed = true;
       stopSending();
       if (ws.readyState === WebSocket.OPEN) {
-        // Defense in depth, not the safety mechanism — the backend zeroes on
-        // disconnect and on watchdog regardless. The literal zero (not
-        // vectorRef.current) is deliberate: deterministic no matter how the
-        // disarm effects were ordered.
+        // Defense in depth; the backend zeroes on disconnect anyway. A literal
+        // zero, not vectorRef.current, so disarm effect order cannot matter.
         ws.send(ZERO_FRAME);
       }
       ws.close();

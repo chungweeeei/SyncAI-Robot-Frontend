@@ -70,9 +70,7 @@ describe("decodeTaskDraft", () => {
   });
 
   it("still restores a draft written by an older editor", () => {
-    // Older builds stored `composerOpen` (the fold) and `mode` (Run now or
-    // On a schedule); an unknown key is stripped rather than costing the
-    // operator their steps.
+    // An unknown key from another build is stripped rather than costing the steps.
     const restored = decodeTaskDraft(
       JSON.stringify({ ...draft(), composerOpen: true, mode: "schedule" }),
     );
@@ -82,9 +80,7 @@ describe("decodeTaskDraft", () => {
   });
 
   it("still restores a draft saved before the duration field existed", () => {
-    // `seconds` arrived with WAIT; a draft from before it has no WAIT row,
-    // and losing all of its steps over a field none of them use would be
-    // the wrong trade.
+    // A draft from before WAIT has no `seconds`, and no row that needs it.
     const stored = draft();
     const old = {
       ...stored,

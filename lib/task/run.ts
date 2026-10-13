@@ -1,14 +1,10 @@
-// What the masthead says about the job that is running, and what it may do to
-// it. Pure rules over the two reads the console has — the active list's entry
-// and the run's own per-step state — so the component that draws them has
-// nothing to decide, and so each rule can be stated as a test.
+// What the masthead says about the running job and what it may do to it: pure
+// rules over the active list's entry and the run's own per-step state.
 //
-// Two of these rules are about epistemics, and the comments say which. A pause
-// is a *request* the backend accepts at once and acts on when it can; PAUSED
-// is a *reading* from the run's state. The masthead must never show the first
-// as if it were the second, which is why the pending phase is derived from a
-// request set against a reading, never stored and never cleared by an effect
-// (the same shape as `pendingPolicy` in hooks/use-locomotion.ts).
+// A pause is a *request* the backend accepts at once and acts on when it can;
+// PAUSED is a *reading*. The masthead must never show the first as the second,
+// so the pending phase is derived from request against reading — never stored,
+// never cleared by an effect (cf. `pendingPolicy` in hooks/use-locomotion.ts).
 
 import {
   isTerminalTaskStatus,
@@ -22,11 +18,10 @@ import { STEP_TYPES } from "@/lib/task/step";
 /**
  * The step the robot is on: the first one held or in progress.
  *
- * Null for an empty list (the backend degrades `steps` to [] whenever the
- * workflow query fails) and for one with nothing live — all PENDING in the
- * moment before the first step is dispatched, or all closed on the last read
- * of a run that just finished. Both are "nothing to say about a step", which
- * is not the same as "no job".
+ * Null for an empty list (the backend degrades `steps` to [] when its workflow
+ * query fails) and for one with nothing live (all PENDING before the first
+ * dispatch, or all closed on a run's last read). That means "nothing to say
+ * about a step", not "no job".
  */
 export function currentStep(
   steps: readonly TaskStepState[],
@@ -35,7 +30,6 @@ export function currentStep(
   return index === -1 ? null : { index, step: steps[index]! };
 }
 
-/** The lower-cased wire type at the end of a composer step id, by type. */
 const LABEL_BY_TYPE_WORD = new Map(
   STEP_TYPES.map((spec) => [spec.value.toLowerCase(), spec.label] as const),
 );
@@ -43,12 +37,10 @@ const LABEL_BY_TYPE_WORD = new Map(
 /**
  * What a step is called, read off its id — the only thing the read carries.
  *
- * A step this console authored is `${ordinal}-${type}` (`stepIdFor` in
- * lib/task/step.ts) and reads as its type's label: Move, Speak, Wait, Stand,
- * Lie. A single-gesture run's one step is named after its kind (`goal`,
- * `standup`, `liedown`) and reads as the dashboard's own words for it. Anything else was
- * authored by another client and is shown verbatim: a name it chose is still
- * more telling than "Step", and guessing a type from it would be a claim.
+ * `${ordinal}-${type}` (`stepIdFor`) reads as its type's label; a
+ * single-gesture run's step is named after its kind (`goal`, `standup`,
+ * `liedown`). Any other id came from another client and is shown verbatim:
+ * guessing a type from it would be a claim.
  */
 export function stepLabel(id: string): string {
   const composed = /^\d+-([a-z]+)$/.exec(id);
@@ -72,14 +64,12 @@ function live(step: TaskStepState): boolean {
 }
 
 /**
- * Where the run is in its list, or null when no step is live (see currentStep).
+ * Where the run is in its list, or null when no step is live.
  *
- * Steps that share a group run at once, so "the" step can be several: the
- * label names every member still live, and the ordinal is the first one's,
- * which is where the group sits in the list. Only members still running are
- * named — a Speak that has finished beside a long Move is no longer news. The
- * message is the first a member has; only a Move carries one, and a group
- * holds at most one Move.
+ * A group runs at once, so "the" step can be several: the label names every
+ * member still live (a finished Speak beside a long Move is no longer news)
+ * and the ordinal is the first one's. Only a Move carries a message, and a
+ * group holds at most one.
  */
 export function stepProgress(steps: readonly TaskStepState[]): StepProgress | null {
   const current = currentStep(steps);
@@ -99,24 +89,20 @@ export function stepProgress(steps: readonly TaskStepState[]): StepProgress | nu
 /**
  * Whether the masthead offers a Pause for a job of this kind.
  *
- * A Stand or Lie down is one posture step, and a posture is not interrupted
- * by a pause: the step finishes and the run, having no next step, finishes
- * with it. A button that does nothing is worse than no button. Everything
- * else — a goal (one MOVE, which a pause does stop), a task, a scheduled run,
- * and a run whose kind the backend did not record — is offered the button,
- * and the backend's refusal is the answer when there is nothing to hold.
+ * A Stand or Lie down is one posture step, which a pause does not interrupt —
+ * the run just finishes — and a button that does nothing is worse than none.
+ * Every other kind, unknown included, gets the button; the backend's refusal
+ * answers when there is nothing to hold.
  */
 export function pauseOffered(kind: string | null): boolean {
   return kind !== "standup" && kind !== "liedown";
 }
 
 /**
- * Whether the hold button (Pause or Resume) is on screen at all: the kind
- * allows one, and the run's own read has not already said it closed. The
- * active list lags the run by its poll interval plus the backend's cache, and
- * a button over a finished job would only earn a refusal. A read that has
- * not answered yet (null) keeps the button; the backend's sentence is the
- * answer if it is pressed too early.
+ * Whether the hold button (Pause or Resume) is on screen: the kind allows one
+ * and the run's own read has not said it closed. The active list lags the run,
+ * and a button over a finished job would only earn a refusal. An unanswered
+ * read (null) keeps the button.
  */
 export function holdOffered(kind: string | null, status: TaskStatus | null): boolean {
   return pauseOffered(kind) && !isTerminalTaskStatus(status);
@@ -125,12 +111,12 @@ export function holdOffered(kind: string | null, status: TaskStatus | null): boo
 export type HoldVerb = "pause" | "resume";
 
 /**
- * Where the job is between running and held, as the masthead draws it.
+ * Where the job is between running and held.
  *
  * `status` is the reading; `requested` is the verb the backend last accepted
- * for this run (see requestedHold). A request the reading has not caught up
- * with is the pending phase, and it resolves itself the moment a read agrees
- * — or stays pending, which is the truth, if none ever does.
+ * (see requestedHold). A request the reading has not caught up with is the
+ * pending phase; it resolves the moment a read agrees, or stays pending —
+ * which is the truth — if none ever does.
  */
 export type RunPhase = "running" | "pausing" | "paused" | "resuming";
 
@@ -144,23 +130,16 @@ export function runPhase(
 }
 
 /**
- * Every word the masthead's bar can end in: the four phases above plus the
- * three ways a run closes.
- *
- * `runPhase` answers "running" for a closed run, which is right for the
- * buttons — there is nothing left to hold — and wrong for a readout that has
- * to name what it is looking at. The bar is on screen for the moment between
- * a run ending and the active list noticing, so an ending is a state it must
- * be able to say.
+ * Every word the masthead's bar can end in: the four phases plus the three
+ * ways a run closes. `runPhase` answers "running" for a closed run, which is
+ * right for the buttons but wrong for a readout: the bar stays up between a
+ * run ending and the active list noticing.
  */
 export type RunState = RunPhase | "completed" | "failed" | "canceled";
 
 /**
- * How a run reads, terminal states first.
- *
- * Before the phase, deliberately: a pause this console asked for says nothing
- * about a run that has since been canceled from elsewhere, and "Pausing…"
- * over a finished job would be a claim the reading has already contradicted.
+ * How a run reads, terminal states first: "Pausing…" over a run canceled from
+ * elsewhere would be a claim the reading has already contradicted.
  */
 export function runState(
   status: TaskStatus | null,
@@ -173,13 +152,8 @@ export function runState(
 }
 
 /**
- * Whether the run this state describes is over, and so has nothing left to
- * hold or to stop.
- *
- * Read off the state rather than the status so a component never has to
- * import the wire vocabulary to ask (`isTerminalTaskStatus` lives in
- * lib/api/task, which components do not reach into — see CLAUDE.md
- * > Layering).
+ * Whether the run is over, with nothing left to hold or stop. Read off the
+ * state so a component need not import `isTerminalTaskStatus` from lib/api.
  */
 export function runClosed(state: RunState): boolean {
   return state === "completed" || state === "failed" || state === "canceled";
@@ -197,11 +171,9 @@ export interface HoldRequestView {
 /**
  * The verb the backend most recently accepted for *this* run, or null.
  *
- * Only the later of the two requests counts, and only once it has succeeded:
- * a request still in flight has claimed nothing yet, and a refused one (the
- * run already closed) claims nothing at all. The id check is what retires a
- * stale claim without an effect — a pause accepted for the previous job says
- * nothing about the one that replaced it in the active list.
+ * Only the later request counts, and only once it succeeded: one in flight or
+ * refused claims nothing. The id check retires a stale claim without an
+ * effect — a pause accepted for the previous job says nothing about this one.
  */
 export function requestedHold(
   pause: HoldRequestView,
@@ -217,14 +189,12 @@ export function requestedHold(
 }
 
 /**
- * How long the run has been going, as `m:ss` / `h:mm:ss`, or "—" when the
- * two timestamps cannot be compared.
+ * How long the run has been going (`m:ss` / `h:mm:ss`), or "—".
  *
- * Between two *server* clocks — the start and the active list's `as_of` —
- * never the browser's: the robot and the console are different machines and
- * the list is served from a short cache, so mixing them could show a job that
- * started a few seconds in the future. Shared by the masthead and the /tasks
- * banner so the same run cannot read two durations on one screen.
+ * Measured between two *server* clocks — the start and the list's `as_of` —
+ * never the browser's: they are different machines and the list is cached, so
+ * mixing them could show a job starting in the future. Shared by the masthead
+ * and the /tasks banner so one run cannot read two durations on one screen.
  */
 export function runElapsed(startedAt: string, asOf: string | null): string {
   const seconds = runSeconds(startedAt, asOf);

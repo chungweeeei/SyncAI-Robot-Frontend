@@ -1,10 +1,7 @@
 /**
- * Input types that take focus but never take a letter. A range, a checkbox or
- * a button keeps focus after it is clicked, and asking "is it an INPUT?" made
- * the drive keys go dead the moment the operator had touched the Max speed
- * slider — nothing on screen said why, and the only way back was to click
- * somewhere blank. A slider answers to arrows, a checkbox to Space; neither
- * has any use for W.
+ * Input types that take focus but never a letter. A slider or checkbox keeps
+ * focus after a click, so treating every INPUT as typing left the drive keys
+ * dead after touching Max speed, with nothing on screen saying why.
  */
 const NON_TEXT_INPUT_TYPES = new Set([
   "button",
@@ -20,9 +17,8 @@ const NON_TEXT_INPUT_TYPES = new Set([
 ]);
 
 /**
- * Whether a keydown aimed at `target` is somebody typing, so a single-letter
- * shortcut has to leave it alone. SELECT counts: a focused select jumps to the
- * option starting with the letter pressed.
+ * Whether a keydown on `target` is typing, so a letter shortcut must leave it
+ * alone. SELECT counts: it jumps to the option starting with the letter.
  */
 export function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;

@@ -5,9 +5,7 @@ import { FREE, OCCUPIED, UNKNOWN } from "@/lib/map/grid";
 
 describe("editStateOf", () => {
   it("paints the byte each kind is named for", () => {
-    // Wall is what the planner treats as an obstacle, Floor what it treats as
-    // free: a swapped pair here would paint walls where the operator erased
-    // them, and nothing on screen would say so until the robot refused a route.
+    // A swapped pair would paint walls where the operator erased them, silently.
     expect(editStateOf("wall")).toEqual({ mode: "grid", value: OCCUPIED, panOnly: false });
     expect(editStateOf("floor")).toEqual({ mode: "grid", value: FREE, panOnly: false });
     expect(editStateOf("unknown")).toEqual({ mode: "grid", value: UNKNOWN, panOnly: false });

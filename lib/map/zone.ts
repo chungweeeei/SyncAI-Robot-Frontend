@@ -1,13 +1,8 @@
 /**
- * Forbidden zones: the rules for drawing one on the floor plan editor.
- *
- * What a zone *is* — ZonePoint and ZonePolygon — is the backend's shape and
- * lives in lib/types/map.ts beside MapVertex; it is re-exported here so the
- * editor can take the rules and the words from one place. This module keeps
- * the rules, which is the split every other map thing already has.
- *
- * Pure, and no Path2D: the drawing is lib/map/draw.ts's, so these rules can
- * be tested without a canvas.
+ * Forbidden zones: the rules for drawing one on the floor plan editor. The
+ * shape types live in lib/types/map.ts and are re-exported so the editor
+ * takes rules and types from one place. No Path2D, so this is testable
+ * without a canvas; the drawing is lib/map/draw.ts's.
  */
 
 import type { ZonePoint, ZonePolygon } from "@/lib/types/map";
@@ -15,9 +10,8 @@ import type { ZonePoint, ZonePolygon } from "@/lib/types/map";
 export type { ZonePoint, ZonePolygon };
 
 /**
- * A corner the pointer can pick up and move: one of the shape in flight
- * (`zoneId` null) or one of a finished zone. The same drag serves both, so
- * one name says which polygon the index counts into.
+ * A corner the pointer can pick up: one of the shape in flight (`zoneId`
+ * null) or of a finished zone. One drag serves both.
  */
 export interface ZoneCornerRef {
   zoneId: string | null;
@@ -25,11 +19,9 @@ export interface ZoneCornerRef {
 }
 
 /**
- * Where a shape in flight is attached to a finished zone: which corner of
- * which zone, and where in the shape's own corner list the copy of that
- * corner sits. The copy is not always first — a shape started on bare map
- * can reach a zone's corner later, and the corners before it are as much a
- * part of the run as the ones after (see mergeIntoZone).
+ * Where a shape in flight is attached to a finished zone. The copy of the
+ * zone's corner is not always first: a shape started on bare map can reach a
+ * zone later, and the corners before it count too (see mergeIntoZone).
  */
 export interface ZoneAnchor {
   zoneId: string;
@@ -38,10 +30,7 @@ export interface ZoneAnchor {
   position: number;
 }
 
-/**
- * A shape needs three corners before it encloses anything: two points are a
- * line, and a line has no inside for the robot to be kept out of.
- */
+/** Two points are a line, and a line has no inside to keep the robot out of. */
 export const MIN_ZONE_POINTS = 3;
 
 export function canCloseZone(points: readonly ZonePoint[]): boolean {
@@ -51,13 +40,9 @@ export function canCloseZone(points: readonly ZonePoint[]): boolean {
 /**
  * The corner of the shape in flight under a press, or null.
  *
- * Hit-tested in screen pixels, for the same reason a vertex marker is (see
- * vertexAt in components/maps/grid-canvas.tsx): the dot does not scale with
- * the zoom, so a world-space radius would be unclickable zoomed out and
- * enormous zoomed in. The caller passes the radius, because only it knows
- * whether the press is a mouse or a finger. The nearest wins where two dots
- * overlap, so a corner dropped almost on top of another can still be picked
- * back up.
+ * Hit-tested in screen pixels because the dot does not scale with the zoom.
+ * The caller passes the radius since only it knows mouse from finger. The
+ * nearest wins, so a corner dropped on top of another can still be picked up.
  */
 export function cornerAt(
   corners: readonly { cx: number; cy: number }[],
@@ -83,23 +68,17 @@ export type ZonePressVerdict =
   /** The press landed on the first corner: close the shape. */
   | "close"
   /**
-   * The press landed on a corner and a click there means nothing: the first
-   * corner too early to close, any later one, or a handle too early to
-   * merge. A drag from the same press moves the corner instead, which is the
-   * caller's to carry out.
+   * A click on this corner means nothing (first corner too early to close,
+   * a later one, or a handle too early to merge); a drag from it moves it.
    */
   | "ignore"
   /** No shape in flight and the press landed inside a finished zone: select it. */
   | "select"
-  /**
-   * No shape in flight and the press landed on a finished zone's corner:
-   * start a shape there, anchored to that zone (see reshapeZone).
-   */
+  /** No shape in flight, press on a finished zone's corner: start a shape anchored there. */
   | "anchor"
   /**
-   * An anchored shape in flight and the press landed on another corner of
-   * its zone: the corners drawn since the anchor replace the zone's edge
-   * between the two.
+   * Anchored shape, press on another corner of its zone: the corners drawn
+   * since the anchor replace the zone's edge between the two.
    */
   | "merge";
 
@@ -112,15 +91,11 @@ export interface ZonePressInput {
   corner: number | null;
   /** The press landed inside a finished zone. */
   onZone: boolean;
-  /**
-   * Shift was held, or the press is a finger: the press is about the
-   * selection, adding to it or taking from it, and never a first corner.
-   */
+  /** Shift held, or a finger: the press edits the selection, never a first corner. */
   additive: boolean;
   /**
    * The press landed on a finished zone's corner handle — any zone's until
-   * the shape is anchored, then its own zone's, the anchor corner excepted
-   * (that one is a `corner` of the shape).
+   * anchored, then only its own zone's, the anchor itself excepted.
    */
   onHandle: boolean;
 }
@@ -128,32 +103,21 @@ export interface ZonePressInput {
 /**
  * Which of the six a click is.
  *
- * A press on a corner is never a new corner: a second dot on top of the first
- * is a degenerate edge that could never be closed, and one on top of any other
- * would leave the operator with a shape that looks like four points and counts
- * five. The press is kept for the drag instead — a corner already placed is
- * picked up and moved, so a shape can be adjusted while it is being drawn
- * rather than dropped and redrawn. A click on the first corner is the one
- * exception, and only once the shape *can* close.
+ * A press on a corner is never a new corner: a duplicate dot is a degenerate
+ * edge (or a shape that looks like four points and counts five). It is kept
+ * for the drag instead, so a shape can be adjusted mid-draw. The exception is
+ * the first corner once the shape can close.
  *
- * A finished zone is selected by pressing inside it, but only while no shape
- * is in flight: once a corner is down every press is the next corner, so a
- * shape can still be drawn across a zone that is already there. What cannot
- * be done is *starting* one inside a zone — the inside is already forbidden,
- * so nothing is lost. With Shift held (or under a finger, which has no
- * Shift) the press adds the zone to the selection instead of replacing it,
- * and a miss onto bare map keeps the selection rather than starting a
- * shape: an operator holding Shift is choosing zones, not drawing one.
+ * A finished zone is selected only while no shape is in flight; after the
+ * first corner every press is the next corner, so a shape can cross a zone.
+ * Starting one inside a zone is lost, but that area is already forbidden.
+ * Shift (or a finger) adds to the selection, and a miss keeps it instead of
+ * starting a shape.
  *
- * A finished zone's corner is where a zone grows from. A click on one
- * anchors the shape there — as its first corner, or as the next one of a
- * shape already under way that has reached the zone; a click on another
- * corner of the same zone ends it, and the shape's own corners replace that
- * stretch of the zone's edge (mergeIntoZone). The merge needs at least one
- * corner of its own: the anchor and the target alone would only replace an
- * edge with a straight line, which is a corner drag's job. An anchored
- * shape never closes on itself — it belongs to the zone now, so `close` is
- * not offered.
+ * A finished zone's corner anchors a shape; a click on another corner of the
+ * same zone merges it (mergeIntoZone). A merge needs a corner of its own, or
+ * it would just straighten an edge, which is a corner drag's job. An anchored
+ * shape belongs to its zone, so it never offers `close`.
  */
 export function classifyZonePress(input: ZonePressInput): ZonePressVerdict {
   const { count, anchored, corner, onZone, additive, onHandle } = input;
@@ -179,23 +143,15 @@ function doubledArea(points: readonly ZonePoint[]): number {
 }
 
 /**
- * Replace the stretch of a zone's edge between two of its corners with a
- * run of new corners.
+ * Replace the stretch of a zone's edge between two corners with new corners.
  *
- * The ring between `from` and `to` has two arcs, and either could be the one
- * the operator meant to redraw. The one kept is whichever leaves the larger
- * zone, which is the reading that matches the gesture nine times in ten: a
- * bump drawn outward grows the zone, and the arc it replaces is the short
- * edge it bypassed. Drawing inward shrinks a zone, and the larger of the two
- * results is then the zone with the smaller piece cut away — which is what
- * a cut is for. The alternative, a rule on the drawing direction, would
- * make the same shape mean two things depending on which corner the
- * operator happened to start at.
+ * Of the two arcs between `from` and `to`, the one kept is whichever leaves
+ * the larger zone: an outward bump grows it, an inward cut removes the
+ * smaller piece. A rule on drawing direction instead would make the same
+ * shape mean two things depending on the starting corner.
  *
- * `inserted` is the run in drawing order from `from` towards `to`, with
- * neither corner in it. The result starts at `from`, so the zone keeps its
- * corner order readable, and the corners in it are the zone's own objects
- * where they were kept.
+ * `inserted` runs from `from` towards `to`, excluding both. The result starts
+ * at `from` and reuses the zone's own corner objects where kept.
  */
 export function reshapeZone(
   points: readonly ZonePoint[],
@@ -221,22 +177,13 @@ export function reshapeZone(
 }
 
 /**
- * Merge a shape in flight into the zone it is anchored to, ending on the
- * zone's corner `target`.
+ * Merge an anchored shape into its zone, ending on the zone's corner `target`.
  *
- * The shape's corners split at the anchor into the ones drawn after it and
- * the ones drawn before it. Either set is a run from one corner of the zone
- * to the other — after the anchor it runs anchor → target, before it the
- * shape's ring runs target → (its start) → anchor — and each goes through
- * reshapeZone on its own. A shape usually has only one of the two: started
- * on the zone it has corners after the anchor, started on bare map and
- * closed onto the zone it has them before. One that has both bulges out on
- * both sides of the chord between the two corners, and the larger result
- * is kept, reshapeZone's own rule one level up; the other run is dropped
- * rather than guessed at.
+ * The corners after the anchor run anchor → target; those before it run
+ * target → anchor. Each goes through reshapeZone. A shape with both keeps the
+ * larger result and drops the other rather than guessing.
  *
- * Null when there is nothing to merge: the shape has no corner of its own,
- * or the target is the anchor.
+ * Null when the shape has no corner of its own or the target is the anchor.
  */
 export function mergeIntoZone(
   points: readonly ZonePoint[],
@@ -257,12 +204,8 @@ export function mergeIntoZone(
 }
 
 /**
- * Whether a map-frame point lies inside a polygon: the even-odd rule, by
- * casting a ray along +x and counting the edges it crosses.
- *
- * In metres rather than screen pixels, unlike the first corner: an area does
- * not have the dot's problem of vanishing with the zoom, and the map frame
- * needs no view to test against.
+ * Even-odd point-in-polygon test, in map metres: an area does not vanish with
+ * the zoom the way a corner dot does, so no view is needed.
  */
 export function pointInPolygon(points: readonly ZonePoint[], at: ZonePoint): boolean {
   let inside = false;
@@ -275,10 +218,7 @@ export function pointInPolygon(points: readonly ZonePoint[], at: ZonePoint): boo
   return inside;
 }
 
-/**
- * The topmost zone under a map-frame point, or null. Last-to-first because
- * that is paint order reversed: where two overlap, the one drawn on top wins.
- */
+/** The topmost zone under a point, or null: reverse paint order, so the one on top wins. */
 export function zoneAt(zones: readonly ZonePolygon[], at: ZonePoint): ZonePolygon | null {
   for (let i = zones.length - 1; i >= 0; i -= 1) {
     if (pointInPolygon(zones[i].points, at)) return zones[i];
@@ -287,15 +227,11 @@ export function zoneAt(zones: readonly ZonePolygon[], at: ZonePoint): ZonePolygo
 }
 
 /**
- * A fresh id for a zone this editor drew, distinct from every zone in `taken`.
+ * A fresh zone id, distinct from every zone in `taken`.
  *
- * Not crypto.randomUUID(): the console is served over plain http on the
- * robot's LAN, where that function does not exist (the same reason
- * lib/task/step.ts makes its own ids). And not a bare session counter, which
- * it used to be while nothing stored a zone: the zones loaded from the robot
- * carry ids an earlier session handed out, the backend keeps an id as it was
- * sent, and refuses a list in which one appears twice — so the next id has to
- * step over every id already on the map, not only over this session's.
+ * Not crypto.randomUUID(), which does not exist over the robot's plain http.
+ * Not a session counter either: loaded zones carry ids from earlier sessions,
+ * and the backend refuses a list with a duplicate id.
  */
 export function newZoneId(taken: readonly ZonePolygon[]): string {
   const used = new Set(taken.map((zone) => zone.id));
@@ -305,12 +241,9 @@ export function newZoneId(taken: readonly ZonePolygon[]): string {
 }
 
 /**
- * Whether two zone lists would save as the same thing: same zones, same
- * order, same corners. What the editor's zone half of `dirty` is measured
- * with, against the list last loaded or saved — by value rather than by
- * identity, so a corner dragged away and back, or a click that selected a
- * zone without moving it, does not light Save for a write that changes
- * nothing on the robot.
+ * Whether two zone lists would save the same (ids, order, corners). Compared
+ * by value so a corner dragged away and back, or a mere selection, does not
+ * mark the editor dirty.
  */
 export function sameZones(a: readonly ZonePolygon[], b: readonly ZonePolygon[]): boolean {
   if (a === b) return true;
@@ -332,11 +265,9 @@ export interface RemovedZone {
 }
 
 /**
- * `list` without the zones whose ids are in `ids`, and those zones with
- * their positions. Remove applies this twice: to the zones on screen, and to
- * the list last saved, which is what goes to the robot — so a remove deletes
- * those zones there and nothing else, and zones drawn or reshaped since the
- * last Save stay unsaved rather than riding along.
+ * `list` without the zones in `ids`, plus those zones and their positions.
+ * Remove applies it to both the screen and the last-saved list, so only those
+ * zones are deleted on the robot and unsaved edits do not ride along.
  */
 export function withoutZones(
   list: readonly ZonePolygon[],
@@ -352,12 +283,9 @@ export function withoutZones(
 }
 
 /**
- * Put zones a refused remove took off the screen back where they stood.
- *
- * Back at their old positions, not appended, because the Save dot compares
- * lists in order (sameZones): a refused remove on a clean editor has to
- * leave it clean. A zone already back in the list — the operator drew over
- * the gap under the same id, which cannot happen today — is not doubled.
+ * Put back zones a refused remove took off the screen, at their old
+ * positions: sameZones compares in order, so a clean editor must stay clean.
+ * A zone already in the list is not doubled.
  */
 export function restoreZones(
   list: readonly ZonePolygon[],

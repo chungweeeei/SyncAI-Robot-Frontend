@@ -1,37 +1,20 @@
 /**
- * The console's signal hues and surfaces, as the two canvases need them.
+ * The signal hues the canvases draw with, transcribed once from
+ * `app/globals.css` — a canvas cannot read a CSS variable. A token moved there
+ * must be moved here too. Not read from the computed stylesheet at runtime:
+ * the scene is built before paint, and a miss would be a black viewport.
  *
- * These values live in `app/globals.css` as custom properties and are the
- * single source for every DOM surface. A `<canvas>` cannot read a CSS variable
- * — three.js wants a number, the 2D context wants a string — so both canvases
- * used to carry their own transcription, in two different notations, with a
- * "keep in sync with globals.css" comment apiece. That made three places to
- * change a colour and no way to tell when one had been missed.
- *
- * This is the second one, and now the only one: `lib/scene/theme.ts` derives
- * its hex numbers from here and `lib/map/draw.ts` its CSS strings, so a token
- * moved in globals.css is a two-file change with the second file named by the
- * first. Reading the computed stylesheet at runtime would collapse it to one,
- * but the scene is built before paint and a miss there is a black viewport, not
- * a slightly wrong hue.
- *
- * Only the tokens a canvas actually draws with are here. The rest of the
- * palette has no business outside CSS.
+ * Only tokens a canvas draws with belong here.
  */
 
 export type ThemeMode = "light" | "dark";
 
 interface SignalTokens {
-  /** `--background`: the page under everything. */
+  /** `--background` */
   background: number;
   /**
-   * `--elevated`: a raised surface.
-   *
-   * The 3D scene uses it for the dark ground plane and the gridmap editor for
-   * the light well outside the map. The editor's *dark* well deliberately does
-   * not read this token — it is a shade lighter, so the map's near-black
-   * obstacles keep an edge against it — and is left a literal in lib/map/draw.ts
-   * on purpose. Do not tokenize it.
+   * `--elevated`. The editor's *dark* well is deliberately a lighter literal in
+   * lib/map/draw.ts, so near-black obstacles keep an edge. Do not tokenize it.
    */
   elevated: number;
   /** `--signal-cmd`: a value the operator is committing. */
@@ -40,10 +23,7 @@ interface SignalTokens {
   caution: number;
   /** `--signal-live`: measured, happening now. */
   live: number;
-  /**
-   * `--signal-warn`: faulted — or forbidden. The one hue that says "not
-   * here", which is what the floor plan editor's zones are drawn in.
-   */
+  /** `--signal-warn`: faulted, or forbidden (forbidden zones). */
   warn: number;
 }
 

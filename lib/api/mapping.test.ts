@@ -3,11 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchMappingStatus, startMapping } from "@/lib/api/mapping";
 
 /**
- * The run-status read is what the whole mapping rail hangs off, so what is
- * pinned is that every state the backend can answer parses, and that a shape
- * it never promised is refused at the boundary rather than lighting a button.
- * The start is pinned for its wire shape: a bodyless POST, which under the
- * CORS rule in http.ts means no Content-Type header either.
+ * Every run state the backend can answer parses, and an unpromised shape is
+ * refused. The start is a bodyless POST, so no Content-Type (see http.ts).
  */
 
 let fetchMock: ReturnType<typeof vi.fn>;

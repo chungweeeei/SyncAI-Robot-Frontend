@@ -1,9 +1,5 @@
-// The vertex-type vocabulary, shared by the canvas that draws vertices and the
-// panel that edits them.
-//
-// It lives here rather than in either consumer because the two must not drift:
-// the glyph on the marker is the only thing telling an operator what a dot on
-// the map *is*, and it has to be the same letter the panel's type selector shows.
+// The vertex-type vocabulary, shared so the marker's glyph and the panel's
+// type selector can never show different letters.
 
 import type { VertexType } from "@/lib/types/map";
 
@@ -12,14 +8,9 @@ export interface VertexTypeSpec {
   /** Panel label. Condensed caps in the UI, so short. */
   label: string;
   /**
-   * One character, drawn beside the marker.
-   *
-   * Deliberately not a colour per type. `tone` in components/console/instrument
-   * is an EFIS semantic — live is a measured value, warn is a fault — and
-   * spending five signal hues on five vertex roles would make a WAITING stop
-   * render in the same red the console uses for MAINTENANCE. Every stored vertex
-   * is drawn in one marker hue; the commanded hue is reserved for the one the
-   * operator is placing, exactly as it is for the brush ring.
+   * One character beside the marker. Not a colour per type: signal hues mean
+   * measured / commanded / fault, and a WAITING stop must not render in
+   * MAINTENANCE red.
    */
   glyph: string;
   /** One line in the panel, so the roles are not guessed from the name. */
@@ -43,7 +34,6 @@ const GLYPHS: Record<VertexType, string> = VERTEX_TYPES.reduce(
 );
 
 export function vertexGlyph(type: VertexType): string {
-  // The fallback covers a row written before a type was retired from the enum;
-  // the list endpoint returns whatever the column holds.
+  // A row may hold a type since retired from the enum.
   return GLYPHS[type] ?? "?";
 }

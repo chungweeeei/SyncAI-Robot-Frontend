@@ -4,14 +4,9 @@ import { z } from "zod";
 import { errorBody, errorDetail, requestJson, requestRaw } from "@/lib/api/http";
 
 /**
- * The one door every backend read and write goes through. Three contracts are
- * load-bearing and all three are invisible to the type checker:
- *
- *  - a refusal reaches the operator as the backend's own sentence,
- *  - `Content-Type` is sent only with a body, because a GET that carries it
- *    leaves the CORS safelist and costs a preflight on every poll,
- *  - a response that does not match its schema is a loud error, not a silent
- *    `undefined` three components later.
+ * Three contracts the type checker cannot see: a refusal is the backend's own
+ * sentence, `Content-Type` only with a body (CORS preflight), and a schema
+ * mismatch is a loud error.
  */
 
 const URL_ = "http://robot.local:3000/api/v1/thing";
@@ -50,8 +45,7 @@ describe("errorBody", () => {
   });
 
   it("keeps the machine-readable code beside the sentence", async () => {
-    // Reading the body once is the whole reason this function exists: the two
-    // endpoints that branch on `code` cannot unwrap the sentence first.
+    // A body reads once, so sentence and `code` come out together.
     const body = await errorBody(
       jsonResponse({ detail: "Hand edits present.", code: "gridmap_hand_edited" }, { status: 409 }),
     );
@@ -97,8 +91,7 @@ describe("errorBody", () => {
 
 describe("requestJson headers", () => {
   it("sends no Content-Type on a bodyless request", async () => {
-    // A GET carrying it is cross-origin here and would cost an OPTIONS
-    // preflight per poll.
+    // A GET carrying it would cost a CORS preflight per poll.
     fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
     await requestJson(URL_);
     expect(sentInit().headers.get("Content-Type")).toBeNull();
@@ -111,8 +104,7 @@ describe("requestJson headers", () => {
   });
 
   it("lets an explicit Content-Type win", async () => {
-    // The gridmap PUT ships a raw cell buffer; if this regressed the server
-    // would try to parse ~1.6 MB of bytes as JSON.
+    // The floor plan PUT ships raw bytes the server must not parse as JSON.
     fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
     await requestJson(URL_, {
       method: "PUT",
@@ -145,8 +137,7 @@ describe("requestJson headers", () => {
   });
 
   it("hands the caller's signal to fetch", async () => {
-    // Cancelling an import rests on this: the dialog's button aborts a
-    // controller, and only a signal that reaches fetch stops the upload.
+    // An import's Cancel only works if the signal reaches fetch.
     fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
     const { signal } = new AbortController();
     await requestJson(URL_, { method: "POST", body: "x", signal });
@@ -234,8 +225,7 @@ describe("requestJson schema validation", () => {
   });
 
   it("tells the operator a write already happened when its answer is unreadable", async () => {
-    // A 2xx means the robot acted. Without this sentence the error reads as
-    // "nothing happened", and the Retry beside it would do the thing twice.
+    // A 2xx means the robot acted; a Retry would do it twice.
     fetchMock.mockResolvedValue(jsonResponse({ name: "dp2f" }));
     await expect(
       requestJson(URL_, { method: "POST", body: "{}", schema }),
@@ -256,8 +246,7 @@ describe("requestJson schema validation", () => {
 
 describe("requestRaw", () => {
   it("hands back the un-consumed response on success", async () => {
-    // The gridmap image path depends on this: requestRaw must not read the
-    // body, because decodeGrid wants it as a Blob.
+    // decodeGrid wants the body unread, as a Blob.
     fetchMock.mockResolvedValue(new Response("PGM-BYTES", { status: 200 }));
     const res = await requestRaw(URL_);
     expect(res.bodyUsed).toBe(false);

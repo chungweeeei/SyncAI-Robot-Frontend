@@ -18,9 +18,8 @@ const meta: MapMetadata = {
   height: 300,
 };
 
-// A wide preview: 320x160 against a 4:3 map fits by height, so the map is
-// centred with a well on either side — the case where a naive x/width scale
-// would be wrong.
+// A wide preview: a 4:3 map fits by height, with a well either side, where a
+// naive x/width scale would be wrong.
 const rect = { width: 320, height: 160 };
 const view = previewView(rect, meta);
 

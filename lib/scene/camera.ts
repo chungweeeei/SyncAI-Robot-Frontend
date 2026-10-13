@@ -5,48 +5,24 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 /**
  * Wire the OrbitControls buttons for a camera mode.
- *  - "move":  left-drag pans (moves the view), right-drag orbits.
- *  - "focus": left-drag orbits around the locked target; panning is disabled
- *    so the target stays pinned to the robot.
- * Middle button always dollies (zoom).
+ *  - "move":  left-drag pans, right-drag orbits.
+ *  - "focus": left-drag orbits the target, which stays pinned to the robot
+ *    (no pan).
+ * Middle button always dollies.
  *
- * An armed pick mode overrides the left button entirely: a left-drag then has to
- * produce a pose, not move the camera. Mapping it to null (OrbitControls falls
- * through to its no-action default) rather than disabling the controls outright
- * keeps right-drag orbit and wheel zoom live, so the operator can still look
- * around while placing a pose.
+ * An armed pick maps the left button to null rather than disabling the
+ * controls, so right-drag orbit and wheel zoom stay live while placing a pose.
  *
- * `touches` has to be set alongside `mouseButtons` and not instead of it:
- * OrbitControls keeps two entirely separate mapping tables and consults
- * `touches` for every pointer of `pointerType === "touch"`, so a mouse mapping
- * alone leaves a phone on the library defaults (ONE: ROTATE, TWO: DOLLY_PAN)
- * whatever mode the console is in. That is what made the viewport impossible to
- * pan by dragging on a tablet — one finger orbited in *both* modes, and there
- * was no gesture left that moved the view — and it also let a one-finger drag
- * swing the camera while a pick was armed, which the mouse mapping expressly
- * forbids.
+ * `touches` must be set too: OrbitControls reads it, not `mouseButtons`, for
+ * touch pointers, and its defaults made one finger orbit in both modes (no way
+ * to pan on a tablet) and swing the camera mid-pick. It mirrors the mouse
+ * table; two fingers add pinch-zoom. In "focus", DOLLY_PAN degrades to
+ * pinch-zoom since pan is off.
  *
- * The touch table mirrors the mouse one rather than inventing a second
- * vocabulary: one finger does what the left button does, two fingers do what
- * the right button does plus pinch-zoom (there is no wheel to carry it). In
- * "focus" that second gesture is DOLLY_PAN rather than DOLLY_ROTATE only
- * because one finger already rotates there; with `enablePan` off the pan half
- * is inert, so it degrades to the pinch-zoom the mode needs.
- *
- * `zoomToCursor` tracks the mode for the same reason `enablePan` does. In "move"
- * the wheel has to close in on whatever is under the pointer, not on the orbit
- * target: OrbitControls' default dolly slides the camera straight down the
- * view axis, so the screen centre is the only thing zoom can ever approach, and
- * reaching a corner of a warehouse map costs a zoom-pan-zoom-pan crawl. The
- * gridmap editor already anchors its wheel at the cursor (`zoomAt` in
- * lib/map/view.ts), so this is also what makes the two views behave alike.
- *
- * In "focus" it stays off, and not just as a preference: zoom-to-cursor works by
- * shifting the *target* toward the pointer ray, and the render loop reassigns
- * `controls.target` to the robot pose every frame (see `stepPose`). The shift
- * would be overwritten a frame later, leaving the camera swung off-axis with the
- * robot snapping back to centre — a lurch per wheel notch. A locked target is
- * the whole point of focus mode, so zoom there belongs on the axis to the robot.
+ * `zoomToCursor` is on in "move" so the wheel closes in on the pointer, as the
+ * floor plan editor does. It is off in "focus" because it works by shifting
+ * the target, which the render loop re-pins to the robot every frame
+ * (`stepPose`) — a lurch per notch.
  */
 export function applyCameraMode(
   controls: OrbitControls,
@@ -67,9 +43,7 @@ export function applyCameraMode(
   };
 }
 
-// Fallback world framing when no 2D map is available (e.g. a raw body_cloud
-// render test with no map_server running). Points arrive near the LIO odom
-// origin, so a modest span centred on the origin frames them sensibly.
+// Fallback framing with no floor plan: points arrive near the odom origin.
 export const DEFAULT_SPAN_M = 20;
 
 /** The rectangle a scene was built around, in metres on the z=0 floor. */
@@ -81,15 +55,9 @@ export interface MapFrame {
 }
 
 /**
- * The view the viewport opens on: aimed at the map's centre from south of it
- * and above, far enough back that the whole extent is in the frame at a
- * three-quarter tilt.
- *
- * Written once and called twice — by the scene setup, and by the toolbar's
- * Recenter — so "back to the opening view" cannot drift from the opening
- * view. The framing is deliberately oblique rather than overhead: overhead is
- * what Top down is for, and a recenter that also flattened the view would take
- * away the depth an operator went looking for by orbiting.
+ * The opening view: the map's centre from south and above, at a three-quarter
+ * tilt with the whole extent in frame. Shared with Recenter so the two cannot
+ * drift; oblique on purpose, since overhead is Top down's job.
  */
 export function frameMap(
   camera: THREE.PerspectiveCamera,
@@ -103,25 +71,15 @@ export function frameMap(
 }
 
 /**
- * Closest a zoom step may bring the camera to its target, in metres.
- *
- * Not the near plane: at that distance the floor under the target is already
- * clipped and the next step would put the camera through the target and flip
- * the view. Half a metre is well inside where the wheel stops being useful on
- * a robot-scale scene and keeps the step monotonic.
+ * Closest a zoom step may bring the camera to its target, in metres. Not the
+ * near plane, where the next step would pass through the target and flip the view.
  */
 export const MIN_DOLLY_M = 0.5;
 
 /**
- * Move the camera one zoom step along its line to the target: `factor` above 1
- * closes in by that ratio, below 1 backs off.
- *
- * Expressed about the target and not as a shift of it, on purpose. In focus
- * mode the render loop pins `controls.target` to the robot every frame, so a
- * zoom that moved the target (the way zoom-to-cursor does) would be undone a
- * frame later; scaling the camera's offset from the target is the one form of
- * zoom both modes agree on, and it is also what OrbitControls' own dolly does
- * internally. That method is private, hence this.
+ * Move the camera one zoom step along its line to the target (`factor` > 1
+ * closes in). Scales the offset rather than moving the target, which focus
+ * mode re-pins every frame — what OrbitControls' private dolly does too.
  */
 export function dollyStep(
   camera: THREE.PerspectiveCamera,
@@ -129,8 +87,7 @@ export function dollyStep(
   factor: number,
 ) {
   const offset = camera.position.clone().sub(controls.target);
-  // A camera sitting on its target has no line to move along; leave it, rather
-  // than normalise a zero vector into NaN and lose the view.
+  // On the target there is no line to move along; normalising would give NaN.
   if (offset.lengthSq() === 0) return;
   offset.setLength(Math.max(offset.length() / factor, MIN_DOLLY_M));
   camera.position.copy(controls.target).add(offset);
@@ -138,15 +95,9 @@ export function dollyStep(
 }
 
 /**
- * How far south of the target an overhead camera is parked, as a fraction of its
- * height.
- *
- * A camera placed *exactly* above its target in a z-up world has its up vector
- * parallel to its view direction, which is undefined for both the projection and
- * OrbitControls' spherical maths — the view snaps to an arbitrary azimuth and
- * the first orbit drag flips it. About a degree off vertical costs nothing that
- * reads as tilt and pins map +y to the top of the screen, which is the
- * orientation the gridmap editor and every site plan use.
+ * How far south of the target an overhead camera is parked, as a fraction of
+ * its height. Exactly overhead in z-up, up is parallel to the view direction
+ * and the azimuth is undefined; a degree off pins map +y to the top.
  */
 export const TOP_DOWN_TILT = 0.02;
 
@@ -160,8 +111,7 @@ export function overheadDistance(
   heightM: number,
 ): number {
   const halfFov = (camera.fov * Math.PI) / 360;
-  // The vertical fov is the fixed one; the horizontal follows from the aspect,
-  // so a wide, short map is framed by its width and a tall one by its height.
+  // The vertical fov is fixed; the horizontal follows from the aspect.
   const forHeight = heightM / 2 / Math.tan(halfFov);
   const forWidth = widthM / 2 / (Math.tan(halfFov) * camera.aspect);
   return Math.max(forHeight, forWidth) * TOP_DOWN_MARGIN;

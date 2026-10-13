@@ -1,7 +1,5 @@
-// When the masthead interrupts an operator about a hot motor, and when it is
-// allowed to do so again. The thresholds are lib/robot/levels.ts's; this is
-// the rule that turns a stream of 1 Hz readings into one notice rather than
-// one per frame, kept pure so the edges are tested and not remembered.
+// Turns 1 Hz motor readings into one overheating notice rather than one per
+// frame. Thresholds are lib/robot/levels.ts's.
 
 import { TEMP_ALERT_C, TEMP_WARN_C } from "@/lib/robot/levels";
 import type { RobotMotorStatus } from "@/lib/types/robot";
@@ -13,25 +11,18 @@ import type { RobotMotorStatus } from "@/lib/types/robot";
  * - `raised`: a motor crossed `TEMP_ALERT_C` and the notice is on screen.
  * - `dismissed`: the operator closed it, and the motor is still hot.
  *
- * There is no timer in here. The gridmap editor's save notes say why no
- * message that matters auto-dismisses in this console, and a motor over its
- * limit matters more than a save.
+ * No timer: nothing that matters auto-dismisses in this console.
  */
 export type HeatAlertPhase = "clear" | "raised" | "dismissed";
 
 /**
  * The phase after one reading of the hottest motor.
  *
- * Raised on the crossing, strictly above the limit. Cleared — which is also
- * what re-arms a dismissed notice — only once the peak has fallen back under
- * the red readout's own threshold, five degrees lower: a joint hovering at
- * 85/86 would otherwise raise, clear and raise again on every poll, and a
- * notice that flickers is one that gets dismissed without being read. No
- * reading at all clears too, so a robot that drops off the air takes its
- * notice with it rather than leaving a stale one up.
- *
- * Returns `prev` itself when nothing changes, so a caller adjusting React
- * state during render can compare by identity and settle.
+ * Raised strictly above the limit; cleared (and re-armed) only below the red
+ * threshold five degrees lower, so a joint hovering at 85/86 does not make it
+ * flicker. No reading clears too, so a robot that drops off takes its notice
+ * with it. Returns `prev` itself when unchanged, so a render-time state
+ * adjustment can settle by identity.
  */
 export function nextHeatAlertPhase(
   prev: HeatAlertPhase,
@@ -43,10 +34,8 @@ export function nextHeatAlertPhase(
 }
 
 /**
- * The motor the notice names: the hottest, first one listed on a tie, and
- * none when the robot reports no motors. Faults are not weighed here — the
- * grid's summary chip already ranks a fault above heat, and this notice is
- * about one thing.
+ * The hottest motor (first on a tie). Faults are not weighed: the grid's
+ * summary chip already ranks them.
  */
 export function hottestMotor(
   motors: readonly RobotMotorStatus[],

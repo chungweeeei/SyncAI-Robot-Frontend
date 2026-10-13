@@ -1,44 +1,24 @@
-// Mirrors the backend Pydantic models in
-// src/syncai_backend/syncai_backend/interfaces/rest/routers/robot.py.
-// snake_case is preserved throughout, which is what lets `fetchRobotState` in
-// lib/api/robot.ts parse a response straight into RobotState with no mapping
-// layer — and what makes a field rename on the backend a type error here.
-//
-// The schemas at the bottom are the runtime half of that mirror: the interfaces
-// say what this console expects, and `RobotStateSchema` is what checks the robot
-// actually sent it. Each schema is annotated with the interface it must produce,
-// so a field added above and forgotten below does not compile.
+// Mirrors the backend's robot models, snake_case, so a response parses
+// straight into RobotState. The schemas at the bottom are the runtime check.
 
 import { z } from "zod";
 
 export type RobotMode = "MAINTENANCE" | "MANUAL" | "AUTO";
 
 /**
- * What the gait controller reports it is doing — not `RobotState.mode`, which is
- * which byobu session is up.
+ * What the gait controller reports (not `RobotState.mode`).
  *
- * Open strings rather than unions on purpose: the backend decodes the controller's
- * integers through a lookup with an `"UNKNOWN"` fallback, and it will legitimately
- * hit that fallback — CHAMP/ISSAC are real policies the REST command surface does
- * not expose, and MPC's motion code is genuinely unknown. Motion 8 is named
- * `"IDLE"` (motors not driven by any controller) rather than left to the
- * fallback, because `lib/robot/controller.ts` acts on it.
- *
- * The payload carries labels only; the raw integers stay on the ROS topic. So
- * `"UNKNOWN"` is as much as the console can ever say, and two different unmapped
- * codes are indistinguishable here — `ros2 topic echo /<robot_id>/robot_state
- * --field low_level_mode` is where you find out which one it was.
+ * Open strings on purpose: the backend's lookup falls back to `"UNKNOWN"` and
+ * legitimately hits it (unexposed policies, MPC's motion code). Only labels
+ * arrive, so two unmapped codes look the same here; the robot's own
+ * `robot_state` topic has the integers.
  */
 export interface RobotLowLevelMode {
   policy: string;
   motion: string;
   /**
-   * Whether the driver's software safety lock is engaged — the emergency
-   * stop. Not the controller's, unlike the two labels above: while it is on,
-   * the driver drops manual drive and every motion key, and the backend
-   * cancelled every running job when it engaged. (`safety_state` on the
-   * robot's own topic.) False before the driver has ever published, which
-   * is indistinguishable from a real release.
+   * The driver's safety lock — the emergency stop. False before the driver
+   * has ever published, indistinguishable from a real release.
    */
   safety_locked: boolean;
 }
@@ -47,15 +27,11 @@ export interface RobotPose {
   x: number;
   y: number;
   z: number;
-  /** heading in degrees */
+  /** degrees */
   theta: number;
 }
 
-/**
- * A pose on the map floor: what a drag on the viewport produces and what the
- * backend takes for both a nav goal and an initial-pose estimate. Theta is in
- * degrees, CCW from +x — the whole REST vocabulary is degrees.
- */
+/** A pose on the map floor (a goal, an initial pose). Theta in degrees, CCW from +x. */
 export interface PlanarPose {
   x: number;
   y: number;
@@ -63,17 +39,8 @@ export interface PlanarPose {
 }
 
 /**
- * Normalized teleop command, REP-103 body-frame axes: +vx forward, +vy left,
- * +wz counter-clockwise. Every component is in [-1, 1] on purpose — scaling to
- * m/s and rad/s is the sender's job, because the robot's velocity limits live
- * next to whatever will publish cmd_vel, not in a UI component that would
- * otherwise need re-editing every time a limit changes.
- *
- * Here rather than in useJoystick, where it was first written, because this is
- * the shape that goes on the wire: `encodeTeleopFrame` in lib/ros/teleop-frame.ts
- * is what turns it into a frame, and a `lib/` module reaching up into a UI input
- * hook for the definition of its own payload was the arrow pointing backwards.
- * The joystick is one producer of this shape, not its owner.
+ * Normalized teleop command, REP-103 body frame: +vx forward, +vy left, +wz
+ * CCW, each in [-1, 1]. Velocity limits live with the robot, not the UI.
  */
 export interface TeleopVector {
   vx: number;
@@ -82,18 +49,11 @@ export interface TeleopVector {
 }
 
 /**
- * The planner's remaining global route, from the telemetry stream's `path`
- * frames. Flat map-frame metres — [x0, y0, x1, y1, …] — because the only
- * consumer walks it to build geometry, and a Float32Array of pairs is what that
- * loop wants rather than an array of objects.
+ * The planner's remaining route, flat map-frame metres [x0, y0, x1, y1, …],
+ * the layout the geometry builder walks.
  *
- * Heading is not carried: the viewport draws the route as a band on the floor,
- * not as a series of poses.
- *
- * An empty `points` is the explicit "no route" state, not a missing sample. The
- * backend synthesises it when plans stop arriving, because nothing in the nav
- * stack publishes an empty plan and arrival / cancel / abort are otherwise
- * indistinguishable silence.
+ * An empty `points` is an explicit "no route", synthesised by the backend
+ * when plans stop: otherwise arrival, cancel and abort are all silence.
  */
 export interface PlannedPath {
   points: Float32Array;
@@ -119,11 +79,7 @@ export interface RobotBatteryStatus {
   battery_percentage: number;
 }
 
-/**
- * One joint's health. A subset of the ROS MotorState — q/dq/ddq/tau_est are not
- * exposed over REST, because robot_state is a 10 Hz snapshot whose samples
- * cannot be ordered. Live joint kinematics come from the telemetry WebSocket.
- */
+/** One joint's health. Kinematics are not here; they come from telemetry. */
 export interface RobotMotorStatus {
   /** URDF joint name, matching the keys in lib/robot/g23-joints.ts */
   name: string;
@@ -140,17 +96,15 @@ export interface RobotState {
   mode: RobotMode;
   low_level_mode: RobotLowLevelMode;
   /**
-   * Whether localization_status carries a real pose. False before the
-   * localizer converges, and for the whole of a mapping run (its TF chain
-   * never reaches base_link) — the pose fields are then a zeroed placeholder.
-   * A state frame with this false is still a live frame: mode, battery and
-   * the gait state are all real.
+   * Whether localization_status is real. False before convergence and for the
+   * whole of a mapping run, when the pose is a zeroed placeholder; the rest
+   * of the frame is still live.
    */
   localization_valid: boolean;
   localization_status: RobotLocalizationStatus;
   network_status: RobotNetworkStatus;
   battery_status: RobotBatteryStatus;
-  /** empty while syncai_driver_manager is not publishing motor_states */
+  /** empty while the driver is not publishing */
   motor_status: RobotMotorStatus[];
 }
 
@@ -166,22 +120,10 @@ export interface MapMetadata {
   height: number;
 }
 
-// `OccupancyGrid` and `Vertex` used to live here and are gone: the first was an
-// Int8Array alias nothing ever referenced (the editor's cells are a Uint8Array
-// in lib/map/grid.ts, in .pgm byte values rather than the ROS -1/0/100), and the
-// second was a map/vertexes.json shape that MapVertex in lib/types/map.ts
-// replaced when vertices moved into Postgres with ids and a type.
-
 // ---- Runtime schemas --------------------------------------------------
 //
-// Only for what actually arrives over REST. PlannedPath and TeleopVector are
-// built by this console (from a WebSocket frame and from a thumbstick), so
-// there is nothing to check; MapMetadata never arrives in this shape either —
-// the catalogue sends `{x, y, yaw}` and lib/api/map.ts folds it into the tuple.
-//
-// Each is annotated with the interface it must produce, which is what makes the
-// two halves impossible to drift apart: a field added above and forgotten here
-// is a compile error rather than a silent `undefined` at runtime.
+// Only for what arrives over REST (MapMetadata arrives as `{x, y, yaw}` and is
+// folded in lib/api/map.ts).
 
 const RobotPoseSchema: z.ZodType<RobotPose> = z.object({
   x: z.number(),
@@ -195,9 +137,7 @@ export const RobotStateSchema: z.ZodType<RobotState> = z.object({
   robot_id: z.string(),
   map: z.string(),
   mode: z.enum(["MAINTENANCE", "MANUAL", "AUTO"]),
-  // Open strings, matching the interface: the backend's lookup has an
-  // "UNKNOWN" fallback it legitimately hits, so an enum here would reject a
-  // frame that is perfectly valid.
+  // Open strings, matching the interface.
   low_level_mode: z.object({
     policy: z.string(),
     motion: z.string(),

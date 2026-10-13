@@ -1,22 +1,16 @@
-// The floor plan editor's staged waypoints: what Save would send, and what
-// the editor holds once some of it has landed.
+// The floor plan editor's staged waypoints: what Save would send, and what the
+// editor holds once some of it has landed.
 //
-// The editor keeps two lists, as it does for forbidden zones — `saved`, the
-// rows as the robot holds them, and `working`, what is on screen — and Save
-// writes the difference. A waypoint placed here has no server id until the
-// create answers, so it carries a local one; that keeps it a plain MapVertex
-// the canvas, the selection and the form already know how to handle.
-//
-// React-free so the diff rules can be held by a unit test: nothing here
-// knows how a request is sent, only which ones a change needs.
+// Two lists, as for zones: `saved` (the robot's rows) and `working` (the
+// screen); Save writes the difference. A new waypoint has a local id until its
+// create answers, so it stays a plain MapVertex everywhere.
 
 import { normalizeTheta } from "@/lib/angle";
 import type { MapVertex, VertexType } from "@/lib/types/map";
 
 /**
- * Not a uuid, so it can never collide with a row id the backend issued — and
- * a prefix rather than a flag beside the row, so a selection (which holds
- * ids alone) can still tell a staged waypoint from a stored one.
+ * Cannot collide with a backend uuid, and a prefix rather than a flag so a
+ * selection (ids alone) can tell staged from stored.
  */
 const LOCAL_ID_PREFIX = "local:";
 
@@ -62,8 +56,7 @@ export function planVertexSave(
     } else if (isLocalVertex(vertex.id)) {
       creates.push({ localId: vertex.id, draft: draftOf(vertex) });
     }
-    // A server id that is in neither list cannot be staged here; it is a row
-    // another console added after this one loaded, and it is not ours to send.
+    // A server id not in `saved` came from another console; not ours to send.
   }
   return { deletes, updates, creates };
 }
@@ -89,13 +82,10 @@ export interface VertexSaveLanded {
 }
 
 /**
- * Fold what landed into both lists.
- *
- * `saved` takes exactly the writes that landed, so whatever did not is still
- * a difference and Save stays lit for the retry. `working` swaps each created
- * row's local id for the one the robot issued, and otherwise keeps what is on
- * screen — including anything edited while the requests were in flight.
- * `ids` is that swap, for the selection, which holds ids alone.
+ * Fold what landed into both lists. `saved` takes only what landed, so the
+ * rest stays a difference for the retry. `working` swaps created rows' local
+ * ids for the robot's and keeps edits made in flight. `ids` is that swap, for
+ * the selection.
  */
 export function rebaseVertices(
   saved: readonly MapVertex[],
@@ -116,8 +106,7 @@ export function rebaseVertices(
   const nextWorking = working.map((vertex) => {
     const echo = created.get(vertex.id);
     if (!echo) return vertex;
-    // The echo is what the robot stored; the screen keeps any edit made to
-    // the staged row since the request left, under its new id.
+    // Keep any edit made since the request left, under the new id.
     return { ...vertex, id: echo.id, map_name: echo.map_name };
   });
   return { saved: nextSaved, working: nextWorking, ids };
@@ -134,9 +123,8 @@ export function vertexSaveSummary(landed: VertexSaveLanded): string {
 }
 
 /**
- * A stopped save's note. The backend's sentence stays verbatim and last; what
- * landed before it goes first, because "not saved" over a save that deleted
- * two stops would be a lie the next look at the map exposes.
+ * A stopped save's note: what landed first, then the backend's sentence
+ * verbatim. A bare "not saved" would be false after a partial save.
  */
 export function vertexSaveFailure(landed: VertexSaveLanded, failure: string): string {
   const wrote = landed.created.length + landed.updated.length + landed.deleted.length;
@@ -155,11 +143,7 @@ function draftOf(vertex: MapVertex): StagedDraft {
   };
 }
 
-/**
- * Only the fields that moved, or null. The heading is compared folded, so
- * -180 against a stored 180 is no change — the backend would store the same
- * row and the Save dot would be lit for nothing.
- */
+/** Only the fields that moved, or null. Headings compare folded, so -180 vs 180 is no change. */
 function changedFields(before: MapVertex, after: MapVertex): Partial<StagedDraft> | null {
   const changes: Partial<StagedDraft> = {};
   if (after.name !== before.name) changes.name = after.name;

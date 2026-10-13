@@ -7,11 +7,6 @@ import {
   formatTimestamp,
 } from "@/lib/recording/format";
 
-/**
- * These four are shared by the recorder panel and the bag list precisely so one
- * quantity never appears in two spellings, which is only true while they agree
- * on the edges.
- */
 describe("formatDuration", () => {
   it("drops the hour until there is one", () => {
     expect(formatDuration(0)).toBe("0:00");
@@ -58,12 +53,7 @@ describe("formatTimestamp", () => {
 });
 
 describe("formatCount", () => {
-  /**
-   * U+2009, not a plain space, and spelled as an escape here so the
-   * difference is visible: a regular space would wrap and would be a wider
-   * gap than a tabular readout wants. A test that pasted the character would
-   * pass against either and say nothing.
-   */
+  /** U+2009, spelled as an escape so a pasted plain space cannot pass. */
   const THIN = "\u2009";
 
   it("groups from the right with thin spaces", () => {

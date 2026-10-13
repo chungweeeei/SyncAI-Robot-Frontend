@@ -2,23 +2,17 @@
 
 import * as THREE from "three";
 
-// Upper bound on live points held in the GPU buffer. The backend caps frames
-// (default 30k) well below this; the slack absorbs config changes without a
-// reallocation.
+// GPU buffer capacity; well above the backend's frame cap (default 30k), so a
+// config change needs no reallocation.
 export const MAX_LIVE_POINTS = 200_000;
 
-// Fixed height band (metres, map frame) used to colour points by z. A fixed
-// range keeps colours stable frame-to-frame instead of flickering with the
-// per-frame min/max.
+// Fixed height band (metres) for colouring by z, so colours do not flicker frame to frame.
 const Z_MIN = -0.5;
 const Z_MAX = 3.0;
 
-// Point sizes (metres — PointsMaterial keeps sizeAttenuation on, so these are
-// world units that shrink with distance, not screen pixels). The live body
-// cloud is drawn small and fine: at ~2.5k points per scan, sprites large enough
-// to see individually also merge into blobs that hide the structure of what the
-// lidar actually saw. The map cloud stays coarser — it is decimated to a 0.3 m
-// voxel, so drawing it finer than that only makes it look sparse.
+// Point sizes in world metres (sizeAttenuation on). The live scan is fine so
+// points do not merge into blobs; the map scan is coarser to match its 0.3 m
+// voxels, or it looks sparse.
 export const LIVE_POINT_SIZE = 0.05;
 export const MAP_POINT_SIZE = 0.14;
 

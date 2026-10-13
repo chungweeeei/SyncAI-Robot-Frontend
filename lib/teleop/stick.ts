@@ -1,11 +1,6 @@
-// The dual-thumbstick teleop maths: where a stick may go, how far it must go
-// before it commands anything, which keys deflect it, and how a deflection in
-// screen space becomes a velocity in the robot's body frame.
-//
-// Pure and React-free so vitest can hold it to its rules. This is the one
-// place in the console where an arithmetic slip turns into the robot moving
-// the wrong way, which is a poor thing to leave covered only by a hand on a
-// stick. useJoystick owns the refs, the frame loop and the listeners.
+// Thumbstick teleop maths: clamp, deadzone, key bindings, and the turn from
+// screen space into the body frame. Pure so it is tested: a slip here moves
+// the robot the wrong way. useJoystick owns the refs and listeners.
 
 import type { TeleopVector } from "@/lib/types/robot";
 
@@ -17,24 +12,15 @@ export interface StickValue {
 
 export type StickId = "left" | "right";
 
-/**
- * Radial deadzone as a fraction of full travel. Exported so the Thumbstick can
- * draw the ring at the same radius the math uses — a ring that only decorates
- * would drift from the truth the first time this constant moves.
- */
+/** Fraction of full travel; the Thumbstick draws its ring from it. */
 export const DEADZONE = 0.12;
 
 /**
- * Physical key codes, not `event.key`: ZQSD on an AZERTY board should drive by
- * position, the way every game does it. Left (translation) stick is W/S/Q/E,
- * right (rotation) stick is A/D — screen-space signs, so "left" is negative x
- * and "up" is negative y.
+ * Physical key codes, not `event.key`, so AZERTY drives by position. Signs are
+ * screen space ("left" is -x, "up" is -y).
  *
- * A/D rotate and Q/E strafe, not the other way round: A/D under the resting
- * fingers is the turn in every driving game, and strafing is the rarer command
- * on a chassis that mostly drives where it is pointed. The earlier binding had
- * them swapped, which read as sideways drift every time an operator tried to
- * turn.
+ * A/D rotate and Q/E strafe: A/D is the turn in every driving game, and
+ * strafing is the rarer command.
  */
 export const KEY_AXES: Readonly<
   Record<string, { stick: StickId; axis: "x" | "y"; sign: 1 | -1 }>
@@ -47,16 +33,13 @@ export const KEY_AXES: Readonly<
   KeyD: { stick: "right", axis: "x", sign: 1 },
 };
 
-/** Whether a physical key drives a stick at all. */
 export function isStickKey(code: string): boolean {
   return Object.hasOwn(KEY_AXES, code);
 }
 
 /**
- * The left stick's reachable set is a disc, so the clamp is radial — clamping
- * x and y separately would let a diagonal command √2 times the straight-line
- * maximum. The right stick is one-dimensional by design (it commands wz only),
- * so its y is discarded rather than clamped.
+ * Radial for the left stick, or a diagonal would command √2 × the maximum.
+ * The right stick commands wz only, so its y is discarded.
  */
 export function clampStick(stick: StickId, raw: StickValue): StickValue {
   if (stick === "right") {
@@ -67,17 +50,13 @@ export function clampStick(stick: StickId, raw: StickValue): StickValue {
 }
 
 /**
- * The drive view's translation stick drives one axis at a time: forward /
- * back or strafe, whichever the thumb is further along, and the other is
- * dropped. A thumb on glass has no detent to find straight ahead by, so an
- * unlocked stick turned every intended "forward" into a slow crab. The drive
- * panel's stick keeps the full disc: a mouse has the precision, and the keys
- * already are the four directions.
+ * The drive view's translation stick: one axis at a time, whichever the thumb
+ * is further along. A thumb on glass has no detent for straight ahead, so a
+ * free stick turned every "forward" into a crab. (The drive panel keeps the
+ * full disc.)
  *
- * The kept axis is the projection, not the full deflection: the knob rides
- * the axis under the thumb like a rail, so pushing at 30° off straight ahead
- * is slower than pushing straight, and no sideways drag is a jump to full
- * speed. A tie goes to forward / back, the commoner command.
+ * The kept axis is the projection, so a push 30° off is slower than straight,
+ * never a jump to full speed. A tie goes to forward / back.
  */
 export function lockToAxis(value: StickValue): StickValue {
   return Math.abs(value.x) > Math.abs(value.y)
@@ -86,9 +65,8 @@ export function lockToAxis(value: StickValue): StickValue {
 }
 
 /**
- * Radial deadzone with rescale, so the command is continuous from zero: a plain
- * cutoff would make the smallest possible command DEADZONE-sized, which on a
- * real robot is a visible lurch the moment the stick leaves the ring.
+ * Radial deadzone with rescale, so the command is continuous from zero; a
+ * plain cutoff lurches as the stick leaves the ring.
  */
 export function applyDeadzone(value: StickValue): StickValue {
   const m = Math.hypot(value.x, value.y);
@@ -98,14 +76,10 @@ export function applyDeadzone(value: StickValue): StickValue {
 }
 
 /**
- * One stick's clamped, pre-deadzone position and whether anything is holding
- * it — what the knob draws.
- *
- * Per-stick, pointer wins: while a stick's pointer is captured, that whole
- * stick is pointer-owned and its keys are ignored; otherwise the stick shows
- * the keyboard deflection, where opposing keys sum to zero. Keyboard
- * deflection is instant full-scale — a slew ramp was considered and left for
- * the sender, which is where acceleration limits belong.
+ * One stick's clamped, pre-deadzone position (what the knob draws). A captured
+ * pointer owns the whole stick; otherwise keys deflect it, opposing keys
+ * cancelling. Keys are instant full scale: acceleration limits belong to the
+ * sender.
  */
 export function resolveStick(
   stick: StickId,
@@ -123,41 +97,31 @@ export function resolveStick(
   return { value: clampStick(stick, { x, y }), active: x !== 0 || y !== 0 };
 }
 
-/** No command: what a released stick, a disarm and a blur all come back to. */
 export const AT_REST_VECTOR: TeleopVector = { vx: 0, vy: 0, wz: 0 };
 
 /**
- * The linear speed limit, as a fraction of full stick. Full stick is 1.0 on
- * the wire, which the backend publishes as-is, so this is the one place an
- * operator can ask for slow translation. That matters most from the keyboard,
- * whose deflection is always full.
- *
- * The floor is 10%, not 0%: a limit of zero would leave the translation stick
- * silently dead while the panel still looked armed. The default is full
- * speed, so the panel drives as it always has until an operator asks for
- * slower.
+ * Linear speed limit as a fraction of full stick: the only way to ask for
+ * slow translation, which matters most from the always-full keyboard. The
+ * floor is 10%: zero would leave the stick dead while the panel looks armed.
  */
 export const LINEAR_SCALE_MIN = 0.1;
 export const LINEAR_SCALE_MAX = 1;
 export const LINEAR_SCALE_STEP = 0.1;
 export const LINEAR_SCALE_DEFAULT = 1;
 
-/** A linear scale held inside its range. A non-finite one is the default. */
+/** Non-finite is the default. */
 export function clampLinearScale(value: number): number {
   if (!Number.isFinite(value)) return LINEAR_SCALE_DEFAULT;
   return Math.min(LINEAR_SCALE_MAX, Math.max(LINEAR_SCALE_MIN, value));
 }
 
 /**
- * The commanded velocity for two knob positions: deadzone applied, then screen
- * space turned into the body frame. Stick up (-y) is forward, stick left (-x)
- * is +vy (REP-103 y points left) and, on the right stick, +wz (CCW).
+ * The commanded velocity for two knob positions. Stick up (-y) is forward,
+ * stick left (-x) is +vy (REP-103) and, on the right stick, +wz (CCW).
  *
- * `linearScale` limits translation only, vx and vy together, so a diagonal
- * keeps its direction as it slows. Rotation is not scaled. It is applied here
- * rather than in the sender, so the panel's readouts, `vectorRef` and the
- * wire frame all carry the same number: what the panel shows is what is sent.
- * It defaults to 1, which is exactly the unscaled command.
+ * `linearScale` scales vx and vy together (a diagonal keeps its direction),
+ * not wz. Applied here rather than in the sender, so what the panel shows is
+ * what is sent.
  */
 export function commandFrom(
   left: StickValue,

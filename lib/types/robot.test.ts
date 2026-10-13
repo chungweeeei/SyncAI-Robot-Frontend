@@ -3,15 +3,9 @@ import { describe, expect, it } from "vitest";
 import { RobotStateSchema } from "@/lib/types/robot";
 
 /**
- * The console's single most-read boundary: every screen hangs off this frame at
- * 1 Hz. The schema exists for one failure in particular — a field the backend
- * renamed used to arrive as `undefined`, cast to a RobotState, and surface
- * pages later as a blank readout or a crash inside a render.
- *
- * Three properties are the contract, and all three are policy rather than
- * shape, so only a test says them: an added field must not break the console,
- * a removed or retyped one must, and the two fields the backend keeps open
- * must stay open.
+ * The 1 Hz frame every screen hangs off. The contract is policy, so only a
+ * test states it: an added field must not break the console, a removed or
+ * retyped one must, and the two open fields stay open.
  */
 const frame = {
   timestamp: 1_758_000_000,
@@ -41,8 +35,7 @@ describe("RobotStateSchema", () => {
   });
 
   it("ignores a field the backend added", () => {
-    // Adding to the response must never be a breaking change for the console,
-    // or the two repos cannot be deployed independently.
+    // Or the two repos cannot be deployed independently.
     const parsed = RobotStateSchema.parse({ ...frame, gait_phase: 0.25 });
     expect(parsed).toEqual(frame);
     expect("gait_phase" in parsed).toBe(false);
@@ -79,9 +72,7 @@ describe("RobotStateSchema", () => {
   });
 
   it("leaves low_level_mode open, because the backend legitimately says UNKNOWN", () => {
-    // CHAMP and ISSAC are real policies the REST command surface does not
-    // expose, and MPC's motion code is genuinely unknown — an enum here would
-    // reject a frame that is perfectly valid.
+    // Unexposed policies and MPC's motion code are legitimately UNKNOWN.
     for (const policy of ["PPO", "HIMLOCO", "CHAMP", "ISSAC", "UNKNOWN"]) {
       const result = RobotStateSchema.safeParse({
         ...frame,

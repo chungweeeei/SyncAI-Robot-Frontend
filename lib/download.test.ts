@@ -30,10 +30,8 @@ describe("downloadBlob", () => {
       revokeObjectURL: vi.fn((url: string) => revoked.push(url)),
     });
 
-    // jsdom has no download manager, so a real click would navigate. The spy
-    // snapshots the document at click time rather than afterwards, because the
-    // caller removes the anchor immediately and what matters is what the
-    // browser would have seen while the click was being handled.
+    // jsdom would navigate on a real click. Snapshot the document at click
+    // time, since the anchor is removed straight after.
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {
       const anchor = document.querySelector<HTMLAnchorElement>("a[download]");
       clicked = anchor && {

@@ -8,25 +8,13 @@ import { cssHex } from "@/lib/theme/signal";
 import type { MapVertex } from "@/lib/types/map";
 
 /*
- * Vertex markers, in metres.
- *
- * Deliberately *not* the ring-and-arrow of createPoseMarker at a smaller scale.
- * A map carries a dozen or more stored stops and only ever one goal, and a dozen
- * arrows crossing each other at floor level is noise the operator has to read
- * past to find the marker they are acting on. A stop is instead a flat target on
- * the floor — a translucent disc, a crisp ring, and a chevron for the heading —
- * so the whole layer reads as ground marking rather than as instruments.
- *
- * The chevron is what carries the heading, and it is short: a stop's heading is
- * worth knowing but never worth as much screen as the goal's, which is drawn as
- * a full arrow because it is the pose being commanded right now.
- *
- * The mark sits lower than MARKER_Z_M so a goal placed on a stop draws over it
- * rather than z-fighting with it.
+ * Vertex markers, in metres. Not createPoseMarker's ring-and-arrow: a dozen
+ * crossing arrows would bury the one goal, so a stop is flat ground marking
+ * (disc, ring, short heading chevron). It sits below MARKER_Z_M so a goal on a
+ * stop draws over it instead of z-fighting.
  */
 const VERTEX_DISC_RADIUS_M = 0.2;
-// A 5 cm band rather than 3: the ring is what locates the stop from across a
-// warehouse, and a hairline ring is the first thing to alias away at distance.
+// A 5 cm band: a hairline ring aliases away at distance.
 const VERTEX_RING_INNER_M = 0.2;
 const VERTEX_RING_OUTER_M = 0.25;
 const VERTEX_CHEVRON_BASE_M = 0.31;
@@ -35,16 +23,9 @@ const VERTEX_CHEVRON_HALF_M = 0.1;
 const VERTEX_Z_M = 0.02;
 
 /*
- * The floor mark alone disappears the moment the camera drops toward the
- * horizon — which is most of the time, because the useful views of a robot are
- * from behind and low. A thin stem and a small badge above it give every stop a
- * vertical presence that survives a grazing camera, the same way a pin does on a
- * street map, without adding anything at floor level.
- *
- * The badge carries the type glyph and nothing else. The name lives in the
- * dialog a tap opens: a caption per stop is the one thing that turns
- * this layer back into clutter, and the operator only needs a name at the moment
- * they are about to act on one.
+ * A stem and badge, like a map pin, because a floor mark vanishes at the low
+ * camera angles that are most useful. The badge carries only the type glyph;
+ * per-stop names would be clutter, so the name is in the dialog a tap opens.
  */
 const VERTEX_STEM_HEIGHT_M = 0.6;
 const VERTEX_STEM_RADIUS_M = 0.009;
@@ -53,11 +34,7 @@ const VERTEX_BADGE_SIZE_M = 0.22;
 const VERTEX_BADGE_HOVER_SCALE = 1.3;
 /** Texture resolution of a badge, not its drawn size. */
 const VERTEX_BADGE_TEXTURE_PX = 128;
-/**
- * Radius of the invisible disc that catches the pointer. Comfortably wider than
- * the mark itself, for the same reason the gridmap editor's VERTEX_HIT_RADIUS is
- * wider than its dot: a stop is a point, and a point is hard to hit.
- */
+/** Radius of the invisible disc that catches the pointer; wider than the mark, since a point is hard to hit. */
 const VERTEX_HIT_RADIUS_M = 0.42;
 
 /** Materials for one vertex hue, shared by every marker drawn in it. */
@@ -80,26 +57,16 @@ function createVertexMaterials(color: number): VertexMaterials {
       // translucent disc erase the cloud behind the next one.
       depthWrite: false,
     });
-  // The ring and chevron are drawn flat out: they are the mark. Only the disc
-  // stays translucent, and even that is now solid enough to read as a target
-  // through the live cloud rather than as a smudge under it.
+  // Ring and chevron opaque; the disc translucent but solid enough to read through the scan.
   return { fill: make(0.35), line: make(1), stem: make(0.7) };
 }
 
 /**
- * The type badge: a filled disc in the marker hue with the glyph knocked out in
- * near-white, plus a pale rim.
+ * The type badge: a disc in the marker hue, a near-white glyph, a pale rim.
  *
- * The hue is baked in rather than left to `SpriteMaterial.color` tinting a white
- * texture. Tinting was cheaper — one texture served both the resting and hover
- * hues — but it forces the glyph to be a *darkened* version of the disc it sits
- * on, and once the disc hue went dark enough to be findable, dark-on-dark is
- * what that leaves. A light glyph on a solid dark disc is the contrast that
- * makes the badge readable at a glance, and it is the same figure/ground the
- * console's own chips use.
- *
- * Two textures per glyph then, resting and hover — ten in the worst case, all
- * 128 px, all built once per layer.
+ * The hue is baked in rather than tinted via `SpriteMaterial.color`, because
+ * tinting can only darken the glyph, leaving dark-on-dark. Hence two textures
+ * per glyph (resting, hover), ten at most, built once per layer.
  */
 function createBadgeTexture(glyph: string, fill: number): THREE.CanvasTexture {
   const size = VERTEX_BADGE_TEXTURE_PX;
@@ -114,8 +81,7 @@ function createBadgeTexture(glyph: string, fill: number): THREE.CanvasTexture {
   ctx.beginPath();
   ctx.arc(centre, centre, centre - size * 0.08, 0, Math.PI * 2);
   ctx.fill();
-  // A pale rim, so a dark badge keeps its edge against the near-black
-  // background of a map with no gridmap under it.
+  // A pale rim keeps a dark badge's edge against a near-black background.
   ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
   ctx.lineWidth = size * 0.05;
   ctx.stroke();
@@ -124,9 +90,7 @@ function createBadgeTexture(glyph: string, fill: number): THREE.CanvasTexture {
   ctx.font = `700 ${size * 0.5}px ui-monospace, SFMono-Regular, Menlo, monospace`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  // +2% down: the monospace cap sits high in the em box, and a badge whose
-  // letter is off-centre is the kind of thing you see without being able to
-  // name it.
+  // +2% down: the monospace cap sits high in the em box.
   ctx.fillText(glyph, centre, centre + size * 0.02);
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -160,14 +124,11 @@ export interface VertexLayer {
 }
 
 /**
- * The whole stored-vertex layer as one group, plus the disposer for everything
- * it allocated.
+ * The whole stored-vertex layer as one group, plus its disposer.
  *
- * Built wholesale and thrown away on any change rather than diffed: the list
- * comes from a fetch-once-per-mount hook, so "any change" means a map swap or a
- * theme toggle, not a stream. Geometry, materials and the badge textures are all
- * shared across the layer; a vertex owns only its meshes, its sprite material
- * (which carries the tint hover changes) and its transforms.
+ * Rebuilt on any change rather than diffed: a change is a map swap or theme
+ * toggle, not a stream. Geometry, materials and badge textures are shared; a
+ * vertex owns only its meshes, its sprite material and its transforms.
  */
 export function createVertexLayer(
   vertices: MapVertex[],
@@ -183,9 +144,8 @@ export function createVertexLayer(
     VERTEX_RING_OUTER_M,
     32,
   );
-  // Both the chevron and the ring are already in the XY plane, i.e. flat on
-  // this z-up world, and the chevron already points down +x — so the marker
-  // group's rotation.z is the heading, exactly as in createPoseMarker.
+  // Ring and chevron lie in the XY plane (flat in this z-up world) and the
+  // chevron points down +x, so the group's rotation.z is the heading.
   const chevron = new THREE.Shape();
   chevron.moveTo(VERTEX_CHEVRON_TIP_M, 0);
   chevron.lineTo(VERTEX_CHEVRON_BASE_M, VERTEX_CHEVRON_HALF_M);
@@ -199,16 +159,14 @@ export function createVertexLayer(
     6,
   );
   const hitGeom = new THREE.CircleGeometry(VERTEX_HIT_RADIUS_M, 12);
-  // The hit discs are `visible = false` (set per mesh below) and still picked:
-  // three's Raycaster tests layers, never visibility, so a flagged-off mesh
-  // costs no draw call and keeps catching rays. That is the whole job here.
+  // The hit discs are `visible = false` yet still picked: Raycaster tests
+  // layers, never visibility, so they cost no draw call.
   const hitMaterial = new THREE.MeshBasicMaterial({
     depthWrite: false,
     side: THREE.DoubleSide,
   });
 
-  // Keyed by glyph *and* face, so five types cost at most ten textures however
-  // many stops the map has.
+  // Keyed by glyph and face: at most ten textures however many stops.
   const badgeTextures = new Map<string, THREE.CanvasTexture>();
   const badgeTexture = (glyph: string, hovered: boolean) => {
     const key = `${hovered ? "h" : "b"}:${glyph}`;
@@ -262,10 +220,8 @@ export function createVertexLayer(
       }),
     );
     badge.scale.setScalar(VERTEX_BADGE_SIZE_M);
-    // Hung off the layer rather than the marker: a sprite ignores rotation, so
-    // parenting it under the heading transform would only hide that fact.
-    // Lifted by a third of its own height so it caps the stem instead of
-    // swallowing the top of it.
+    // Hung off the layer, not the marker: a sprite ignores rotation anyway.
+    // Lifted a third of its height so it caps the stem.
     badge.position.set(
       vertex.x,
       vertex.y,
@@ -304,10 +260,8 @@ export function createVertexLayer(
   };
 
   const setHovered = (id: string | null) => {
-    // An id this layer does not know is treated as none: the caller's idea of
-    // what is hovered outlives a rebuild, and a map swap can retire the stop it
-    // names. Resolving it here (rather than trusting the id) is what keeps a
-    // rebuilt layer from carrying a highlight nothing can clear.
+    // An unknown id is none: the caller's hover outlives a rebuild, and trusting
+    // a retired id would leave a highlight nothing can clear.
     const next = id && handles.has(id) ? id : null;
     if (next === hovered) return;
     paint(hovered, false);
@@ -323,8 +277,7 @@ export function createVertexLayer(
     for (const candidate of [moving, next]) {
       const handle = candidate ? handles.get(candidate) : undefined;
       if (!handle) continue;
-      // Group visibility covers the whole mark; the badge is hung off the layer
-      // rather than the marker, so it has to be told separately.
+      // The badge hangs off the layer, not the marker, so hide it separately.
       const shown = candidate !== next;
       handle.marker.visible = shown;
       handle.badge.visible = shown;
@@ -348,10 +301,7 @@ export function createVertexLayer(
       set.stem.dispose();
     }
     hitMaterial.dispose();
-    // Textures are shared between the badges wearing the same glyph, so they are
-    // freed here rather than per badge — and they have to be freed here at all:
-    // the scene teardown's traverse reaches geometries and materials, never the
-    // texture a material points at.
+    // Freed by hand: the scene teardown never reaches a material's texture.
     for (const texture of badgeTextures.values()) texture.dispose();
     for (const handle of handles.values()) handle.badge.material.dispose();
   };

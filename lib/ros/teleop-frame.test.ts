@@ -33,10 +33,8 @@ describe("encodeTeleopFrame", () => {
   });
 
   it("collapses every non-finite axis to a stop, infinities included", () => {
-    // A NaN reaching cmd_vel is the failure this guard exists for: it is not
-    // an out-of-range speed the driver would clamp, it is a command with no
-    // meaning at all. An infinity is treated the same rather than clamped to
-    // full stick — "as fast as possible" is never what a broken input meant.
+    // A NaN is a command with no meaning; an infinity is treated the same, not
+    // as full stick — "as fast as possible" is never what a broken input meant.
     expect(decode({ vx: NaN, vy: Infinity, wz: -Infinity })).toEqual({
       vx: 0,
       vy: 0,

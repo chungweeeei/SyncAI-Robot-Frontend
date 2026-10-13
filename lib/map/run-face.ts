@@ -1,20 +1,12 @@
 import type { MappingStatus } from "@/lib/api/mapping";
 
 /**
- * Which face the mapping screen's run strip shows, and what its indicator
- * says — the one rule that decides what the operator is offered.
+ * Which face the mapping run strip shows, and what its indicator says.
  *
- * The run is bracketed by two presses, Start and Save, and the robot accepts
- * each only in one state: Start wants `idle`, Save and a reset want
- * `mapping`. So the strip offers exactly what the robot would accept, read
- * off `GET /api/v1/mapping` rather than off a flag this tab set — a run
- * started from another console, or a save that landed there, has to read the
- * same here, and after a reload the strip has to know whether Start or Save
- * is the next thing to offer.
- *
- * Anything the console cannot vouch for fails closed: a poll still loading,
- * a failed one, or the robot's own `unknown` all hold every button, the way
- * the map job lock refuses rather than assumes.
+ * Start needs `idle`, Save and reset need `mapping`, so the strip offers what
+ * the robot would accept — read off `GET /api/v1/mapping`, not a local flag,
+ * so another console's run and a reload read the same. Anything unvouched for
+ * (loading, failed, `unknown`) holds every button.
  */
 export interface RunFaceInput {
   /** The robot reports Mapping and no switch is pending. */
@@ -27,10 +19,7 @@ export interface RunFaceInput {
 export type RunFace =
   /** Nothing is running: offer Start. `enabled` is false in the wrong mode, and `reason` says so. */
   | { kind: "start"; enabled: boolean; reason: string | null }
-  /**
-   * A run is on: the recording indicator, then Save and New map. The dot
-   * alone, by request — the keyframe count beside it was dropped (2026-10).
-   */
+  /** A run is on: the recording indicator (the dot alone, by request), then Save and New map. */
   | { kind: "run" }
   /** The robot is between states or unreadable: the indicator alone, every button held. */
   | { kind: "held"; readout: string };
@@ -54,9 +43,7 @@ export function mappingRunFace({ inMapping, run, status }: RunFaceInput): RunFac
     case "resetting":
       return { kind: "held", readout: "Resetting…" };
     default:
-      // "unknown": the backend has not heard the mapper, which on a robot that
-      // reports Mapping means the session is still coming up — or that this
-      // console is older than the robot's backend.
+      // "unknown": the mapper is still coming up, or this console predates the backend.
       return { kind: "held", readout: "Unknown" };
   }
 }

@@ -1,13 +1,9 @@
 // The editor's view transform, and the grid <-> world transforms.
 //
-// One rule holds this together, inherited from the 2D map canvas this replaces:
-// there is exactly one transform, and draw() and every pointer handler read the
-// same one. Anything that needs to turn a screen position into a cell (or back)
-// goes through a function in here rather than deriving its own scale/offset.
-//
-// Every value is in CSS pixels — the unit `event.clientX` gives you. Device pixel
-// ratio belongs in the canvas's `setTransform` and nowhere else; folding it in
-// here would silently break every hit test.
+// There is exactly one transform: draw() and every pointer handler go through
+// these functions rather than deriving their own scale/offset. Everything is in
+// CSS px (what `event.clientX` gives); device pixel ratio belongs only in the
+// canvas's `setTransform`, or every hit test breaks.
 
 import type { GridSize } from "@/lib/map/grid";
 import type { MapMetadata } from "@/lib/types/robot";
@@ -82,26 +78,13 @@ export function cellAt(view: View, size: GridSize, cx: number, cy: number) {
 }
 
 /**
- * Keep the map reachable, not pinned.
+ * Keep the map reachable, not pinned: it must still straddle the viewport
+ * centre on both axes, so it can never be flung off screen yet pans at every
+ * zoom.
  *
- * The rule is that the map must still straddle the viewport centre: its near edge
- * may not be dragged past the centre line on either axis. That leaves the map
- * always grabbable — there is no way to fling it off screen and lose it — while
- * still allowing a real pan at every zoom level.
- *
- * This replaced a stricter rule ("an edge may reach but never pass the viewport
- * edge, and an axis where the map fits is force-centred"), which had a bug that
- * looked like a broken feature: the editor opens at `fitScale`, at fit the map by
- * definition fits at least one axis and exactly fills the other, and zooming out
- * is floored at `fitScale` — so on the opening view *both* axes were force-centred
- * and dragging with the Pan tool was a guaranteed no-op. Operators reasonably
- * concluded panning did not work. Letting the map overscroll is what every image
- * and map editor does, and it costs only the guarantee that the map is always
- * flush to an edge, which nothing here needed.
- *
- * Note the consequence: `clampView` no longer re-centres anything. Whatever wants
- * a centred map has to say so — `fitView` does, and `0` / the Fit button is the
- * explicit way back to it.
+ * Not a "never pass the viewport edge, centre an axis that fits" rule: at the
+ * opening fit view that centred both axes and made Pan a no-op. So this never
+ * re-centres; `fitView` (the Fit button) is the explicit way back.
  */
 export function clampView(view: View, rect: Size, size: GridSize): View {
   return {
@@ -112,12 +95,8 @@ export function clampView(view: View, rect: Size, size: GridSize): View {
 }
 
 /**
- * One axis of the straddle rule: the map's far edge cannot come short of the
- * viewport's midpoint, and its near edge cannot pass it.
- *
- * `extent` is the scaled map's length on this axis. When it is smaller than the
- * viewport the window is `extent` wide, which is still a usable amount of travel
- * and never zero — the case the previous force-centring turned into a dead drag.
+ * One axis of the straddle rule: neither map edge may cross the viewport's
+ * midpoint. `extent` is the scaled map length, so travel is never zero.
  */
 function clampAxis(offset: number, viewport: number, extent: number): number {
   const mid = viewport / 2;
@@ -125,18 +104,14 @@ function clampAxis(offset: number, viewport: number, extent: number): number {
 }
 
 /**
- * Zoom by `factor` about a container-local point, keeping the grid position
- * under that point fixed.
+ * Zoom by `factor` about a container-local point, holding the grid position
+ * under it.
  *
- * The lower bound is fitScale rather than some constant: it stops the map being
- * shrunk into a corner of the viewport, and it also bounds the downscale factor
- * to ~2x, which is the range the browser's filtered `drawImage` handles without
- * losing 1-cell-thick walls (see grid-canvas.tsx on imageSmoothingEnabled).
- *
+ * Floored at fitScale, which also caps downscaling at ~2x, the range filtered
+ * `drawImage` handles without losing 1-cell walls (see grid-canvas.tsx).
  * `minScale` lets a surface whose opening view is smaller than the bare fit
- * say so: the task editor's floor plan fits inside an inset that keeps edge
- * captions on screen, and without this the first wheel notch would snap it to
- * the edge-to-edge fit with no way back out.
+ * (the task editor's inset preview) keep it, rather than snap to the bare fit
+ * on the first wheel notch.
  */
 export function zoomAt(
   view: View,
@@ -161,17 +136,9 @@ export function panBy(view: View, dx: number, dy: number, rect: Size, size: Grid
 }
 
 /**
- * Bring one grid point to the viewport centre, holding the zoom.
- *
- * For a pose that arrives from somewhere other than the pointer — the robot's own
- * position — where the operator has no idea which way to drag to find it. The
- * straddle rule in `clampView` never clips a point that is inside the map, so the
- * request is always honoured exactly; only a target outside the extent is pulled
- * back, and nothing asks for one.
- *
- * The zoom is deliberately kept rather than reset to fit: the operator zoomed in
- * for a reason, and a centre-and-refit would answer "where is the robot" by
- * throwing away the view they were working in.
+ * Bring one grid point (e.g. the robot) to the viewport centre. Exact for any
+ * point inside the map. The zoom is kept, not refit: the operator zoomed in
+ * for a reason.
  */
 export function centerView(
   view: View,
@@ -192,11 +159,8 @@ export function centerView(
 }
 
 /**
- * Re-clamp a view for a new viewport size, holding the grid point that was at
- * the old viewport centre.
- *
- * Deliberately not a refit: a window resize (or opening a devtools pane) must not
- * throw away the zoom the operator set. "Fit" is the explicit way back.
+ * Re-clamp a view for a new viewport size, holding the grid point at the old
+ * centre. Not a refit, so a resize never throws away the operator's zoom.
  */
 export function reanchorView(
   view: View,
