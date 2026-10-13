@@ -159,7 +159,7 @@ components/
   dashboard/    3D viewport (pointcloud-canvas) with the pose laid over its
                 corner, the instrument rail (the registered schedules first —
                 a glance with pause and delete, the list itself stays on
-                /tasks — then posture, locomotion and motors) and the
+                /tasks — then locomotion and motors) and the
                 driving controls
   drive/        the full-screen drive view (/drive, unlisted in the nav rail):
                 a blank screen with the sticks in its bottom corners, the

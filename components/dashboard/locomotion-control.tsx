@@ -17,8 +17,9 @@ const POLICIES: readonly { value: Policy; label: string }[] = [
 /**
  * Which locomotion controller is commanded, and which policy the robot reports.
  *
- * Segmented rather than the momentary buttons PostureControl uses, because these
- * are mutually exclusive *modes* the robot stays in, not verbs it performs once.
+ * Segmented rather than the momentary posture buttons the drive panel uses,
+ * because these are mutually exclusive *modes* the robot stays in, not verbs it
+ * performs once.
  *
  * The two rows do not mean the same kind of thing, and the labels say so:
  *

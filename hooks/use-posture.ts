@@ -6,19 +6,17 @@ import { useMutation } from "@tanstack/react-query";
 import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { ignore } from "@/lib/api/mutation-state";
-import { sendPostureTask, type Posture, type TaskStatus } from "@/lib/api/task";
+import { sendPostureTask, type Posture } from "@/lib/api/task";
 
 export interface PostureControl {
   /** Submit a posture command. */
   send: (posture: Posture) => Promise<void>;
   /** The command whose task is being tracked, or null. */
   sent: Posture | null;
-  taskStatus: TaskStatus | null;
   running: boolean;
   /** True while the submit request itself is in flight. */
   busy: boolean;
   error: string | null;
-  clear: () => void;
 }
 
 /**
@@ -52,7 +50,7 @@ export function usePosture(robotId: string): PostureControl {
     onSuccess: (id) => track(id),
   });
 
-  const { mutateAsync: submitAsync, reset: resetSubmit } = submit;
+  const { mutateAsync: submitAsync } = submit;
 
   const send = React.useCallback(
     async (posture: Posture) => {
@@ -63,21 +61,14 @@ export function usePosture(robotId: string): PostureControl {
     [submitAsync],
   );
 
-  const clear = React.useCallback(() => {
-    resetSubmit();
-    reset();
-  }, [reset, resetSubmit]);
-
   return {
     send,
     // The mutation's own variables, which is what "the command being tracked"
     // has always meant here: it is set the moment the request goes out, so a
     // posture that failed to submit is still the one named beside the error.
     sent: submit.variables ?? null,
-    taskStatus: task.taskStatus,
     running: task.running,
     busy: submit.isPending,
     error: submit.error?.message ?? task.error,
-    clear,
   };
 }
