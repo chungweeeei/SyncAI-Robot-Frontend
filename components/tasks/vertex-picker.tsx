@@ -24,22 +24,16 @@ export interface VertexPickerProps {
   disabled: boolean;
   onPick: (vertex: MapVertex) => void;
   /**
-   * The picker's accessible name. It has no visible label beside it, and a
-   * placeholder is not a name: once a waypoint is picked, the placeholder is
-   * gone. The row passes its step number, because a job with several MOVE
-   * steps would otherwise read as several identical "Waypoint" controls.
+   * The accessible name, since there is no visible label and a placeholder
+   * goes once picked. The row adds its step number to tell MOVE rows apart.
    */
   label?: string;
 }
 
 /**
- * Set a MOVE step from a stop already placed on the active map.
- *
- * This is the only way to set one: the composer has no coordinate fields, so
- * every unavailable case below says what to do on the map instead, and the row
- * stays unsendable until a waypoint is picked. A vertex stores x/y in metres and theta in
- * degrees in the map frame precisely so it can be handed to a MOVE step without
- * conversion — the only thing done to it on the way in is the angle fold.
+ * Set a MOVE step from a stop on the map. The only way to set one (there are
+ * no coordinate fields), so each unavailable case says what to do on the map.
+ * A vertex is already in the MOVE step's units; only the angle is folded.
  */
 export function VertexPicker({
   vertices,
@@ -85,11 +79,9 @@ export function VertexPicker({
 
   return (
     <Select
-      // `items` is what makes SelectValue render the *label*; without it the
-      // trigger shows the raw uuid this is keyed by.
+      // Without `items`, SelectValue shows the raw uuid instead of the label.
       items={vertices.map((vertex) => ({ value: vertex.id, label: vertex.name }))}
-      // base-ui accepts null for "nothing selected", so there is no sentinel item
-      // for "hand edited" — the label simply clears.
+      // null is "nothing selected", so no sentinel item is needed.
       value={value}
       disabled={disabled}
       onValueChange={(next) => {

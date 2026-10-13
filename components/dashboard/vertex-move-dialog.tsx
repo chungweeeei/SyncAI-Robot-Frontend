@@ -15,31 +15,13 @@ import { Button } from "@/components/ui/button";
 import type { MapVertex } from "@/lib/types/map";
 
 /**
- * "Move to this stop" — the confirm behind a tap on a vertex in the
- * viewport.
+ * The dialog behind a tap on a waypoint. It is where the name shows (on the
+ * map a caption per stop would be a wall of text).
  *
- * The dialog is where the vertex's *name* lives. On the map a stop is a mark and
- * a one-letter type badge and nothing else: a caption per stop turns a dozen
- * markers into a wall of text, and the only moment the operator needs the name
- * is this one, when they are about to send the robot to it.
- *
- * Confirming dispatches the MOVE task outright rather than staging it — the
- * question this dialog asks *is* the confirmation the drag-a-goal flow gets from
- * its read-back and Send button, and asking it twice teaches an operator to
- * click through it. Everything after dispatch (task chip, errors, cancel) is
- * read from GoalControl, which is already the one place task state is shown.
- *
- * The second action, Reposition, edits the stop instead of driving to it. The
- * two live in one dialog because they answer the same thought — the operator
- * tapped a stop because they are looking at where it sits — and because
- * the alternative is a second gesture on the map for a rare action. It is styled
- * as the secondary of the two: sending the robot is what this dialog is for, and
- * moving the mark is what you do when the stop turns out to be in a wall.
- *
- * Delete is the third, between Cancel and Move, and asks once more before it
- * writes — a confirm rather than an undo, for the reason the editor's Delete
- * gives: the row is written through, so there is no local history to step
- * back over. A refusal keeps the dialog open with the backend's sentence.
+ * Move dispatches at once: this question is the confirmation, and asking twice
+ * teaches click-through. GoalControl reports the job after. Reposition is the
+ * secondary action, for a stop that turns out to be in a wall. Delete asks
+ * once more, since the write goes through with no undo.
  */
 export function VertexMoveDialog({
   vertex,
@@ -60,10 +42,7 @@ export function VertexMoveDialog({
   busy: boolean;
   /** A task is already running, so this one cannot be dispatched. */
   running: boolean;
-  /**
-   * Why this stop cannot be changed right now — a job is driving on its map —
-   * or null. Greys Reposition and Delete; Move is a command, not an edit.
-   */
+  /** Why the stop is read-only (a job drives on its map). Greys Reposition and Delete. */
   editLock?: string | null;
   /** Why no goal can be sent onto this map right now, or null. Greys Move. */
   dispatchLock?: string | null;
@@ -78,13 +57,8 @@ export function VertexMoveDialog({
   onDelete: (vertex: MapVertex) => void;
   onClose: () => void;
 }) {
-  // The close transition outlives the prop going null, so the last stop asked
-  // about is kept and rendered while the popup animates out. Without it the
-  // dialog empties itself on the way off screen.
-  //
-  // Held in state and adjusted during render (React's own "derive state from
-  // props" escape hatch) rather than in an effect: an effect would paint the
-  // empty dialog for one frame first, which is the flash this exists to avoid.
+  // Keeps the last stop rendered through the close animation. Derived during
+  // render, since an effect would paint one empty frame first.
   const [shown, setShown] = React.useState<MapVertex | null>(vertex);
   if (vertex && vertex !== shown) setShown(vertex);
 
@@ -100,13 +74,10 @@ export function VertexMoveDialog({
           <>
             <AlertDialogHeader>
               <AlertDialogTitle>Move to {shown.name}</AlertDialogTitle>
-              {/* No description, by request: the title names the stop and the
-                * Move button says what confirming does. */}
+              {/* No description, by request. */}
             </AlertDialogHeader>
 
-            {/* Same three readouts, in the same order and the same commanded
-              * hue, as the staged goal in GoalControl — this is the same pose,
-              * reached a different way. */}
+            {/* The same readouts as GoalControl's: the same kind of pose. */}
             <div className="space-y-1 rounded-md border border-hairline bg-elevated/50 p-2.5">
               <Readout label="X" value={shown.x.toFixed(2)} unit="m" tone="cmd" />
               <Readout label="Y" value={shown.y.toFixed(2)} unit="m" tone="cmd" />
@@ -144,9 +115,8 @@ export function VertexMoveDialog({
               <Button
                 variant="ghost"
                 size="sm"
-                // Live while *this tab's* goal is merely on its way, but not
-                // while any job drives on the stop's map: the backend refuses
-                // that write, and editLock says so before the press does.
+                // Live while this tab's goal is in flight; greyed only while a
+                // job drives on the stop's map.
                 className="mr-auto"
                 disabled={editLock !== null}
                 onClick={() => onReplace(shown)}

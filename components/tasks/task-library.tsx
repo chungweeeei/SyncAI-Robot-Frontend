@@ -13,23 +13,13 @@ import { schedulesByTemplate } from "@/lib/task/schedule";
 const EMPTY_SCHEDULES: readonly ScheduleState[] = [];
 
 export interface TaskLibraryProps {
-  /**
-   * Every saved job, whichever map it is for. A row for another map is
-   * marked and cannot be run from here, but it is listed: hiding it is how an
-   * operator concludes their work was lost.
-   */
+  /** Every saved job, any map: hiding another map's job reads as lost work. */
   templates: TaskTemplate[];
-  /**
-   * Every registered schedule, not the ones for a given row: the rows are
-   * matched here so the caller does not have to build the same index once per
-   * row. Passed in rather than fetched, like every other prop on this component.
-   */
+  /** Every registered schedule; matched to rows here, once. */
   schedules: readonly ScheduleState[];
   /**
-   * How many of those name no template. They cannot be shown on a row — there
-   * is no row they belong to — but they are unattended runs on this robot, so
-   * counting them is what keeps "no clock chip anywhere" from meaning "nothing
-   * runs on its own here".
+   * Schedules naming no template. No row can show them, so they are counted,
+   * or "no clock chip anywhere" would read as "nothing runs unattended".
    */
   unlinkedScheduleCount: number;
   status: TaskTemplatesStatus;
@@ -51,13 +41,8 @@ export interface TaskLibraryProps {
 }
 
 /**
- * The template library. Presentation only.
- *
- * Height-capped with its own scroll, which is what makes putting it *above* the
- * composer affordable without any collapse state — no chevron on the frame,
- * nothing to remember, nothing to persist. Same pattern and rationale as
- * VertexList: a robot with thirty saved routes would otherwise push the composer
- * off the screen.
+ * The template library. Presentation only. Height-capped with its own scroll
+ * from sm, as VertexList is, so a long library needs no collapse state.
  */
 export function TaskLibrary({
   templates,
@@ -105,9 +90,7 @@ export function TaskLibrary({
           No saved jobs yet. Press Create task to build one.
         </p>
       ) : (
-        // The cap and the inner scroll are for a desktop composer, where the
-        // library shares a column with the step list. On a phone the page is
-        // the scroll surface, and a 224 px list of its own caught swipes.
+        // No cap on a phone: the page scrolls, and an inner list caught swipes.
         <ul className="space-y-1.5 sm:max-h-56 sm:overflow-y-auto">
           {templates.map((template) => (
             <TaskTemplateRow
@@ -117,8 +100,6 @@ export function TaskLibrary({
               dispatchDisabled={dispatchDisabled}
               dispatchLock={dispatchLockFor(template)}
               busy={busy}
-              // Only the row that started the run gets the readback. A row that
-              // did not is left blank rather than showing another row's status.
               taskStatus={template.id === dispatchedFromId ? taskStatus : null}
               stepStates={template.id === dispatchedFromId ? stepStates : null}
               schedules={scheduledBy.get(template.id) ?? EMPTY_SCHEDULES}
@@ -132,14 +113,8 @@ export function TaskLibrary({
         </ul>
       )}
 
-      {/*
-       * The honesty footnote. A schedule registered from loose steps — which
-       * the old editor's Schedule pane could do with nothing loaded — records
-       * no source, so no row above can carry its clock chip. None can be made
-       * that way now, but the ones already registered still run the robot
-       * unattended, and a library with no clock chips on it would otherwise
-       * read as nothing doing so.
-       */}
+      {/* Schedules registered from loose steps (no longer possible, but still
+       * running) record no source, so no row carries their clock chip. */}
       {unlinkedScheduleCount > 0 && (
         <p className="text-[11px] leading-tight text-signal-caution">
           {unlinkedScheduleCount}{" "}

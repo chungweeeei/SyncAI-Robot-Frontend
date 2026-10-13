@@ -10,19 +10,13 @@ import { cn } from "@/lib/utils";
 /**
  * A password field with a show/hide toggle.
  *
- * The console's Input has no adornment slot, so this is the plain wrapper: a
- * relative box, the input padded on the right, and an icon button sitting in
- * that padding. Two details are load-bearing:
+ * - `type="button"` on the toggle: it sits inside the Connect form, and
+ *   without it a click on the eye would submit a half-typed password.
+ * - `autoComplete="off"`: the robot's Wi-Fi password shouldn't be saved
+ *   against the console's origin.
  *
- * - `type="button"` on the toggle. It lives inside the Connect form, and
- *   base-ui's Button does not promise a `type` default, so without it a click
- *   on the eye would submit the form — sending a half-typed password to nmcli.
- * - `autoComplete="off"`. Browsers otherwise offer to save the robot's WiFi
- *   password against the console origin, which is the wrong place for it.
- *
- * The toggle stays in the tab order on purpose. The common `tabIndex={-1}`
- * trick keeps Tab flowing password → Connect, but it makes the eye unreachable
- * from a keyboard; one extra stop on a two-field form is the cheaper trade.
+ * The toggle stays in the tab order on purpose: `tabIndex={-1}` would make it
+ * unreachable from a keyboard.
  */
 export function PasswordInput({
   className,

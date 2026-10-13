@@ -1,9 +1,8 @@
 import * as React from "react";
 
 /**
- * Same panel shape /recordings and /maps use when there is nothing to list,
- * or when the robot could not answer. Shared by the dashboard and the list,
- * so a failed count and a failed page read the same way.
+ * The empty / failed panel /recordings and /maps use. Shared by the dashboard
+ * and the list so a failed count and a failed page read the same.
  */
 export function Notice({
   label,

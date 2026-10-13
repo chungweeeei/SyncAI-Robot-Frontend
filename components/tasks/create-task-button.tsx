@@ -9,13 +9,9 @@ import { useTaskTemplates } from "@/hooks/use-task-templates";
 import { draftWouldBeLost } from "@/lib/task/draft-store";
 
 /**
- * Opens the editor on a new job.
- *
- * The draft outlives the editor's page, so there may be unsaved steps waiting
- * in it that the operator cannot see from here. Asked rather than cleared:
- * OK starts empty, Cancel still opens the editor — on the work they kept,
- * which is the likelier reason they pressed it at all. A saved job opened and
- * left untouched is not unsaved work, which is what the library is read for.
+ * Opens the editor on a new job. Unsaved work in the draft is asked about:
+ * OK starts empty, Cancel still opens the editor on the kept work. An
+ * untouched saved job is not unsaved work (hence the library read).
  */
 export function CreateTaskButton() {
   const router = useRouter();

@@ -6,22 +6,14 @@ import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * An icon button in the masthead and the floating panel it drops.
+ * An icon button in the masthead and the floating panel it drops: the button,
+ * its styling, the ARIA pairing and Escape.
  *
- * The strip is the one piece of chrome every route renders, which makes it the
- * place to hang anything an operator should be able to reach without first
- * navigating to the screen that happens to own it. Two things do so far — the
- * drive panel and the camera window — and this holds what they share: the
- * button, its expanded styling, the ARIA pairing and Escape.
+ * **Closing unmounts the panel**, and callers depend on it: the drive panel
+ * drops its teleop channel, the camera window releases the robot's one viewer
+ * slot. A hidden-but-mounted panel would be a live channel nothing shows.
  *
- * **Closing unmounts the panel**, and both callers depend on that rather than
- * merely tolerating it: the drive panel disarms and drops its teleop channel,
- * the camera window closes its session and hands the robot's one viewer slot
- * back. A panel kept alive behind a hidden flag would be a live command channel
- * or a held camera with nothing on screen saying so.
- *
- * The panel is positioned by the caller and anchored to this button, which is
- * why the wrapper is the positioned element.
+ * The wrapper is the positioned element the caller anchors the panel to.
  */
 export function StripDisclosure({
   icon: Icon,
@@ -39,17 +31,12 @@ export function StripDisclosure({
   /** Hover text for each state; the button is icon-only, so it carries the words. */
   showTitle: string;
   hideTitle: string;
-  /**
-   * Set to own the open state, for a panel that also opens on its own — the
-   * sensor alert drops when a motor runs hot, not only when pressed. Every
-   * press and Escape goes through `onOpenChange` either way.
-   */
+  /** Controlled open state, for a panel that also opens itself (the sensor alert). */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   /**
-   * Something behind the button needs the operator: the glyph turns warn and
-   * a dot sits on its corner. The dot is decoration; the caller says the same
-   * thing in `label`, because a dot is not something a screen reader hears.
+   * Warn glyph plus a corner dot. The dot is not heard, so the caller says the
+   * same in `label`.
    */
   alert?: boolean;
   /** Rendered only while open. Position it against the wrapper. */
@@ -64,10 +51,8 @@ export function StripDisclosure({
   const panelId = React.useId();
   const buttonRef = React.useRef<HTMLButtonElement>(null);
 
-  // Escape closes and hands focus back, the disclosure convention. Scoped to
-  // the subtree rather than the window: while the drive panel is armed the
-  // window belongs to the joystick's key handler, and a second global listener
-  // on the same events is how one of them ends up eating the other's keys.
+  // Escape closes and returns focus. Scoped to the subtree, not the window,
+  // which the armed joystick's key handler owns.
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.key !== "Escape" || !open) return;
     setOpen(false);
@@ -85,24 +70,14 @@ export function StripDisclosure({
         title={open ? hideTitle : showTitle}
         onClick={() => setOpen(!open)}
         className={cn(
-          // The full height of the strip and as wide as it is tall: these are
-          // the things in the strip an operator presses, on a phone and at
-          // arm's length from a laptop, so they get the whole row rather than
-          // a 24 px target inside it. Square so they read as a set.
+          // The strip's full height: the main press targets, phone or laptop.
           "relative flex size-14 items-center justify-center rounded-sm border transition-colors",
-          // Open is the cmd hue, like every other operator choice in the
-          // console. It is the only state these buttons show: what the panel
-          // is doing once open is the panel's own business.
-          //
-          // Closed, the frame shows only under a pointer or keyboard focus, by
-          // request: at rest the pair reads as two icons in the strip rather
-          // than two boxes, and the open state keeps its frame because it is
-          // the one thing the button reports.
+          // Open is the cmd hue. Closed shows a frame only on hover or focus,
+          // by request.
           open
             ? "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd"
             : "border-transparent text-muted-foreground hover:border-hairline hover:bg-elevated hover:text-foreground focus-visible:border-hairline",
-          // After the open/closed hues so it wins over both: an alert is
-          // worth more than which way the panel is.
+          // Last, so an alert wins over both.
           alert && "text-signal-warn hover:text-signal-warn",
         )}
       >
@@ -121,32 +96,19 @@ export function StripDisclosure({
 }
 
 /**
- * Where a dropped panel sits: under the strip, right edge aligned with the
- * button that opened it.
+ * Where a dropped panel sits: under the strip, right-aligned to its button.
+ * z-30 because <main>, a later sibling, would paint over it.
  *
- * mt-2 is the gap under the strip — the button is the full 56px of the row,
- * so its bottom edge is the heartbeat hairline and 8px clears it. z-30 because
- * <main> is a later sibling of the header and would otherwise paint over
- * anything that leaves the strip's box.
- *
- * Below sm the panel is anchored to the viewport instead of the button: the
- * button sits 100–240 px from the right edge of a phone, and a 256–320 px
- * panel hung off it opened past the left edge of a body that cannot scroll.
- * `fixed` inside the `relative` wrapper is sound here because nothing between
- * the panel and <body> has a transform or filter — overlayPanel's backdrop
- * blur is on the panel itself — and both panels' drag clamps measure their
- * rect against `window`, which is what a fixed box is positioned in. top-16
- * is the 56 px strip, its hairline and the same 8 px gap.
+ * Below sm it is fixed to the viewport instead, since hung off the button it
+ * opened past a phone's left edge. `fixed` is sound because no ancestor has a
+ * transform or filter, and the drag clamps measure against `window` anyway.
  */
 export const droppedPanel =
   "fixed top-16 right-3 z-30 sm:absolute sm:top-full sm:right-0 sm:mt-2";
 
 /**
- * The lowest a dropped panel may be dragged or grown to: the top of the nav
- * when it is a bar under the page (below lg), the bottom of the window when
- * it is a rail beside it. The panels are chrome, so knowing that <main> is
- * the region between the strip and the nav is theirs to know — the window's
- * height was the previous answer, and it let a panel be parked over the tabs.
+ * The lowest a dropped panel may reach: the bottom of <main>, so it cannot be
+ * parked over the nav bar below lg.
  */
 export function panelFloor(): number {
   const main = document.querySelector("main");

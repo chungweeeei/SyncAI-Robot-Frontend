@@ -34,22 +34,13 @@ export interface TaskTemplateRowProps {
   activeMapName: string | null;
   /** True while any task is in flight, or the robot id is not known yet. */
   dispatchDisabled: boolean;
-  /**
-   * Why this job's map cannot take a job right now (its floor plan is being
-   * rebuilt), or null. Shown under the row, since a greyed Run with no reason
-   * reads as broken.
-   */
+  /** Why this job's map cannot take a job now; shown so a greyed Run does not read as broken. */
   dispatchLock: string | null;
   /** Per-step state, but only when *this* row is the one that was dispatched. */
   stepStates: ReadonlyMap<string, TaskStepState> | null;
   /** Task-level status of the run this row started, or null. */
   taskStatus: React.ComponentProps<typeof TaskStatusChip>["status"] | null;
-  /**
-   * The registered schedules frozen from this template. Empty means the row is a
-   * one-time task — which, until this existed, was indistinguishable from a
-   * scheduled one: the schedules live in their own list, on the other pane of
-   * the composer, and nothing on the row said the robot would run it unattended.
-   */
+  /** The schedules frozen from this template; empty for a one-time job. */
   schedules: readonly ScheduleState[];
   busy: boolean;
   onDispatch: () => void;
@@ -61,13 +52,8 @@ export interface TaskTemplateRowProps {
 }
 
 /**
- * One library row: what it does, and the four things you can do with it.
- *
- * Expansion is a single boolean and a chevron, not an accordion component —
- * there is no such primitive in this project and one row's open state is not
- * worth adding it. Actions are four bare icon buttons rather than a row menu,
- * matching every other list in the console (ScheduleList, VertexList) and keeping
- * the tap targets large on a touch console.
+ * One library row. Actions are bare icon buttons rather than a menu, like the
+ * console's other lists, keeping tap targets large.
  */
 export function TaskTemplateRow({
   template,
@@ -89,13 +75,8 @@ export function TaskTemplateRow({
   const railed = groupPlaces.some(Boolean);
 
   /**
-   * One chip for however many schedules point at this template, worded by
-   * `scheduleChipSummary` (which has why paused ones are counted).
-   *
-   * A row is not the place to list them, and the Registered schedules frame
-   * sits directly under this library — so the chip is a button that takes the
-   * operator there and lights this job's rows. The hover title still lists
-   * them for a mouse; the button is what a finger gets.
+   * One chip for all this template's schedules. A button that lights them in
+   * the list below; the hover title lists them for a mouse.
    */
   const schedule = scheduleChipSummary(schedules);
   const scheduleTitle = schedules
@@ -105,10 +86,8 @@ export function TaskTemplateRow({
     )
     .join("\n");
 
-  // The one hard gate in this feature. A task whose coordinates are in another
-  // map's frame points somewhere else entirely in the loaded map, so it cannot be
-  // dispatched or scheduled — unlike a missing vertex, which merely falls back to
-  // the snapshot and is reported.
+  // The hard gate: another map's coordinates point elsewhere on the loaded one.
+  // A missing vertex only falls back to the snapshot.
   const wrongMap = template.map_name !== null && !template.map_matches_active;
   const blocked = wrongMap || dispatchDisabled || dispatchLock !== null;
 
@@ -133,8 +112,7 @@ export function TaskTemplateRow({
           {template.name}
         </span>
 
-        {/* The step shape at a glance — M M S reads as a route without
-          * expanding, and [M T] as two steps that start together. */}
+        {/* The shape at a glance: M M S is a route, [M T] two steps together. */}
         <span
           className="readout min-w-0 max-w-full truncate text-[11px] tracking-wider text-muted-foreground"
           aria-label={`${template.steps.length} steps`}
@@ -142,8 +120,7 @@ export function TaskTemplateRow({
           {stepShape(template.steps)}
         </span>
 
-        {/* Before the map chip: whether the robot runs this by itself outranks
-          * which map it is in. */}
+        {/* Before the map chip: running unattended outranks which map. */}
         {schedule && (
           <button
             type="button"
@@ -177,8 +154,7 @@ export function TaskTemplateRow({
           </IconButton>
           <IconButton
             label={`Load "${template.name}" into the editor`}
-            // Loading is always allowed, even for another map's task: reading and
-            // fixing one is exactly what you would want to do next.
+            // Allowed for another map's job too: fixing it is the next thing to do.
             disabled={busy}
             onClick={onLoad}
           >
@@ -264,9 +240,7 @@ function TemplateStepLine({
           {step.vertex_name}
         </span>
       )}
-      {/* A chip, not a hover title on the struck-through name: the strike
-        * says something is wrong and a finger cannot ask what. The longer
-        * consequence stays on hover for those who have one. */}
+      {/* A chip, since a finger cannot hover to ask what the strike means. */}
       {step.vertex_status === "MISSING" && (
         <Chip
           tone="caution"
@@ -275,17 +249,14 @@ function TemplateStepLine({
           deleted
         </Chip>
       )}
-      {/* resolved_params, not params: this is what a dispatch would actually
-        * send, so showing the snapshot would be showing a number the robot will
-        * not drive to. (For a SPEAK or a WAIT the two are the same by construction.) */}
+      {/* resolved_params, not params: what a dispatch would actually send. */}
       {step.type === "MOVE" && step.resolved_params && (
         <span className="readout min-w-0 truncate">
           {step.resolved_params.x.toFixed(3)}, {step.resolved_params.y.toFixed(3)} ·{" "}
           {step.resolved_params.theta.toFixed(1)}°
         </span>
       )}
-      {/* Wrapped, not truncated: this is the expanded detail, where the room
-        * is vertical, and a hover title was the only way to read the rest. */}
+      {/* Wrapped, not truncated: the expanded detail has vertical room. */}
       {step.type === "SPEAK" && step.resolved_params && (
         <span className="min-w-0 wrap-anywhere italic">
           “{step.resolved_params.text}”{repeatSuffix(step.resolved_params.repeat)}

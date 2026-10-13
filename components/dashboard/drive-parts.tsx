@@ -15,18 +15,13 @@ import type { TeleopVector } from "@/lib/types/robot";
 import { cn } from "@/lib/utils";
 
 /*
- * The pieces both drive surfaces are built from — the masthead's drive panel
- * (ManualControl) and the full-screen drive view (DriveScreen). Each surface
- * owns its own arm state, limit and joystick; these only draw them, so the two
- * cannot drift into different words or different rules for the same control.
+ * Parts shared by ManualControl and DriveScreen. Each surface owns its state;
+ * these only draw it, so the two cannot drift apart.
  */
 
 /**
- * On = listening. A switch rather than a pressed toggle, because this is an
- * on/off state the panel stays in, not a one-shot pick mode; and green,
- * `signal-live`, rather than the cmd hue the pick modes light in — on
- * request, and it reads as "input is live", which is what it is. The title
- * and aria-label carry the words.
+ * On = listening. A switch, since it is a state the panel stays in, and green
+ * (`signal-live`) by request: input is live.
  */
 export function ArmSwitch({
   armed,
@@ -61,14 +56,9 @@ export function ArmSwitch({
 }
 
 /**
- * The Max speed slider: limits translation, vx and vy together, as a
- * fraction of full stick; rotation is not limited. The limit is applied where
- * the command is computed (lib/teleop/stick.ts), so what is sent is the
- * scaled number, not the stick's raw deflection.
- *
- * No visible label, by the user's choice: the bar and its percentage are the
- * whole row. The name is still there for a screen reader and on hover,
- * because an unnamed slider reads as "slider, 100".
+ * Max speed: scales translation (vx and vy), not rotation, where the command
+ * is computed (lib/teleop/stick.ts). No visible label, by request; the name is
+ * on hover and for screen readers, or it reads as "slider, 100".
  */
 export function SpeedLimit({
   linearScale,
@@ -81,8 +71,7 @@ export function SpeedLimit({
   armed: boolean;
   className?: string;
 }) {
-  // Whole percent on the slider, so a step of 10 never accumulates float
-  // error; the fraction the command uses is derived from it.
+  // Whole percent on the slider, so steps never accumulate float error.
   const speedPercent = Math.round(linearScale * 100);
   return (
     <div className={cn("flex items-center gap-2.5", className)} title="Max speed">
@@ -103,8 +92,7 @@ export function SpeedLimit({
             `${percent} percent of full speed`,
         }}
       />
-      {/* The readout's own rule: the cmd hue only while armed, because a
-        * limit on a panel that is not listening is not yet a command. */}
+      {/* Cmd hue only while armed: until then it is not a command. */}
       <span
         className={cn(
           "readout w-9 shrink-0 text-right text-[13px] font-medium",
@@ -118,15 +106,9 @@ export function SpeedLimit({
 }
 
 /**
- * The live half of a drive surface: owns the WS channel for exactly as long
- * as it is mounted. Three states on one line: connecting (muted), streaming
- * (cmd hue — this IS the command channel now), and a backend refusal (warn
- * hue; e.g. teleop rejected while an autonomous move runs, decays after ~2 s
- * of the frames no longer being refused).
- *
- * Mount it only while armed: the mount boundary is what opens and closes the
- * channel AND what resets its per-session state, which replaces any
- * setState-in-effect reset (Next 16 lint).
+ * Owns the teleop channel for exactly as long as it is mounted, so mount it
+ * only while armed; the mount also resets its state. One line: connecting,
+ * streaming, or the backend's refusal (e.g. during an autonomous move).
  */
 export function TeleopFooter({
   vectorRef,

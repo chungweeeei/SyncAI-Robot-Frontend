@@ -19,10 +19,8 @@ import { formatLocalRunTime, formatUtcRunTime } from "@/lib/task/schedule";
 import { cn } from "@/lib/utils";
 
 /**
- * The same hue the outcome's chip wears on every row below, so a segment in
- * the bar and the chip on a job it counts are one colour. Via the tone tokens
- * rather than a chart palette: these are outcomes, and the console already
- * has a word for each.
+ * The hue each outcome's chip wears on the rows below, so a bar segment and
+ * the chips it counts are one colour.
  */
 const OUTCOME_TONE: Record<TaskHistoryStatus, Tone> = {
   COMPLETED: "live",
@@ -82,7 +80,7 @@ function LoadingDashboard() {
   );
 }
 
-/** When the backend counted, on the operator's clock once the browser has said which — the history row's trade. */
+/** When the backend counted, on the operator's clock once the browser has said which. */
 function useCountedAt(asOf: string): string {
   const timeZone = useBrowserTimeZone();
   return timeZone ? formatLocalRunTime(asOf) : `${formatUtcRunTime(asOf)} UTC`;
@@ -96,16 +94,12 @@ export interface HistoryDashboardProps {
 
 /**
  * How the finished jobs in the window ended: five headline numbers and one
- * bar of everything finished, split by outcome.
+ * bar split by outcome. Display only.
  *
- * Display only. The filters are the toolbar above, and the counts are read
- * without the outcome filter (see toHistoryStatsQuery), so the dashboard is
- * the window's whole picture whichever outcome is listed below; when one is,
- * the caption under the tiles says so.
- *
- * The bar is the tiles again, as proportion rather than number: each segment
- * carries its count when there is room, and the hover readout lists every
- * outcome. There is no table alternative because the tiles already are one.
+ * The counts ignore the outcome filter (see toHistoryStatsQuery), so the
+ * dashboard is the window's whole picture whichever outcome is listed; the
+ * caption says when one is. The bar is the tiles as proportion, so it needs
+ * no table alternative.
  */
 export function HistoryDashboard({ stats, outcome }: HistoryDashboardProps) {
   const headingId = React.useId();
@@ -171,8 +165,7 @@ function Dashboard({
             tone={OUTCOME_TONE[status]}
           />
         ))}
-        {/* An em dash, not "0 %", when nothing finished: a rate of nothing is
-          * not a claim about the robot. */}
+        {/* An em dash, not "0 %", when nothing finished. */}
         <Tile
           label="Success rate"
           value={stats.success_rate === null ? "—" : formatPercent(stats.success_rate)}
@@ -192,10 +185,8 @@ function Dashboard({
           </p>
         ) : (
           <>
-            {/* The one bar: a 2 px gap between segments is what keeps two
-              * adjacent outcomes from reading as one, and a count sits inside
-              * a segment only when the segment is wide enough to hold it —
-              * the hover readout and the tiles carry the rest. */}
+            {/* A 2 px gap keeps adjacent outcomes apart; a count sits in a
+              * segment only when it fits — the tooltip and tiles carry the rest. */}
             <div
               title={barTitle}
               aria-hidden

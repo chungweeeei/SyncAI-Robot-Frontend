@@ -18,47 +18,27 @@ import { LINEAR_SCALE_DEFAULT } from "@/lib/teleop/stick";
 export const DRIVE_PAGE = "/drive";
 
 /**
- * The full-screen drive view: the two sticks in the bottom corners of an
- * otherwise empty screen, where a phone's thumbs are. Nothing is drawn
- * behind them, by request: the dashboard's viewport there was a second set
- * of gestures under the thumbs and a toolbar the drive did not need. The masthead's drive panel
- * is a 16rem card with both wells side by side in its middle, which on a
- * phone put them under one thumb; this is the same drive, taken apart for
- * two. The panel links here on a phone only, but the route renders at every
- * width, so a desktop that opens it gets the same layout.
+ * The full-screen drive view: the sticks in the bottom corners of an empty
+ * screen, under a phone's two thumbs (the panel's card puts both under one).
+ * Nothing behind them, by request. Its own page rather than the panel
+ * restyled below sm, which would be two designs in one component's markup.
  *
- * Its own page rather than the panel restyled below sm: the card is the
- * right shape for a mouse and a keyboard at every width, and a layout that
- * changed what the panel *was* with the window's width was two designs
- * sharing one component's markup.
- *
- * The sticks are the overlay kind (see thumbstick.tsx), and the
- * translation stick drives one axis at a time — forward / back or strafe,
- * never a diagonal (lockToAxis): a thumb on glass has no detent to find
- * straight ahead by. The panel's sticks stay free, because a mouse has one.
- *
- * Everything the panel arms with is here too — the arm switch, the Max speed
- * limit and the channel line — in one pill above the sticks. The arm state
- * and the limit are this screen's own and start disarmed and at full, like
- * the panel's do on every open: arming is the operator's act on the surface
- * they are holding, never something carried over from another one. The strip
- * does not offer the panel on this route (DriveDisclosure), so there is one
- * teleop channel and one key listener, not two.
+ * The translation stick is axis-locked (lockToAxis): a thumb on glass has no
+ * detent to find straight ahead by. Arm state and limit are this screen's own
+ * and start disarmed at full; arming never carries over from another surface.
+ * The strip hides the drive panel here, so there is one teleop channel.
  */
 export function DriveScreen() {
   const [armed, setArmed] = React.useState(false);
   const { engaged: stopped } = useConsoleEstop();
-  // The panel's rule (ManualControl): the stop disarms, and lifting it does
-  // not re-arm. A render-time adjust, so not one more frame goes out.
+  // ManualControl's rule: the stop disarms and lifting it does not re-arm.
   if (stopped && armed) setArmed(false);
   const [linearScale, setLinearScale] = React.useState(LINEAR_SCALE_DEFAULT);
   const stick = useJoystick(armed, linearScale);
-  // A WS event, not an effect body — the allowed place for setState.
   const handleDrop = React.useCallback(() => setArmed(false), []);
 
   const router = useRouter();
-  // Back to wherever the panel was opened from; a view opened straight from
-  // its URL has nowhere to go back to inside the console, so it goes home.
+  // Opened straight from its URL there is nothing to go back to: go home.
   const leave = () => {
     if (window.history.length > 1) router.back();
     else router.push("/");
@@ -72,9 +52,6 @@ export function DriveScreen() {
           className="flex w-full max-w-72 flex-col self-center rounded-2xl border border-foreground/15 bg-panel/60 px-3 py-2 shadow-sm backdrop-blur-sm"
         >
           <div className="flex items-center gap-2.5">
-            {/* A back arrow, not the minimise glyph it used to be: the button
-              * returns to the screen the panel was opened from, and on a phone
-              * that reads as "back", not as shrinking a window. */}
             <button
               type="button"
               onClick={leave}

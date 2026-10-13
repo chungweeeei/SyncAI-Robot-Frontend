@@ -37,18 +37,16 @@ function LiveRecorder({
             <RecordDot />
             Recording
           </span>
-          {/* The elapsed clock is the robot's own number, arriving once a
-            * second. A local timer counting up from started_at would keep
-            * ticking through a dropped connection and a dead recorder — the two
-            * states this readout exists to expose. */}
+          {/* The robot's own elapsed number, not a local timer: a local one
+            * would keep ticking through a dropped link or a dead recorder,
+            * which is what this readout exists to expose. */}
           <p className="readout mt-2 text-3xl leading-none font-medium text-signal-warn">
             {formatDuration(active.elapsed_seconds)}
           </p>
         </div>
 
-        {/* Not `destructive`: in this console red means faulted, and stopping
-          * is the act that makes the bag playable. It is the commanded hue like
-          * every other thing the operator does deliberately. */}
+          {/* Not `destructive`: red means faulted here, and stopping is what
+            * makes the recording playable. */}
         <Button type="button" size="sm" disabled={busy} onClick={onStop}>
           <SquareIcon data-icon="inline-start" />
           {busy ? "Stopping…" : "Stop"}
@@ -67,10 +65,8 @@ function LiveRecorder({
         <Readout label="Name" value={active.name} />
       </div>
 
-      {/* The resolved names, which is what actually went to the recorder — the
-        * picker showed the relative spelling and the backend expanded it. Worth
-        * the four lines: a topic namespaced onto the wrong robot is invisible
-        * anywhere else until the bag comes back empty. */}
+      {/* The resolved names the backend expanded: a channel namespaced onto the
+        * wrong robot is invisible anywhere else until the recording is empty. */}
       <ul className="space-y-0.5">
         {active.topics.map((topic) => (
           <li
@@ -110,24 +106,16 @@ function StoppedLine({ stopped }: { stopped: StoppedRecording }) {
 }
 
 /**
- * Start and stop the robot's bag recorder.
+ * Start and stop the robot's recorder.
  *
- * The page's one live instrument, and the only control on it: the catalogue
- * below is a record of what this panel has done. It has two faces rather than
- * one with disabled parts, because the two states share no fields — idle asks
- * what to record, live reports what is being recorded — and a start form greyed
- * out under a running recorder would invite filling in a name that cannot be
- * used.
+ * Two faces rather than one with disabled parts: idle asks what to record,
+ * live reports it, and a greyed start form would invite a name that can't be
+ * used. The face comes from the server, not a local "we pressed Start", so it
+ * is right about a recording started elsewhere or one that died (the backend
+ * reaps a dead recorder on the same read).
  *
- * Which face is shown comes from the server, not from a local "we pressed
- * Start" flag. That is what makes the panel correct about a recording started
- * from a shell on the robot or from a second console, and about one that died
- * on its own — the backend reaps a dead recorder on the same read.
- *
- * Refusals are the backend's sentences verbatim, as everywhere else in this
- * console: one recording at a time, a name already on disk, and less than 2 GB
- * free. The last one is the only one that asks the operator to go and do
- * something, and what it asks for — delete a recording — is the list below.
+ * Refusals are the backend's sentences: one at a time, a name already on disk,
+ * less than 2 GB free — the last answered by deleting a recording below.
  */
 export function RecorderControl() {
   const { active, status } = useActiveRecording();
@@ -136,20 +124,17 @@ export function RecorderControl() {
 
   const [name, setName] = React.useState("");
   const [topics, setTopics] = React.useState<string[]>(DEFAULT_TOPICS);
-  // On by default, by request: a recording is kept until someone deletes it,
-  // and the 2 GB free-space refusal is the one that stops a run. The CPU it
-  // costs the robot is the trade, and the switch is still there to decline it.
+  // On by default, by request: recordings are kept until deleted and the 2 GB
+  // floor is what stops a run. The robot's CPU is the trade.
   const [compression, setCompression] = React.useState(true);
 
-  // One panel, two writes: whichever was pressed last owns the busy flag and
-  // the error line, and starting a recording clears the last stop's receipt.
-  // Each press resets the other mutation to keep that true.
+  // Two writes, one busy flag and error line: each press resets the other
+  // mutation so the last one pressed owns them.
   const busy = start.isPending || stop.isPending;
   const error = (start.error ?? stop.error)?.message ?? null;
   const stopped: StoppedRecording | null = stop.data ?? null;
 
-  // Empty is valid — the backend names the bag `rec_<UTC timestamp>` and that
-  // is the right default for the run somebody is about to drive.
+  // Empty is valid: the backend names it `rec_<UTC timestamp>`.
   const nameValid =
     name.length === 0 ||
     (RECORDING_NAME_RE.test(name) && name !== RESERVED_RECORDING_NAME);
@@ -171,9 +156,8 @@ export function RecorderControl() {
     <section className="rounded-md border border-hairline bg-panel px-4 py-3.5">
       <h2 className="instrument-label mb-3 text-muted-foreground">Recorder</h2>
 
-      {/* Nothing committal until the first answer: showing the start form while
-        * the robot might already be recording would offer a button that can
-        * only 409. */}
+      {/* Nothing until the first answer: a start form while the robot may
+        * already be recording would offer a button that can only 409. */}
       {status === "loading" ? (
         <p className="text-[11px] leading-tight text-muted-foreground">
           Checking the recorder…
@@ -203,8 +187,7 @@ export function RecorderControl() {
             </Button>
           </div>
 
-          {/* Shown only while the name breaks the rule — a resting hint would
-            * be chrome on a field that is usually left empty. */}
+          {/* Only while the name breaks the rule; the field is usually empty. */}
           {!nameValid && (
             <p className="text-[11px] leading-snug text-signal-caution">
               {name === RESERVED_RECORDING_NAME

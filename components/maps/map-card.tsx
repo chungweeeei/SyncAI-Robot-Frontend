@@ -14,13 +14,10 @@ import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
 
 /**
- * The tile the map is read from.
- *
- * The backdrop is a fixed light neutral, not a theme surface. A gridmap image is
- * white-free / near-black-obstacle in both themes (the same constraint the 2D map
- * canvas recorded), so a dark tile would put black walls on near-black ground and
- * the map would read as an empty rectangle. The tile is a hair lighter than the
- * 205 unknown-grey so the map's own unknown region still reads as part of the map.
+ * The map's tile, on a fixed light neutral rather than a theme surface: a
+ * floor plan image has near-black walls in both themes, so a dark tile would
+ * read as an empty rectangle. A hair lighter than the 205 unknown-grey so the
+ * map's own unknown region still reads as map.
  */
 function MapThumbnail({ map }: { map: MapSummary }) {
   if (!map.thumbnail) {
@@ -36,9 +33,8 @@ function MapThumbnail({ map }: { map: MapSummary }) {
 
   return (
     <div className="aspect-[4/3] border-b border-hairline bg-[#e4e4e4] p-2">
-      {/* Plain <img>: the real thumbnail URL is resolved at runtime by apiUrl()
-       * from the page's own hostname, so next/image would need a
-       * images.remotePatterns entry for a host that is not known at build time. */}
+      {/* Plain <img>: apiUrl() resolves the host at runtime, which next/image's
+       * build-time remotePatterns can't know. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={map.thumbnail}
@@ -50,16 +46,10 @@ function MapThumbnail({ map }: { map: MapSummary }) {
 }
 
 /**
- * The chip that carries a map's gridmap state, or nothing when it has a good one.
- *
- * Tones are the console's EFIS semantic, not a palette choice: `warn` is for a
- * fault and only `failed` is one — the pipeline rejected this cloud and the same
- * recipe will reject it again. `none` and `interrupted` are merely not-done, so
- * they take `caution` and are told apart by their labels, and `converting`
- * takes `active` because the system is mid-action.
- *
- * `ok` renders nothing at all. A chip on every healthy card would be four
- * chips saying "fine" on a screen whose question is which map is loaded.
+ * The chip for a map's floor plan state, or nothing for a good one (a chip on
+ * every healthy card would just say "fine"). Only `failed` is a fault (`warn`:
+ * the same recipe will fail again); `none` and `interrupted` are not-done
+ * (`caution`); `converting` is mid-action (`active`).
  */
 function GridStatusChip({ map }: { map: MapSummary }) {
   switch (map.grid_status) {
@@ -81,30 +71,20 @@ function GridStatusChip({ map }: { map: MapSummary }) {
 }
 
 /**
- * What to do about a gridmap that is not there, or not the one that was asked
- * for — the actionable half of the chip above, next to the control that acts.
+ * What to do about a missing or stale floor plan — the actionable half of the
+ * chip, beside the control that acts. Always shown, because a failed
+ * conversion's reason is otherwise only in the robot's log.
  *
- * Always on the card, and that is the point of it: these sentences used to be
- * one generic
- * "never converted" line, and a conversion that actually failed said nothing
- * here and left its reason in the robot's backend log. A reason an operator
- * cannot see is a reason nobody reads.
- *
- * Silent for `ok` and for `converting`, where the chip already says everything
- * and a second line would only push the controls down for the minute it runs.
- *
- * Every other branch ends by naming what to do next, and none of them may name
- * Build grid unless it is actually on the card — GridRebuildControl renders
- * only for a map with a cloud, and telling an operator to press a control that
- * is not there is worse than the generic line this replaced.
+ * Silent for `ok` and `converting`, where the chip says it all. No branch may
+ * name Build grid unless it is on the card: GridRebuildControl renders only
+ * for a map with a scan.
  */
 function GridStatusNote({ map }: { map: MapSummary }) {
   if (map.grid_status === "ok" || map.grid_status === "converting") return null;
 
   if (!map.has_pointcloud) {
-    // No map.pcd, so there is nothing to convert from and no control to offer:
-    // pgo either never wrote the cloud or it was removed from the directory by
-    // hand. Re-saving the run is the only way back, and this run is gone.
+    // No scan file, so nothing to convert from: re-saving the run is the only
+    // way back, and the run is gone.
     return (
       <p className="mt-2 text-[11px] leading-tight text-signal-warn">
         This map has no scan data, so a floor plan cannot be built from it. Only
@@ -136,10 +116,8 @@ function GridStatusNote({ map }: { map: MapSummary }) {
     );
   }
 
-  // "none" last rather than as a switch case, because it doubles as the
-  // fallback: a status this build has not heard of means a backend ahead of
-  // this frontend, and "no usable grid, build one" is the safe thing to say
-  // about any state that is not one of the four handled above.
+  // "none" is last because it doubles as the fallback: an unknown status means
+  // a newer backend, and "build one" is the safe thing to say.
   return (
     <p className="mt-2 text-[11px] leading-tight text-muted-foreground">
       This map was saved but its floor plan was never built, so the robot cannot
@@ -149,42 +127,24 @@ function GridStatusNote({ map }: { map: MapSummary }) {
 }
 
 /**
- * One map in the catalogue.
+ * One map in the catalogue, in instrument vocabulary: `signal-cmd` marks the
+ * loaded map, the console's hue for "the value in force".
  *
- * Instrument vocabulary rather than a shadcn Card: `signal-cmd` for the loaded
- * map is the console's existing meaning for "the value in force" — the rail's
- * location tick and the active segment of a Segmented control are the same hue.
+ * No readouts, by request — the screen answers "which maps are here and which
+ * is loaded"; what a map measures is the editor's business. Always shown: "In
+ * use", the floor plan chip and its note — a map the robot can't load must say
+ * so at a glance, and a conversion in flight is why Edit and Rebuild are greyed.
  *
- * No readouts at all, by request. It used to carry six behind a Details
- * toggle — extent, cells, resolution, waypoint count, size, save time — and the
- * question this screen answers is "which maps are on the robot and which one is
- * loaded", which the thumbnail, the name and the chips answer on their own.
- * What a map measures is the editor's business, where it is being worked on.
+ * "In use" gets three signals so one card wins outright: a solid corner check,
+ * a ring, and first place in the sort. `aria-current` carries it to a screen
+ * reader.
  *
- * What the card always shows: "In use", the gridmap-state chip, and the
- * sentence that says what to do about it. A map the nav stack cannot load must
- * say so at a glance, or the flag is worthless — and a conversion in flight is
- * why Edit and Rebuild are greyed, so hiding it would make the card look broken
- * instead of busy. The note earns the same treatment for a stronger reason: a
- * failed conversion's only other record is a log line on the robot.
- *
- * "In use" gets three signals rather than one, because *which map is loaded* is
- * the question the screen exists to answer and one card in the grid has to win
- * it outright: a solid check in the thumbnail's corner, a ring around the card,
- * and the sort order (MapLibrary puts it first). It used to be a header chip
- * and a 5% tint, which is a difference you find by comparing cards instead of
- * one you see. The wording lives in the badge's tooltip and accessible name,
- * and `aria-current` carries the fact to a screen reader on its own.
- *
- * The title is the one editable value on the card (MapRenameControl). Delete
- * and Edit are the two things that happen to a whole map, and both live in the
- * top-right corner as icon tiles (MapDeleteControl, MapEditLink) rather than
- * in the header row — an X and a pencil are the glyphs for them, and putting
- * Delete among the word-labels would make the destructive action look like
- * one more view to open. Rename and Delete are greyed on the map in use: the
- * stack was launched with that name, nothing here can re-point it, and the
- * backend refuses both either way. Edit is not — a floor plan saved onto the
- * live map is reloaded in place — and greys only while a job drives on it.
+ * The title is the one editable value (MapRenameControl). Delete and Edit are
+ * corner tiles (an X and a pencil) rather than words in the header, so the
+ * destructive one doesn't read as another view. Rename and Delete grey on the
+ * map in use — the stack was launched with that name, and the backend refuses
+ * both. Edit doesn't (a floor plan saved onto the live map reloads in place)
+ * and greys only while a job drives on it.
  */
 export function MapCard({
   map,
@@ -193,9 +153,9 @@ export function MapCard({
   onSwitched,
 }: {
   map: MapSummary;
-  /** Forwarded to the rename control; see MapRenameControl for why it goes up. */
+  /** Forwarded to the rename control; see MapRenameControl. */
   onRenamed?: (message: string) => void;
-  /** Same contract for the delete control — the card unmounts on success. */
+  /** Same contract for delete — the card unmounts on success. */
   onDeleted?: (message: string) => void;
   /** The backend's sentence about where the robot ended up after a map switch. */
   onSwitched?: (message: string) => void;
@@ -206,31 +166,19 @@ export function MapCard({
     <article
       aria-current={map.active ? "true" : undefined}
       className={cn(
-        // `relative` is what the corner overlays are pinned to; see
-        // MapDeleteControl for why it owns the absolute rather than a wrapper.
+        // `relative` pins the corner overlays; see MapDeleteControl.
         "relative overflow-hidden rounded-sm border",
         map.active
-          ? // A ring *and* the border: the ring draws outside the box, so this
-            // reads as a 2px outline without the 1px reflow a border-2 would
-            // cause on one card in a grid of otherwise identical ones.
+          ? // A ring plus the border reads as 2px without the reflow border-2
+            // would cause on one card in the grid.
             "border-signal-cmd bg-signal-cmd/8 ring-1 ring-signal-cmd"
           : "border-hairline bg-panel",
       )}
     >
-      {/* The answer to the only question this screen asks, in the corner the
-       * delete X does not use — and the corner MapActivateControl takes over
-       * on every card where the answer is "not this one".
-       *
-       * A check, not the words "In use". One card in the grid carries it, so
-       * it is read as *which one*, not as something to parse — and the same
-       * geometry as the delete X opposite makes the pair read as a system:
-       * two 24px corner tiles, one solid (a state) and one outlined (an
-       * action). The words survive as the tooltip and as the accessible name,
-       * because a glyph alone cannot say which of "loaded", "selected" or
-       * "converted" it means; `aria-current` on the card says it again.
-       *
-       * bg-primary is signal-cmd in both themes and ships a foreground already
-       * paired to it, so no colour is spelled out here. */}
+      {/* The in-use check, in the corner MapActivateControl takes on every
+       * other card. A glyph so it reads as *which one*; the words survive as
+       * tooltip and accessible name, since a check alone can't say "loaded"
+       * vs "selected". bg-primary is signal-cmd in both themes. */}
       {map.active ? (
         <span
           title="In use — the map the robot is working in"
@@ -240,12 +188,8 @@ export function MapCard({
           <CheckIcon className="size-3.5" aria-hidden />
         </span>
       ) : (
-        // The same corner, the opposite job: the badge above is a state, this
-        // is the action that moves it here. Swap arrows rather than an unfilled
-        // check, which would read as "already done, greyed out" — see that
-        // component for the full argument. Mutually exclusive with the badge by
-        // construction: MapActivateControl renders nothing when the map is
-        // active.
+        // Same corner, opposite job: the action that moves the badge here.
+        // Mutually exclusive with the badge — it renders nothing when active.
         <MapActivateControl map={map} onSwitched={onSwitched} />
       )}
       <MapDeleteControl map={map} onDeleted={onDeleted} />
@@ -266,19 +210,15 @@ export function MapCard({
           )}
           <GridStatusChip map={map} />
 
-          {/* Export at the right of the facts: the one verb that takes a copy
-           * away without touching the map. Edit and Delete, which do touch
-           * it, are the corner tiles above. Export carries the `ml-auto`; its
-           * refusal line, when there is one, is a `basis-full` child of this
-           * same wrapping row, so it lands under the chips. */}
+          {/* Export at the right: the one verb that takes a copy without
+           * touching the map. Its refusal line is a `basis-full` child of this
+           * wrapping row, so it lands under the chips. */}
           <MapExportControl map={map} />
         </div>
 
-        {/* Why the grid is missing or stale, then the control that fixes it.
-         * Both below the chips rather than among them: each carries a full
-         * sentence, and the rebuild control has its own status line (the
-         * backend's reply, or an error). Only for maps with a cloud — without
-         * map.pcd there is nothing to convert and the backend would 400. */}
+        {/* Why the floor plan is missing or stale, then the control that fixes
+         * it, below the chips since both carry sentences. Only with a scan —
+         * without one the backend would 400. */}
         <GridStatusNote map={map} />
         {map.has_pointcloud && <GridRebuildControl map={map} />}
       </div>

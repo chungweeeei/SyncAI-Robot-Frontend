@@ -12,32 +12,20 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * The icon strip both map surfaces float over their canvas: the dashboard
- * viewport's two toolbars and the floor plan editor's. One vocabulary rather
- * than two look-alikes, so a pressed tool, a divider and a tooltip read the
- * same wherever an operator meets them — the way lib/map/gesture.ts already
- * makes a drag mean the same thing on both.
+ * The icon strip both map surfaces float over their canvas, one vocabulary so
+ * a pressed tool reads the same on both.
  *
- * Nothing here is icon-only to a mouse or a screen reader. Each button
- * carries its name as its accessible name and in a tooltip beside what a
- * press will do; under a finger, which never hovers, the name is printed under
- * the icon instead — unless the strip is `compact`, which trades that label
- * for a strip that fits on one row of a phone (see ToolStrip).
+ * Each button has its name as accessible name and tooltip. A finger never
+ * hovers, so under a coarse pointer the name is printed under the icon —
+ * unless the strip is `compact` (see ToolStrip).
  */
 
 export type ToolTone = "cmd" | "caution";
 
-/**
- * What a button draws as its glyph. A lucide icon fits as it is; so does any
- * small component that takes a className — the editor's cell swatches are one.
- */
+/** A lucide icon, or any small component taking a className (the cell swatches). */
 export type ToolIcon = React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
 
-/**
- * Pressed state is the tone's hue, like every armed or shown control in the
- * console: what a drag does and what is drawn are choices the operator made,
- * and have to read as choices at a glance.
- */
+/** Pressed is the tone's hue: an operator choice reads as one at a glance. */
 const PRESSED: Record<ToolTone, string> = {
   cmd: "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd",
   caution: "border-signal-caution/50 bg-signal-caution/12 text-signal-caution",
@@ -47,14 +35,11 @@ const PRESSED: Record<ToolTone, string> = {
 const CompactContext = React.createContext(false);
 
 /**
- * The strip itself: a named `toolbar` on the overlay panel ground.
+ * A named `toolbar` on the overlay ground.
  *
- * `compact` is for a strip that has to fit on a phone in one row. Under a
- * coarse pointer its buttons are 32 px icons with no label under them, by
- * request: the dashboard's nine viewport tools, labelled and 40 px wide,
- * wrapped to two rows over a 390 px viewport and hid a third of the scene. It
- * gives up the house 40 px target and the finger's only reading of each
- * name, so it is an opt-in per strip rather than the default.
+ * `compact` makes coarse-pointer buttons 32 px icons with no label, by
+ * request, so a strip fits one phone row (labelled, the viewport's tools hid
+ * a third of the scene). It gives up the 40 px target, so it is opt-in.
  */
 export function ToolStrip({
   label,
@@ -150,17 +135,14 @@ export function ToolButton({
         }
       >
         <Icon aria-hidden className={cn("size-4", busy && "animate-pulse")} />
-        {/* A finger never hovers, so it never reads the tooltip; under a
-          * coarse pointer the button is 40 px tall and has room to say it. */}
+        {/* A finger never sees the tooltip, so the name is printed. */}
         {!compact && (
           <span className="instrument-label hidden text-[9px] leading-none pointer-coarse:block">
             {label}
           </span>
         )}
       </TooltipTrigger>
-      {/* Hidden under a coarse pointer: the label is already printed on the
-        * button, and a tap would otherwise leave a tooltip standing over the
-        * scene. */}
+      {/* Hidden under a coarse pointer, or a tap leaves it over the scene. */}
       <TooltipContent side="bottom" className="pointer-coarse:hidden">
         <span className="font-medium">{label}</span>
         <span className="opacity-70">— {hint}</span>

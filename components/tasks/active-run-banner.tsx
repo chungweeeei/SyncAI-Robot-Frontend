@@ -9,20 +9,10 @@ import type { ActiveTask } from "@/lib/api/task";
 import { runElapsed } from "@/lib/task/run";
 
 /**
- * Runs this tab is not following, with a way to stop them.
- *
- * The console used to have exactly one handle on a task: the id returned by the
- * dispatch that started it, held in memory by the tab that dispatched it. A
- * reload, a navigation, a second browser or a schedule firing overnight all
- * produced the same situation — a robot executing a task with no status and no
- * Cancel anywhere on screen, and the Temporal UI on :8081 as the only recourse.
- * GET /api/v1/active_tasks is what ended that, and this is where it is spent.
- *
- * Rows this tab *is* following are filtered out, because the library row that
- * started them already shows them with per-step detail this list does not
- * have. So an empty banner is
- * the normal state, and a non-empty one always means "something is running that
- * you are not looking at".
+ * Runs this tab is not following (another tab, a reload, a schedule), with a
+ * way to stop them. The run this tab tracks is left out, since its library
+ * row already shows it in more detail, so a non-empty banner always means
+ * "something is running that you are not looking at".
  */
 export function ActiveRunBanner({
   /** The run the composer is tracking, so it is not announced twice. */
@@ -34,9 +24,7 @@ export function ActiveRunBanner({
 
   const unattended = tasks.filter((task) => task.id !== trackedTaskId);
 
-  // Silent while the poll is failing. The status strip already carries that
-  // failure in the caution hue, and a second copy of it here would be a banner
-  // that appears when nothing is wrong with the *tasks*.
+  // Silent while the poll fails: the status strip already says so.
   if (status !== "ok" || !unattended.length) return null;
 
   return (
@@ -52,9 +40,7 @@ export function ActiveRunBanner({
 }
 
 function ActiveRunRow({ task, asOf }: { task: ActiveTask; asOf: string | null }) {
-  // One mutation per row: two unattended runs cancelled back to back must not
-  // share a busy flag or overwrite each other's refusal. The re-read of the
-  // active list that follows a cancel is the hook's, not this row's.
+  // One mutation per row, so two cancels do not share a busy flag or refusal.
   const cancel = useCancelTask();
   const busy = cancel.isPending;
   const error = cancel.error?.message ?? null;

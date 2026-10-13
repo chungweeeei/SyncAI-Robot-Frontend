@@ -4,24 +4,19 @@ import { SIGNAL_BARS } from "@/lib/robot/levels";
 import type { Tone } from "@/lib/types/tone";
 import { cn } from "@/lib/utils";
 
-// Re-exported so every surface keeps importing its tone and its bars from
-// here, beside the parts that draw them.
 export type { Tone } from "@/lib/types/tone";
 export { rssiToBars } from "@/lib/robot/levels";
 
 /**
- * The console's instrument vocabulary — the parts every telemetry surface is
- * built from. Deliberately not shadcn Cards: a card's padding, border and title
- * chrome around four numbers is most of the pixels spent on the frame rather
- * than the value. A group here is a condensed caps label, a hairline, and rows.
+ * The console's instrument parts. Not shadcn Cards: card chrome around four
+ * numbers spends most of the pixels on the frame. A group is a caps label, a
+ * hairline and rows.
  *
- * `tone` is the EFIS colour semantic from globals.css, not a visual choice:
- * pick it by what the value *is* (measured / commanded / degraded / faulted),
- * and the same hue will mean the same thing on the map canvas.
+ * `tone` is the EFIS colour semantic from globals.css: pick it by what the
+ * value *is* (measured / commanded / degraded / faulted), not by look.
  */
 
-/** Text colour per tone. Exported for surfaces that colour a value themselves
- *  (the motor grid) instead of going through Readout. */
+/** Text colour per tone, for surfaces that colour a value themselves. */
 export const TONE_TEXT: Record<Tone, string> = {
   neutral: "text-foreground",
   live: "text-signal-live",
@@ -165,8 +160,7 @@ export function Chip({
     <span
       title={title}
       className={cn(
-        // nowrap and shrink-0: a chip is one fact, and wrapped to two lines in a
-        // squeezed strip it reads as two.
+        // A chip wrapped onto two lines reads as two facts.
         "instrument-label inline-flex h-5 shrink-0 items-center rounded-sm border px-1.5 whitespace-nowrap",
         TONE_CHIP[tone],
         className,
@@ -209,9 +203,8 @@ export function SignalBars({
 }
 
 /**
- * Segmented level meter (battery). Discrete cells rather than a smooth bar:
- * a continuous fill invites reading a precision the 1 Hz integer percentage
- * does not have, and cells are countable out of the corner of an eye.
+ * Segmented level meter (battery). Cells rather than a smooth fill, which
+ * would suggest a precision the integer percentage does not have.
  */
 export function SegmentMeter({
   value,
@@ -246,19 +239,11 @@ export function SegmentMeter({
 }
 
 /**
- * The record indicator: a filled dot that breathes while a capture runs.
+ * The record indicator: a dot that pulses while a capture runs, so "still
+ * running?" is answered from across a room. Reduced motion keeps the dot.
  *
- * The one animated thing on the surfaces that use it, and it earns the
- * exception — what is being captured grows with no other outward sign, and the
- * single question an operator asks is whether it is still running. A static dot
- * answers it too, but not from across a room. Reduced motion drops the
- * animation and keeps the dot, which is the whole signal; the pulse is
- * emphasis, never the message.
- *
- * Warn red rather than the tone table's reading of it. `signal-warn` means
- * faulted everywhere else in this console, but record-red is a stronger
- * convention than the EFIS palette here, and two capture surfaces disagreeing
- * about what "running" looks like would be worse than one borrowed hue.
+ * Warn red despite `signal-warn` meaning faulted elsewhere: record-red is the
+ * stronger convention here.
  */
 export function RecordDot() {
   return (
@@ -273,13 +258,9 @@ export function RecordDot() {
 }
 
 /**
- * Segmented selector for view state (2D / 3D, camera mode, motion). Commanded
- * hue on the active segment: it is a value the operator set, not one measured.
- *
- * A labelled group, because each segment is an `aria-pressed` button and a
- * screen reader otherwise hears "Move, button, pressed" with nothing saying
- * what Move is a choice of. `label` is required for the same reason
- * IconButton's is: a name that is optional is a name that gets left off.
+ * Segmented selector. Commanded hue on the active segment: the operator set
+ * it. `label` is required, because otherwise a screen reader hears "Move,
+ * button, pressed" with nothing saying what Move is a choice of.
  */
 export function Segmented<T extends string>({
   label,
@@ -290,32 +271,17 @@ export function Segmented<T extends string>({
   disabled = false,
   className,
 }: {
-  /**
-   * What the segments choose between, as the group's accessible name. Use the
-   * words of the visible label beside it where there is one, so what is heard
-   * matches what is read.
-   */
+  /** The group's accessible name; match the visible label beside it. */
   label: string;
   /**
-   * `null` lights no segment.
-   *
-   * For a control whose current value can be something none of the options
-   * represents. The locomotion policy row is the motivating case: it lights what
-   * the robot *reports*, and the robot can report a policy the command surface
-   * deliberately does not expose (CHAMP / ISSAC), or none at all. Lighting the
-   * nearest option instead would be a claim about the robot.
+   * `null` lights no segment, for a value none of the options represents (the
+   * robot can report a policy the console does not offer). Lighting the
+   * nearest option would be a claim about the robot.
    */
   value: T | null;
   options: readonly { value: T; label: string }[];
   onChange: (value: T) => void;
-  /**
-   * Fill the container, splitting it into equal segments.
-   *
-   * The default hugs its labels, which is right for a control sized by its
-   * content. Inside a fixed-width panel it is wrong: the row does not wrap, so a
-   * set of long labels (FREE / UNKNOWN / OBSTACLE in the gridmap editor) simply
-   * overflows the panel's border.
-   */
+  /** Split the container into equal segments, so long labels cannot overflow it. */
   stretch?: boolean;
   /** Dim the whole control and refuse every segment. */
   disabled?: boolean;
@@ -344,13 +310,9 @@ export function Segmented<T extends string>({
             className={cn(
               "instrument-label h-6 px-2 transition-colors pointer-coarse:min-h-10",
               "border-l border-hairline first:border-l-0",
-              // The dimming lives on the container, so a disabled segment only
-              // has to stop reacting — two stacked opacities would be muddy.
+              // The container carries the dimming; two opacities would be muddy.
               disabled && "hover:bg-transparent hover:text-muted-foreground",
-              // min-w-0 so a segment can shrink below its label; truncate rather
-              // than let one long label push the row past the container. The
-              // padding drops to px-1 because flex-1 is already doing the spacing,
-              // and px-2 on four segments is what pushes the last label over.
+              // Shrink and truncate; px-1 since flex-1 already spaces them.
               stretch && "min-w-0 flex-1 truncate px-1",
               active
                 ? "bg-signal-cmd/12 text-signal-cmd"
@@ -366,9 +328,8 @@ export function Segmented<T extends string>({
 }
 
 /**
- * Shared chrome for controls that float on top of the viewport. They sit over a
- * canvas that can be any colour, so they need their own opaque-ish ground —
- * this is the only place in the console that uses a blur.
+ * Chrome for controls floating over the viewport, which can be any colour —
+ * the console's only blur.
  */
 export const overlayPanel =
   "rounded-sm border border-hairline bg-panel/85 shadow-sm backdrop-blur-sm";

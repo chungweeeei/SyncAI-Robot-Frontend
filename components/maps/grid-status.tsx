@@ -13,16 +13,12 @@ export interface GridStatusProps {
 }
 
 /**
- * Where the pointer is: the cell under it, and that cell's place on the map.
- *
- * Two readouts, by request. The value under the pointer, the zoom and the
- * per-value cell counts it used to carry went: the floor plan shows a cell's
- * value by its grey, and the zoom is what the view looks like.
+ * Where the pointer is: the cell under it, and its place on the map. Two
+ * readouts, by request — the grey and the view already show value and zoom.
  */
 export function GridStatus({ meta, hover, className }: GridStatusProps) {
-  // Cell centres, not corners. gridToWorld(col, row) is the cell's corner, and at
-  // 0.05 m/cell reporting that as "the position" is a 2.5 cm lie in a readout an
-  // operator may be using to check where a wall actually is.
+  // Cell centres, not corners: at 0.05 m/cell a corner is a 2.5 cm lie to an
+  // operator checking where a wall is.
   const world = hover ? gridToWorld(hover.col + 0.5, hover.row + 0.5, meta) : null;
 
   return (

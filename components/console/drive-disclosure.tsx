@@ -12,38 +12,16 @@ import { DRIVE_PAGE } from "@/components/drive/drive-screen";
 
 /**
  * The drive panel's mount in the masthead, so manual drive is reachable from
- * every screen rather than only from the three that happen to own a viewport.
- *
- * It used to be anchored bottom-right inside the point cloud, the mapping
- * viewport and the gridmap editor, which meant the answer to "can I nudge the
- * robot from here" depended on which page you were on and, on two of them, on
- * what mode that page was in. The strip is the one piece of chrome every route
- * renders, so hanging the panel off it makes that answer the same everywhere.
- *
- * A disclosure rather than a permanent overlay: /maps, /recordings, /tasks and
- * /settings are scrolling documents, and a 16rem panel parked over their
- * bottom-right corner would cover content on screens that have nothing to
- * drive toward. Collapsed it costs one button in the strip.
+ * every screen. A disclosure rather than a permanent overlay, which would
+ * cover content on the scrolling screens.
  *
  * **Collapsing unmounts the panel**, which disarms it and closes the teleop
- * channel — the backend's watchdog then zeroes cmd_vel. That is deliberate and
- * it is the safe direction: the keyboard half of the panel is a window-level
- * WASD listener, so a panel that stayed armed while hidden would be a live
- * teleop with nothing on screen saying so. The sticks are the input; put them
- * away and the robot stops.
- *
- * The trigger wears the same joystick as the panel's arm button, which is a
- * real collision while the panel is open: two cmd-hued joysticks a few pixels
- * apart, switching different things. What separates them is position and size.
- * If they are ever mistaken for each other, the arm toggle is the glyph to
- * change, not this one — a drive panel opened by anything other than a joystick
- * is the less obvious of the two.
+ * channel. That is the safe direction: the keys are a window-level listener,
+ * and an armed panel while hidden would be a live teleop nothing shows.
  */
 export function DriveDisclosure() {
-  // Not on the drive view, which is the same drive full-screen: a panel
-  // opened over it would be a second teleop channel and a second key
-  // listener. Leaving the route also unmounts an open panel, so it comes back
-  // closed and disarmed.
+  // Not on the drive view: that would be a second teleop channel and key
+  // listener.
   const pathname = usePathname();
   if (pathname === DRIVE_PAGE) return null;
   return (

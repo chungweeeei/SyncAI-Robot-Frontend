@@ -7,7 +7,7 @@ import { useRecordings } from "@/hooks/use-recordings";
 import type { RecordingSummary } from "@/lib/api/recording";
 import { formatSize, formatTimestamp } from "@/lib/recording/format";
 
-/** Same panel shape /maps and /settings use when there is nothing to list. */
+/** The empty / failed panel /maps and /settings use. */
 function Notice({
   label,
   children,
@@ -24,12 +24,8 @@ function Notice({
 }
 
 /**
- * The chip a row carries, or nothing for a bag that is simply fine.
- *
- * `ok` renders nothing on purpose — the map library's rule: a chip on every
- * healthy row is a column of the word "fine" on a screen whose question is
- * which bags are here. Tones are the console's EFIS semantic: `interrupted` is
- * a bag that is not done rather than a fault, so it takes caution, not warn.
+ * A row's chip, or nothing for a healthy recording — a column of "fine" would
+ * be noise. `interrupted` is unfinished rather than faulted, so caution.
  */
 function StatusChip({ recording }: { recording: RecordingSummary }) {
   if (recording.status === "recording") {
@@ -37,9 +33,7 @@ function StatusChip({ recording }: { recording: RecordingSummary }) {
   }
   if (recording.status === "interrupted") {
     return (
-      // The chip is all an interrupted row says now: the paragraph under it
-      // (cut short by a restart, needs repairing, contact support) was
-      // removed by request, so the hover title carries the one fact left.
+      // The explanatory paragraph was removed by request; the title keeps the fact.
       <Chip tone="caution" title="This recording did not close cleanly.">
         No index
       </Chip>
@@ -49,13 +43,9 @@ function StatusChip({ recording }: { recording: RecordingSummary }) {
 }
 
 /**
- * A bag that recorded nothing, which is almost always a topic that was never
- * published under the name it was given.
- *
- * Worth its own line rather than leaving the operator to notice a zero: nothing
- * in the pipeline refuses an unknown topic — the recorder waits for it, so that
- * it can be armed before bringup — which makes a typo completely silent right
- * up until the bag is needed.
+ * A recording with no messages — almost always a channel never published
+ * under the name given. The recorder waits for unknown channels rather than
+ * refusing them, so a typo is otherwise silent until the recording is needed.
  */
 function EmptyWarning({ recording }: { recording: RecordingSummary }) {
   if (recording.status !== "ok" || recording.message_count !== 0) return null;
@@ -67,10 +57,7 @@ function EmptyWarning({ recording }: { recording: RecordingSummary }) {
   );
 }
 
-/**
- * Why the delete control beside a live recording does nothing. The control
- * carries the same reason as a hover title, which a finger never sees.
- */
+/** Why the delete control beside a live recording does nothing — its hover title never reaches a finger. */
 function LiveHint({ recording }: { recording: RecordingSummary }) {
   if (recording.status !== "recording") return null;
   return (
@@ -96,8 +83,7 @@ function RecordingRow({ recording }: { recording: RecordingSummary }) {
   const live = recording.status === "recording";
 
   return (
-    // Stacked below sm: the numbers beside the name left it ~60 px at 375,
-    // which is an ellipsis.
+    // Stacked below sm, where the numbers left the name ~60 px.
     <li className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:gap-3">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
@@ -105,9 +91,7 @@ function RecordingRow({ recording }: { recording: RecordingSummary }) {
             {recording.name}
           </span>
           <StatusChip recording={recording} />
-          {/* The format itself is an internal name (zstd on this robot), so
-            * the chip says only what it means for the operator: the files are
-            * smaller than the raw data and play back the same. */}
+          {/* The format is an internal name, so the chip says what it means. */}
           {recording.compression && (
             <Chip tone="neutral" title="Stored compressed. Plays back the same.">
               Compressed
@@ -118,10 +102,8 @@ function RecordingRow({ recording }: { recording: RecordingSummary }) {
         {/* wrap-anywhere: channel paths have no spaces to break on. */}
         <p className="mt-1 text-[11px] leading-tight wrap-anywhere text-muted-foreground">
           {formatTimestamp(recording.modified_at)}
-          {/* Live bags have no topic list yet: rosbag2 writes it into
-            * metadata.yaml on shutdown, so until then the recorder panel above
-            * is the only place the topics exist. Saying so beats an empty row
-            * that reads as "recorded nothing". */}
+          {/* A live recording's channel list is only written on shutdown; say
+            * so rather than show a row that reads as "recorded nothing". */}
           {recording.topics.length > 0
             ? ` · ${recording.topics.join(", ")}`
             : live
@@ -133,9 +115,7 @@ function RecordingRow({ recording }: { recording: RecordingSummary }) {
         <LiveHint recording={recording} />
       </div>
 
-      {/* Size only. Length and message count sat beside it and were dropped
-        * by request; the message count still drives the empty warning above,
-        * which is the one thing it was needed for on this screen. */}
+      {/* Size only, by request; the message count still drives EmptyWarning. */}
       <div className="flex shrink-0 items-start justify-between gap-4 sm:justify-start">
         <Cell label="Size" value={formatSize(recording.size_bytes)} />
         <RecordingDeleteControl recording={recording} />
@@ -161,14 +141,10 @@ function LoadingList() {
 }
 
 /**
- * Every bag on the robot, newest first — the order the backend answers in,
- * which is the order they are looked for.
+ * Every recording on the robot, newest first (the backend's order).
  *
- * A row list rather than the map library's card grid: a bag has no picture, and
- * its size reads as a column. The live recording stays in the list
- * with its own chip instead of being filtered out; the panel above says what it
- * is doing, and a row that vanished while recording and reappeared on stop
- * would be the one moment the list looked wrong.
+ * The live one stays in the list with its chip: a row that vanished while
+ * recording and reappeared on stop would look wrong.
  */
 export function RecordingList() {
   const { recordings, status } = useRecordings();

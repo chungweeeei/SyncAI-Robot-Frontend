@@ -39,45 +39,29 @@ import { mappingRunFace } from "@/lib/map/run-face";
 import { cn } from "@/lib/utils";
 
 /*
- * There is no camera-mode control here, unlike the dashboard's viewport
- * (components/dashboard/pointcloud-view.tsx, which keeps both). The canvas runs
- * on its `cameraMode` default, Move, and Focus — the mode that keeps the camera
- * locked on the robot — is not offered on this screen for now.
- *
- * Mapping is the one screen where the view is not about where the robot is. The
- * operator is driving it around to grow a cloud, and what they are reading is
- * the shape of the room that has been covered so far and the hole that has not;
- * a camera that rides the robot takes exactly that judgement away, and the run
- * is long enough that it is the judgement the whole screen is for. The
- * top-down button beside where this used to sit is the framing that question
- * actually wants.
+ * No camera-mode control here, unlike the dashboard: the canvas stays on Move.
+ * Focus rides the robot, and this screen is about the shape of the room
+ * covered so far, which a camera locked to the robot takes away.
  */
 
 /**
- * What the operator is about to do, once they have said yes.
- *
- * `unsaved` is frozen when the dialog opens rather than read at render: it is
- * the reason the dialog says what it says, and a save landing underneath an
- * open dialog must not rewrite the question being asked.
+ * What the operator is about to do, once they have said yes. `unsaved` is
+ * frozen when the dialog opens so a save landing underneath can't rewrite the
+ * question.
  */
 type Confirming =
   | { kind: "reset" }
   | { kind: "switch"; to: SwitchableMode; unsaved: boolean };
 
 /**
- * The four questions this page can ask, keyed by `confirmKey` below.
- *
- * `leave` and `reset` are the two ways to lose the run; `MANUAL` and `AUTO` are
- * the plain mode switches, which destroy nothing but do tear the whole stack
- * down for ~30 s. Hence `destructive`: the red is spent only where something is
- * actually unrecoverable, so it keeps meaning that (same rule as the map
- * library's Switch-vs-Delete dialogs).
+ * The four questions, keyed by `confirmKey`. `leave` and `reset` lose the run;
+ * `MANUAL` and `AUTO` destroy nothing but tear the stack down for ~30 s. Only
+ * the unrecoverable ones are `destructive`, so red keeps meaning that.
  */
 const CONFIRM_COPY = {
   leave: {
     title: "Leave mapping without saving?",
-    // `body: null` means the dialog writes its own line — the reset copy is the
-    // one that depends on state (`savedRun`).
+    // `body: null`: the dialog writes its own line (the reset copy depends on `savedRun`).
     body: "This run's map is only in the robot's memory. Switching discards it for good.",
     icon: Trash2Icon,
     confirm: "Discard and switch",
@@ -110,83 +94,54 @@ const CONFIRM_COPY = {
   },
 } as const;
 
-/** Which copy a pending confirmation reads. */
 function confirmKey(confirming: Confirming): keyof typeof CONFIRM_COPY {
   if (confirming.kind === "reset") return "reset";
   return confirming.unsaved ? "leave" : confirming.to;
 }
 
 /**
- * The mapping screen's content: drive the robot around and watch the map being
- * built.
+ * The mapping screen: drive the robot around and watch the map being built.
  *
- * The same viewport-plus-rail shape as the dashboard, but deliberately NOT
- * gated on the robot state the way that page is: this screen's defining moment
- * is the mode switch, during which the backend is down and there is no state —
- * a page that blanked itself right then would go dark exactly when the
- * operator needs to see "Switching" holding steady.
+ * Not gated on robot state like the dashboard: the mode switch, when the
+ * backend is down and there is no state, is this screen's defining moment, and
+ * blanking then would hide "Switching".
  *
- * The canvas gets no map meta and no ground image: in MANUAL there is no
- * loaded map — what is on screen IS the map. Two layers say how the run is
- * going: the dim "map so far" layer is pgo's merged keyframe cloud
- * (loop-closure-corrected — watch it snap into shape when a loop closes),
- * streamed only while a mapping session is up, and the bright live scan rides
- * on top of it over the same body_cloud WebSocket as the dashboard (pgo
- * broadcasts the map TF during mapping, so that stream works unchanged). The
- * robot model needs the telemetry pose, which mapping's TF chain may not
- * provide; the clouds are the primary instrument either way.
+ * No map meta or ground image — in MANUAL what is on screen *is* the map. The
+ * dim "map so far" is the loop-closure-corrected keyframe scan, streamed while
+ * a mapping session is up; the live scan rides on top over the dashboard's
+ * socket. The robot model needs a telemetry pose mapping may not provide; the
+ * scans are the instrument either way.
  *
- * The run's controls sit over the viewport as one strip (RunStrip), and the
- * rail keeps only the mode switch. The strip's face is the robot's run state,
- * polled, not a flag this page sets on a press: a run started from another
- * console, or a save that landed there, must read the same here, and after a
- * reload the strip has to know whether Start or Save is the next thing to
- * offer. The rule is lib/map/run-face.ts.
+ * The strip's face is the robot's polled run state (lib/map/run-face.ts), not
+ * a flag set on a press, so a run started or saved from another console, or
+ * a reload, reads the same.
  *
- * This page owns the three run writes — start, save, reset — because a
- * refused start or reset lands in the same panel under the strip, and the
- * save's receipt has to outlive a dialog that stays open as it. Whichever was
- * pressed last owns the panel: every press `reset()`s the other two (the
- * recorder's idiom), which is also what clears a save's receipt and its
- * floor plan line when the next run starts — a dialog reopened on "Saved
- * 'foo'" for a brand-new empty map would be a lie about this run.
+ * This page owns start, save and reset: a refused start or reset lands in one
+ * panel under the strip, and the save's receipt outlives its dialog. Each press
+ * `reset()`s the other two, so the last press owns the panel and a new run
+ * never reopens on the previous save's receipt.
  *
- * The one rule this page owns: **every act that rebuilds or discards something
- * goes through one confirm dialog**, because nothing downstream will stop you —
- * sys_manager takes `switch_mode` at its word and pgo holds the run in RAM. So
- * both mode segments confirm, not just the one that loses a map: a switch in
- * either direction tears the stack down for ~30 s and stops whatever the robot
- * was doing, which is not something to hand to a stray tap on a touchscreen.
- * What differs is how loud the dialog is — `savedRun` is what escalates leaving
- * MANUAL from "the stack restarts" to "the map is gone". It re-arms on three
- * events that look nothing alike: a new MANUAL session, tracked by watching
- * `reported` change (the adjust-during-render pattern, same as
- * VertexMoveDialog's `shown`), a successful reset, and a successful start —
- * the last two have to say so explicitly because `reported` never moves across
- * either. The guard is also lifted by the robot itself: once the run state
- * reads `idle` (after a save, or before any start) there is nothing in RAM to
- * lose, so leaving is a plain switch. `unknown` keeps the guard, the way the
- * map job lock refuses rather than assumes.
+ * **Every act that rebuilds or discards goes through one confirm dialog**,
+ * since nothing downstream stops it: the mode manager takes a switch at its
+ * word and the run lives in RAM. Both mode segments confirm, since either
+ * direction tears the stack down for ~30 s. `savedRun` decides how loud
+ * leaving MANUAL is ("restart" vs "map gone"); it re-arms on a new MANUAL
+ * session (watching `reported`), a successful reset and a successful start —
+ * the last two explicitly, as `reported` doesn't move across them. A run state
+ * of `idle` lifts the guard (nothing in RAM); `unknown` keeps it.
  *
- * A start goes through **no confirm dialog**, and that is a decision against
- * the rule above: a start rebuilds nothing and discards nothing — the stack
- * stays up and there is no run to lose, which the robot itself guarantees by
- * refusing a start while a run is on. Its one hazard, the robot having to
- * stand still while the lidar re-levels, is in the sentence the robot answers
- * with — which, since the panel under the strip keeps only refusals
- * (2026-10, by request), is no longer on screen.
+ * A start has no confirm: it discards nothing, and the robot refuses one while
+ * a run is on.
  */
 export function MappingView() {
   const control = useModeSwitch();
   const { feed } = useTelemetry();
   const [topDownNonce, setTopDownNonce] = React.useState(0);
   const [savedRun, setSavedRun] = React.useState(false);
-  // One dialog, every question. They all ask "you are about to interrupt the
-  // robot" and differ only in what happens next, so a second AlertDialog block
-  // would be a copy of the same copy, drifting apart at the first reword.
+  // One dialog for every question: they differ only in what happens next, and
+  // two copies would drift apart.
   const [confirming, setConfirming] = React.useState<Confirming | null>(null);
-  // The save dialog is the other one, and never open at the same time: it is
-  // reached from the strip, which is inert under the confirm.
+  // Never open with the confirm: it is reached from the strip, which is inert under it.
   const [saving, setSaving] = React.useState(false);
 
   const start = useStartMapping();
@@ -195,8 +150,7 @@ export function MappingView() {
 
   const { reported, pending, switchTo } = control;
 
-  // A new MANUAL run means the save guard re-arms — whatever was saved last
-  // run says nothing about this one.
+  // A new MANUAL run re-arms the save guard.
   const [prevReported, setPrevReported] = React.useState(reported);
   if (reported !== prevReported) {
     setPrevReported(reported);
@@ -205,9 +159,8 @@ export function MappingView() {
 
   const mapping = reported === "MANUAL" && !pending;
 
-  // Polled only while the robot reports Mapping: outside it the answer is
-  // `unknown` by construction and the query is not even fetched. Loading fails
-  // closed, which offers nothing.
+  // Polled only while Mapping; elsewhere the answer is `unknown`. Loading
+  // fails closed, offering nothing.
   const runStatus = useMappingStatus(mapping);
   const runState: MappingRunState =
     mapping && runStatus.run ? runStatus.run.state : "unknown";
@@ -217,31 +170,22 @@ export function MappingView() {
     status: runStatus.status,
   });
 
-  // The map whose conversion this screen is following, read off the last save:
-  // "the one I just saved" is not something the catalogue can be asked, since
-  // it lists every map on the robot and says nothing about which one is this
-  // operator's. Only when the backend says a conversion started — for
-  // grid_pending false there is nothing running to watch, and the line would
-  // sit on "none" saying nothing. Null until then, which is also what keeps the
-  // mapping screen from fetching a catalogue it otherwise has no use for.
+  // The map this screen follows the conversion of, read off the last save —
+  // the catalogue can't say which map is "the one I just saved". Null unless
+  // a conversion started, which also spares this screen the catalogue fetch.
   const watching = save.data?.grid_pending ? save.data.name : null;
   const converting = useMapConversion(watching);
 
-  // No segment commands a switch directly — every one of them opens the dialog
-  // and the operator's second tap is what reaches sys_manager. The one press
-  // that still does nothing is the mode already reported: re-selecting it is
-  // not a request (sys_manager refuses to rebuild the live mode anyway), so
-  // asking about it would be a dialog whose yes does nothing.
+  // Every segment opens the dialog; the second tap is what commands. The mode
+  // already reported does nothing — re-selecting it is not a request.
   const selectMode = React.useCallback(
     (mode: SwitchableMode) => {
       if (mode === reported && !pending) return;
       setConfirming({
         kind: "switch",
         to: mode,
-        // Only leaving MANUAL can lose a run — and only towards AUTO, since
-        // re-selecting MANUAL to cancel a pending switch keeps the run alive.
-        // And only while the robot holds one: `idle` means nothing is in RAM
-        // (saved, or never started); `unknown` fails closed and still warns.
+        // Only MANUAL → AUTO loses a run, and only while the robot holds one:
+        // `idle` has nothing in RAM; `unknown` fails closed and warns.
         unsaved:
           mode === "AUTO" && reported === "MANUAL" && runState !== "idle" && !savedRun,
       });
@@ -253,14 +197,13 @@ export function MappingView() {
     save.reset();
     discard.reset();
     start.mutate(undefined, {
-      // The third re-arm event (see the component doc): a start after a save
-      // is a new unsaved run that `reported` never sees.
+      // A start after a save is a new unsaved run `reported` never sees.
       onSuccess: () => setSavedRun(false),
     });
   };
 
-  // Cleared on open, not on submit: a receipt from a run another console
-  // saved and restarted would otherwise show as this save's for a frame.
+  // Cleared on open, not submit: a receipt from another console's save would
+  // otherwise flash as this one's.
   const openSave = () => {
     start.reset();
     discard.reset();
@@ -272,8 +215,7 @@ export function MappingView() {
     save.mutate(name, { onSuccess: () => setSavedRun(true) });
   };
 
-  // A refusal the operator backed out of was shown in the dialog and is
-  // dropped with it, so the dialog reopens on an empty form.
+  // A refusal backed out of is dropped, so the dialog reopens empty.
   const closeSave = () => {
     if (save.error) save.reset();
     setSaving(false);
@@ -285,27 +227,21 @@ export function MappingView() {
     save.reset();
     discard.mutate(undefined, {
       onSuccess: () => {
-        // The line that makes the leave-guard keep working. Its usual re-arm
-        // watches `reported` change, and `reported` stays MANUAL straight
-        // through a reset — so without this, an operator who saves map A,
-        // resets, drives map B and then switches to Nav gets no warning and
-        // loses B silently.
+        // `reported` stays MANUAL through a reset, so without this a save of A,
+        // reset, drive B, switch to Nav would lose B with no warning.
         setSavedRun(false);
       },
     });
   };
 
-  // Confirmed even when the run IS saved: a misclick costs the run either way,
-  // and "it was saved" says nothing about the minutes driven since the save.
+  // Confirmed even when saved: the minutes driven since the save are still lost.
   const requestReset = React.useCallback(
     () => setConfirming({ kind: "reset" }),
     [],
   );
 
-  // The last question asked, held past the dialog closing so its copy does not
-  // change under the close animation (adjust-during-render, as above). Reading
-  // `confirming` directly would mean guarding every line of text for the null
-  // frame the operator never sees.
+  // The last question, held past close so the copy doesn't change under the
+  // close animation (adjust-during-render, as above).
   const [shown, setShown] = React.useState<Confirming>({ kind: "reset" });
   if (confirming && confirming !== shown) setShown(confirming);
   const confirmCopy = CONFIRM_COPY[confirmKey(shown)];
@@ -319,8 +255,7 @@ export function MappingView() {
     }
     const target = confirming.to;
     setConfirming(null);
-    // A switch tears the session down; the receipts describe a run that no
-    // longer exists.
+    // A switch tears the session down; the receipts describe a dead run.
     start.reset();
     save.reset();
     discard.reset();
@@ -335,9 +270,8 @@ export function MappingView() {
         ? "reset"
         : null;
 
-  // Whichever press was refused last — at most one holds an error, since
-  // every press resets the other two. The save's refusal stays in its dialog,
-  // beside the name to fix.
+  // At most one holds an error, since each press resets the others. The
+  // save's refusal stays in its dialog.
   const runError = start.error?.message ?? discard.error?.message ?? null;
 
   return (
@@ -352,12 +286,9 @@ export function MappingView() {
           mapCloudStream
         />
 
-        {/* The run strip at the top right, a refused press hanging under
-          * it. No stream-health pills and no layer toggle (2026-10, by
-          * request): the map so far is always streamed, and whether there is
-          * any is read off the picture itself. The whole overlay is
-          * pointer-transparent so the scene behind its empty stretches still
-          * takes a drag — only the panels themselves catch the pointer. */}
+        {/* The run strip top right, a refused press under it. The overlay is
+          * pointer-transparent so its empty stretches still pass a drag to
+          * the scene. */}
         <div className="pointer-events-none absolute inset-x-3 top-3 flex max-h-[calc(100%-1.5rem)] flex-col gap-2">
           <RunStrip
             className="pointer-events-auto self-end"
@@ -368,9 +299,8 @@ export function MappingView() {
             onReset={requestReset}
           />
 
-          {/* Right-aligned, under the strip whose press it answers. Scrolling
-            * because a phone held sideways leaves the viewport ~200 px tall,
-            * and a refusal can be three lines. */}
+          {/* Scrolls: a phone held sideways leaves ~200 px, and a refusal
+            * can be three lines. */}
           <div className="pointer-events-none flex min-h-0 w-56 flex-col gap-2 self-end overflow-y-auto empty:hidden">
             <RunError className="pointer-events-auto" message={runError} />
           </div>
@@ -430,12 +360,8 @@ export function MappingView() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            {/* Icon and label both, the house pattern (see the map library's
-              * delete and switch dialogs): the glyph tells the two buttons
-              * apart at a glance, the word is what makes the committing one
-              * unmistakable. The confirm glyph is the one the action already
-              * wears elsewhere on this page — RotateCcw is the strip's New
-              * map — so the dialog reads as that control continued. */}
+            {/* Icon and label, the house pattern; the confirm glyph is the one
+              * the action wears on this page (RotateCcw is New map). */}
             <Button variant="ghost" size="sm" onClick={() => setConfirming(null)}>
               <ArrowLeftIcon data-icon="inline-start" />
               {confirmCopy.cancel}

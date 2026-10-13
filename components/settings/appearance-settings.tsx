@@ -31,7 +31,7 @@ const subscribeNoop = () => () => {};
 
 export function AppearanceSettings() {
   const { theme, setTheme } = useTheme();
-  // Hydration-safe mounted check: the theme is unknown until the client mounts
+  // The theme is unknown until the client mounts.
   const mounted = React.useSyncExternalStore(
     subscribeNoop,
     () => true,

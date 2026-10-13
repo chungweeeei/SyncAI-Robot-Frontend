@@ -72,8 +72,7 @@ export function ScheduleList({
   }
 
   if (!schedules.length) {
-    // A muted line rather than the bordered Notice panel /maps uses: inside an
-    // InstrumentGroup that would be a box in a box.
+    // Not the bordered Notice: inside an InstrumentGroup it is a box in a box.
     return (
       <p className="text-[11px] leading-tight text-muted-foreground">
         No schedules are registered on this robot.
@@ -103,12 +102,7 @@ export function ScheduleList({
   );
 }
 
-/**
- * One schedule row, expandable to show the steps it froze at registration.
- *
- * Its own component rather than inline in the list above, because the expanded
- * flag is per-row state and a hook cannot live inside a `.map` callback.
- */
+/** One schedule row, expandable to show the steps it froze at registration. */
 function ScheduleRow({
   schedule,
   templates,
@@ -132,21 +126,13 @@ function ScheduleRow({
   const [editing, setEditing] = React.useState(false);
   const timezone = useBrowserTimeZone();
 
-  /**
-   * Paused rows and runs that have already happened both read "—" or move on
-   * to the one after; upcomingRun has the reasons.
-   */
+  /** See upcomingRun for paused rows and runs already past. */
   const next = upcomingRun(schedule, readAtMs);
 
   /**
-   * The next run on the operator's own clock, once the browser has said which
-   * clock that is. It used to be UTC for everyone, sliced from the ISO string
-   * to keep the prerender and the browser agreeing — honest, but an operator
-   * who registered "09:00" and read back "01:00 UTC" concluded the schedule
-   * was wrong. UTC is now only the server render's answer, labelled as such;
-   * the browser replaces it on hydration. The zone is named only when it is
-   * not the one the trigger was registered in, because then — and only then —
-   * the two readouts on this row can legitimately show different numbers.
+   * On the operator's clock once the browser names it; UTC, labelled, is only
+   * the server render's answer. The zone is named only when it differs from
+   * the trigger's, the one case the two readouts can disagree.
    */
   const nextReadout = next
     ? timezone
@@ -165,8 +151,7 @@ function ScheduleRow({
 
   return (
     <li
-      // The anchor a saved job's clock chip scrolls to and focuses; -1 so the
-      // row takes focus from script without becoming a tab stop of its own.
+      // Where a job's clock chip scrolls and focuses; -1 keeps it off the tab order.
       data-template-id={schedule.task_template_id ?? undefined}
       tabIndex={-1}
       data-highlighted={highlighted || undefined}
@@ -226,9 +211,7 @@ function ScheduleRow({
             disabled={busy}
             className="text-signal-warn hover:bg-signal-warn/12"
             onClick={() => {
-              // A confirm rather than an undo: deleting a Temporal schedule is not
-              // reversible from here, and there is no local history to step back
-              // over. Same stance as the vertex panel.
+              // A confirm, since there is no undo.
               if (
                 window.confirm(
                   `Delete schedule "${schedule.id}"? This cannot be undone.`,
@@ -263,10 +246,8 @@ function ScheduleRow({
         </div>
       )}
 
-      {/* Mounted only while expanded, which is what defers the per-schedule
-       * describe RPC to a deliberate gesture. Unmounting on collapse also means
-       * re-expanding re-reads, so a schedule deleted and re-created elsewhere does
-       * not show its old steps. */}
+      {/* Mounted only while expanded, deferring the per-schedule describe RPC;
+       * re-expanding re-reads, so a re-created schedule never shows old steps. */}
       {open && (
         <div className="pl-7">
           <ScheduleSteps scheduleId={schedule.id} source={source} />

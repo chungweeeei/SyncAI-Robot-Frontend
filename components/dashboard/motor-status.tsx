@@ -10,10 +10,8 @@ import { cn } from "@/lib/utils";
 import type { RobotMotorStatus } from "@/lib/types/robot";
 import { motorTempTone } from "@/lib/robot/levels";
 
-// Plan view of the chassis, laid out rather than listed because that is how
-// the fault reads — "the hind-left leg is hot", not "HL_Knee_joint is 78" —
-// and it matches the robot the operator sees in the viewport beside this. The
-// legs, the joint codes and the naming rule live in lib/robot/motor-label.ts.
+// A plan view, because a fault reads as "the hind-left leg is hot", not
+// "HL_Knee_joint is 78". The naming rule is lib/robot/motor-label.ts.
 
 /** The worst thing in the set, as one chip. Faults outrank heat. */
 function summaryChip(motors: RobotMotorStatus[]) {
@@ -43,9 +41,7 @@ function JointRow({
       <span className="instrument-label text-muted-foreground">{label}</span>
       {motor ? (
         <span className="flex items-baseline gap-1.5">
-          {/* The error code only appears when there is one: a column of E0 down
-           * every leg would train the eye to skip exactly the field that
-           * matters. */}
+          {/* Only when there is one: a column of E0 trains the eye to skip it. */}
           {motor.error !== 0 && (
             <span className="readout text-[11px] text-signal-warn">
               E{motor.error}
@@ -73,21 +69,14 @@ function JointRow({
 }
 
 /**
- * Per-joint motor health from GET /api/v1/robot/state: twelve actuators as the
- * robot's own plan view, so heat and faults read as a place on the machine.
- *
- * Only temperature and the error code are here because that is all the
- * endpoint exposes — the kinematic half of MotorState is deliberately internal
- * (see the backend router). This is a 10 Hz snapshot polled at 1 Hz: fine for
- * watching a leg warm up over minutes, useless for anything faster.
+ * Per-joint temperature and error code, the only motor fields the robot state
+ * exposes. Polled at 1 Hz: fine for a leg warming over minutes, not faster.
  */
 export function MotorStatus({ motors }: { motors: RobotMotorStatus[] }) {
   const byName = new Map(motors.map((m) => [m.name, m]));
 
-  // Anything the four-leg layout does not account for. kJointNames in
-  // syncai_driver_manager.cpp still carries a TODO about its ordering, so a
-  // renamed joint is a live possibility — list the strays rather than drop
-  // them, which would silently shrink the grid to eleven readings.
+  // Joints the layout does not know (the driver's naming is still unsettled):
+  // listed rather than silently dropped from the grid.
   const placed = new Set(
     LEG_ROWS.flat().flatMap((leg) =>
       JOINTS.map((j) => jointName(leg, j.suffix)),

@@ -8,27 +8,12 @@ import { cn } from "@/lib/utils";
 import type { GoalTask } from "@/hooks/use-goal-task";
 
 /**
- * Read-back for the drag-a-goal flow: the goal that went out, and the way to
- * cancel or clear it. Arming it is the viewport toolbar's Set goal.
+ * Read-back for the drag-a-goal flow, floating on the viewport beside the
+ * drag it describes, in the arrow's cmd hue.
  *
- * It floats on the viewport rather than living in the instrument rail because
- * the gesture that produces a goal happens on the map: moving the readback away
- * from the drag would put the number and the thing it describes on opposite
- * sides of the screen. The pose is set in the commanded hue — the same cyan the
- * arrow is drawn in on the canvas.
- *
- * There is no Send: the drag dispatches on release (see `useGoalTask`), so this
- * panel is a readback of what already went out, not a form waiting to be
- * submitted. A button standing there afterwards would read as a step still owed
- * — which is how the old Send button read once the arrow on the map had already
- * said where the robot was going. What is left is the way back out: Cancel while
- * the task runs, Clear once it is finished, and a Retry that appears only when
- * the submit itself failed, because by then the drag is over and re-aiming is
- * the only other option.
- *
- * Task state lives in `useGoalTask` and the armed flag in the view (one pick
- * mode is shared with the initial-pose tool); this component is presentation
- * only, and renders nothing until there is something to read back.
+ * No Send: release dispatches (`useGoalTask`), and a button left standing
+ * would read as a step still owed. Cancel while running, Clear after, and
+ * Retry only when the submit failed. Presentation only.
  */
 export function GoalControl({
   task,
@@ -39,8 +24,6 @@ export function GoalControl({
 }) {
   const { goal, taskStatus, error, message, running, busy } = task;
 
-  // Nothing to read back yet: arming lives in the viewport toolbar now, so
-  // with no pose out there is nothing for this panel to hold.
   if (!goal && !taskStatus && !error) return null;
 
   return (
@@ -58,9 +41,7 @@ export function GoalControl({
         </div>
       )}
 
-      {/* `busy` earns a row of its own: the POST is in flight before the
-        * tracker has a status to show, and coordinates sitting there with no
-        * state beside them read as a drag that did nothing. */}
+      {/* Shown while the POST is in flight too, or the drag looks inert. */}
       {(taskStatus || busy) && (
         <div className="mt-2.5 flex items-center justify-between gap-2">
           <span className="instrument-label text-muted-foreground">
@@ -99,8 +80,7 @@ export function GoalControl({
           </button>
         ) : (
           <>
-            {/* Only ever a retry — see the header. To re-drive a goal that
-              * went out fine, drag again. */}
+            {/* Only a retry; to re-drive a goal, drag again. */}
             {error && (
               <button
                 type="button"
@@ -112,8 +92,7 @@ export function GoalControl({
                 Retry
               </button>
             )}
-            {/* Disabled while busy so a Clear landing between release and
-              * the POST resolving cannot drop a goal that is on its way. */}
+            {/* Disabled while busy, so it cannot drop a goal on its way. */}
             <button
               type="button"
               disabled={busy}

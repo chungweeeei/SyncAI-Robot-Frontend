@@ -24,34 +24,21 @@ import { cn } from "@/lib/utils";
 import type { GridRecipe, MapSummary } from "@/lib/types/map";
 
 /**
- * (Re)build a map's 2D gridmap — the card-side face of
- * POST /api/v1/maps/{name}/grid/convert.
+ * (Re)build a map's floor plan — the card-side face of
+ * POST /api/v1/maps/{name}/grid/convert. Offers the two recipes only; the
+ * pipeline's tuning knobs stay API-only, since they're tuned against
+ * intermediate scans, not guessed from a card.
  *
- * This is the formal home of what field operators used to do over SSH with a
- * one-off script: pick the recipe when the default is wrong for the site. The
- * dropdown carries exactly the two recipes and nothing else — band offsets,
- * gap_fill_size and the debug switch stay API-only on purpose, because they are
- * tuned with the pipeline's intermediate clouds in front of you, not guessed
- * from a card.
- *
- * The hand-edit conflict is the one flow with structure: the backend answers
- * 409 `gridmap_hand_edited` for a map whose grid holds operator edits, and this
- * control turns that into a confirm dialog and a retry with `overwriteEdits`
- * rather than a dead error — the edited grid survives as gridmap_prev.pgm
- * either way, and the dialog says so. A `conversion_running` 409 and every
- * other failure just render as the backend's own sentence.
- *
- * There is no local "converting" state to hold, and no completion to report
- * either: useConvertMapGrid invalidates the maps query, the catalogue answers
- * with `grid_status: "converting"`, and useMaps' poll carries the card through
- * to `ok` or to `failed` with its reason. What this control owns is the
- * request — everything after it belongs to the card.
+ * 409 `gridmap_hand_edited` becomes a confirm and a retry with
+ * `overwriteEdits` (the edited grid survives as gridmap_prev.pgm either way).
+ * Every other failure is the backend's sentence. No local "converting" state:
+ * the invalidation makes the catalogue answer `converting`, and useMaps' poll
+ * carries the card to `ok` or `failed`.
  */
 export function GridRebuildControl({ map }: { map: MapSummary }) {
   const conversion = useConvertMapGrid();
-  // A rebuild replaces the floor plan the planner is using, so it waits for
-  // any job driving on this map — the backend refuses it, and this says so
-  // first. See lib/map/run-lock.ts.
+  // A rebuild replaces the planner's floor plan, so it waits for any job on
+  // this map (lib/map/run-lock.ts); the backend refuses it anyway.
   const runLock = useMapRunLock(map.name);
   const [confirm, setConfirm] = React.useState<{
     recipe: GridRecipe;
@@ -60,9 +47,7 @@ export function GridRebuildControl({ map }: { map: MapSummary }) {
 
   const busy = conversion.isPending;
   const message = conversion.data?.message ?? null;
-  // The hand-edit conflict is a question, not a failure: it is asked in the
-  // dialog below and never rendered as an error, whether the dialog is open or
-  // was answered "keep". Every other refusal is the backend's sentence.
+  // The hand-edit conflict is a question, asked in the dialog — never an error.
   const conflict =
     isHandEditConflict(conversion.error) &&
     !conversion.variables?.overwriteEdits;
@@ -81,9 +66,8 @@ export function GridRebuildControl({ map }: { map: MapSummary }) {
     );
   };
 
-  // Every state but "converting" is rebuildable, failures included — a failed
-  // conversion is in fact the state most likely to want this control, with the
-  // other recipe.
+  // Everything but "converting" is rebuildable — a failed conversion most of
+  // all, with the other recipe.
   const disabled =
     busy || map.grid_status === "converting" || !map.has_pointcloud;
 
@@ -94,10 +78,8 @@ export function GridRebuildControl({ map }: { map: MapSummary }) {
   return (
     <div className="mt-2 space-y-1.5">
       {runLock.locked ? (
-        // A look-alike span rather than the disabled trigger, for the reason
-        // MapEditLink gives: the trigger's disabled state swallows the
-        // pointer, and the tooltip carrying the reason is the point. Focusable
-        // and named with the reason, so a keyboard reaches the same sentence.
+        // A look-alike span: the disabled trigger swallows the pointer the
+        // tooltip needs. Focusable and named with the reason for keyboards.
         <span
           role="button"
           tabIndex={0}
@@ -148,7 +130,7 @@ export function GridRebuildControl({ map }: { map: MapSummary }) {
         </DropdownMenu>
       )}
 
-      {/* The backend's sentences, verbatim — same contract as SaveMapControl. */}
+      {/* The backend's sentences, verbatim. */}
       {message && (
         <p className="text-[11px] leading-tight text-muted-foreground">
           {message}

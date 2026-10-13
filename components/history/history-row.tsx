@@ -41,9 +41,8 @@ function Cell({
 }
 
 /**
- * A job's close time on the operator's own clock once the browser has said
- * which clock that is, and UTC — labelled — for the prerender. Same trade the
- * schedule list makes for its next-run readout.
+ * A job's close time on the operator's clock once the browser has said which,
+ * and labelled UTC for the prerender.
  */
 function useFinishedReadout(closedAt: string | null): {
   value: string;
@@ -56,10 +55,7 @@ function useFinishedReadout(closedAt: string | null): {
     : { value: formatUtcRunTime(closedAt), unit: "UTC" };
 }
 
-/**
- * What each step did, read on expand. Mounted only while the row is open, which
- * is what defers the request to a deliberate gesture.
- */
+/** What each step did. Mounted only while the row is open, so it is read on demand. */
 function RunSteps({ id }: { id: string }) {
   const { status, steps, error } = useTaskRun(id);
 
@@ -72,8 +68,7 @@ function RunSteps({ id }: { id: string }) {
     );
   }
 
-  // The backend's sentence, verbatim — most often that the job has aged out of
-  // what the robot keeps, which is the operator's answer as it stands.
+  // The backend's sentence — most often that the job has aged out.
   if (status === "error") {
     return (
       <p role="alert" className="text-[11px] leading-snug text-signal-warn">
@@ -82,9 +77,8 @@ function RunSteps({ id }: { id: string }) {
     );
   }
 
-  // The backend degrades the step list to empty rather than failing when it
-  // cannot ask the job itself, so an empty list is "not available", not "the
-  // job had no steps" — nothing in this console dispatches a zero-step job.
+  // The backend answers an empty step list when it can't ask the job, so empty
+  // means "not available" — this console never dispatches a zero-step job.
   if (!steps.length) {
     return (
       <p className="text-[11px] leading-tight text-muted-foreground">
@@ -125,17 +119,13 @@ export function HistoryRow({ entry }: { entry: TaskHistoryEntry }) {
   const panelId = React.useId();
   const finished = useFinishedReadout(entry.closed_at);
   const seconds = runSeconds(entry.started_at, entry.closed_at);
-  // The template's name, the kind, or — for a run nothing labelled — the id;
-  // see describeRun. The id itself is in the detail below, for whoever has
-  // to find the run in the orchestrator's own log.
+  // See describeRun. The id is also in the detail below, for the orchestrator's log.
   const { title, detail } = describeRun(entry);
   const titledById = title === entry.id;
 
   return (
     <li>
-      {/* The whole row is the disclosure, so there is no small target to hunt
-        * for. Its name is its visible text — status, title, source, times —
-        * which is also what a screen-reader user needs to pick the row out. */}
+      {/* The whole row is the disclosure; its name is its visible text. */}
       <button
         type="button"
         aria-expanded={open}
@@ -149,9 +139,8 @@ export function HistoryRow({ entry }: { entry: TaskHistoryEntry }) {
           <span
             className={cn(
               "block text-sm font-medium",
-              // An id is a readout and truncates — its tail is a sequence
-              // number nobody reads; a name is words and wraps, because on
-              // a phone the times beside it leave "Morni…" otherwise.
+              // An id truncates (its tail is a sequence number); a name wraps,
+              // or a phone shows "Morni…".
               titledById ? "readout truncate" : "break-words",
             )}
           >
@@ -162,12 +151,10 @@ export function HistoryRow({ entry }: { entry: TaskHistoryEntry }) {
           </span>
         </span>
 
-        {/* A missing close time is an em dash, not a zero — a zero would be a
-          * claim about the job. */}
+        {/* A missing close time is an em dash, not a zero. */}
         <span className="flex shrink-0 items-start gap-3 sm:gap-4">
           <Cell label="Finished" value={finished.value} unit={finished.unit} />
-          {/* Took is hidden below sm: at 375 px the id is what an operator
-            * picks a row out by, and it was the one thing that truncated. The
+          {/* Took is hidden below sm, where it made the title truncate; the
             * duration is still in the expanded detail. */}
           <span className="hidden sm:flex">
             <Cell
@@ -188,18 +175,15 @@ export function HistoryRow({ entry }: { entry: TaskHistoryEntry }) {
 
       {open && (
         <div id={panelId} className="space-y-2 px-4 pb-3">
-          {/* The id, once, where an engineer looks for it: it is what the
-            * orchestrator's log and a support conversation call the run. Not
-            * repeated when the title already is the id. */}
+          {/* The id, for the orchestrator's log; skipped when it is the title. */}
           {!titledById && (
             <div className="flex items-baseline gap-2">
               <span className="instrument-label shrink-0 text-muted-foreground">Job id</span>
               <span className="readout min-w-0 truncate text-[12px]">{entry.id}</span>
             </div>
           )}
-          {/* Which map it drove on: a route's coordinates only mean something
-            * on one map, and a site with several is where "it went to the
-            * wrong place" gets asked. Absent for a job that used none. */}
+          {/* Coordinates only mean something on one map, and a site with
+            * several is where "it went to the wrong place" gets asked. */}
           {entry.map_name && (
             <div className="flex items-baseline gap-2">
               <span className="instrument-label shrink-0 text-muted-foreground">Map</span>

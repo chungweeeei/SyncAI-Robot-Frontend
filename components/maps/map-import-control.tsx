@@ -20,55 +20,33 @@ import { MAP_NAME_RE } from "@/lib/map/name";
 import type { MapSummary } from "@/lib/types/map";
 
 /**
- * What the file picker offers by default. Both spellings of gzip, because
- * browsers disagree on which one a `.tar.gz` carries; the extensions are what
- * actually filter on most platforms.
+ * Both gzip MIME spellings, since browsers disagree for a `.tar.gz`; the
+ * extensions are what filter on most platforms.
  */
 const ACCEPT =
   ".zip,.tar.gz,application/zip,application/gzip,application/x-gzip";
 
 /**
- * The library-side face of POST /api/v1/maps/import.
+ * The library-side face of POST /api/v1/maps/import: one button above the
+ * grid, rendered before the empty state since a robot with no maps is where
+ * it matters most. The picker is a hidden input the button clicks, still
+ * named in the tree (which is how e2e hands it a file).
  *
- * One button above the grid rather than anything on a card, because an import
- * is not about any map that is already here — and the screen it matters most
- * on is the one with no cards at all, which is why MapLibrary renders this
- * before its empty state rather than inside the grid.
+ * A pick opens a confirm rather than uploading, because **an import under an
+ * existing name silently replaces that map and its waypoints** (the backend
+ * refuses only in-use, converting or template-bound maps). The dialog shows
+ * the landing name, pre-filled and editable, and turns destructive (Replace)
+ * when it matches a card. Left empty, the archive's own name is used, which
+ * this console can't read — hence the general warning.
  *
- * The picker is the browser's own, behind a hidden input the button clicks:
- * a visible file input cannot be styled into this console's vocabulary and
- * its own label ("No file chosen") is a state this control never shows. The
- * input is still in the tree with an accessible name, which is also how the
- * e2e suite hands it a file.
+ * A refusal keeps the dialog open (409 `template_bound` names the templates).
+ * A success's sentence goes up through `onResult` to MapLibrary's line, since
+ * the card it is about doesn't exist yet.
  *
- * Picking a file opens a confirm rather than uploading at once, for one
- * reason: **an import under a name that is already on the robot replaces
- * that map and its waypoints.** The backend refuses only when the map is in
- * use, mid-conversion or still targeted by a task template; an idle map with
- * hand-placed waypoints is silently overwritten. So the dialog shows the
- * name the map will land under, pre-filled from the file and editable, and
- * when it matches a card in the catalogue the confirm button turns
- * destructive and says Replace. Left empty, the name written inside the
- * archive is used — a name this console cannot read without unpacking the
- * file, which is why the empty case warns in general terms.
- *
- * A refusal keeps the dialog open and shows the backend's sentence there, as
- * the delete dialog does: 409 `template_bound` names the templates to go and
- * unbind, and closing the dialog would take the list away.
- *
- * On success the backend's sentence goes *up* through `onResult` to the
- * line MapLibrary keeps above the grid — the same line a rename's and a
- * delete's land on — because the thing the import produced is a new card,
- * and the sentence is about the catalogue rather than about this button.
- *
- * While the upload runs the footer's Cancel stays live and reads "Cancel
- * upload": a wrong file picked over a weak link is minutes of waiting
- * otherwise. It aborts the request and closes the dialog, and the one
- * sentence this console writes itself — "Import canceled." — goes up the same
- * line, so a dialog that vanished is explained. Escape is still swallowed
- * while busy: the button is the deliberate path, and an accidental key should
- * not throw an upload away. What the sentence cannot know is whether the last
- * byte had already landed; the hook refetches the catalogue for that case.
+ * While uploading, Cancel stays live ("Cancel upload") — a wrong file over a
+ * weak link is minutes otherwise — and reports "Import canceled." on the same
+ * line. Escape stays swallowed so a stray key can't drop the upload. Whether
+ * the last byte landed is unknowable, so the hook refetches the catalogue.
  */
 export function MapImportControl({
   maps,
@@ -76,10 +54,7 @@ export function MapImportControl({
 }: {
   /** The catalogue, for the replace warning; null while it is still loading. */
   maps: readonly MapSummary[] | null;
-  /**
-   * A sentence for the library's status line: the backend's on success, this
-   * console's on cancel.
-   */
+  /** For the library's status line: the backend's sentence, or ours on cancel. */
   onResult?: (message: string) => void;
 }) {
   const importing = useImportMap();
@@ -97,9 +72,8 @@ export function MapImportControl({
 
   const pick = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
-    // Cleared at once, so picking the same file again after a Cancel fires
-    // `change` a second time — a file input only fires it when the value
-    // differs from the last one.
+    // Cleared at once: an input only fires `change` when the value differs,
+    // so re-picking the same file after a Cancel would do nothing.
     event.target.value = "";
     if (!file) return;
     importing.reset();
@@ -113,8 +87,8 @@ export function MapImportControl({
       onResult?.("Import canceled.");
     }
     setArchive(null);
-    // Detaches this dialog from the mutation, so the abort's rejection settles
-    // in the background instead of rendering as an error on the next open.
+    // Detach from the mutation so the abort's rejection doesn't show as an
+    // error on the next open.
     importing.reset();
   };
 
@@ -142,11 +116,9 @@ export function MapImportControl({
         tabIndex={-1}
         onChange={pick}
       />
-      {/* Solid signal-live rather than a Button variant: the page's one
-       * call to action, and green because it is the verb that brings a map
-       * *in* — the console's hue for a value that is sound and present.
-       * `text-background` keeps the label legible in both themes, where the
-       * hue is dark on light and light on dark. */}
+      {/* Solid signal-live: the page's one call to action, green because it
+       * brings a map *in*. `text-background` keeps the label legible in both
+       * themes. */}
       <Button
         type="button"
         onClick={() => inputRef.current?.click()}
@@ -159,15 +131,13 @@ export function MapImportControl({
       <AlertDialog
         open={archive !== null}
         onOpenChange={(open) => {
-          // Escape is this path; while uploading only the footer's button may
-          // cancel, so a stray key cannot throw the transfer away.
+          // Escape lands here; while uploading only the footer's button cancels.
           if (!open && !busy) close();
         }}
       >
         <AlertDialogContent>
           <form
-            // A form so Enter in the name field confirms, the way the rename
-            // row does; the handler guards what the button's `disabled` does.
+            // A form so Enter confirms; the handler repeats the button's guard.
             onSubmit={(event) => {
               event.preventDefault();
               submit();
@@ -206,9 +176,7 @@ export function MapImportControl({
                 disabled={busy}
                 className="readout h-8 rounded-sm"
               />
-              {/* The rule, shown only while the name breaks it — the same
-               * line the save-map and rename rows use, because it is the
-               * same rule. */}
+              {/* Shown only while the name breaks the rule, as on save and rename. */}
               {!valid && (
                 <p className="text-[11px] leading-snug text-signal-caution">
                   Letters, digits, dot, dash and underscore only, up to 64

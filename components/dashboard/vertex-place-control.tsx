@@ -8,16 +8,9 @@ import { vertexGlyph } from "@/lib/map/vertex";
 import type { MapVertex } from "@/lib/types/map";
 
 /**
- * The re-place flow's only chrome: what is in hand, how to put it down, and how
- * to back out.
- *
- * It exists because the gesture is otherwise silent. Arming a re-place takes a
- * marker off the map and hands its pose to the pointer — from the operator's
- * side, a stop vanished — so something has to name the stop that is in flight
- * and offer a way out that is not "drag it somewhere and hope".
- *
- * Presentation only, like GoalControl beside it: the write, its in-flight flag
- * and its error all live in useActiveMapVertices.
+ * The re-place flow's only chrome: which stop is in hand, and a way out.
+ * Without it, arming looks like a stop vanished. Presentation only; the write
+ * lives in useActiveMapVertices.
  */
 export function VertexPlaceControl({
   vertex,
@@ -35,9 +28,7 @@ export function VertexPlaceControl({
   onDismissError: () => void;
   className?: string;
 }) {
-  // Nothing armed and nothing to report is the resting state of this flow, and
-  // it draws no chrome at all — a permanent empty panel over the map would cost
-  // the viewport a corner for a mode that is off.
+  // At rest it draws nothing, rather than an empty panel over the map.
   if (!vertex && !error && !busy) return null;
 
   return (
@@ -73,8 +64,7 @@ export function VertexPlaceControl({
         </p>
       )}
 
-      {/* One button, and which one it is follows what there is to undo: an armed
-        * re-place can be abandoned, a failed one can only be acknowledged. */}
+      {/* An armed re-place can be abandoned; a failed one only acknowledged. */}
       {vertex ? (
         <button
           type="button"

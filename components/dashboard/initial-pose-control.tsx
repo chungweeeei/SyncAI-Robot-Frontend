@@ -7,33 +7,15 @@ import { cn } from "@/lib/utils";
 import type { InitialPoseEstimate } from "@/hooks/use-initial-pose";
 
 /**
- * Read-back for the drag-an-initial-pose flow (RViz's "2D Pose Estimate"):
- * what the drag published. Arming it is the viewport toolbar's Set initial
- * pose.
+ * Read-back for the initial-pose drag: what was published on release.
  *
- * Sits under the goal read-back and mirrors its shape, because it is the same
- * gesture producing a different kind of pose — but everything it draws is in the
- * caution hue, not the commanded cyan a goal uses. That is the point of the
- * distinction: a goal is a place to drive to, while this overrides the robot's
- * own estimate of where it already is. Getting it wrong does not send the robot
- * somewhere unintended, it makes the whole map frame wrong, which is worse and
- * quieter. Amber, and a separate tool, keep the two from being confused
- * mid-drag.
+ * Shaped like the goal read-back but in the caution hue: a wrong initial pose
+ * does not send the robot astray, it silently makes the whole map frame
+ * wrong, so it must never be mistaken for a goal mid-drag.
  *
- * Like the goal control there is no Send: arming picks the robot model up onto
- * the pointer, and putting it down where the machine stands *is* the
- * confirmation — `useInitialPose` posts on release. So this
- * panel is a readback of what already went out, and the amber button below it is
- * a retry for when it did not — the ordinary way to correct a pose is to drag
- * again, not to press a button here.
- *
- * A successful estimate also expires on its own (useInitialPose), so this panel
- * flashes up on release and is gone a moment later without being dismissed —
- * and re-arming the tool clears it outright. Clear stays for a failure, which
- * never expires because its error and its Retry live here.
- *
- * All state lives in `useInitialPose` (plus the view's pick mode); this
- * component is presentation only.
+ * No Send: release publishes, and the button here is only a retry after a
+ * failure. A success expires on its own (useInitialPose); a failure stays,
+ * since its error and Retry live here. Presentation only.
  */
 export function InitialPoseControl({
   estimate,
@@ -44,8 +26,6 @@ export function InitialPoseControl({
 }) {
   const { pose, published, busy, error } = estimate;
 
-  // Nothing to read back yet: arming lives in the viewport toolbar now, so
-  // with no pose out there is nothing for this panel to hold.
   if (!pose && !error) return null;
 
   return (
@@ -73,14 +53,10 @@ export function InitialPoseControl({
         </div>
       )}
 
-      {/* "Published", not "Localized": the topic has no ack and the
-        * localizer only takes this as an ICP seed, so the honest claim is
-        * that the sample went out. Whether it converged is answered by the
-        * robot in the viewport moving to the marker.
-        *
-        * Now that release posts on its own, this row is the only thing
-        * saying the POST happened — so it also has to show the in-flight
-        * and failed states, which the removed Send button used to imply. */}
+      {/* "Sent", not "Localized": the estimate is only a seed with no ack.
+        * Whether it converged shows as the robot moving to the marker. This
+        * row is the only sign the request went out, so it shows in-flight
+        * and failed too. */}
       {(busy || published || error) && (
         <div className="mt-2.5 flex items-center justify-between gap-2">
           <span className="instrument-label text-muted-foreground">
@@ -103,11 +79,7 @@ export function InitialPoseControl({
       )}
 
       <div className="mt-2.5 flex gap-1.5">
-        {/* Only ever a retry. Dropping the robot is what publishes, so a
-          * button standing there the rest of the time reads as a step still
-          * owed — which is exactly how the old Publish button was read. It
-          * appears when there is a failure to retry and not otherwise; to
-          * re-seed a pose that went out fine, drop the robot again. */}
+        {/* Only a retry: a button shown otherwise reads as a step still owed. */}
         {error && (
           <button
             type="button"

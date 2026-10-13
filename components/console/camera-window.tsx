@@ -26,15 +26,9 @@ const DEFAULT_WIDTH = 320;
 const DEFAULT_HEIGHT = 180;
 /** Viewport margin the window keeps when it opens: the strip's right-3, both sides. */
 const OPEN_MARGIN = 24;
-/** One keyboard press of the move or resize handle. Coarse enough to be worth pressing. */
+/** One keyboard press of the move or resize handle. */
 const KEY_STEP = 16;
-/**
- * How long the "saved" line sits on the picture.
- *
- * The bag recorder holds its receipt until the next run starts, which it can
- * afford: that is a page with room. This one is printed *on* the 320x180 image
- * the window exists to show, so it says its piece and gets out of the way.
- */
+/** How long the "saved" line sits on the picture; it covers what the window shows. */
 const RECEIPT_MS = 6_000;
 
 function clamp(value: number, min: number, max: number): number {
@@ -42,34 +36,25 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * The size the window opens at and resets to: the default, or as wide as a
- * phone leaves room for, at the encoder's 16:9. Read once per open rather than
- * tracked — the window only mounts on a click, so there is no server render
- * for the measurement to disagree with, and a rotation after that is the drag
- * clamps' problem, not this one's.
+ * The size the window opens and resets to, narrowed to fit a phone at 16:9.
+ * Measured on open only: the window mounts on a click, so there is no server
+ * render to disagree with.
  */
 function openingSize(): { width: number; height: number } {
   const width = clamp(window.innerWidth - OPEN_MARGIN, MIN_WIDTH, DEFAULT_WIDTH);
   return { width, height: Math.round((width * DEFAULT_HEIGHT) / DEFAULT_WIDTH) };
 }
 
-/**
- * Whether a press on the header landed on one of its controls rather than on
- * the header itself. The move handle is a button too, but it is the header's
- * own grip, so a drag that starts on it is a drag.
- */
+/** Whether a header press landed on a control. The move handle does not count. */
 function pressedAControl(target: EventTarget): boolean {
   const button = (target as HTMLElement).closest("button");
   return button !== null && !button.hasAttribute("data-move-handle");
 }
 
 /**
- * What the operator is told once a capture ends.
- *
- * Every sentence names the file's fate, because the file is the point: a clip
- * that stopped for a reason the operator did not choose still saved, and saying
- * only that it stopped would read as "lost". None of them names how any of it
- * works — the operator's word for where it went is "downloads".
+ * What the operator is told once a capture ends. Every sentence names the
+ * file's fate: a clip that stopped on its own still saved, and "stopped" alone
+ * would read as lost.
  */
 function receiptFor(outcome: ClipOutcome): { text: string; tone: string } {
   if (outcome.filename === null) {
@@ -100,35 +85,18 @@ function receiptFor(outcome: ClipOutcome): { text: string; tone: string } {
 
 /**
  * The robot's camera as a small window that follows the operator across the
- * console — the "watch where it is going while doing something else" panel.
+ * console. Movable and resizable, since it always sits in front of something.
+ * Both gestures record the pointer id and measure everything at pointerdown,
+ * so pointermove never forces layout. Only the header drags and the corner
+ * resizes; the picture itself is neither.
  *
- * Movable and resizable, because it is by definition in front of something:
- * unlike the drive panel it has no corner it can be said to belong in, and the
- * one thing an operator wants from a video window is for it to be bigger while
- * they look at it and out of the way when they do not. Both gestures follow the
- * thumbstick's gestureRef idiom — pointer identity plus everything measured
- * once at pointerdown, so pointermove never forces layout.
+ * Audio starts muted: the window is opened while doing something else, and a
+ * console that started talking would be a surprise. Stream diagnostics belong
+ * to /webrtc-test, not here.
  *
- * The header drags and the corner resizes; the body is neither, because the
- * body is the picture and a video that moved when you tried to point at
- * something in it would be a window fighting its own content.
- *
- * Audio arrives on the same session — the Opus track rides the camera's
- * pipeline — and starts muted. Not for the autoplay policy (the panel opens
- * from a click) but because this window is opened *while doing something
- * else*: a console that started talking because a panel was opened on the
- * Settings screen would be a surprise, and the speaker button is right there.
- *
- * What it does not have is the bench's readouts. Resolution, bitrate, the
- * candidate pair and the rest answer "why is the video bad", which is a
- * question for /webrtc-test; this window answers "what can the robot see".
- *
- * The header's other button saves a clip of the picture to the operator's own
- * machine. Two consequences worth knowing before editing this file: a capture
- * deliberately survives the window closing, because the handle it runs on is
- * not React's (see hooks/use-camera-clip.ts), so an operator who hits Escape
- * mid-clip still gets the file; and walking between routes does not interrupt
- * one, because the strip that mounts this window is in the root layout.
+ * A clip capture deliberately survives the window closing (see
+ * hooks/use-camera-clip.ts), and route changes do not interrupt it because the
+ * strip that mounts this window is in the root layout.
  */
 export function CameraWindow({ className }: { className?: string }) {
   const { phase, error, stream, retry } = useCameraStream();
@@ -138,12 +106,7 @@ export function CameraWindow({ className }: { className?: string }) {
   const panelRef = React.useRef<HTMLDivElement>(null);
   const [muted, setMuted] = React.useState(true);
   const [size, setSize] = React.useState(openingSize);
-  /**
-   * Displacement from the anchor the caller positioned us at, applied as a
-   * translate — the same arrangement as the drive panel, so where the window
-   * first appears stays the caller's business and the offset survives that
-   * anchor changing.
-   */
+  /** Displacement from the caller's anchor, applied as a translate. */
   const [offset, setOffset] = React.useState({ x: 0, y: 0 });
 
   const { last: clipOutcome, dismiss: dismissClip } = clip;
@@ -165,8 +128,7 @@ export function CameraWindow({ className }: { className?: string }) {
         : "Save a clip to this computer";
 
   // srcObject is a property, not an attribute, so it cannot be JSX. play() is
-  // best-effort: the element keeps `controls` as the fallback when a policy
-  // refuses it.
+  // best-effort.
   React.useEffect(() => {
     const video = videoRef.current;
     if (!video || !stream) return;
@@ -192,13 +154,10 @@ export function CameraWindow({ className }: { className?: string }) {
     maxY: number;
   } | null>(null);
 
-  // Takes the kind as an argument rather than currying it, so nothing calls
-  // this during render: a `onGrab("move")` in JSX is a call, and a call that
-  // reads a ref is one the compiler cannot prove happens in a handler.
+  // Not curried: `onGrab("move")` in JSX would be a render-time call reading a
+  // ref, which the compiler lint rejects.
   const onGrab = (kind: "move" | "resize", event: React.PointerEvent<HTMLElement>) => {
     if (dragRef.current) return;
-    // The header carries the clip and speaker buttons; a press on one is a
-    // press on it. The move handle is the one button that is the header's own.
     if (kind === "move" && pressedAControl(event.target)) return;
     const panel = panelRef.current;
     if (!panel) return;
@@ -214,10 +173,8 @@ export function CameraWindow({ className }: { className?: string }) {
       originY: event.clientY,
       baseX: kind === "move" ? offset.x : size.width,
       baseY: kind === "move" ? offset.y : size.height,
-      // Moving: how far the window may still travel before an edge leaves the
-      // viewport — one dragged fully off-screen is unrecoverable. Resizing:
-      // how much it may still grow. Width grows leftward (see onDrag), so what
-      // limits it is the gap to the left edge, not the right.
+      // Moving: keep every edge on screen, or the window is unrecoverable.
+      // Resizing: width grows leftward (see onDrag), so the left gap limits it.
       minX: kind === "move" ? offset.x - rect.left : MIN_WIDTH,
       maxX:
         kind === "move"
@@ -246,12 +203,8 @@ export function CameraWindow({ className }: { className?: string }) {
       return;
     }
 
-    // The handle is the bottom-LEFT corner, and the window is anchored by its
-    // right edge to the button that opened it. Widening therefore moves the
-    // left edge left, which is where the handle is — so the corner tracks the
-    // pointer, and the horizontal delta is negated to say so. With the handle
-    // on the right it did not track at all: the opposite edge moved while the
-    // grabbed corner stood still.
+    // The window is anchored by its right edge, so the handle sits bottom-LEFT
+    // (the edge that moves) and the horizontal delta is negated.
     setSize({
       width: clamp(drag.baseX - dx, drag.minX, drag.maxX),
       height: clamp(drag.baseY + dy, drag.minY, drag.maxY),
@@ -264,10 +217,8 @@ export function CameraWindow({ className }: { className?: string }) {
     const drag = dragRef.current;
     if (drag?.pointerId !== event.pointerId) return;
     dragRef.current = null;
-    // A tap on the grip puts the window back where and how it opened — the
-    // finger's path to what Home and the double-click do, since a double-tap
-    // is not a gesture a phone reports reliably. Only a real release: a
-    // cancel or a lost capture is not a tap.
+    // A tap on the grip resets the window: the touch form of Home and
+    // double-click. Only a real pointerup counts as a tap.
     if (
       event.type === "pointerup" &&
       drag.onGrip &&
@@ -278,11 +229,7 @@ export function CameraWindow({ className }: { className?: string }) {
     }
   };
 
-  // The move handle's keyboard path, for the same reason the resize handle has
-  // one: a window a keyboard user can make bigger but not move out of the way
-  // is one they can only make worse. Each key moves one step, held inside the
-  // viewport exactly as a drag is, and Home puts the window back where and how
-  // it opened, as a double-click on the header does.
+  // Keyboard move, clamped like a drag; Home resets like a double-click.
   const onMoveKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "Home") {
       event.preventDefault();
@@ -303,9 +250,7 @@ export function CameraWindow({ className }: { className?: string }) {
     }));
   };
 
-  // The handle is a button, so it is focusable, and arrow keys are the only
-  // way to resize without a pointer. Each key moves the handle the way the
-  // pointer would move it: left is wider because the handle is on the left.
+  // Keyboard resize. Left is wider because the handle is on the left.
   const onHandleKeyDown = (event: React.KeyboardEvent) => {
     const horizontal = event.key === "ArrowLeft" || event.key === "ArrowRight";
     const vertical = event.key === "ArrowUp" || event.key === "ArrowDown";
@@ -352,9 +297,7 @@ export function CameraWindow({ className }: { className?: string }) {
         onPointerCancel={onRelease}
         onLostPointerCapture={onRelease}
         onDoubleClick={(event) => {
-          // A double-click on a control is aimed at the control. Without this
-          // a quick start-then-stop on the clip button would also snap the
-          // window back to its default size and place.
+          // Or a quick start-stop on the clip button would also reset the window.
           if (pressedAControl(event.target)) return;
           setOffset({ x: 0, y: 0 });
           setSize(openingSize());
@@ -363,9 +306,7 @@ export function CameraWindow({ className }: { className?: string }) {
         className="mb-2 flex h-4 cursor-grab touch-none items-center justify-between gap-2 select-none active:cursor-grabbing pointer-coarse:h-10"
       >
         <h2 className="instrument-label flex items-center gap-1.5 text-muted-foreground">
-          {/* The drag still works from anywhere on the header. This button is
-            * where the keyboard gets the same gesture, so it is the grip the
-            * header already drew, made focusable. */}
+          {/* The grip as a button, so the keyboard can move the window too. */}
           <button
             type="button"
             data-move-handle
@@ -379,10 +320,8 @@ export function CameraWindow({ className }: { className?: string }) {
           Camera
         </h2>
         <div className="flex items-center gap-1">
-          {/* Record red rather than the commanded cyan the speaker wears: this
-            * button does not set a value on the robot, it starts something
-            * that is running, and the bag recorder already spends signal-warn
-            * on exactly that. */}
+          {/* Record red, not commanded cyan: it starts something running, as
+            * the recorder's signal-warn does. */}
           <button
             type="button"
             aria-pressed={clip.capturing}
@@ -436,10 +375,8 @@ export function CameraWindow({ className }: { className?: string }) {
       <div className="relative bg-black" style={{ height: size.height }}>
         <video
           ref={videoRef}
-          // playsInline so iOS Safari does not hijack it into a fullscreen
-          // player. No `controls`: at this size the bar covers the picture, and
-          // the two things it offers that matter here — sound and size — are
-          // this window's own header and corner.
+          // playsInline keeps iOS from going fullscreen. No `controls`: the bar
+          // would cover the picture, and sound and size are the window's own.
           playsInline
           muted={muted}
           className="h-full w-full object-contain"
@@ -451,8 +388,6 @@ export function CameraWindow({ className }: { className?: string }) {
               <p className="instrument-label text-muted-foreground">Connecting</p>
             ) : (
               <div>
-                {/* The backend's own sentence, verbatim — it is written for
-                  * operators, and rephrasing it here would lose what it says. */}
                 <p className="readout text-[11px] break-words text-signal-warn">
                   {error ?? "No video from the robot."}
                 </p>
@@ -469,8 +404,8 @@ export function CameraWindow({ className }: { className?: string }) {
         )}
 
         {clip.capturing && (
-          // aria-hidden: a live region re-reading a duration every second is
-          // unusable. The status line below says the two things that matter.
+          // aria-hidden: a duration re-read every second is unusable; the
+          // status line below covers it.
           <div
             aria-hidden
             className="absolute top-1 left-1 flex items-center gap-1.5 rounded-sm bg-black/60 px-1.5 py-0.5"
@@ -501,9 +436,8 @@ export function CameraWindow({ className }: { className?: string }) {
           </p>
         )}
 
-        {/* Bottom-LEFT, the corner that moves when the window grows — see
-          * onDrag. Inside the picture rather than in the panel's 8px padding,
-          * where it would be both invisible and off the shape it resizes. */}
+        {/* Bottom-left (see onDrag), inside the picture rather than in the
+          * panel's padding, where it would be invisible. */}
         <button
           type="button"
           aria-label="Resize the camera window"
@@ -516,10 +450,7 @@ export function CameraWindow({ className }: { className?: string }) {
           onKeyDown={onHandleKeyDown}
           className="group absolute bottom-0 left-0 size-5 cursor-nesw-resize touch-none pointer-coarse:size-10"
         >
-          {/* Two diagonal strokes, the platform's own resize-grip shape, drawn
-            * rather than iconed so they sit flush in the corner. Both rotate
-            * about the same origin and carry no class that would fight the
-            * transform; the inner one is shorter and inset. */}
+          {/* Two drawn diagonal strokes, so they sit flush in the corner. */}
           {[0, 4].map((inset) => (
             <span
               key={inset}

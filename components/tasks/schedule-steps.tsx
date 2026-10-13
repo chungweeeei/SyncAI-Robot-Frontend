@@ -18,20 +18,13 @@ export interface ScheduleStepsProps {
 }
 
 /**
- * A registered schedule's frozen step list, fetched when the row is expanded.
+ * A registered schedule's frozen step list, fetched when the row is expanded:
+ * the list endpoint cannot carry steps (a Temporal list element has no args),
+ * so each needs its own `describe` — one RPC on demand instead of N per paint.
  *
- * Its own query (useSchedule) rather than data threaded down from
- * `useSchedules`, because the collection endpoint cannot carry steps at all: a
- * Temporal schedule *list* element holds only the workflow type name, so the
- * args have to come from a per-schedule `describe`. Paying that on expansion
- * means one RPC for the one schedule the operator opened, instead of N on every
- * first paint.
- *
- * When the schedule came from a template that is still in the library, the
- * frozen steps are diffed against that template's *current* resolution. That is the
- * only way the operator can see that a schedule is about to drive somewhere the
- * map no longer says — the steps in Temporal are concrete and nothing re-reads
- * them, so a vertex moved after registration never reaches a scheduled run.
+ * With its template still in the library, the frozen steps are diffed against
+ * its current resolution: frozen steps are never re-read, so a vertex moved
+ * since registration never reaches a scheduled run.
  */
 export function ScheduleSteps({ scheduleId, source }: ScheduleStepsProps) {
   const { schedule, status } = useSchedule(scheduleId);
@@ -44,8 +37,7 @@ export function ScheduleSteps({ scheduleId, source }: ScheduleStepsProps) {
     return <Line>The frozen steps could not be read.</Line>;
   }
   if (!steps?.length) {
-    // Legitimate, not an error: a schedule registered before the backend exposed
-    // its args, or one created outside this API, has nothing to show.
+    // Not an error: older or externally created schedules report no steps.
     return <Line>This schedule does not report its steps.</Line>;
   }
 
@@ -114,17 +106,13 @@ export function ScheduleSourceChip({
   schedule: { task_template_id?: string | null; task_template_name?: string | null };
   templates: readonly TaskTemplate[];
 }) {
-  // No source at all: registered from loose steps in the composer (or before the
-  // memo carried a source). Saying so beats saying nothing — the alternative was
-  // a row that looked exactly like a linked one, on a page whose library then
-  // showed no sign that this schedule existed.
+  // Registered from loose steps, or before the memo carried a source.
   if (!schedule.task_template_id) {
     return <Chip tone="caution">unsaved steps</Chip>;
   }
 
   const source = templates.find((template) => template.id === schedule.task_template_id);
-  // The source was deleted after registration. The schedule still runs — it holds
-  // its own copy of the steps — so this is information, not a fault.
+  // Information, not a fault: the schedule holds its own copy of the steps.
   if (!source) {
     return <Chip tone="neutral">source deleted</Chip>;
   }

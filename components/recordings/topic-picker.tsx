@@ -5,43 +5,31 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * The topics offered as one tap, and why each is on the list.
+ * The channels offered as one tap, and why each is on the list.
  *
- * Hardcoded rather than discovered: the backend has no topic-list route, and
- * adding one to serve a convenience row would put a ROS graph query behind
- * every visit to this page. The cost is that this list can drift from what the
- * robot actually publishes — which is why a recording's message count is on
- * every row of the catalogue.
+ * Hardcoded: the backend has no channel-list route, and one would put a ROS
+ * graph query behind every visit. This can drift from what the robot
+ * publishes, which is why each row shows its message count.
  *
- * Relative names only. Everything the robot owns is namespaced and the backend
- * expands it (`livox/lidar` → `/robot01/livox/lidar`), so nothing here spells a
- * robot id.
- *
- * Kept to what is worth one tap. The drive commands, the live scan and the
- * two transform channels were offered too, and were trimmed by request; none
- * of them is needed to rebuild a map, which is what a recording is for.
+ * Relative names only — the backend expands them (`livox/lidar` →
+ * `/robot01/livox/lidar`). Trimmed to what rebuilding a map needs, by request.
  */
 const PRESETS: readonly { topic: string; hint: string }[] = [
   // The pair a lost mapping run is replayed from — the reason this page exists.
   { topic: "livox/lidar", hint: "Laser scanner — the robot's main sensor" },
   { topic: "livox/imu", hint: "Motion sensor — needed with the scanner to rebuild a map" },
   { topic: "imu", hint: "Body motion sensor — how the robot itself tilts and turns" },
-  // The camera's picture, as the camera node publishes it: it is pinned to
-  // MJPG, which goes out on image_raw/compressed only — there is no raw image
-  // channel beside it to offer. That node is opt-in at bringup (the live
-  // camera stream holds the device otherwise), so on a robot started without
-  // it this channel records nothing, which the zero-message row will say.
+  // The camera node is pinned to MJPG, so only image_raw/compressed exists.
+  // It is opt-in at bringup, so without it this records nothing — which the
+  // zero-message row will say.
   { topic: "image_raw/compressed", hint: "Camera picture" },
   { topic: "odom", hint: "Where the robot calculates it has travelled" },
   { topic: "robot_state", hint: "Overall status: battery, mode, motor health" },
 ];
 
 /**
- * The default selection: the LIO inputs, which are the backend's own default,
- * plus the camera picture, by request. The body IMU used to be on by default
- * and was taken off, also by request; it stays one tap away. The console
- * always sends its list, so the backend's default only answers a client that
- * sends none.
+ * The default: the LIO inputs (also the backend's default) plus the camera,
+ * by request. The console always sends its list.
  */
 export const DEFAULT_TOPICS = [
   "livox/lidar",
@@ -50,16 +38,11 @@ export const DEFAULT_TOPICS = [
 ];
 
 /**
- * One selectable topic. The `Segmented` idiom widened to multi-select: chosen
- * segments take the commanded hue because what is recorded is the operator's
- * choice, not a measurement.
+ * One selectable channel; chosen ones take the commanded hue (a choice, not a
+ * measurement).
  *
- * The label is the topic name itself, in the readout face. A friendlier word
- * ("Lidar") would read better and be the wrong trade: these exact strings are
- * what ends up in the bag's metadata and what `ros2 bag play` will name, so the
- * chip has to be verifiable against them. The plain-language half is the
- * tooltip, and only the tooltip: a "What these channels are" disclosure under
- * the row used to repeat it for touch screens, and was removed by request.
+ * The label is the exact channel name, since that is what the recording's
+ * metadata and playback will show; the plain-language half is the tooltip only.
  */
 function TopicChip({
   topic,
@@ -102,16 +85,9 @@ function TopicChip({
 }
 
 /**
- * Pick the topics a recording will subscribe to.
- *
- * Presets as toggles rather than the bare text field the hand-pasted
- * `ros2 bag record` command was: the common case here is one tap (the LIO
- * pair and the camera picture, already selected), and the failure mode of
- * typing is silent — a misspelled topic records nothing and says nothing, because the
- * recorder waits for topics rather than refusing unknown ones.
- *
- * There is no free-text row any more, by request: a channel off this list is
- * added here, in code, with its hint.
+ * Pick the channels a recording subscribes to: toggles rather than free text,
+ * because a misspelled channel records nothing silently. A channel off this
+ * list is added here in code, by request.
  */
 export function TopicPicker({
   value,

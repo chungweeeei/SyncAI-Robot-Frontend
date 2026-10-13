@@ -3,20 +3,12 @@
 import { Chip, type Tone } from "@/components/console/instrument";
 import type { TaskStatus } from "@/lib/api/task";
 
-// A task in flight is active guidance, which is what magenta means everywhere
-// else in the console; a finished one is just a measured outcome.
+// In flight is active guidance (magenta); finished is a measured outcome.
+// CANCELED and PAUSED are caution, not neutral: the robot is short of where
+// it was sent, worth a second look though nothing went wrong.
 //
-// CANCELED is caution, not neutral: a job that did not finish left the robot
-// short of where it was sent, which is worth a second look in the history
-// even when someone stopped it on purpose. It stays short of FAILED's red,
-// because nothing went wrong. PAUSED (and the ack-only PAUSING) is caution
-// for the same reason: the hold is intended, but the robot is standing
-// somewhere between stops and will stay there until someone acts.
-//
-// Exported for the one surface that cannot use TaskStatusChip itself: the
-// status strip has no room for "IN PROGRESS" and renders its own shorter label.
-// It borrows the tone from here so a running task cannot end up one colour in
-// the masthead and another on /tasks.
+// Exported for the status strip, which draws its own shorter label but must
+// use the same colour as /tasks.
 export const STATUS_TONE: Record<TaskStatus, Tone> = {
   PENDING: "cmd",
   IN_PROGRESS: "active",
@@ -28,13 +20,8 @@ export const STATUS_TONE: Record<TaskStatus, Tone> = {
 };
 
 /**
- * A submitted task's status. Shared by every flow that dispatches one — the nav
- * goal and posture overlays on the dashboard, and both the task-level and the
- * per-step readback on /tasks — so the same workflow state reads the same colour
- * wherever the operator meets it.
- *
- * It lives beside instrument.tsx rather than under components/dashboard/ for
- * that reason: three routes read it, and the dashboard folder is route-scoped.
+ * A submitted task's status, shared by every flow that dispatches one so a
+ * state reads the same colour everywhere. In console/ since three routes use it.
  */
 export function TaskStatusChip({ status }: { status: TaskStatus }) {
   return <Chip tone={STATUS_TONE[status]}>{status.replace("_", " ")}</Chip>;

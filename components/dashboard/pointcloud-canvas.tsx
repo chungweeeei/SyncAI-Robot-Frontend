@@ -54,41 +54,19 @@ import type { PointCloudFrame } from "@/lib/types/pointcloud";
 import type { StreamStatus } from "@/lib/types/stream";
 import { createPointCloudStream } from "@/lib/ros/pointcloud-stream";
 
-
-
-
-
-
-
-
-
-
-
-// Height (metres) the robot model floats at while it is being carried on the
-// pointer, before a press plants it on the floor. Purely an affordance: held and
-// placed have to look different, or a carried robot reads as a pose that is
-// already set. Small enough that the shadowless model still lines up with the
-// marker ring below it, which stays on the floor throughout.
+// Height (metres) the robot floats at while carried on the pointer, so a held
+// robot does not read as a pose already set. Small enough to stay lined up with
+// the marker ring on the floor below it.
 const CARRY_LIFT_M = 0.35;
-
-
-
-
-
 
 /**
  * The kinds of pose a drag on the viewport can produce.
  *
- * "vertex" re-places a stop that already exists, which is why the canvas needs
- * `movingVertex` alongside the mode: unlike the other two, the drag is *about*
- * a row, and the marker for it has to come off the map while it is in hand.
- *
- * "place" is a stop that does not exist yet. The gesture is the re-place one —
- * the marker is carried under the bare pointer, a press plants it, a drag aims
- * it — and the canvas hands the pose up on release exactly as for the others;
- * what happens next (the dialog that names it, the write) is the view's. It is
- * a mode rather than a tap because a new stop needs a heading, and only a drag
- * gives one.
+ * "vertex" re-places an existing stop, so the canvas also needs `movingVertex`
+ * to take that marker off the map while it is in hand. "place" is a new stop:
+ * the same carry / press / drag gesture, handed up on release. It is a mode
+ * rather than a tap because a new stop needs a heading, and only a drag gives
+ * one.
  */
 export type PickMode = "goal" | "initial-pose" | "vertex" | "place";
 
@@ -96,151 +74,95 @@ interface PointCloudCanvasProps {
   /** 2D map metadata; when omitted the cloud renders with no ground plane. */
   meta?: MapMetadata;
   /**
-   * Ground-plane texture URL — GET /api/v1/maps/{name}/image, absolute, from
-   * apiUrl(). A plain URL rather than the base64 data URI the removed
-   * /api/v1/map/image returned: TextureLoader takes either, and a real URL is
-   * the one the browser can cache and revalidate against the endpoint's ETag.
+   * Ground-plane texture URL (GET /api/v1/maps/{name}/image via apiUrl()). A
+   * real URL rather than a data URI so the browser can revalidate its ETag.
    */
   mapImageUrl?: string;
   /**
-   * Where the robot is and how its legs are arranged, drained once per drawn
-   * frame rather than arriving as props.
-   *
-   * A feed and not two values because the telemetry socket lands ~40 messages a
-   * second: a prop is a render, so feeding it that way re-rendered this whole
-   * subtree at the wire's rate for a change only the frame loop cares about.
-   * The same arrangement the point cloud has always had, one layer up.
-   *
-   * Omitted leaves the robot hidden, which is what a cloud-only view wants.
+   * Pose and joints, drained once per drawn frame. A feed rather than props
+   * because the socket lands ~40 messages a second and a prop is a render.
+   * Omitted leaves the robot hidden.
    */
   telemetry?: TelemetryFeed;
   /**
-   * A stored map's scan to draw under the live one, already downloaded; null or
-   * omitted draws none. Handed in rather than fetched here, so the read goes
-   * through a hook and its refusal reaches a screen instead of the console (see
-   * useMapPointCloud).
+   * A stored map's scan to draw under the live one; null draws none. Fetched by
+   * useMapPointCloud so its refusal reaches a screen.
    */
   mapCloud?: PointCloudFrame | null;
   /**
-   * The planner's remaining route, from the telemetry stream. Drawn as a band on
-   * the floor between the robot and its goal, so an operator can read *how* the
-   * robot means to get there — the one thing the viewport could not show before,
-   * and the difference between catching a route that hugs a wall and finding out
-   * when the robot is already against it.
-   *
-   * An empty `points` means the route is over; the layer simply is not built.
+   * The planner's remaining route, drawn as a band on the floor so an operator
+   * can catch a route that hugs a wall before the robot is against it. An empty
+   * `points` means the route is over.
    */
   path?: PlannedPath;
   /** Hide the path layer without unmounting the canvas. Defaults to true. */
   showPath?: boolean;
   /**
-   * The active map's stored vertices, drawn flat on the ground with their
-   * headings and names. The canvas only draws them: the two pick modes that
-   * change them ("vertex" and "place") hand a pose up, and the write is the
-   * view's. Renaming, retyping and deleting stay in the gridmap editor.
+   * The active map's stored vertices. Draw-only: the "vertex" and "place" picks
+   * hand a pose up and the view writes it.
    */
   vertices?: MapVertex[];
   /** Hide the vertex layer without unmounting the canvas. Defaults to true. */
   showVertices?: boolean;
-  /**
-   * The active map's forbidden zones, as saved, drawn as a red wash on the
-   * floor. Draw-only: drawing and removing them is the floor plan editor's,
-   * and nothing here reacts to a press on one.
-   */
+  /** The active map's saved forbidden zones. Draw-only. */
   zones?: ZonePolygon[];
   /** Hide the zone layer without unmounting the canvas. Defaults to true. */
   showZones?: boolean;
   /**
-   * Fired when a stored vertex is tapped: one pointer, pressed and released
-   * inside the drag deadzone, with no pick mode armed. It used to take a
-   * double-click, so that brushing the map while driving the camera could not
-   * propose a stop — but a double-tap is not a gesture a phone reports
-   * reliably, and the deadzone already tells a tap from an orbit. What guards
-   * the robot is the dialog this opens, not the gesture.
-   *
-   * What it means is "the operator asked about this stop", not "go there": the
-   * canvas never dispatches a task, it hands the row up and the view asks.
+   * Fired when a stored vertex is tapped (press and release inside the drag
+   * deadzone, no pick armed). A tap rather than a double-click because phones
+   * do not report a double-tap reliably; the dialog this opens is what guards
+   * the robot, and the canvas never dispatches anything itself.
    */
   onVertexActivate?: (vertex: MapVertex) => void;
   /**
-   * The vertex a `"vertex"` pick is re-placing. Its stored marker is hidden for
-   * the duration — the draft under the pointer is the same stop, and drawing it
-   * twice would leave the operator unsure which one they are about to save — and
-   * its heading seeds the draft, so releasing without a drag keeps the heading it
-   * already had instead of snapping to 0°.
+   * The vertex a `"vertex"` pick is re-placing. Its stored marker is hidden so
+   * the stop is not drawn twice, and its heading seeds the draft so a release
+   * without a drag keeps it instead of snapping to 0°.
    */
   movingVertex?: MapVertex | null;
   /**
-   * Camera interaction mode. "move" = free navigation, left-drag pans the
-   * scene. "focus" = the camera locks onto the robot (target follows its pose
-   * and stays centred), left-drag orbits around it. Defaults to "move".
+   * "move": left-drag pans. "focus": the target follows the robot and
+   * left-drag orbits it. Defaults to "move".
    */
   cameraMode?: "move" | "focus";
   /**
-   * Bumped by the view's top-down button to swing the camera overhead. A nonce
-   * rather than a callback the view holds, the same shape the gridmap editor's
-   * Fit action uses (`fitNonce` in components/maps/grid-canvas.tsx): the camera
-   * lives in here, and handing out a setter would give the view a second way to
-   * reach it. 0 means "never pressed", so a fresh mount keeps its default view.
-   *
-   * It is an action, not a mode — nothing stops the next drag from orbiting
-   * straight back out of it, which is why it is a button rather than a third
-   * option beside Move / Focus.
+   * Bumped to swing the camera overhead. A nonce (like grid-canvas's
+   * `fitNonce`) so the camera stays owned in here; 0 means never pressed. An
+   * action, not a mode: the next drag may orbit straight out of it.
    */
   topDownNonce?: number;
   /**
-   * Bumped by the view's Recenter button to put the camera back where the
-   * scene opened: the whole map, from the same oblique angle. Same shape and
-   * same reasons as `topDownNonce`. The view switches the camera mode to
-   * "move" in the same click, because focus mode re-pins the target to the
-   * robot every frame and would take the recentred view straight back.
+   * Bumped to return to the opening view. The view also switches to "move" in
+   * the same click, since focus mode would re-pin the target to the robot.
    */
   recenterNonce?: number;
   /**
-   * One zoom step, in or out, from the view's toolbar: `factor` above 1 closes
-   * in, below 1 backs off. A fresh object per press, because identity is what
-   * triggers it — pressing Zoom in twice has to zoom twice — which is the
-   * shape the gridmap editor's `zoomStep` already has. Null between presses.
+   * One zoom step: `factor` above 1 closes in. A fresh object per press so
+   * identity triggers it and two presses zoom twice. Null between presses.
    */
   zoomStep?: { factor: number } | null;
   /**
-   * Open the streamed "map so far" WebSocket — pgo's merged, loop-closure-
-   * corrected keyframe cloud, which only has a producer while a mapping
-   * session is up — and render it as a dim layer under the live scan. Each
-   * frame REPLACES the layer wholesale (a loop closure moves the whole map, so
-   * accumulation client-side would be wrong). Defaults to false; the mapping
-   * page is the one surface that turns it on.
+   * Stream the "map so far" cloud (only produced while mapping) as a dim layer
+   * under the live scan. Each frame replaces the layer wholesale, because a
+   * loop closure moves the whole map. Defaults to false.
    */
   mapCloudStream?: boolean;
-  /**
-   * Status of the map-cloud stream, separate from `onStatus` (the live
-   * scan's): the two sockets fail independently and the mapping page shows
-   * each with its own pill.
-   */
+  /** The map-cloud stream's status; it fails independently of `onStatus`. */
   onMapStatus?: (status: StreamStatus) => void;
   /** Committed goal, drawn on the ground until the caller clears it. */
   goal?: PlanarPose | null;
   /**
-   * The initial pose the operator last placed, drawn in the caution hue until
-   * cleared. It outlives the publication on purpose — it is the reference the
-   * reported pose is read against while the localizer's ICP converges — but only
-   * by seconds: useInitialPose expires a published estimate on its own, and this
-   * marker goes with it.
+   * The initial pose last placed, kept as the reference the reported pose is
+   * read against while localization converges. useInitialPose expires it.
    */
   initialPose?: PlanarPose | null;
   /**
-   * What a press-drag-release on the ground currently produces, or null for
-   * none (RViz style either way): the press point is projected onto the z=0 map
-   * plane and the drag direction gives the heading. Left-button camera motion is
-   * suspended while a mode is armed.
-   *
-   * In "initial-pose" mode the robot model is picked up as soon as the mode is
-   * armed: it floats under the bare pointer until a press plants it, so the
-   * preview is the machine itself rather than only the draft arrow.
-   *
-   * One mode at a time — the gesture is identical for both, so the only thing
-   * telling the operator (and this canvas) which pose they are placing is which
-   * mode is armed. The view owns that choice.
+   * What a press-drag-release on the ground produces, or null: the press is
+   * projected onto z=0 and the drag gives the heading. Left-button camera
+   * motion is suspended while armed. In "initial-pose" the robot model itself
+   * follows the pointer until a press plants it. One mode at a time, since the
+   * gesture is identical for all of them.
    */
   pickMode?: PickMode | null;
   /** Fired once on release with the dragged pose, for whichever mode is armed. */
@@ -278,19 +200,13 @@ export function PointCloudCanvas({
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
 
-  // Pose being carried / dragged right now. Kept in state (not a ref) so the
-  // marker effect below runs on every pointer move; the scene itself is
-  // untouched, so this costs a marker transform per frame, not a rebuild.
+  // Pose being carried / dragged. State so the marker effect runs per pointer
+  // move; that costs a marker transform, not a scene rebuild.
   const [draft, setDraft] = React.useState<PlanarPose | null>(null);
 
   /**
-   * True while the draft is being *carried* — following the bare pointer with no
-   * button down — as opposed to planted by a press and being turned by a drag.
-   *
-   * Only initial-pose mode carries. Arming it takes the robot out of the pose
-   * feed's hands and puts it in the pointer's, so the operator sees the machine
-   * itself track the cursor and can read the fit against the cloud before
-   * committing to a spot; a press then pins that spot and the drag aims it.
+   * True while the draft follows the bare pointer (no button down), as opposed
+   * to planted by a press and turned by a drag.
    */
   const [carrying, setCarrying] = React.useState(false);
 
@@ -304,16 +220,14 @@ export function PointCloudCanvas({
     liveGeom: THREE.BufferGeometry;
     mapPoints: THREE.Points | null;
     /**
-     * The streamed "map so far" layer (mapCloudStream), rebuilt wholesale per
-     * frame — frames arrive seconds apart, unlike the preallocated 10 Hz
-     * liveGeom above.
+     * The streamed "map so far" layer, rebuilt per frame: frames arrive
+     * seconds apart, unlike the preallocated 10 Hz liveGeom.
      */
     streamedMapPoints: THREE.Points | null;
     /**
-     * The map extent this scene was built around, in metres, or null when there
-     * is no 2D map. Kept here rather than read off the `meta` prop so the
-     * top-down effect can frame the map without listing `meta` as a dependency —
-     * which would re-frame the camera every time a map loads.
+     * The map extent this scene was built around, or null with no 2D map. Held
+     * here so the top-down effect need not depend on `meta`, which would
+     * re-frame the camera on every map load.
      */
     mapFrame: MapFrame | null;
     goalMarker: THREE.Group;
@@ -328,17 +242,14 @@ export function PointCloudCanvas({
     onStatusRef.current = onStatus;
   }, [onStatus]);
 
-  // Same treatment for the map-cloud stream's status callback.
   const onMapStatusRef = React.useRef(onMapStatus);
   React.useEffect(() => {
     onMapStatusRef.current = onMapStatus;
   }, [onMapStatus]);
 
   /**
-   * Last frame of the streamed map cloud, held so the layer survives a scene
-   * rebuild. The live cloud needs no such thing — its next frame is 100 ms
-   * away — but this one arrives every few seconds, and a theme toggle or map
-   * load in between would otherwise leave the layer empty until then.
+   * Last streamed map frame, held so the layer survives a scene rebuild: the
+   * next one may be seconds away (the live cloud's is 100 ms away).
    */
   const mapStreamFrameRef = React.useRef<PointCloudFrame | null>(null);
 
@@ -360,8 +271,7 @@ export function PointCloudCanvas({
         new THREE.BufferAttribute(frame.positions, 3),
       );
       const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
-      // The static map cloud's dim solid treatment, for the same reason it has
-      // one: the height-coloured live scan must read on top of the map.
+      // Dim and solid like the static map cloud, so the live scan reads on top.
       const points = new THREE.Points(
         geom,
         new THREE.PointsMaterial({
@@ -378,38 +288,26 @@ export function PointCloudCanvas({
     [resolvedTheme],
   );
 
-  // Read by the stream effect through a ref so a theme change (which remakes
-  // the callback above) re-tints via the setup effect's re-apply instead of
-  // bouncing the WebSocket through its 2 s reconnect loop.
+  // Through a ref so a theme change re-tints via the setup effect's re-apply
+  // instead of bouncing the WebSocket.
   const applyMapStreamFrameRef = React.useRef(applyMapStreamFrame);
   React.useEffect(() => {
     applyMapStreamFrameRef.current = applyMapStreamFrame;
   }, [applyMapStreamFrame]);
 
-  // Camera mode + pose easing state, read by the render loop and by effects
-  // that must not re-run on every change without listing them as deps.
-  //
-  // Both pose refs live at component scope rather than inside the scene-setup
-  // effect so a map load or theme toggle rebuilds the renderer without
-  // restarting the animation from the world origin.
+  // Read by the render loop and by effects that must not depend on them. The
+  // pose refs live at component scope so a scene rebuild does not restart the
+  // ease from the world origin.
   const cameraModeRef = React.useRef(cameraMode);
   const pickModeRef = React.useRef(pickMode);
   const targetPoseRef = React.useRef<SmoothPose | null>(null);
   const renderedPoseRef = React.useRef<SmoothPose | null>(null);
 
-  /**
-   * Where the robot model is drawn *instead of* the reported pose, while an
-   * initial-pose drag is in flight. Null the rest of the time.
-   *
-   * A ref rather than state because the render loop reads it every frame; the
-   * pointer handlers already hold the same drag in `draft` for the marker.
-   */
+  /** Where the robot is drawn instead of the reported pose during an initial-pose pick. */
   const posePreviewRef = React.useRef<SmoothPose | null>(null);
 
-  // The stored-vertex layer and the marker currently lit under the pointer.
-  // `hoverIdRef` is the scene's copy and drives the highlight at pointer rate;
-  // the state alongside it exists only so the cursor can become a pointer, which
-  // is a render — hence two, rather than one read at two speeds.
+  // `hoverIdRef` drives the highlight at pointer rate; the state beside it
+  // exists only so the cursor can change, which needs a render.
   const vertexLayerRef = React.useRef<VertexLayer | null>(null);
   const hoverIdRef = React.useRef<string | null>(null);
   /** Mirrors `movingVertex` for the layer effect, which rebuilds around it. */
@@ -418,12 +316,10 @@ export function PointCloudCanvas({
     null,
   );
 
-  // Joint articulation. The GLB keeps URDF link names as node names, so each
-  // joint resolves to the child-link Object3D it rotates. Nodes belong to the
-  // module-cached model instance, so the resolved map stays valid across scene
-  // rebuilds — resolve once, on first model attach. `latestJointsRef` buffers
-  // the newest joints so angles that arrive while the model is still loading
-  // are applied as soon as it lands (mirrors targetPoseRef for the body pose).
+  // Each joint resolves to the child-link node it rotates (the GLB keeps URDF
+  // link names). The nodes belong to the module-cached model, so the map is
+  // resolved once and survives scene rebuilds. `latestJointsRef` buffers angles
+  // that arrive before the model has loaded.
   const jointNodesRef = React.useRef<Map<
     string,
     { node: THREE.Object3D; axis: THREE.Vector3 }
@@ -452,11 +348,7 @@ export function PointCloudCanvas({
     }
   }, []);
 
-  /**
-   * Record where the robot should be. The render loop walks the drawn pose
-   * toward it; nothing here touches the scene, so it is safe to call while a
-   * rebuild is in flight.
-   */
+  /** Record where the robot should be; the render loop eases toward it. */
   const setTargetPose = React.useCallback((next: RobotPose) => {
     const yaw = (next.theta * Math.PI) / 180;
     const cur = renderedPoseRef.current;
@@ -472,8 +364,6 @@ export function PointCloudCanvas({
     };
   }, []);
 
-  // The live feed, when one was given. In a ref so a frame loop can read it
-  // without the loop's effect depending on the prop.
   const telemetryRef = React.useRef(telemetry);
   React.useEffect(() => {
     telemetryRef.current = telemetry;
@@ -482,13 +372,9 @@ export function PointCloudCanvas({
   const feedPoseRef = React.useRef<RobotPose | undefined>(undefined);
 
   /**
-   * Drain the live feed, once per drawn frame rather than once per message.
-   *
-   * Polling a 20 Hz feed from a 60 Hz loop reads each frame about three times,
-   * which is why both channels are guarded on object identity: the stream hands
-   * out a fresh object per message, so "unchanged" is one comparison and costs
-   * nothing. The alternative — a subscription that pushes — would buy an
-   * earlier reaction by at most one frame and would need its own teardown.
+   * Drain the live feed once per drawn frame. A 60 Hz loop reads a 20 Hz feed
+   * about three times per message, so both channels are guarded on object
+   * identity (the stream hands out a fresh object per message).
    */
   const pumpTelemetry = React.useCallback(() => {
     const feed = telemetryRef.current;
@@ -518,9 +404,8 @@ export function PointCloudCanvas({
     const centerX = meta ? meta.origin[0] + widthM / 2 : 0;
     const centerY = meta ? meta.origin[1] + heightM / 2 : 0;
 
-    // Set by dispose() below. Two async loads — the GLB and the ground texture
-    // — can land after this scene has been torn down by a theme toggle or a map
-    // change, and each has to check it before touching anything.
+    // Set by dispose(). The GLB and the ground texture can land after this
+    // scene was torn down, and each checks it first.
     let cancelled = false;
 
     const scene = new THREE.Scene();
@@ -538,19 +423,14 @@ export function PointCloudCanvas({
     renderer.domElement.style.display = "block";
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    // OrbitControls writes touch-action: none inline on the canvas, which
-    // below lg made the top 55 svh of a scrolling page a place a swipe could
-    // not scroll from. Cleared so the container's class decides: pan-y on a
-    // phone (a vertical swipe scrolls, a horizontal one still orbits or pans,
-    // and a pinch still zooms), none from lg where nothing scrolls anyway,
-    // and none while picking, since touch-action intersects up the tree.
+    // OrbitControls writes touch-action: none inline, which stops a swipe
+    // scrolling the page below lg. Cleared so the container's class decides
+    // (pan-y on a phone, none from lg and while picking).
     renderer.domElement.style.touchAction = "";
-    // The opening view, shared with the Recenter effect below so the two
-    // cannot disagree about where "back to the start" is.
+    // Shared with Recenter so the two agree on the opening view.
     frameMap(camera, controls, { cx: centerX, cy: centerY, widthM, heightM });
     controls.enableDamping = true;
-    // Left-button behaviour tracks the camera mode; the dedicated mode effect
-    // keeps this in sync, but seed it here so a scene rebuild preserves it.
+    // Seeded here so a scene rebuild keeps the camera mode.
     applyCameraMode(
       controls,
       cameraModeRef.current,
@@ -558,8 +438,7 @@ export function PointCloudCanvas({
     );
     controls.update();
 
-    // Ground plane textured with the 2D occupancy grid for spatial context.
-    // Only drawn when a 2D map is available; a raw cloud test skips it.
+    // Ground plane textured with the floor plan, when there is one.
     let groundTexture: THREE.Texture | null = null;
     if (meta) {
       const ground = new THREE.Mesh(
@@ -576,17 +455,13 @@ export function PointCloudCanvas({
 
       if (mapImageUrl) {
         new THREE.TextureLoader().load(mapImageUrl, (texture) => {
-          // A rebuild that lands mid-download leaves this callback holding a
-          // texture for a material that is already disposed. Nothing else would
-          // ever free it, and nothing would ever draw it either.
+          // Landed after a rebuild: nothing else would ever free it.
           if (cancelled) {
             texture.dispose();
             return;
           }
           texture.colorSpace = THREE.SRGBColorSpace;
-          // Kept so dispose() can free it: the teardown traverse below walks
-          // materials, and a material does not dispose the textures it points
-          // at. Every theme toggle used to leak one of these.
+          // Kept so dispose() can free it; disposing a material does not.
           groundTexture = texture;
           const mat = ground.material as THREE.MeshBasicMaterial;
           mat.map = texture;
@@ -616,20 +491,16 @@ export function PointCloudCanvas({
     livePoints.frustumCulled = false;
     scene.add(livePoints);
 
-    // The robot is the only lit object in the scene — the ground, both clouds
-    // and the old marker are all unlit — so these lights exist solely to give
-    // it readable form. The hemisphere fill keeps its underside off pure black
-    // and the directional key rakes across the body from the default camera
-    // side, which is what makes the leg geometry legible.
+    // Only the robot is lit. The hemisphere fill keeps its underside off black;
+    // the key light rakes across it from the default camera side so the legs
+    // read.
     scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2.0));
     const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
     keyLight.position.set(-1, -1.5, 3);
     scene.add(keyLight);
 
-    // Pose markers: the committed goal, the staged initial pose, and the
-    // lighter one that follows the drag (recoloured per pick mode). All start
-    // hidden; the marker effect below places them and re-runs after a scene
-    // rebuild, so a rebuild mid-drag does not lose them.
+    // Goal, initial pose, and the drag's draft. Placed by the marker effect,
+    // which re-runs after a rebuild.
     const goalMarker = createPoseMarker(theme.goal, 1);
     const initialPoseMarker = createPoseMarker(theme.initialPose, 1);
     const draftMarker = createPoseMarker(theme.goalDraft, 0.55);
@@ -638,20 +509,17 @@ export function PointCloudCanvas({
     scene.add(draftMarker);
 
     const robotGroup = new THREE.Group();
-    // Hidden until the first pose arrives (a raw cloud test has no /robot/state).
+    // Hidden until the first pose arrives.
     robotGroup.visible = false;
     scene.add(robotGroup);
 
-    // Attach the shared model once it resolves. `cancelled` guards a scene
-    // rebuild that lands mid-load: Object3D.add() reparents, so a stale
-    // callback would steal the model out of the group the new scene just built.
+    // `cancelled` matters here: add() reparents, so a stale callback would
+    // steal the shared model from the rebuilt scene's group.
     loadRobotModel()
       .then((model) => {
         if (cancelled) return;
         model.position.z = ROBOT_BASE_HEIGHT_M;
         robotGroup.add(model);
-        // Resolve joint -> child-link nodes once; the map survives scene
-        // rebuilds because the nodes belong to the cached model.
         if (!jointNodesRef.current) {
           const nodes = new Map<
             string,
@@ -673,12 +541,9 @@ export function PointCloudCanvas({
       })
       .catch((err) => console.error("robot model failed to load", err));
 
-    // The canvas's client rect, cached. castFromPointer runs on every
-    // pointermove and a drag re-renders this component (the draft marker is
-    // state), so reading it live would force a layout on each move. The cache
-    // lives in this closure rather than in a component ref because it describes
-    // *this* renderer and has to die with it — and because a ref an effect
-    // touches may not be written from a callback.
+    // The canvas's client rect, cached: castFromPointer runs per pointermove,
+    // and a live read would force a layout each time. In this closure so it
+    // dies with this renderer.
     let cachedRect: DOMRect | null = null;
     const invalidateRect = () => {
       cachedRect = null;
@@ -695,32 +560,24 @@ export function PointCloudCanvas({
       renderer.setSize(rect.width, rect.height, false);
       camera.aspect = rect.width / rect.height;
       camera.updateProjectionMatrix();
-      // Draw now, not on the next frame. setSize reassigns the canvas's
-      // width and height, which clears it, and an observer fires after this
-      // frame's render: without a draw here the browser paints the cleared
-      // canvas, and the scene blinks out on every resize — for the whole of
-      // a resize that runs over several frames.
+      // Draw now: setSize clears the canvas and the observer fires after this
+      // frame's render, so without it the cleared canvas is painted.
       renderer.render(scene, camera);
     };
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(container);
-    // A scroll moves the canvas in client coordinates without resizing it, and
-    // below `lg` this page scrolls. Capture phase because the scroller is an
-    // ancestor and scroll does not bubble; passive because this only ever
-    // drops a cached value.
+    // A scroll moves the canvas without resizing it (the page scrolls below
+    // lg). Capture phase, since scroll does not bubble from an ancestor.
     window.addEventListener("scroll", invalidateRect, {
       capture: true,
       passive: true,
     });
 
     /**
-     * Advance the drawn pose toward the reported one by one frame.
-     *
-     * The exponential factor is derived from dt rather than applied per frame,
-     * so a 120 Hz display converges at the same wall-clock rate as a 60 Hz one
-     * (and a tab restored after minutes in the background lands on a large dt,
-     * i.e. snaps — which is the right answer, the robot really has moved).
+     * Ease the drawn pose toward the reported one. The factor comes from dt so
+     * any refresh rate converges at the same wall-clock rate, and a tab
+     * restored from the background snaps.
      */
     const stepPose = (dt: number) => {
       const target = targetPoseRef.current;
@@ -737,10 +594,8 @@ export function PointCloudCanvas({
           cur.z += dz;
           cur.yaw += (target.yaw - cur.yaw) * a;
 
-          // Focus mode: shift the camera by the same delta so the viewing offset
-          // (and any orbit the user set) survives while the robot moves. This
-          // used to run per pose update, which made the 1 Hz jump doubly
-          // obvious — the whole view lurched, not just the robot.
+          // Focus mode: move the camera by the same delta so the operator's
+          // orbit survives while the robot moves.
           if (cameraModeRef.current === "focus") {
             camera.position.x += dx;
             camera.position.y += dy;
@@ -752,18 +607,14 @@ export function PointCloudCanvas({
         }
       }
 
-      // Focus mode tracks the *reported* pose even mid-drag: the camera follows
-      // the machine, not the estimate being placed. Easing above also keeps
-      // running through a drag, so releasing it hands the model back to a
-      // current pose rather than to wherever the robot was when the drag began.
+      // Focus follows the reported pose even mid-drag: the machine, not the
+      // estimate being placed.
       if (cur && cameraModeRef.current === "focus") {
         controls.target.set(cur.x, cur.y, cur.z);
       }
 
-      // An initial-pose drag draws the robot at the dragged pose instead — no
-      // easing, so the model tracks the pointer 1:1 the way a dragged object
-      // has to. Until either exists there is nothing to draw (a raw cloud test
-      // with no pose feed).
+      // An initial-pose drag draws the robot at the dragged pose, un-eased so
+      // it tracks the pointer 1:1.
       const drawn = posePreviewRef.current ?? cur;
       if (!drawn) return;
       robotGroup.position.set(drawn.x, drawn.y, drawn.z);
@@ -778,8 +629,7 @@ export function PointCloudCanvas({
       const dt = (now - prevFrameMs) / 1000;
       prevFrameMs = now;
 
-      // Before the ease, so a frame that just arrived is the one this frame
-      // walks toward rather than the one before it.
+      // Before the ease, so this frame walks toward the newest pose.
       pumpTelemetry();
       stepPose(dt);
       controls.update();
@@ -795,9 +645,8 @@ export function PointCloudCanvas({
       window.removeEventListener("scroll", invalidateRect, { capture: true });
       controls.dispose();
       renderer.dispose();
-      // Detach the robot before the sweep below. The model is cached across
-      // scene rebuilds (theme / map changes), so letting the traverse dispose
-      // its geometry would leave every later mount with an empty group.
+      // Detach the cached robot model first, or the sweep would dispose it for
+      // every later mount.
       robotGroup.clear();
       scene.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
@@ -806,9 +655,7 @@ export function PointCloudCanvas({
         if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
         else if (mat) mat.dispose();
       });
-      // By hand, because the traverse above never reaches the texture a
-      // material points at — the same gap the vertex layer's badge textures
-      // have their own dispose for.
+      // By hand: the traverse never reaches a material's texture.
       groundTexture?.dispose();
       if (renderer.domElement.parentNode === container) {
         container.removeChild(renderer.domElement);
@@ -830,9 +677,7 @@ export function PointCloudCanvas({
       dispose,
     };
 
-    // Re-apply the held streamed map frame: the rebuild this effect just did
-    // disposed the old layer, and the stream's next frame is seconds away.
-    // Running through applyMapStreamFrame also re-tints it for a theme change.
+    // Re-apply the held streamed map frame (and re-tint it for a theme change).
     if (mapStreamFrameRef.current) {
       applyMapStreamFrame(mapStreamFrameRef.current);
     }
@@ -851,12 +696,8 @@ export function PointCloudCanvas({
   ]);
 
   // ---- Live body_cloud stream (independent of scene rebuilds) ----------
-  // The WebSocket is opened once on mount and closed on unmount. Each frame is
-  // written into whatever live geometry the scene-setup effect currently owns
-  // (via sceneRef), so map loads and theme changes rebuild the scene without
-  // tearing down the socket. Previously the stream lived in the setup effect,
-  // so an async map load closed the still-connecting WS and logged
-  // "WebSocket is closed before the connection is established".
+  // Opened once per mount and written into whatever geometry sceneRef holds,
+  // so a scene rebuild never closes a still-connecting socket.
   React.useEffect(() => {
     const color = new THREE.Color();
     const applyFrame = (frame: PointCloudFrame) => {
@@ -895,14 +736,11 @@ export function PointCloudCanvas({
   }, []);
 
   // ---- Streamed "map so far" cloud (mapping runs) ------------------------
-  // Same socket-outside-the-scene-effect shape as the live stream above, same
-  // reason. Deps are [mapCloudStream] alone: the frame applier is reached
-  // through its ref so a theme change never bounces the socket.
+  // Outside the scene effect like the live stream; the applier is read through
+  // its ref so a theme change never bounces the socket.
   React.useEffect(() => {
     if (!mapCloudStream) {
-      // Turned off (or never on): drop the held frame and the drawn layer, so
-      // re-enabling starts clean and a toggled-off layer is not resurrected by
-      // the next scene rebuild's re-apply.
+      // Drop the held frame too, or the next rebuild's re-apply resurrects it.
       mapStreamFrameRef.current = null;
       const ctx = sceneRef.current;
       if (ctx?.streamedMapPoints) {
@@ -928,8 +766,7 @@ export function PointCloudCanvas({
   }, [mapCloudStream]);
 
   // ---- Camera mode (move / focus) --------------------------------------
-  // Re-runs on a scene rebuild (meta / theme) too, so the mode survives a
-  // renderer teardown.
+  // Re-runs on a scene rebuild too, so the mode survives it.
   React.useEffect(() => {
     cameraModeRef.current = cameraMode;
     const ctx = sceneRef.current;
@@ -945,22 +782,16 @@ export function PointCloudCanvas({
   }, [cameraMode, meta, mapImageUrl, resolvedTheme]);
 
   // ---- Top-down view (one-shot) ----------------------------------------
-  // Deliberately not a dep of the camera-mode effect above and deliberately not
-  // re-run on a scene rebuild: this answers a button press, and a map load or a
-  // theme toggle re-framing the camera would throw away a view the operator set
-  // by hand. The nonce is the only thing that triggers it.
+  // Nonce-only deps: a map load or theme toggle must not re-frame a view the
+  // operator set by hand.
   React.useEffect(() => {
     if (!topDownNonce) return;
     const ctx = sceneRef.current;
     if (!ctx) return;
     const { camera, controls, mapFrame } = ctx;
 
-    // Focus mode's target is the robot and the render loop keeps writing it, so
-    // there the only choice left is the height — and the current one is the
-    // operator's own zoom, which a "look from above" should not discard.
-    // Otherwise a map to frame beats wherever the view had been panned to:
-    // the whole point of going overhead is to see the site, not the corner of
-    // it that happened to be under the camera.
+    // In focus the target is the robot, so keep it and the operator's zoom.
+    // Otherwise frame the whole map: going overhead is for seeing the site.
     const framing = cameraModeRef.current !== "focus" ? mapFrame : null;
     if (framing) controls.target.set(framing.cx, framing.cy, 0);
 
@@ -978,12 +809,9 @@ export function PointCloudCanvas({
   }, [topDownNonce]);
 
   // ---- Recenter (one-shot) ----------------------------------------------
-  // The opening view again, from wherever the operator has orbited, panned or
-  // zoomed to. Declared *after* the camera-mode effect on purpose: the view
-  // sets the mode back to "move" in the same click, and effects run in
-  // declaration order, so this one has to come second to have the last word
-  // on the camera. Nonce-only deps for the same reason as top-down above: a
-  // map load or a theme toggle must not re-frame a view set by hand.
+  // Declared after the camera-mode effect on purpose: the same click sets the
+  // mode to "move", and effects run in order, so this one gets the last word.
+  // Nonce-only deps, as for top-down.
   React.useEffect(() => {
     if (!recenterNonce) return;
     const ctx = sceneRef.current;
@@ -991,14 +819,12 @@ export function PointCloudCanvas({
     frameMap(
       ctx.camera,
       ctx.controls,
-      // With no map there is still an opening view: the fallback box around
-      // the origin the setup effect used.
+      // No map: the setup effect's fallback box around the origin.
       ctx.mapFrame ?? { cx: 0, cy: 0, widthM: DEFAULT_SPAN_M, heightM: DEFAULT_SPAN_M },
     );
   }, [recenterNonce]);
 
   // ---- Zoom step (one-shot) ---------------------------------------------
-  // Identity-triggered, like the gridmap editor's: a new object per press.
   React.useEffect(() => {
     if (!zoomStep) return;
     const ctx = sceneRef.current;
@@ -1007,9 +833,9 @@ export function PointCloudCanvas({
   }, [zoomStep]);
 
   // ---- Pick mode: hand the left button over ----------------------------
-  // Separate from the effect above (which also re-frames the camera when focus
-  // mode is entered — arming a pick must not jolt the view). `cameraMode` is a
-  // dep so the button mapping is re-asserted after that effect rewrites it.
+  // Separate from the camera-mode effect, which re-frames on entering focus;
+  // arming a pick must not jolt the view. `cameraMode` is a dep so the button
+  // mapping is re-asserted after that effect rewrites it.
   React.useEffect(() => {
     pickModeRef.current = pickMode;
     const ctx = sceneRef.current;
@@ -1026,10 +852,8 @@ export function PointCloudCanvas({
     placePoseMarker(ctx.goalMarker, goal);
     placePoseMarker(ctx.initialPoseMarker, initialPose);
 
-    // The draft belongs to whichever mode is armed, in that mode's hue — the
-    // arrow has to say which pose is being placed while it is being placed, not
-    // once it lands in a readback panel. Leaving the mode mid-drag must not
-    // strand a marker on the map, hence the null.
+    // The draft wears the armed mode's hue, so it says which pose is being
+    // placed. Disarming mid-drag must not strand it, hence the null.
     setMarkerColor(
       ctx.draftMarker,
       pickMode === "initial-pose" ? theme.initialPoseDraft : theme.goalDraft,
@@ -1038,15 +862,10 @@ export function PointCloudCanvas({
   }, [goal, initialPose, draft, pickMode, meta, mapImageUrl, resolvedTheme]);
 
   // ---- Initial-pose pick: the robot itself is the preview ----------------
-  // An initial pose asserts where the machine *is*, so the machine is what
-  // moves: arming the mode takes the robot off the reported pose and hands it to
-  // the pointer, a press plants it, the drag turns it to face where it faces.
-  // That makes the gesture self-describing — what stands on the floor at release
-  // is exactly what gets published — which is why this flow needs no confirm.
-  //
-  // A goal pick deliberately does not do this. A goal is somewhere to go, not a
-  // claim about the present, and moving the robot to preview one would state
-  // something false; the arrow marker is the whole of that preview.
+  // An initial pose asserts where the machine is, so the machine moves: what
+  // stands on the floor at release is what gets published, which is why this
+  // flow needs no confirm. A goal pick does not do this — moving the robot to
+  // preview somewhere it is not would state something false.
   React.useEffect(() => {
     if (pickMode !== "initial-pose" || !draft) {
       posePreviewRef.current = null;
@@ -1055,26 +874,16 @@ export function PointCloudCanvas({
     posePreviewRef.current = {
       x: draft.x,
       y: draft.y,
-      // Whatever height the robot is already drawn at — the pose feed is planar
-      // (lio_bridge reports z ~ 0), so this keeps it on the same floor rather
-      // than guessing a new one — plus the lift while it is still in hand.
+      // The height it is already drawn at, plus the lift while in hand.
       z: (renderedPoseRef.current?.z ?? 0) + (carrying ? CARRY_LIFT_M : 0),
       yaw: (draft.theta * Math.PI) / 180,
     };
   }, [draft, carrying, pickMode]);
 
   // ---- Stored map vertices (toggle) ------------------------------------
-  // The layer is reached into after it is built — hover recolours a marker on
-  // every pointer move — so it is held in a ref rather than being rebuilt.
-  // `hoverIdRef` mirrors the id the layer is currently showing, so a rebuild
-  // (map swap, theme toggle) can restore the highlight, and so a pointer move
-  // that stays on the same marker costs one comparison and no React render.
-  //
-  // The layer itself is rebuilt rather than diffed, so it needs no slot in
-  // sceneRef: the group is created here and this effect's own cleanup takes it
-  // back out. The scene-rebuild deps (meta / mapImageUrl / theme) are listed for
-  // the same reason the marker effect lists them — a rebuild drops the old
-  // scene, and without them the layer would never be re-added to the new one.
+  // Held in a ref because hover recolours it per pointer move. Lists the
+  // scene-rebuild deps so it is re-added to a rebuilt scene; its own cleanup
+  // removes it.
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx || !showVertices || !vertices?.length) return;
@@ -1083,37 +892,29 @@ export function PointCloudCanvas({
     const layer = createVertexLayer(vertices, theme);
     ctx.scene.add(layer.group);
     vertexLayerRef.current = layer;
-    // A theme toggle under a resting pointer must not drop the highlight, and a
-    // list patched by a re-place rebuilds this layer mid-gesture: both ids
-    // survive the rebuild even though the objects wearing them do not.
+    // The hover and moving ids survive a rebuild (a theme toggle, a re-place
+    // patching the list mid-gesture).
     layer.setHovered(hoverIdRef.current);
     layer.setMoving(movingIdRef.current);
 
     return () => {
-      // `ctx.scene` may already be the discarded scene by the time this runs
-      // (the setup effect's cleanup goes first); removing from it is harmless
-      // either way, and the dispose is what actually matters — the teardown
-      // traverse frees geometries and materials but never the badge textures.
+      // `ctx.scene` may already be discarded; the dispose is what matters,
+      // since the teardown traverse never frees the badge textures.
       ctx.scene.remove(layer.group);
       layer.dispose();
       vertexLayerRef.current = null;
     };
   }, [vertices, showVertices, meta, mapImageUrl, resolvedTheme]);
 
-  // A stop in the operator's hands comes off the map. Its own effect rather than
-  // a dep of the one above: arming a re-place must not rebuild the layer, and
-  // the build effect re-applies this from the ref after a rebuild anyway.
+  // Its own effect so arming a re-place does not rebuild the layer.
   React.useEffect(() => {
     movingIdRef.current = movingVertex?.id ?? null;
     vertexLayerRef.current?.setMoving(movingIdRef.current);
   }, [movingVertex]);
 
   // ---- Forbidden zones ---------------------------------------------------
-  // The path band's shape below, and the vertex layer's: built wholesale,
-  // removed and disposed by this effect's own cleanup, and listing the
-  // scene-rebuild deps so a rebuild re-adds it to the new scene. Nothing
-  // reaches into it after it is built, so unlike the vertex layer it needs
-  // no ref.
+  // Built wholesale like the vertex layer, but needs no ref: nothing reaches
+  // into it after.
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx || !showZones || !zones?.length) return;
@@ -1123,23 +924,14 @@ export function PointCloudCanvas({
     ctx.scene.add(layer.group);
 
     return () => {
-      // `ctx.scene` may already be the discarded scene here; the remove is
-      // harmless either way and the dispose is what matters.
       ctx.scene.remove(layer.group);
       layer.dispose();
     };
   }, [zones, showZones, meta, mapImageUrl, resolvedTheme]);
 
   // ---- Planned path band ------------------------------------------------
-  // Same shape as the vertex layer above — built wholesale, removed and disposed
-  // by this effect's own cleanup, so it needs no slot in sceneRef. It also lists
-  // the scene-rebuild deps for the same reason: a rebuild drops the old scene,
-  // and without them the band would never be added to the new one.
-  //
-  // Depending on `path` (a fresh object per frame) is what makes each new route
-  // replace the last, and the empty-points sample from the backend is what
-  // erases it: the guard below fails, so the cleanup runs and nothing takes its
-  // place. There is deliberately nothing here that decides when a route is over.
+  // Each new `path` replaces the last, and the backend's empty-points sample
+  // erases it by failing the guard; nothing here decides when a route is over.
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx || !showPath || !path || path.points.length < 4) return;
@@ -1150,36 +942,21 @@ export function PointCloudCanvas({
     ctx.scene.add(ribbon.mesh);
 
     return () => {
-      // `ctx.scene` may already be the discarded scene here (the setup effect's
-      // cleanup goes first); the remove is harmless either way and the dispose
-      // is what matters, same as the vertex layer.
       ctx.scene.remove(ribbon.mesh);
       ribbon.dispose();
     };
   }, [path, showPath, meta, mapImageUrl, resolvedTheme]);
 
   // ---- Optional static map cloud (toggle) ------------------------------
-  //
-  // `meta` and `mapImageUrl` are dependencies although nothing here reads them:
-  // they rebuild the scene, and this layer has to be re-added to the new one.
-  // Without them a grid appearing for the map already on screen disposed these
-  // points with the old scene and left the toggle lit over nothing. The path
-  // ribbon above carries the same two for the same reason.
-  //
-  // Synchronous now that the download happens in useMapPointCloud: the frame
-  // is already here, so there is no in-flight request to abort and no landing
-  // after a rebuild to guard against.
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx || !mapCloud) return;
 
     const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const geom = new THREE.BufferGeometry();
-    // The attribute references the cached frame's array rather than copying
-    // it, which is what lets a re-added layer cost no download and no copy.
+    // References the cached frame's array, so a re-add costs no copy.
     geom.setAttribute("position", new THREE.BufferAttribute(mapCloud.positions, 3));
-    // Solid map-cloud colour (white on dark, dark-grey on light) keeps it
-    // visually distinct from the height-coloured live body cloud.
+    // Solid colour keeps it distinct from the height-coloured live scan.
     const points = new THREE.Points(
       geom,
       new THREE.PointsMaterial({
@@ -1194,10 +971,7 @@ export function PointCloudCanvas({
     ctx.scene.add(points);
 
     return () => {
-      // `ctx.scene` may already be the discarded scene here, since the setup
-      // effect's cleanup runs first; the remove is harmless either way and the
-      // dispose is what matters, same as the path ribbon. Disposing frees the
-      // GPU copy only; the array stays with the query cache.
+      // Frees the GPU copy only; the array stays with the query cache.
       ctx.scene.remove(points);
       geom.dispose();
       points.material.dispose();
@@ -1206,10 +980,9 @@ export function PointCloudCanvas({
   }, [mapCloud, meta, mapImageUrl, resolvedTheme]);
 
   // ---- Pose picking -----------------------------------------------------
-  // The anchor is the ground point the press landed on, kept alongside the raw
-  // pointer position so the heading deadzone can be measured in screen pixels:
-  // a metric deadzone would be enormous at the far end of a perspective view
-  // and vanishingly small up close.
+  // The anchor keeps the raw pointer position beside the ground point so the
+  // heading deadzone is in screen pixels; a metric one would vary wildly with
+  // perspective depth.
   const anchorRef = React.useRef<{
     pointerId: number;
     wx: number;
@@ -1221,13 +994,9 @@ export function PointCloudCanvas({
   const tapRef = React.useRef<{ pointerId: number; cx: number; cy: number } | null>(
     null,
   );
-  // Lazily constructed: a useRef initialiser argument is evaluated (then thrown
-  // away) on every render, and a Raycaster is not free to build.
+  // Built lazily: a useRef initialiser is evaluated on every render.
   const raycasterRef = React.useRef<THREE.Raycaster | null>(null);
-  /**
-   * Reads the canvas's client rect through the scene's own cache, or null
-   * before the renderer exists. Installed by the setup effect below.
-   */
+  /** The canvas's cached client rect; installed by the setup effect. */
   const canvasRectRef = React.useRef<
     ((fresh?: boolean) => DOMRect) | null
   >(null);
@@ -1236,9 +1005,6 @@ export function PointCloudCanvas({
   const castFromPointer = (event: { clientX: number; clientY: number }) => {
     const ctx = sceneRef.current;
     if (!ctx) return null;
-    // Through the scene's cache, dropped by its ResizeObserver and by any
-    // ancestor scroll — the two things that move the canvas in client
-    // coordinates — and refilled on the first cast after either.
     const rect = canvasRectRef.current?.();
     if (!rect || rect.width === 0 || rect.height === 0) return null;
 
@@ -1253,14 +1019,7 @@ export function PointCloudCanvas({
     return raycaster ? intersectGround(raycaster) : null;
   };
 
-  /**
-   * The stored vertex under a pointer position, or null.
-   *
-   * A real raycast against the layer, not a distance test against projected
-   * screen positions: the markers stand on the floor of a perspective view, so
-   * "near the pointer" only means anything after the projection the raycaster is
-   * already doing. Hidden layer, no hits — the ref is null.
-   */
+  /** The stored vertex under a pointer position, or null (also when hidden). */
   const pickVertex = (event: { clientX: number; clientY: number }) => {
     const layer = vertexLayerRef.current;
     if (!layer) return null;
@@ -1274,9 +1033,8 @@ export function PointCloudCanvas({
   /** Light the marker under the pointer, or clear the highlight. */
   const hoverVertex = (vertex: MapVertex | null) => {
     const id = vertex?.id ?? null;
-    // Told every time, not only on a change: setHovered is self-deduping, and
-    // going through it unconditionally is what re-lights a marker whose layer
-    // was rebuilt while the pointer sat still on it.
+    // Unconditional (setHovered dedupes), which re-lights a marker whose layer
+    // was rebuilt under a still pointer.
     vertexLayerRef.current?.setHovered(id);
     if (id === hoverIdRef.current) return;
     hoverIdRef.current = id;
@@ -1284,10 +1042,8 @@ export function PointCloudCanvas({
   };
 
   /**
-   * The planner can only plan inside the occupancy grid, and the localizer can
-   * only match against the map it loaded, so a press that lands on floor beyond
-   * the map must not become a pose. With no 2D map loaded there is nothing to
-   * bound against, so any ground point is accepted.
+   * A pose beyond the floor plan can be neither planned to nor localized
+   * against, so it is refused. With no floor plan anything goes.
    */
   const insideMap = (wx: number, wy: number) => {
     if (!meta) return true;
@@ -1301,42 +1057,25 @@ export function PointCloudCanvas({
   };
 
   /**
-   * The heading a draft starts at, before any drag aims it.
-   *
-   * A re-place starts from the stop's own heading rather than the robot's: the
-   * gesture is about where that stop is, and a plain click to nudge it half a
-   * metre must not silently spin it to face wherever the machine happens to be
-   * pointing. The other two modes keep the robot's heading, which is the sane
-   * default when the pose being placed is the robot's own.
+   * The heading a draft starts at, before any drag aims it. A re-place keeps
+   * the stop's own heading, so nudging it does not spin it; the other modes
+   * start from the robot's heading at the moment of the press.
    */
   const seedTheta = () =>
     draft?.theta ??
     (pickMode === "vertex"
       ? movingVertex?.theta
-      : // Off the feed rather than a prop, and read here rather than kept in
-        // state: this runs on a press, so "the robot's heading" means the one
-        // it has at the moment the gesture starts.
-        telemetryRef.current?.pose.current?.theta) ??
+      : telemetryRef.current?.pose.current?.theta) ??
     0;
 
   const handlePointerDown = (event: React.PointerEvent) => {
-    // Re-measure on every press, whatever the press turns out to mean.
-    //
-    // The cache's two invalidations — a resize and an ancestor scroll — miss
-    // the canvas being *translated* without either: a banner or a status row
-    // appearing above a fixed-height viewport moves it in client coordinates
-    // and a ResizeObserver says nothing. A stale rect there would put a
-    // commanded pose at an offset from where the operator clicked, which is
-    // the one way this can be wrong that matters. A press is both the start of
-    // every pick and rare enough to pay a layout read for; the drag that
-    // follows cannot move the canvas, since the pointer is captured.
+    // Re-measure on every press. A banner appearing above the viewport moves
+    // the canvas without a resize or a scroll, and a stale rect would command
+    // a pose offset from the click.
     canvasRectRef.current?.(true);
     if (!pickMode) {
-      // A press that may become a tap on a stored vertex, resolved on release
-      // (see handlePointerUp) and never here: a drag that starts on a marker
-      // still orbits the camera instead of opening a dialog over the view it
-      // was about to move. Only the primary pointer: a second finger is a
-      // pinch, and it also cancels a tap the first one had started.
+      // Maybe a tap on a vertex, resolved on release so a drag starting on a
+      // marker still orbits. Primary pointer only: a second finger is a pinch.
       tapRef.current =
         event.button === 0 && event.isPrimary && onVertexActivate
           ? { pointerId: event.pointerId, cx: event.clientX, cy: event.clientY }
@@ -1344,11 +1083,8 @@ export function PointCloudCanvas({
       return;
     }
     if (event.button !== 0) return;
-    // A second finger while a press is planted is a pinch or a two-finger
-    // orbit, not a second placement, and one that lands with nothing planted
-    // is the tail of the same gesture. Neither may plant, and the first
-    // finger's eventual lift must not commit whatever it was aiming when the
-    // operator gave up on it.
+    // A second finger is a pinch or orbit, never a second placement, and the
+    // first finger's lift must not then commit what it was aiming.
     if (anchorRef.current || !event.isPrimary) {
       abandonPick();
       return;
@@ -1361,44 +1097,29 @@ export function PointCloudCanvas({
       cx: event.clientX,
       cy: event.clientY,
     };
-    // Capture on the canvas, not on this container: OrbitControls captures the
-    // same pointer on the canvas itself, and capturing further up the tree
-    // would steal it and strand OrbitControls' pointerup handler.
+    // On the canvas, not this container: capturing higher would steal the
+    // pointer from OrbitControls and strand its pointerup.
     sceneRef.current?.renderer.domElement.setPointerCapture(event.pointerId);
-    // The press plants what was being carried: same spot, on the floor now.
     setCarrying(false);
-    // Until the pointer moves, keep the heading it was carried at (the seed, on
-    // the first press) so a plain click still yields a sane pose instead of
-    // snapping to 0deg.
+    // Keep the carried heading so a plain click does not snap to 0deg.
     setDraft({ x: hit.wx, y: hit.wy, theta: seedTheta() });
   };
 
   const handlePointerMove = (event: React.PointerEvent) => {
     if (!pickMode) {
-      // Hover-testing the vertex layer is the *only* thing a bare pointer move
-      // does here. Skipped with a button down: that is a camera drag, and
-      // lighting up markers the view is sweeping past says the pointer is over
-      // something when it is really just orbiting.
+      // Hover-test only with no button down; a button down is a camera drag.
       if (event.buttons === 0) hoverVertex(pickVertex(event));
       return;
     }
-    // A pose is being placed, so nothing on the map is a target — and leaving a
-    // marker lit under a crosshair would offer a second meaning for a gesture
-    // that already has one.
+    // While placing a pose nothing on the map is a target.
     hoverVertex(null);
-    // Only the primary pointer carries or aims; the press handler has already
-    // abandoned the pick if a second one is down.
     if (!event.isPrimary) return;
 
     const anchor = anchorRef.current;
 
-    // No press yet: carry the pose under the pointer, keeping the heading. Goal
-    // mode alone does not — an arrow trailing the cursor with nothing committed
-    // would read as a goal that is already set. The other two are *moving*
-    // something that exists (the robot, or a stored stop), so seeing it follow
-    // the pointer before the press is the whole point. A cursor over ground
-    // outside the map carries nothing, for the same reason a press there does
-    // not plant: it could not be published.
+    // No press yet: carry the pose under the pointer. Not in goal mode, where a
+    // trailing arrow would read as a goal already set; the other modes move
+    // something that exists. Off the map nothing is carried.
     if (!anchor) {
       if (pickMode === "goal") return;
       const hit = pickGround(event);
@@ -1411,16 +1132,10 @@ export function PointCloudCanvas({
       return;
     }
 
-    // Planted: the position is fixed at the anchor and the drag only aims.
-    // Keep whatever heading the draft already has inside the deadzone.
-    // The deadzone is the floor plan editor's, from lib/map/gesture.ts, so a
-    // drag aims at the same distance on both map surfaces.
+    // Planted: the drag only aims, past the shared deadzone.
     let theta = seedTheta();
     if (isDrag(anchor.cx, anchor.cy, event.clientX, event.clientY)) {
-      // World-space angle from the anchor to wherever the drag now points at
-      // the floor. This cannot come from the screen delta: the camera may be
-      // looking at the map from any azimuth (or from below), so screen-right is
-      // not world +x.
+      // World-space, not the screen delta: the camera may face any azimuth.
       const hit = pickGround(event);
       if (hit) theta = headingDegrees(hit.wx - anchor.wx, hit.wy - anchor.wy) ?? theta;
     }
@@ -1431,9 +1146,7 @@ export function PointCloudCanvas({
     const tap = tapRef.current;
     if (tap) {
       tapRef.current = null;
-      // Ignored if a pick mode was armed between press and release: the
-      // disarm button is off-canvas, so a pointer cannot do this, but a
-      // dialog over a pose being placed would be asking about the wrong thing.
+      // Ignored if a pick was armed between press and release.
       if (
         !pickMode &&
         tap.pointerId === event.pointerId &&
@@ -1456,12 +1169,8 @@ export function PointCloudCanvas({
   };
 
   /**
-   * Abandon a planted press without committing it. lib/scene/camera.ts keeps
-   * the two-finger camera live during a pick on purpose, so a second finger
-   * is the operator zooming, and a pointercancel is the browser taking the
-   * pointer for itself: in neither case was anything released deliberately,
-   * and a commit here would send the robot to wherever the first finger
-   * happened to be. handlePointerUp is the only path that commits.
+   * Drop a planted press without committing. A second finger or a
+   * pointercancel is not a deliberate release; only handlePointerUp commits.
    */
   const abandonPick = () => {
     const anchor = anchorRef.current;
@@ -1479,15 +1188,8 @@ export function PointCloudCanvas({
     if (anchorRef.current?.pointerId === event.pointerId) abandonPick();
   };
 
-  // The pointer leaving the viewport takes the carried robot with it, rather
-  // than stranding it wherever it was last seen — the operator moving onto the
-  // control panel has not chosen that spot. A press in flight is unaffected:
-  // the canvas holds the pointer capture, so the drag survives.
-  //
-  // This is also what clears the draft on disarm, and why no effect watches
-  // pickMode to do it: the disarm button is off-canvas, so reaching it means
-  // passing through here first. Both the marker and preview effects gate on
-  // pickMode anyway, so a draft left in state is never drawn.
+  // Leaving the viewport drops the carried draft (a captured drag survives).
+  // This is also what clears it on disarm: the disarm button is off-canvas.
   const handlePointerLeave = () => {
     hoverVertex(null);
     tapRef.current = null;
@@ -1502,8 +1204,7 @@ export function PointCloudCanvas({
       className={cn(
         "relative h-full w-full touch-pan-y overflow-hidden lg:touch-none",
         pickMode && "cursor-crosshair touch-none",
-        // Nothing else on this canvas is clickable, so the cursor is the only
-        // thing that says a marker is.
+        // The only sign that a marker is clickable.
         !pickMode && hoveredVertex && "cursor-pointer",
         className,
       )}

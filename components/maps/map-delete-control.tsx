@@ -22,25 +22,16 @@ const CONVERTING_REASON =
   "This map is still being prepared. Wait for it to finish.";
 
 /**
- * The corner itself: geometry and surface, shared by the live button and the
- * greyed span so the two occupy exactly the same place. Its own `bg-panel`
- * because what is underneath is a gridmap image or `bg-elevated` depending on
- * the map, and a bare glyph would sink into one of them.
+ * The corner tile, shared by the button and the greyed span; its own
+ * `bg-panel` so the glyph doesn't sink into the thumbnail.
  */
 const CORNER =
   "absolute top-2 right-2 z-10 flex size-6 items-center justify-center rounded-sm border border-hairline bg-panel/90 backdrop-blur-sm";
 
 /**
- * The one consequence the title does not already state: the waypoints go too.
- *
- * Size used to lead this sentence and deliberately no longer does. An operator
- * deleting a map is not weighing disk space — the card already shows the size
- * for anyone who is — and putting megabytes first pushed the thing they cannot
- * get back to the end of the line. Vertices are hand-placed work that lives in
- * Postgres, not in the directory, so their going is the part that can surprise.
- *
- * Null for a map with none: there is no second consequence to warn about, and a
- * sentence saying "0 vertices" is a sentence the operator reads for nothing.
+ * The one consequence the title doesn't state: the waypoints go too. They are
+ * hand-placed work stored outside the map directory, so they are what can
+ * surprise — the size is already on the card. Null when there are none.
  */
 function vertexWarning(map: MapSummary): string | null {
   if (map.vertex_count === 0) return null;
@@ -49,53 +40,24 @@ function vertexWarning(map: MapSummary): string | null {
 }
 
 /**
- * The card-side face of DELETE /api/v1/maps/{name}.
+ * The card-side face of DELETE /api/v1/maps/{name}: an X in the card's top
+ * right, not a word in the header, so it can't read as another view. It owns
+ * the `absolute` (the card is the positioned ancestor) because its dialog is
+ * a sibling, and carries its own surface to contrast with either thumbnail.
  *
- * An X pinned to the card's top-right corner, not a word in the header row.
- * Dismiss-this-thing is the one gesture that already has a universal glyph, and
- * the header row is the map's name — the one thing Rename edits — where a word
- * would read as another view to open rather than the one action that destroys
- * something. The corner is also the only place on the card that is not already
- * carrying information.
+ * Confirmed in an AlertDialog (no backdrop dismiss) because nothing is behind
+ * it: a rebuild keeps the previous floor plan and a rename can be undone, but
+ * this removes the run and its waypoints. The dialog names the map and warns
+ * about the waypoints, nothing else.
  *
- * It overlays the thumbnail, which has two different backdrops (a fixed light
- * neutral under a real preview, `bg-elevated` under "No preview"), so the
- * trigger carries its own panel surface and hairline rather than trusting
- * either one for contrast. **The card is what gives it a positioned ancestor**
- * — this component owns the `absolute`, since its dialog is a sibling and a
- * wrapper element would have to be positioned instead.
+ * The map in use can't be deleted (409 `map_active`): the running stack holds
+ * paths into it. Greyed on the active card and mid-conversion (the conversion
+ * is writing into the directory). A refusal keeps the dialog open — 409
+ * `template_bound` names the templates still bound to the map.
  *
- * Behind an AlertDialog because this is the one map action with nothing behind
- * it — a rebuild keeps `gridmap_prev.pgm`, a rename can be renamed back, and
- * this is an `rmtree` of a mapping run plus its waypoints. The alert dialog
- * rather than a plain one for the reason that component's header gives: no
- * dismiss-by-backdrop, so the only ways out are the two buttons. An icon with
- * no label leans harder on that dialog: the title names the map, which is what
- * confirms the operator hit the corner they meant to.
- *
- * The dialog names the map and warns about the vertices (see `vertexWarning`),
- * and says nothing else. Every sentence it could add is one the operator reads
- * *instead of* the two facts that matter.
- *
- * **The map in use cannot be deleted, and that is the backend's rule.** The
- * running stack holds `map/<name>/…` paths it opened at launch, so where a
- * rename would leave map_server and the localizer a stale path, a delete leaves
- * them nothing. Switching the robot to another map lifts this the way it lifts
- * the rename — and note it lifts it properly, by loading the *other* map's
- * files, so the map being deleted is genuinely no longer open. The control is a
- * greyed look-alike on the active card with the reason in its tooltip, and the
- * endpoint answers 409 `map_active` regardless. Greyed mid-conversion too: the
- * conversion thread is writing into the directory.
- *
- * A refusal keeps the dialog open and shows the backend's sentence there. That
- * matters most for 409 `template_bound`, the only one that asks the operator to
- * go and do something — it names the task templates still bound to this map,
- * and closing the dialog would take the list away with it.
- *
- * On success this instance goes away: MapLibrary keys cards by name, so the
- * refetch unmounts the card. The backend's sentence therefore goes *up*, through
- * `onDeleted`, to a line the library keeps — from the per-call callback, which
- * runs before the invalidation useDeleteMap fires has had time to refetch.
+ * On success the card unmounts with the refetch, so the sentence goes up
+ * through `onDeleted` from the per-call callback, which runs before the
+ * refetch lands.
  */
 export function MapDeleteControl({
   map,
@@ -109,8 +71,7 @@ export function MapDeleteControl({
   const [confirming, setConfirming] = React.useState(false);
 
   const busy = remove.isPending;
-  // 409 (in use, converting, a task template still bound) arrives as the
-  // backend's own sentence, written to be shown. The dialog stays open.
+  // 409s (in use, converting, a bound template) arrive as the backend's sentence.
   const error = remove.error?.message ?? null;
 
   const locked = map.active;
@@ -133,9 +94,8 @@ export function MapDeleteControl({
 
   return (
     <>
-      {/* A look-alike span rather than a disabled button when the map is in
-        * use: `disabled` would swallow the pointer events the tooltip needs,
-        * and the reason is the whole point of showing the control at all. */}
+      {/* A look-alike span when blocked: `disabled` swallows the pointer
+        * events the tooltip needs. */}
       {blocked ? (
         <span
           aria-disabled="true"
@@ -186,11 +146,8 @@ export function MapDeleteControl({
           )}
 
           <AlertDialogFooter>
-            {/* Icon *and* label, the house pattern (see vertex-move-dialog):
-              * the glyph is what tells the two apart at a glance, the word is
-              * what makes the dangerous one unmistakable. This is the last
-              * screen before an rmtree — not the place to make an operator
-              * decode two unlabelled buttons. */}
+            {/* Icon and label, the house pattern: the last screen before the
+              * map is removed is no place for two unlabelled buttons. */}
             <Button variant="ghost" size="sm" disabled={busy} onClick={close}>
               <ArrowLeftIcon data-icon="inline-start" />
               Keep

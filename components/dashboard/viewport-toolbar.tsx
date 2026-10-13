@@ -28,33 +28,14 @@ import {
 type CameraMode = "move" | "focus";
 
 /**
- * The viewport's controls, as two rows of icons along its top edge: this one
- * at the right, MapToolbar below at the left.
+ * The viewport's right-hand strip: what a drag produces, how the camera moves,
+ * what is drawn. MapToolbar on the left holds what is done to the map itself.
  *
- * They used to be two clusters — the pose tools as worded buttons over their
- * read-backs at top left, and the camera and layer toggles as a wrapping row
- * along the bottom — and between them they took both ends of the viewport
- * from the scene. Icons in a strip give it the bottom edge back, and put every
- * "what does a drag do / what is drawn" decision in one place.
- *
- * The split by corner is by what a press touches. Everything here is about the
- * *view* and the commands sent through it: which pose a drag produces, how the
- * camera moves, how far it stands, what is drawn. The left strip is what the
- * operator does *to the map itself* — put the whole of it back in frame, add a
- * stop to it — and sits over the read-back column those actions report into.
- *
- * Nothing here is icon-only, which is the rule grid-toolbar.tsx set for the
- * floor plan editor's tool rows and this one follows. Each button carries its
- * name as its accessible name and in a tooltip beside what a press will do;
- * under a finger, which never hovers, the name is printed under the icon
- * instead. The one sentence a tooltip cannot carry is what to do *next* with a
- * pose tool armed, since the pointer has left the button by then — that is
- * the view's armed hint, under the left strip.
- *
- * Groups are split by hairlines and each is a named `group`, so a screen
- * reader hears "Camera, Move, pressed" rather than a bare "Move". The pose
- * tools keep their own hues (cyan for a goal, amber for an initial pose): the
- * difference between the two is the one a mid-drag glance must not get wrong.
+ * Each button has its name as accessible name and tooltip (grid-toolbar.tsx's
+ * rule). What to do next with a pose tool armed is the view's armed hint,
+ * since the pointer has left the button by then. Groups are named so a screen
+ * reader hears "Camera, Move, pressed". Goal and initial pose keep distinct
+ * hues, the difference a mid-drag glance must not get wrong.
  */
 export function ViewportToolbar({
   pick,
@@ -77,10 +58,7 @@ export function ViewportToolbar({
   pick: "goal" | "initial-pose" | null;
   /** A goal is running or on its way; a second one must not be armed. */
   goalLocked: boolean;
-  /**
-   * Why the goal's map cannot take one, when that is what locks it, for the
-   * tooltip. A running goal needs no sentence: its read-back is on screen.
-   */
+  /** Why the map cannot take a goal, for the tooltip. A running goal needs none. */
   goalLockReason?: string | null;
   onArmGoal: () => void;
   onArmInitialPose: () => void;
@@ -94,10 +72,7 @@ export function ViewportToolbar({
   onTopDown: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
-  /**
-   * Only the layers that have something to draw. A toggle over an empty layer
-   * is indistinguishable from a broken one, so the view leaves those out.
-   */
+  /** Only the layers that have something to draw. */
   layers: readonly LayerOption[];
   className?: string;
 }) {
@@ -109,9 +84,8 @@ export function ViewportToolbar({
             hint={goalLockReason ?? "drag on the map to aim, release to send"}
             icon={CrosshairIcon}
             pressed={pick === "goal"}
-            // `busy` as well as `running`: the tracker only reports a task once
-            // the POST has come back, and a drag is a dispatch, so re-arming in
-            // that window would put a second goal on the wire.
+            // Includes the POST in flight: the tracker reports a task only once
+            // it returns, and re-arming then would send a second goal.
             disabled={goalLocked}
             onClick={onArmGoal}
           />
@@ -123,11 +97,9 @@ export function ViewportToolbar({
             pressed={pick === "initial-pose"}
             onClick={onArmInitialPose}
           />
-          {/* Beside Set initial pose because it answers the same question —
-            * where does the robot stand — without the drag. One-shot, so never
-            * pressed; the search runs for seconds, and the read-back under the
-            * left strip is where it reports, so the icon only pulses. Same
-            * amber: it overrides the robot's estimate just as a drag does. */}
+          {/* Same question as Set initial pose without the drag, and the same
+            * amber: it overrides the estimate too. One-shot, so never pressed;
+            * it pulses while searching. */}
           <ToolButton
             label="Auto localize"
             hint={
@@ -162,10 +134,8 @@ export function ViewportToolbar({
             onClick={() => onCameraMode("focus")}
           />
         </ToolGroup>
-        {/* Beside the camera modes, not among them, and never pressed: Move and
-          * Focus say what a drag does until changed, while this is a one-shot
-          * placement the very next drag can orbit out of. A lit segment would
-          * claim a view the operator may no longer be in. */}
+        {/* Not a camera mode and never pressed: the next drag can orbit out
+          * of it, so a lit button would claim a view no longer held. */}
         <ToolButton
           label="Top down"
           hint="look straight down at the map"
@@ -200,11 +170,8 @@ export function ViewportToolbar({
 
         <Divider />
 
-        {/* Last, at the strip's outer edge: zoom is otherwise the wheel and, on
-          * a phone, the pinch, so these are the buttons reached for least and
-          * the ones a thumb finds without looking. One press is one step in
-          * either mode: it moves the camera along its line to the target,
-          * which is the one form of zoom focus mode does not undo. */}
+        {/* Last: the wheel and the pinch zoom too. A step dollies toward the
+          * target, the one zoom focus mode does not undo. */}
         <ToolGroup label="Zoom">
           <ToolButton
             label="Zoom in"
@@ -224,15 +191,8 @@ export function ViewportToolbar({
 }
 
 /**
- * The left strip: what the operator does to the map itself. Two buttons, one
- * of them a mode, so it stays a strip rather than a panel — the read-back
- * column that hangs under it is where anything it starts gets reported.
- *
- * Recenter is one-shot and never lit, for the reason Top down is not: the next
- * drag can orbit straight back out of it. Add waypoint is a pick mode like Set
- * goal, and lights the same way while it is armed; it is greyed with no map
- * loaded, because a waypoint is a row on a map and there would be nothing to
- * put it on.
+ * The left strip: what is done to the map itself. Recenter is one-shot and
+ * never lit, like Top down. Add waypoint is a pick mode, greyed with no map.
  */
 export function MapToolbar({
   placing,
@@ -289,8 +249,7 @@ const LAYER_ICONS = {
   scan: ScanLineIcon,
   waypoints: MapPinIcon,
   path: RouteIcon,
-  // The Draw list's sign for a forbidden zone, so the toggle names the same
-  // thing the editor drew.
+  // The floor plan editor's forbidden zone icon.
   zones: BanIcon,
 } as const;
 

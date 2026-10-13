@@ -70,19 +70,16 @@ import {
 import type { MapVertex } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
-/**
- * Click slop around a marker centre. Comfortably larger than the dot itself.
- * Also the target for a zone's first corner, which is a dot of the same size.
- */
+/** Click slop around a marker centre (and a zone's first corner, the same size of dot). */
 const VERTEX_HIT_RADIUS = 11;
-/** The same slop under a finger, which covers ~22 px and cannot see the dot. */
+/** Under a finger, which covers ~22 px and can't see the dot. */
 const VERTEX_HIT_RADIUS_TOUCH = 22;
 
 export interface GridCanvasProps {
   session: GridSession;
   /**
-   * Grid paints cells; vertex places poses and never touches the buffer; zone
-   * collects the corners of a forbidden zone and touches neither.
+   * Grid paints cells; vertex places poses; zone collects a forbidden zone's
+   * corners. Only grid touches the buffer.
    */
   mode: EditMode;
   tool: EditTool;
@@ -96,34 +93,22 @@ export interface GridCanvasProps {
   /** True while the shell sees Space held — pans without changing the tool. */
   spacePan: boolean;
   /**
-   * Bumped by the shell's Fit action. A nonce rather than a callback the shell
-   * holds: the view lives in here, and handing out a setter would give the shell a
-   * second way to reach it.
+   * Bumped by the shell's Fit. A nonce rather than a setter, so the view has
+   * one owner.
    */
   fitNonce: number;
   /**
-   * One step of zoom about the viewport's centre, for the toolbar's ± buttons.
-   * Identity is the trigger, as with `focus`: a fresh object means "now". They
-   * exist because a phone has no wheel, and the pinch below is the only other
-   * way in — which is one way too few for something as basic as zoom.
+   * One zoom step about the centre, for the toolbar's ± (a phone has no
+   * wheel). A fresh object means "now", as with `focus`.
    */
   zoomStep: { factor: number } | null;
   /**
-   * A map-frame point to bring to the centre of the viewport, holding the zoom.
-   *
-   * Identity is the trigger — a fresh object means "do it now", the same job
-   * `fitNonce` does with a counter — so the shell hands one over per request and
-   * leaves it in place afterwards. Null means nothing has asked.
-   *
-   * It exists for the robot-position capture: that draft appears without a
-   * pointer gesture, so its marker can land anywhere, including off screen, and
-   * an operator with a staged pose they cannot see has no way to judge it.
+   * A map-frame point to centre, holding the zoom; a fresh object means "now",
+   * null means nothing asked. For the robot-position capture, whose draft can
+   * appear off screen with no gesture to bring it there.
    */
   focus: { x: number; y: number } | null;
-  /**
-   * Once per completed stroke, never mid-drag. The grid and the mirror are already
-   * updated by then; the shell's only job is to record the patch.
-   */
+  /** Once per completed stroke, after the grid and mirror are updated; the shell records the patch. */
   onStrokeCommit: (patch: GridPatch) => void;
   /** Coalesced to at most one call per frame, and only when the cell changes. */
   onHover: (probe: CellProbe | null) => void;
@@ -133,81 +118,56 @@ export interface GridCanvasProps {
   /** Vertices already stored for this map. Drawn in every mode. */
   vertices: MapVertex[];
   /**
-   * Where the robot is standing on this map, or null when that is not knowable
-   * (another map loaded, not localized, no state) — see useRobotMapPose.
-   *
-   * Drawn in every mode, like the vertices: it is the answer to "which end of the
-   * corridor am I looking at", which is as useful with a brush in hand as it is
-   * while placing stops. It is never interactive — nothing on this canvas can
-   * move the robot, and hit-testing ignores it entirely.
+   * Where the robot stands on this map, or null when unknowable (see
+   * useRobotMapPose). Drawn in every mode for orientation; never interactive.
    */
   robotPose: PlanarPose | null;
   /** Staged, not-yet-created vertex. Drawn in the commanded hue. */
   draft: PlanarPose | null;
   /**
-   * Highlighted. One of them is the vertex the panel is editing; more than one
-   * is a band selection, which the panel can only delete.
-   *
-   * A list rather than a Set because it is the shell's state and is handed
-   * straight to React.memo — a Set rebuilt per render would defeat it, and the
-   * only thing this component does with it is a membership test per frame,
-   * which it builds its own Set for.
+   * Highlighted: one is the vertex being edited, more is a band selection.
+   * A list, not a Set, so React.memo sees a stable prop; a Set is built here
+   * for the per-frame membership test.
    */
   selectedIds: readonly string[];
   /** Fired on pointer-down, before any drag, so selection feels immediate. */
   onVertexPick: (id: string | null) => void;
   /** Shift-click on a marker: add it to, or drop it from, the selection. */
   onVertexToggle: (id: string) => void;
-  /**
-   * A finished rubber band, with the ids whose markers it enclosed — possibly
-   * none, which is a real answer and clears the selection unless `additive`.
-   */
+  /** A finished rubber band's enclosed ids — possibly none, which clears unless `additive`. */
   onMarquee: (ids: string[], additive: boolean) => void;
   /** Fired once on pointer-up with the finished pose. */
   onVertexGesture: (gesture: VertexGesture) => void;
 
-  /**
-   * Forbidden zones drawn so far. Drawn in every mode, like the vertices: a
-   * stop placed inside one is exactly what an operator wants to notice.
-   */
+  /** Forbidden zones so far, drawn in every mode: a stop inside one is worth noticing. */
   zones: readonly ZonePolygon[];
   /**
-   * The corners of the shape in flight, the shell's state rather than a ref
-   * in here: a corner arrives once per click, not at pointer rate, and the
-   * toolbar's Done button needs the count. The rubber line from the last
-   * corner still follows the pointer through hoverRef, with no React involved.
+   * The shape in flight's corners, as shell state (they arrive per click and
+   * Done needs the count). The rubber line still follows the pointer via
+   * hoverRef, outside React.
    */
   zoneDraft: readonly ZonePoint[];
   /** The finished zone's corner the shape in flight is attached to, if any. */
   zoneDraftAnchor: ZoneAnchor | null;
   /** A click with Shape armed, on bare map: one more corner. */
   onZonePoint: (point: ZonePoint) => void;
-  /**
-   * A click on a finished zone's corner while the shape is not yet attached
-   * to one: attach it there — as its first corner, or as its next.
-   */
+  /** A click on a finished zone's corner while unattached: attach there, as first or next corner. */
   onZoneAnchor: (corner: ZoneCornerRef) => void;
-  /**
-   * A click on another corner of the anchored zone: the shape's own corners
-   * replace that zone's edge between the two (mergeIntoZone).
-   */
+  /** A click on another corner of the anchored zone: replace that edge with the shape (mergeIntoZone). */
   onZoneMerge: (corner: ZoneCornerRef) => void;
   /** A click on the first corner once there are three: close the shape. */
   onZoneClose: () => void;
   /**
-   * A drag from a corner — of the shape in flight, or a handle of the
-   * selected finished zone — on release: that corner now sits at `point`.
-   * Once per gesture, like onVertexGesture — the corner follows the pointer
-   * through the gesture ref, with no React involved.
+   * On release of a drag from a corner (the draft's or the selected zone's
+   * handle): it now sits at `point`. Once per gesture; the corner follows the
+   * pointer through the gesture ref meanwhile.
    */
   onZoneCornerMove: (corner: ZoneCornerRef, point: ZonePoint) => void;
   /** Highlighted, and what Remove takes. Drawn heavier than the rest. */
   selectedZoneIds: readonly string[];
   /**
-   * A click inside a finished zone with no shape in flight. `additive` when
-   * Shift was held or the press was a finger: the zone joins the selection
-   * (or leaves it) rather than replacing it. Fired on release, like every
-   * other click here.
+   * A click (on release) inside a finished zone with no shape in flight.
+   * `additive` with Shift or a finger: toggle rather than replace.
    */
   onZonePick: (id: string, additive: boolean) => void;
 
@@ -215,14 +175,10 @@ export interface GridCanvasProps {
 }
 
 /**
- * The editable grid: the only component in the editor that touches pixels or
- * pointer events.
- *
- * The invariant inherited from the 2D map canvas this replaces is that there is
- * exactly one view transform and `draw()` and every handler read the same one.
- * Here it is mutable, so the rule is sharper: `viewRef.current` is the single
- * instance, handlers write it and then ask for a frame, and it is never copied into
- * React state — a pan at pointer rate must not re-render the toolbar.
+ * The editable grid: the only editor component touching pixels or pointer
+ * events. One mutable view transform, `viewRef.current`, read by draw() and
+ * every handler alike; handlers write it and request a frame, and it never
+ * enters React state — a pan at pointer rate must not re-render the toolbar.
  */
 export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps) {
   const { session, className } = props;
@@ -233,22 +189,19 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
 
   const viewRef = React.useRef<View | null>(null);
   /**
-   * Cached container size. getBoundingClientRect() inside pointermove is a forced
-   * layout read, and combined with the hover readout writing DOM text in the same
-   * frame it is layout thrash on every mouse move.
+   * Cached container size: getBoundingClientRect() in pointermove forces
+   * layout, which with the hover readout's DOM write is thrash per move.
    */
   const rectRef = React.useRef<{ width: number; height: number } | null>(null);
   const gestureRef = React.useRef<Gesture | null>(null);
   /**
-   * Every finger currently on the canvas, by pointer id, in container-local
-   * px. Gestures are one-pointer things (see Gesture), so this is the only
-   * record of where a second finger is — which is what a pinch needs.
+   * Every finger on the canvas, by pointer id, container-local. Gestures are
+   * one-pointer, so this is the only record of a second finger — a pinch's.
    */
   const touchesRef = React.useRef(new Map<number, { cx: number; cy: number }>());
   /**
-   * The two-finger zoom-and-pan in flight, or null. Kept apart from gestureRef
-   * on purpose: a pinch is not a tool's gesture, it is the view being moved
-   * under whatever tool is armed, and it must never stamp, band or aim.
+   * The pinch in flight, kept apart from gestureRef: it moves the view under
+   * whatever tool is armed and must never stamp, band or aim.
    */
   const pinchRef = React.useRef<{
     a: number;
@@ -260,10 +213,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
   } | null>(null);
   const hoverRef = React.useRef<CellProbe | null>(null);
   /**
-   * The corner under the pointer, with Shape armed and nothing in flight: a
-   * draft corner, or a handle of the selected zone. A ref beside hoverRef
-   * and for its reason: it changes at pointer rate and only the draw path
-   * and the cursor read it.
+   * The corner under the pointer with Shape armed and nothing in flight. A
+   * ref like hoverRef: pointer rate, read only by draw and the cursor.
    */
   const hoverCornerRef = React.useRef<ZoneCornerRef | null>(null);
   const rafRef = React.useRef(0);
@@ -272,10 +223,9 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
   const publishedScaleRef = React.useRef(0);
 
   /**
-   * The draw/listener effect must not re-subscribe when a callback identity, the
-   * tool or the brush size changes: it owns a ResizeObserver and a non-passive
-   * wheel listener, and re-running it mid-drag would drop pointer capture and the
-   * in-flight stroke. It reads everything current through here instead.
+   * The draw/listener effect owns a ResizeObserver and a non-passive wheel
+   * listener; re-subscribing mid-drag on a callback, tool or brush change would
+   * drop pointer capture and the stroke. It reads current props through here.
    */
   const propsRef = React.useRef(props);
   React.useEffect(() => {
@@ -287,12 +237,9 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
   themeRef.current = theme;
 
   /**
-   * Draw-on-change, coalesced to one paint per frame.
-   *
-   * Not a persistent rAF loop: nothing on this screen animates, the 3D viewport
-   * already owns one, and this console can be running on the robot's own Jetson.
-   * Not a bare draw() per event either — a trackpad pinch delivers a dozen wheel
-   * events per frame, and a resize plus a wheel in the same frame must paint once.
+   * Draw-on-change, coalesced to one paint per frame. Not a persistent rAF
+   * loop (nothing animates, and this may run on the robot's Jetson); not a
+   * bare draw() per event (a trackpad pinch sends a dozen wheels a frame).
    */
   const requestDraw = React.useCallback(() => {
     if (rafRef.current) return;
@@ -308,9 +255,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     if (!container || !canvas) return;
 
     const bounds = container.getBoundingClientRect();
-    // A flex child's first layout pass can be 0x0. Bailing is not just a skipped
-    // frame here: fitView on a zero rect gives scale 0, screenToGrid then divides
-    // by it, and the resulting NaN transform never recovers.
+    // A flex child's first layout can be 0x0, and fitView on it gives scale 0
+    // — a NaN transform that never recovers.
     if (bounds.width < 1 || bounds.height < 1) return;
     const rect = { width: bounds.width, height: bounds.height };
     rectRef.current = rect;
@@ -318,8 +264,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const bw = Math.round(rect.width * dpr);
     const bh = Math.round(rect.height * dpr);
-    // Only on change: assigning width/height clears the surface and resets the
-    // transform, which is a wasted full realloc at pointer rate.
+    // Only on change: assigning width/height clears and reallocates.
     if (canvas.width !== bw || canvas.height !== bh) {
       canvas.width = bw;
       canvas.height = bh;
@@ -327,8 +272,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    // DPR lives here and nowhere else — the view transform stays in CSS pixels,
-    // the same unit event.clientX reports, so hit-testing needs no DPR term.
+    // DPR only here; the view stays in CSS pixels like clientX, so hit-tests
+    // need no DPR term.
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const palette = PALETTES[themeRef.current];
@@ -341,11 +286,9 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     const w = grid.width * view.scale;
     const h = grid.height * view.scale;
 
-    // Nearest-neighbour at or above 1:1 — a smoothed cell boundary would lie about
-    // which cell the next click lands in. Below 1:1 the browser's filtered
-    // downscale is the honest choice: fit scale on the 1602x1502 maps is ~0.47, and
-    // nearest sampling there drops every other cell, so 1-to-3-cell-thick walls
-    // break into dotted noise exactly when you are trying to judge them.
+    // Nearest-neighbour at or above 1:1, so a cell edge never lies about which
+    // cell a click hits. Below 1:1, filtered: at fit (~0.47 on 1602x1502)
+    // nearest drops every other cell and thin walls turn to dotted noise.
     ctx.imageSmoothingEnabled = view.scale < 1;
     ctx.drawImage(mirror.canvas, view.ox, view.oy, w, h);
 
@@ -358,9 +301,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     const current = propsRef.current;
     drawPreview(ctx, view, session, gestureRef.current, current, palette);
     drawBrushRing(ctx, view, gestureRef.current, hoverRef.current, current, palette);
-    // Above the grid and the stroke preview, so a zone's wash tints the cells
-    // it covers; below the robot and the markers, because a stop or a robot
-    // standing inside a zone is exactly what the operator is looking for.
+    // Above the grid and stroke preview so the wash tints cells; below the
+    // robot and markers, which are what to notice inside a zone.
     drawZones(
       ctx,
       view,
@@ -380,8 +322,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       current,
       palette,
     );
-    // Under the vertex layer: the markers are what this screen edits, and a stop
-    // placed where the robot is standing must not disappear beneath it.
+    // Under the markers, so a stop placed where the robot stands stays visible.
     if (current.robotPose) {
       drawRobot(ctx, view, session.meta, current.robotPose, palette);
     }
@@ -390,8 +331,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     // Last of all: the band is chrome over everything it is selecting.
     drawMarquee(ctx, gestureRef.current, palette);
 
-    // Publish at most once per frame, and only on a real change: moving within one
-    // cell at high zoom, or a pan that does not change the scale, costs nothing.
+    // Publish at most once per frame, and only on a real change.
     const hover = hoverRef.current;
     const hoverKey = hover ? `${hover.col},${hover.row}` : "";
     if (publishedHoverRef.current !== hoverKey) {
@@ -407,19 +347,15 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
 
   drawRef.current = draw;
 
-  // Repaint on a theme change: the grid bytes do not move, but the chrome hues do.
+  // Repaint on a theme change: the chrome hues move, the grid bytes don't.
   React.useEffect(() => {
     requestDraw();
   }, [theme, requestDraw]);
 
   /**
-   * Repaint when the vertex layer changes.
-   *
-   * Necessary because the propsRef effect above deliberately does not draw: the
-   * tool, the brush and the paint value only matter at the *next* pointer event,
-   * so a render caused by one of them costs no frame. Vertex data is different —
-   * it is on screen, and a create that lands while the pointer is still would
-   * otherwise not appear until something else happened to ask for a frame.
+   * Repaint when on-screen data changes. The propsRef effect deliberately
+   * doesn't draw (tool, brush and value only matter at the next pointer
+   * event), so a create landing while the pointer is still would not appear.
    */
   React.useEffect(() => {
     requestDraw();
@@ -428,14 +364,12 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     props.draft,
     props.selectedIds,
     props.mode,
-    // A corner added by a click is on screen too, and the pointer is still
-    // when it lands.
+    // A clicked corner lands while the pointer is still.
     props.zones,
     props.zoneDraft,
     props.zoneDraftAnchor,
     props.selectedZoneIds,
-    // Once a second at most, and only when the robot has actually moved — the
-    // hook memoises the pose on its values, so a parked robot costs no frames.
+    // The hook memoises on value, so a parked robot costs no frames.
     props.robotPose,
     requestDraw,
   ]);
@@ -465,11 +399,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
   }, [zoomStep, session, requestDraw]);
 
   /**
-   * Centre on a point the shell asked for, if there is a view to move.
-   *
-   * Before the first paint there is neither a transform nor a measured rect, and
-   * nothing to do: draw() then builds the fit view, which has the whole map —
-   * and so the target — on screen anyway.
+   * Centre on the point the shell asked for. Before the first paint there is
+   * no view; draw()'s fit then shows the whole map, target included.
    */
   const focus = props.focus;
   React.useEffect(() => {
@@ -486,9 +417,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     const container = containerRef.current;
     if (!container) return;
 
-    // Undo/redo lives in the shell but has to reach the mirror and the frame
-    // scheduler, which only this component owns. The slot's lifetime is exactly
-    // this effect's.
+    // Undo/redo lives in the shell but needs the mirror and frame scheduler,
+    // which only this component owns; the slot lives as long as this effect.
     session.repaint = (dirty) => {
       if (dirty) blitGridRect(session.mirror, session.grid, dirty);
       else blitGrid(session.mirror, session.grid);
@@ -500,9 +430,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       const bounds = container.getBoundingClientRect();
       if (bounds.width < 1 || bounds.height < 1) return;
       const next = { width: bounds.width, height: bounds.height };
-      // Hold the zoom across a resize rather than refitting — a window resize or a
-      // devtools pane must not throw away the view the operator set up. "Fit" is
-      // the explicit way back.
+      // Hold the zoom across a resize (a devtools pane shouldn't lose the
+      // view); Fit is the way back.
       if (viewRef.current && previous) {
         viewRef.current = reanchorView(viewRef.current, previous, next, session.grid);
       }
@@ -510,14 +439,12 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       rectRef.current = next;
       requestDraw();
     });
-    // The container only, and the canvas stays absolutely positioned: assigning
-    // width on an in-flow canvas changes layout and would re-trigger this forever.
+    // Observe the container; the canvas is absolutely positioned, since resizing
+    // an in-flow canvas would re-trigger this forever.
     observer.observe(container);
 
-    // Wheel cannot be a JSX onWheel prop. React attaches wheel passively at the
-    // root, so preventDefault() there is ignored with a console warning — and
-    // without it a trackpad pinch (which arrives as wheel + ctrlKey) page-zooms
-    // the whole console instead of the map.
+    // Not a JSX onWheel: React attaches wheel passively, so preventDefault is
+    // ignored and a trackpad pinch (wheel + ctrlKey) page-zooms the console.
     const onWheel = (event: WheelEvent) => {
       const rect = rectRef.current;
       const view = viewRef.current;
@@ -527,8 +454,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       const bounds = container.getBoundingClientRect();
       const cx = event.clientX - bounds.left;
       const cy = event.clientY - bounds.top;
-      // The notch-to-factor rule is shared with the task editor's floor plan
-      // (lib/map/gesture.ts), so a wheel feels the same on both.
+    // Shared with the task editor's floor plan (lib/map/gesture.ts).
       const factor = wheelZoomFactor(event.deltaY, event.deltaMode, rect.height);
       viewRef.current = zoomAt(view, cx, cy, factor, rect, session.grid);
       requestDraw();
@@ -556,11 +482,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
   };
 
   /**
-   * The cell under a point, clamped into the grid.
-   *
-   * Clamped rather than nulled so a drag that wanders past the edge keeps painting
-   * the edge row, which is what every paint program does. The press that *starts* a
-   * stroke still has to land inside (see handlePointerDown).
+   * The cell under a point, clamped so a drag past the edge keeps painting the
+   * edge row. A stroke's first press must still land inside.
    */
   const clampedCell = (view: View, cx: number, cy: number): Cell => {
     const { px, py } = screenToGrid(view, cx, cy);
@@ -572,12 +495,9 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
   };
 
   /**
-   * The topmost vertex marker under a point, or null.
-   *
-   * Hit-tested in screen space rather than in metres so the target stays the
-   * same size at every zoom — the marker does not scale, so a world-space radius
-   * would be unclickable zoomed out and enormous zoomed in. Last-to-first
-   * because that is paint order reversed: the marker drawn on top wins.
+   * The topmost marker under a point, hit-tested in screen space so the target
+   * stays one size at every zoom (markers don't scale). Last-to-first: the one
+   * painted on top wins.
    */
   const vertexAt = (view: View, cx: number, cy: number, radius: number): MapVertex | null => {
     const { vertices } = propsRef.current;
@@ -614,13 +534,9 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
 
     if (event.pointerType === "touch") {
       touchesRef.current.set(event.pointerId, { cx, cy });
-      // A second finger is a pinch — if the first one is panning, holding a
-      // zone corner it has not yet added, or doing nothing. Over a stroke, a
-      // band or an aim it stays ignored: a stroke has already stamped, and
-      // the two-finger zoom would move the map out from under the cells
-      // still being painted. (Before the pinch existed a second finger
-      // replaced the gesture, and with Brush armed the next move painted a
-      // line from one finger to the other.)
+      // A second finger pinches if the first is panning, holding an unadded
+      // zone corner, or idle. Over a stroke, band or aim it is ignored: those
+      // have acted, and a zoom would move the map under the cells being painted.
       const gesture = gestureRef.current;
       if (
         touchesRef.current.size === 2 &&
@@ -641,8 +557,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
           cy: (a[1].cy + b[1].cy) / 2,
         };
         event.preventDefault();
-        // Both fingers, so neither lift is lost to an element the finger
-        // slid onto; the first may already be captured from its pan.
+        // Capture both fingers so neither lift is lost; the first may already be.
         event.currentTarget.setPointerCapture(a[0]);
         event.currentTarget.setPointerCapture(b[0]);
         return;
@@ -651,10 +566,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     // One gesture at a time; a pinch in flight owns both fingers.
     if (gestureRef.current || pinchRef.current) return;
 
-    // Which gesture this press starts is a rule, and the rule is
-    // classifyPress in lib/map/gesture.ts: right and middle always pan, the
-    // mode's own tool claims the left button, and Select splits a press into
-    // toggle, band or re-aim. What is left here is doing it to this canvas.
+    // Which gesture a press starts is classifyPress (lib/map/gesture.ts); this
+    // only acts on it.
     const touch = event.pointerType === "touch";
     const hit =
       mode === "vertex"
@@ -679,9 +592,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     }
 
     if (intent === "marquee") {
-      // It starts anywhere, including the letterbox margin outside the grid:
-      // the band selects markers, not cells, so there is nothing for it to be
-      // outside of.
+      // Anywhere, letterbox included: the band selects markers, not cells.
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
       gestureRef.current = {
@@ -699,21 +610,16 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
 
     if (intent === "aim") {
       const { draft } = propsRef.current;
-      // An existing vertex anchors at its *stored* position, not at the press
-      // point. The press has to land within VERTEX_HIT_RADIUS of the marker, so
-      // using it would silently move the vertex by up to 11 px worth of metres
-      // every time the operator merely selected one to re-aim it.
+      // An existing vertex anchors at its stored position, not the press:
+      // using the press would nudge it up to 11 px every time it was selected.
       let anchor: { wx: number; wy: number };
       if (hit) {
         anchor = { wx: hit.x, wy: hit.y };
       } else {
-        // Only a press on the grid places a vertex; the map is letterboxed and
-        // a press in the margin means nothing, exactly as it does for a stroke.
+        // Only a press on the grid places one; the letterbox means nothing.
         const cell = cellAt(view, session.grid, cx, cy);
         if (!cell) return;
-        // Cell centre, not corner: gridToWorld(col, row) is the corner, and at
-        // 0.05 m/cell reporting that as the pose is a 2.5 cm lie — the same
-        // reason GridStatus offsets its readout by half a cell.
+        // Cell centre, not corner (a 2.5 cm lie at 0.05 m/cell, as in GridStatus).
         anchor = gridToWorld(cell.col + 0.5, cell.row + 0.5, session.meta);
       }
 
@@ -729,9 +635,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
         wy: anchor.wy,
         cx,
         cy,
-        // Inside the deadzone the gesture is a click, and a click must not snap
-        // the heading to 0°: keep the vertex's own, or the draft's if the
-        // operator is placing a run of points facing the same way.
+        // A click must not snap the heading to 0°: keep the vertex's, or the
+        // draft's for a run of points facing the same way.
         theta: hit?.theta ?? draft?.theta ?? 0,
       };
       requestDraw();
@@ -740,10 +645,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
 
     if (intent === "point") {
       const { zoneDraft, zoneDraftAnchor, zones } = propsRef.current;
-      // Only a press on the grid adds a corner or picks a zone; a press in
-      // the letterbox margin means nothing, as it does for a stroke and a
-      // waypoint. Cell centre, for the aim branch's reason: the corner is a
-      // pose on the map, and the cell's corner would be half a cell off.
+      // Only a press on the grid counts; the cell centre, as for a waypoint.
       const cell = cellAt(view, session.grid, cx, cy);
       if (!cell) return;
       const { wx, wy } = gridToWorld(cell.col + 0.5, cell.row + 0.5, session.meta);
@@ -751,9 +653,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       const under = zoneDraft.length === 0 ? zoneAt(zones, point) : null;
       const corner = cornerUnder(view, cx, cy, touch);
       const anchored = zoneDraftAnchor !== null;
-      // A finger has no Shift, so a tap adds to the selection the way the
-      // vertex layer's does; a tap on bare map with a corner down is still
-      // the next corner, since Shift means nothing once a shape is in flight.
+      // A finger has no Shift, so a tap adds to the selection; with a corner
+      // down a tap is still the next corner.
       const additive = event.shiftKey || touch;
       const verdict = classifyZonePress({
         count: zoneDraft.length,
@@ -766,15 +667,11 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
 
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
-      // Nothing is done yet: the release decides whether this was a click
-      // or a drag, the way `pan.pick` is resolved. A drag pans the map, or
-      // moves the corner the press landed on. The corner anchors at its
-      // *stored* position until the pointer leaves the deadzone, for the aim
-      // branch's reason: a click within the slop must not nudge it. Two
-      // corners never drag: the shape's copy of the zone's corner, which is
-      // the zone's own and would leave the shape behind, and a finished
-      // zone's while a shape is in flight, where a click attaches or ends
-      // the shape and a drag would be a different verb on the same dot.
+      // The release decides click or drag, as for `pan.pick`. A drag pans or
+      // moves the corner pressed, which anchors at its stored position until
+      // out of the deadzone. Two corners never drag: the shape's copy of the
+      // zone's corner (dragging would leave the shape behind), and a finished
+      // zone's while a shape is in flight (a click there attaches or ends it).
       const draggable =
         corner !== null &&
         !(corner.zoneId === null && corner.index === zoneDraftAnchor?.position) &&
@@ -799,8 +696,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     }
 
     if (intent === "stroke") {
-      // Only a press that lands on the grid starts a stroke; the map is letterboxed
-      // in the viewport and a press in the margin means nothing.
+      // Only a press on the grid starts a stroke; the letterbox means nothing.
       const cell = cellAt(view, session.grid, cx, cy);
       if (!cell) return;
 
@@ -836,12 +732,9 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
         ? { id: hit?.id ?? null }
         : null,
     };
-    // An inline style rather than a class, because the className is React's and a
-    // render lands mid-pan routinely: panning changes the hovered cell, draw()
-    // publishes that to the shell, and the re-render would rewrite className and
-    // drop the class again. `style.cursor` is not managed by React here, so it
-    // survives. This is the only feedback that a right-drag grabbed the map, since
-    // the Pan tool is not selected in that case.
+    // An inline style, not a class: a mid-pan re-render (the hover cell
+    // changes) would rewrite className and drop it. It is the only sign a
+    // right-drag grabbed the map, since Pan isn't the armed tool then.
     setPanCursor(true);
   };
 
@@ -849,10 +742,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
   const setPanCursor = (grabbing: boolean) => setCursor(grabbing ? "grabbing" : null);
 
   /**
-   * The same inline style, for the other cursor the className cannot carry:
-   * `move` over a draft corner and while one is dragged, which comes and
-   * goes at pointer rate and would otherwise re-render the shell on every
-   * mouse move.
+   * The same inline style for `move` / `pointer` over corners, which change
+   * at pointer rate and would otherwise re-render the shell per move.
    */
   const setCursor = (cursor: "grabbing" | "move" | "pointer" | null) => {
     const container = containerRef.current;
@@ -860,15 +751,11 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
   };
 
   /**
-   * The corner under a screen point, hit-tested the way a marker is
-   * (vertexAt): in screen pixels, with a finger's wider slop.
-   *
-   * Which corners are offered follows what a press on one would do (see
-   * classifyZonePress). With a shape in flight its own corners come first;
-   * then, for an anchored shape, the other corners of its zone, which are
-   * where it can end. Otherwise — nothing in flight, or a shape not yet
-   * attached — every finished zone's corners are offered, the selected
-   * zones' first so their handles win where two zones share a corner.
+   * The corner under a screen point, hit-tested like a marker. What's offered
+   * follows what a press would do (classifyZonePress): the shape in flight's
+   * corners first, then for an anchored shape its zone's other corners;
+   * otherwise every finished zone's, the selected ones first so their handles
+   * win on a shared corner.
    */
   const cornerUnder = (
     view: View,
@@ -941,9 +828,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       const dist = Math.hypot(b.cx - a.cx, b.cy - a.cy);
       const mx = (a.cx + b.cx) / 2;
       const my = (a.cy + b.cy) / 2;
-      // Zoom about the old midpoint, then carry it to the new one: the map
-      // stays pinned under the fingers, which is what makes a pinch feel
-      // like holding the paper rather than turning a dial.
+      // Zoom about the old midpoint, then carry it to the new one, so the map
+      // stays pinned under the fingers.
       let next = view;
       if (pinch.dist > 0 && dist > 0) {
         next = zoomAt(next, pinch.cx, pinch.cy, dist / pinch.dist, rect, session.grid);
@@ -955,15 +841,14 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       requestDraw();
       return;
     }
-    // Before the hover probe, or the brush ring would follow the wrong finger.
+    // Before the hover probe, or the brush ring follows the wrong finger.
     if (gesture && gesture.pointerId !== event.pointerId) return;
 
     hoverRef.current = probeAt(cellAt(view, session.grid, cx, cy));
 
     if (!gesture) {
-      // With Shape armed, a corner under the pointer swells and the cursor
-      // says it can be moved. Read here rather than in draw() because the
-      // hit-test wants the pointer itself, and draw() only has the cell.
+      // With Shape armed a corner under the pointer swells; tested here since
+      // draw() only has the cell, not the pointer.
       const { mode, zoneTool, spacePan, zoneDraft, zoneDraftAnchor } = propsRef.current;
       const armed = mode === "zone" && zoneTool === "shape" && !spacePan;
       let corner = armed ? cornerUnder(view, cx, cy, event.pointerType === "touch") : null;
@@ -982,9 +867,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     }
 
     if (gesture.kind === "point" && gesture.corner) {
-      // A drag from a corner carries the corner, not the map. It snaps to
-      // the cell centre under the pointer, as a click does, and clamps to
-      // the grid so a corner cannot be dragged off the floor plan.
+      // A corner drag carries the corner, snapped to cell centres and clamped
+      // to the grid.
       if (isDrag(gesture.ox, gesture.oy, cx, cy)) {
         const cell = clampedCell(view, cx, cy);
         const { wx, wy } = gridToWorld(cell.col + 0.5, cell.row + 0.5, session.meta);
@@ -999,10 +883,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
 
     if (gesture.kind === "pan" || gesture.kind === "point") {
       if (!rect) return;
-      // A corner press pans from the first move, like Pan, rather than
-      // holding still for the deadzone and then jumping by it; the deadzone
-      // is the release's question. The grab cursor waits for it, though, so
-      // a plain click never flashes one.
+      // A corner press pans from the first move (the deadzone is the release's
+      // question), but the grab cursor waits so a click never flashes one.
       if (gesture.kind === "point" && isDrag(gesture.ox, gesture.oy, cx, cy)) {
         setPanCursor(true);
       }
@@ -1028,11 +910,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
 
     if (gesture.kind === "vertex") {
       if (isDrag(gesture.cx, gesture.cy, cx, cy)) {
-        // The y term is negated because canvas rows grow downward while ROS y
-        // grows upward — the same flip worldToGrid applies. Screen-space is
-        // enough here (unlike the 3D viewport, which has to raycast the floor
-        // because the camera can look from any azimuth): this canvas is always
-        // axis-aligned with the map and never rotated.
+        // y negated: canvas rows grow down, ROS y grows up. Screen space is
+        // enough because this canvas is always axis-aligned with the map.
         gesture.theta = headingDegrees(cx - gesture.cx, -(cy - gesture.cy)) ?? gesture.theta;
       }
       requestDraw();
@@ -1040,10 +919,9 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     }
 
     const { brush, value } = propsRef.current;
-    // Recover the samples the browser merged into this event: a fast flick is
-    // otherwise a handful of far-apart points, and interpolating between only
-    // those loses the curve. Never getPredictedEvents() — predictions get
-    // retracted, and retracted paint would be permanent.
+    // Recover the samples merged into this event, or a fast flick loses its
+    // curve. Never getPredictedEvents(): retracted predictions would be
+    // permanent paint.
     const points =
       typeof event.nativeEvent.getCoalescedEvents === "function"
         ? event.nativeEvent.getCoalescedEvents()
@@ -1066,9 +944,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     if (event.pointerType === "touch") touchesRef.current.delete(event.pointerId);
     const pinch = pinchRef.current;
     if (pinch && (event.pointerId === pinch.a || event.pointerId === pinch.b)) {
-      // Either finger lifting ends the pinch. The one still down owns no
-      // gesture and starts none — a pan that began from wherever it happened
-      // to be would jump the map — so it simply rests until it lifts too.
+      // Either lift ends the pinch. The remaining finger starts nothing — a
+      // pan from wherever it was would jump the map.
       pinchRef.current = null;
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
@@ -1086,11 +963,9 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
 
     if (gesture.kind === "pan") {
       setPanCursor(false);
-      // A press that never really moved was a click, not a drag. With Pan armed
-      // in vertex mode that is how a vertex is inspected without disarming, and
-      // a click on bare map is how a selection is dropped. It reuses the heading
-      // deadzone rather than introducing a second threshold, so "did this drag
-      // mean anything" has one answer everywhere on this canvas.
+      // A press that never moved is a click: inspects a vertex with Pan armed,
+      // or drops a selection on bare map. Same deadzone as the heading, so
+      // "did this drag mean anything" has one answer.
       if (gesture.pick && !isDrag(gesture.ox, gesture.oy, gesture.cx, gesture.cy)) {
         propsRef.current.onVertexPick(gesture.pick.id);
       }
@@ -1100,10 +975,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     if (gesture.kind === "point") {
       setCursor(null);
       hoverCornerRef.current = null;
-      // A click adds the corner, closes the shape or selects a zone; a drag
-      // was a pan and adds nothing, or carried a corner, which the shell now
-      // hears about. Nothing in the cell buffer moved either way, so no
-      // patch is committed — the vertex branch's reasoning.
+      // A click adds a corner, closes or selects; a drag panned, or carried a
+      // corner. The buffer didn't move either way, so no patch.
       if (isDrag(gesture.ox, gesture.oy, gesture.cx, gesture.cy)) {
         if (gesture.corner) {
           const { zoneId, index, at } = gesture.corner;
@@ -1125,17 +998,15 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       const { ox, oy, cx, cy, additive } = gesture;
       const band = bandBetween(ox, oy, cx, cy);
 
-      // A band that never opened is a click on bare map, and a click on bare map
-      // clears — the same verdict the Pan tool reaches above, so the two tools
-      // cannot disagree about what pressing nothing means.
+      // A band that never opened is a click on bare map, which clears — the
+      // Pan tool's verdict too.
       if (bandIsClick(band)) {
         if (!additive) propsRef.current.onVertexPick(null);
         requestDraw();
         return;
       }
 
-      // Marker centres, projected with the view the band was drawn in; which
-      // of them the band holds is idsInBand's rule.
+      // Projected with the band's view; membership is idsInBand's rule.
       const ids = view
         ? idsInBand(
             band,
@@ -1151,10 +1022,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     }
 
     if (gesture.kind === "vertex") {
-      // Nothing in the cell buffer moved, so the accumulator is not consulted
-      // and no patch is pushed. Committing an empty patch here would put an
-      // entry in the undo stack that undoes nothing, which is worse than no
-      // undo at all — the operator would press it and watch a real edit survive.
+      // The buffer didn't move, so no patch: an empty one would be an undo
+      // entry that undoes nothing.
       propsRef.current.onVertexGesture({
         id: gesture.id,
         pose: { x: gesture.wx, y: gesture.wy, theta: gesture.theta },
@@ -1180,10 +1049,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
   };
 
   /**
-   * A cancelled pointer commits the stroke rather than discarding it. The buffer
-   * was already mutated by the time the browser took the pointer away, and leaving
-   * an edit that undo cannot reach is strictly worse than an unexpectedly short
-   * stroke.
+   * A cancelled pointer commits the stroke: the buffer is already mutated, and
+   * an edit undo can't reach is worse than a short stroke.
    */
   const handlePointerCancel = endGesture;
 
@@ -1198,8 +1065,7 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
   return (
     <div
       ref={containerRef}
-      // touch-none: without it a touch drag scrolls the page instead of painting,
-      // and the browser fires pointercancel the moment it decides that is a scroll.
+      // touch-none, or a touch drag scrolls the page and fires pointercancel.
       className={cn(
         "relative h-full w-full touch-none overflow-hidden select-none",
         panCursor || "cursor-crosshair",
@@ -1209,10 +1075,8 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
       onPointerMove={handlePointerMove}
       onPointerUp={endGesture}
       onPointerCancel={handlePointerCancel}
-      // Right-drag pans, so the context menu has to go: without this, the menu
-      // opens on mouseup over the canvas and swallows the pointerup that ends the
-      // gesture, leaving the pan stuck to the cursor. There is nothing on this
-      // canvas a browser context menu offers anyway — no text, no image to save.
+      // Right-drag pans, so no context menu: it would swallow the pointerup
+      // and leave the pan stuck to the cursor.
       onContextMenu={(event) => event.preventDefault()}
       onPointerLeave={() => {
         if (gestureRef.current) return;
