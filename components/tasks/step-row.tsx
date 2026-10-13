@@ -34,6 +34,7 @@ import type { ActiveVerticesStatus } from "@/hooks/use-active-map-vertices";
 import { normalizeTheta } from "@/lib/angle";
 import type { TaskStepState } from "@/lib/api/task";
 import {
+  SPEAK_REPEAT_MAX,
   SPEAK_TEXT_MAX,
   STEP_TYPES,
   WAIT_SECONDS_MAX,
@@ -507,6 +508,30 @@ export function StepRow({
                         {step.text.length} / {SPEAK_TEXT_MAX}
                       </span>
                     )}
+                  </label>
+                  {/* Laid out as the Wait row's Duration is: a short field
+                   * with its unit and bound beside it. */}
+                  <label className="mt-2 block">
+                    <span className="instrument-label text-muted-foreground">Times</span>
+                    <span className="mt-0.5 flex items-center gap-1.5">
+                      <Input
+                        value={step.repeat}
+                        disabled={disabled}
+                        // Text with a numeric keypad, for the reason Duration
+                        // is: a number input reports "" mid-edit.
+                        inputMode="numeric"
+                        onChange={(event) => onPatch({ repeat: event.target.value })}
+                        placeholder="1"
+                        aria-describedby={`step-${step.key}-repeat-unit`}
+                        className="h-7 w-20 rounded-sm md:text-[13px]"
+                      />
+                      <span
+                        id={`step-${step.key}-repeat-unit`}
+                        className="text-[11px] text-muted-foreground"
+                      >
+                        in a row, up to {SPEAK_REPEAT_MAX}
+                      </span>
+                    </span>
                   </label>
                 </div>
               )}

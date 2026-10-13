@@ -1442,6 +1442,41 @@ test.describe("the task console", () => {
     await expect(page).toHaveURL(/\/tasks$/);
   });
 
+  test("saves a Speak said more than once with its count", async ({ page }) => {
+    // Both halves: the count on screen, and the count in the body. A line
+    // said once sends none, so a save from before the field is unchanged.
+    await mockBackend(page);
+    const posted: { steps: { params?: Record<string, unknown> }[] }[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as { name: string; steps: [] };
+      posted.push(body);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({ id: "66666666-6666-6666-6666-666666666666", name: body.name }),
+        ),
+      });
+    });
+    await page.goto("/tasks/editor");
+    await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
+    await page.getByRole("textbox", { name: "Task name" }).fill("greeting");
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByPlaceholder(/Delivery arrived/).fill("Arriving");
+    const times = page.getByRole("textbox", { name: "Times" });
+    await expect(times).toHaveValue("1");
+
+    await times.fill("11");
+    await expect(page.getByText("Say it 1 to 10 times.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+
+    await times.fill("3");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => posted).toHaveLength(1);
+    expect(posted[0]!.steps[0]!.params).toEqual({ text: "Arriving", repeat: 3 });
+  });
+
   test("saves steps boxed together as one group", async ({ page }) => {
     // The robot starts a group's steps together; the seam between two rows is
     // how an operator says so, and the wire has to carry it as a shared name.

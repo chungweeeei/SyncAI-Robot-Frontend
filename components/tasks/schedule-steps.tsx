@@ -8,7 +8,7 @@ import type { TaskTemplate } from "@/lib/api/task-template";
 import { GroupRail } from "@/components/tasks/group-rail";
 import type { TaskStepRequest } from "@/lib/api/task";
 import { scheduleDrift } from "@/lib/task/schedule";
-import { stepGlyph, wireGroupPlaces } from "@/lib/task/step";
+import { repeatSuffix, stepGlyph, wireGroupPlaces } from "@/lib/task/step";
 import { cn } from "@/lib/utils";
 
 export interface ScheduleStepsProps {
@@ -87,7 +87,7 @@ export function ScheduleSteps({ scheduleId, source }: ScheduleStepsProps) {
             {/* Wrapped, not truncated — the task library's rule for the same line. */}
             {step.type === "SPEAK" && (
               <span className="min-w-0 wrap-anywhere italic">
-                “{step.params.text}”
+                “{step.params.text}”{repeatSuffix(step.params.repeat)}
               </span>
             )}
             {step.type === "WAIT" && (
