@@ -211,6 +211,9 @@ lib/
                 robot mesh
   theme/        the signal hues both canvases draw with
   task/         step, schedule and history domain helpers, template name limit,
+                the group rule (step.ts: one Move, Stand or Lie per group,
+                refused as it is built by stepLinkProblem / stepMoveProblem,
+                with stepGroupError as the backstop for a list handed in),
                 the masthead's rules for the running job (run.ts: which step is
                 live, what to call it, whether a hold is offered, and the state
                 the bar ends in) and the editor's unsaved draft (draft-store.ts
@@ -317,11 +320,16 @@ touch one, prefer moving it toward the rule.
   produces that the backend never sees at all, which is why it has no fetcher,
   no query key and nothing to invalidate.
 - **A refusal is the backend's own sentence.** `errorBody` unwraps FastAPI's
-  `{detail}` once, because a Response body can only be read once and two
-  endpoints carry a `code` beside it. Those sentences are written for operators
-  and every caller renders `error.message` verbatim — do not wrap or rephrase
-  them. An endpoint whose refusal the UI *branches* on passes `mapError` to
-  turn that code into a typed error; everything else wants the plain one.
+  `{detail}` once, because a Response body can only be read once and some
+  endpoints carry a `code` beside it — and the task, template and schedule
+  writes a `step_id`, naming the step a refusal is about. Those sentences are
+  written for operators and every caller renders `error.message` verbatim — do
+  not wrap or rephrase them. An endpoint whose refusal the UI *branches* on
+  passes `mapError` to turn that code into a typed error; everything else wants
+  the plain one. The template writes turn a `step_id` into a
+  `StepRefusalError`, and the editor marks the row it sent that id from: the
+  ids are positional, so it keeps the id → row map of the save itself rather
+  than reading the id against the list as it is now.
 - **Writes are `useMutation` hooks**, one per backend write, grouped by router
   (`hooks/use-map-actions.ts`, `use-mapping-run.ts`, `use-recorder.ts`,
   `use-cancel-task.ts`, and the write halves of the list hooks). The hook-level
