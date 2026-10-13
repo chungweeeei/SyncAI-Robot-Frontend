@@ -8,16 +8,9 @@ import { RecordingList } from "@/components/recordings/recording-list";
 import { RobotName } from "@/components/console/robot-name";
 
 /**
- * The recording screen: start a bag, watch it grow, and manage what is on disk.
- *
- * Its own route rather than a panel on /mapping, though mapping is what it
- * exists for. A recording outlives the page that started it and outlives the
- * mode the robot is in, so it cannot live on a screen that is only meaningful
- * in MANUAL — and the half of this page that is a catalogue has nothing to do
- * with a run in progress at all.
- *
- * Like /maps and /settings, this screen owns its scroll: the shell's <main>
- * does not.
+ * The recording screen: start one, watch it grow, manage what is on disk. Not
+ * a panel on /mapping: a recording outlives the page and the robot's mode.
+ * The screen owns its scroll.
  */
 export default function RecordingsPage() {
   const { state } = useConsoleRobotState();
@@ -31,10 +24,8 @@ export default function RecordingsPage() {
           <h1 className="text-xl font-semibold tracking-tight">
             Recordings
           </h1>
-          {/* Kept short, like /maps. What it used to spell out — a mapping
-            * run lives only in the robot's memory until it is saved, so a
-            * recording is the one way to rebuild a lost one — is why the
-            * link points there. */}
+          {/* A mapping run lives only in memory until saved; a recording is
+            * how a lost one is rebuilt, hence the link. */}
           <p className="mt-1 text-sm text-muted-foreground">
             Sensor recordings from{" "}
             <RobotName id={state?.robot_id} />.

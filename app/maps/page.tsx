@@ -8,16 +8,13 @@ export default function MapsPage() {
   const { state } = useConsoleRobotState();
 
   return (
-    // Like /settings, this screen owns its scroll: the shell's <main> does not.
-    // Its width is every library screen's (/settings, /tasks, /history,
-    // /recordings), so moving between them does not move the header.
+    // The screen owns its scroll, at every library screen's width so the
+    // header does not move between them.
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:py-8">
         <header className="mb-6">
           <h1 className="text-xl font-semibold tracking-tight">Maps</h1>
-          {/* One line, by request. What it used to spell out lives where it
-            * applies: the switch dialog says to set the robot's position
-            * afterwards, and Rename and Delete are greyed on the map in use. */}
+          {/* One line, by request: the details live where they apply. */}
           <p className="mt-1 text-sm text-muted-foreground">
             Switch, edit and manage the maps{" "}
             <RobotName id={state?.robot_id} />{" "}

@@ -22,9 +22,8 @@ export default function WifiSettingsPage() {
         </Link>
       }
     >
-      {/* Not gated on a state frame: the saved list and Add network do not
-          need one, and a console that has never heard from the robot is
-          exactly the one that needs to fix its WiFi. The readout degrades. */}
+      {/* Not gated on a state frame: a console that never heard from the
+          robot is the one that needs to fix its Wi-Fi. */}
       <WifiConnections />
     </SettingsSubpage>
   );
