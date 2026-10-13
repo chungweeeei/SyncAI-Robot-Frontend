@@ -61,6 +61,16 @@ describe("errorBody", () => {
     });
   });
 
+  it("keeps the step a refusal names, for the editor to mark", async () => {
+    const body = await errorBody(
+      jsonResponse(
+        { detail: "Group 'g1' has more than one…", code: "invalid_step_group", step_id: "2-standup" },
+        { status: 400 },
+      ),
+    );
+    expect(body).toMatchObject({ code: "invalid_step_group", stepId: "2-standup" });
+  });
+
   it("stringifies a 422 validation array rather than dropping it", async () => {
     const body = await errorBody(
       jsonResponse({ detail: [{ loc: ["body", "theta"], msg: "bad" }] }, { status: 422 }),

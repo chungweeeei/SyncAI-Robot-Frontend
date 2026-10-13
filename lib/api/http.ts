@@ -13,6 +13,12 @@ export interface ErrorBody {
   detail: string;
   /** A stable machine-readable reason, on the endpoints that publish one. */
   code?: string;
+  /**
+   * The step of a task body the refusal is about (`step_id`), on the task,
+   * template and schedule writes that refuse a step. The editor marks that
+   * row, which also covers a rule it does not mirror.
+   */
+  stepId?: string;
 }
 
 /**
@@ -26,12 +32,13 @@ export interface ErrorBody {
  */
 export async function errorBody(res: Response): Promise<ErrorBody> {
   try {
-    const body = (await res.json()) as { detail?: unknown; code?: unknown };
+    const body = (await res.json()) as { detail?: unknown; code?: unknown; step_id?: unknown };
     const code = typeof body.code === "string" ? body.code : undefined;
+    const stepId = typeof body.step_id === "string" ? body.step_id : undefined;
     // FastAPI reports errors as {detail: string}, or a 422 validation array.
-    if (typeof body.detail === "string") return { detail: body.detail, code };
-    if (body.detail) return { detail: JSON.stringify(body.detail), code };
-    return { detail: statusLine(res), code };
+    if (typeof body.detail === "string") return { detail: body.detail, code, stepId };
+    if (body.detail) return { detail: JSON.stringify(body.detail), code, stepId };
+    return { detail: statusLine(res), code, stepId };
   } catch {
     // Non-JSON body (a proxy error page); the status line is all there is.
     return { detail: statusLine(res) };

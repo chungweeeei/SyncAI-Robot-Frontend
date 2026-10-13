@@ -25,7 +25,7 @@
 import { z } from "zod";
 
 import { apiUrl } from "@/lib/api/config";
-import { requestJson } from "@/lib/api/http";
+import { requestJson, type ErrorBody } from "@/lib/api/http";
 import type { ScheduleTrigger } from "@/lib/api/schedule";
 import {
   MoveStepParamsSchema,
@@ -210,6 +210,26 @@ export function listTaskTemplates(signal?: AbortSignal): Promise<TaskTemplate[]>
   });
 }
 
+/**
+ * A save refused over one step, carrying the step's wire id (`3-move`) so
+ * the editor can mark the row it was sent from. The message is the backend's
+ * sentence, as for any refusal.
+ */
+export class StepRefusalError extends Error {
+  constructor(
+    message: string,
+    readonly stepId: string,
+  ) {
+    super(message);
+    this.name = "StepRefusalError";
+  }
+}
+
+/** Any refusal that names a step; everything else stays a plain Error. */
+function stepRefusal({ detail, stepId }: ErrorBody): Error | undefined {
+  return stepId ? new StepRefusalError(detail, stepId) : undefined;
+}
+
 export function createTaskTemplate(draft: TaskTemplateDraft): Promise<TaskTemplate> {
   return requestJson<TaskTemplate>(taskTemplatePath(), {
     method: "POST",
@@ -217,6 +237,7 @@ export function createTaskTemplate(draft: TaskTemplateDraft): Promise<TaskTempla
     // The echo is the stored row and is spliced into the cached list, so it is
     // checked like a read rather than trusted because we sent it.
     schema: TaskTemplateSchema,
+    mapError: stepRefusal,
   });
 }
 
@@ -228,6 +249,7 @@ export function updateTaskTemplate(
     method: "PUT",
     body: JSON.stringify(changes),
     schema: TaskTemplateSchema,
+    mapError: stepRefusal,
   });
 }
 

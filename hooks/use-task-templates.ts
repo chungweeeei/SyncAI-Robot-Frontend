@@ -10,6 +10,7 @@ import {
   deleteTaskTemplate,
   listTaskTemplates,
   updateTaskTemplate,
+  StepRefusalError,
   type TaskTemplate,
   type TaskTemplateChanges,
   type TaskTemplateDraft,
@@ -23,6 +24,11 @@ export interface UseTaskTemplates {
   status: TaskTemplatesStatus;
   /** The load failure, or the most recent write failure. Rendered verbatim. */
   error: string | null;
+  /**
+   * The wire id of the step the last refused write named (`3-move`), or null.
+   * Beside `error`, never instead of it: the sentence still says why.
+   */
+  refusedStepId: string | null;
   /** True while a create / update / delete is in flight. */
   busy: boolean;
   /** The stored row, or null if the request failed (see `error`). */
@@ -144,6 +150,7 @@ export function useTaskTemplates(): UseTaskTemplates {
     templates: query.data ?? [],
     status: query.isPending ? "loading" : query.isError ? "error" : "ok",
     error: write.error ?? query.error?.message ?? null,
+    refusedStepId: write.failure instanceof StepRefusalError ? write.failure.stepId : null,
     busy: write.busy,
     create,
     update,
