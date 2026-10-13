@@ -10,6 +10,7 @@ import {
   moveStep,
   moveStepDraft,
   newStepDraft,
+  repeatSuffix,
   stepDraftError,
   stepDraftsSubmittable,
   stepGroupError,
@@ -122,6 +123,54 @@ describe("stepDraftError", () => {
   it("has nothing to check on a posture step", () => {
     expect(stepDraftError(newStepDraft("STANDUP"))).toBeNull();
     expect(stepDraftError(newStepDraft("LIEDOWN"))).toBeNull();
+  });
+});
+
+/**
+ * A Speak said more than once. The count is the backend's `repeat`, bounded
+ * 1–10 there; a line said once must stay the body it always was, so every
+ * template and schedule from before the field reads the same.
+ */
+describe("a Speak's count", () => {
+  const times = (repeat: string): StepDraft => ({ ...speak("Arrived"), repeat });
+
+  it("says a new line once, and sends no count for it", () => {
+    expect(newStepDraft("SPEAK").repeat).toBe("1");
+    const [step] = toStepRequests([speak("Arrived")]);
+    expect(step).toEqual({ id: "1-speak", type: "SPEAK", params: { text: "Arrived" } });
+  });
+
+  it("sends a count above once", () => {
+    const [step] = toStepRequests([times("3")]);
+    expect(step).toMatchObject({ params: { text: "Arrived", repeat: 3 } });
+  });
+
+  it("refuses anything but a whole 1 to 10, before the backend's 422", () => {
+    for (const bad of ["", "0", "11", "2.5", "-1", "x"]) {
+      expect(stepDraftError(times(bad))).toMatch(/1 to 10 times/);
+    }
+    expect(stepDraftError(times(" 10 "))).toBeNull();
+  });
+
+  it("round-trips through a saved template, and reads a missing one as once", () => {
+    const saved = (params: { text: string; repeat?: number }): TemplateStep => ({
+      id: "1-speak",
+      type: "SPEAK",
+      params,
+      resolved_params: params,
+      vertex_id: null,
+      vertex_name: null,
+      vertex_status: "NONE",
+      group: null,
+    });
+    expect(fromTemplateSteps([saved({ text: "Hi", repeat: 4 })])[0]!.repeat).toBe("4");
+    expect(fromTemplateSteps([saved({ text: "Hi" })])[0]!.repeat).toBe("1");
+  });
+
+  it("reads the count after the quote, and nothing for once", () => {
+    expect(stepSummary(times("3"))).toBe("“Arrived” ×3");
+    expect(stepSummary(times("1"))).toBe("“Arrived”");
+    expect(repeatSuffix(undefined)).toBe("");
   });
 });
 

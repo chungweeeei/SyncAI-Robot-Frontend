@@ -501,7 +501,12 @@ export function scheduleDrift(
     if (!now || now.type !== step.type) return count + 1;
     if (wireLinked(frozen, index) !== wireLinked(current, index)) return count + 1;
     if (step.type === "SPEAK" && now.type === "SPEAK") {
-      return step.params.text === now.params.text ? count : count + 1;
+      // A missing count is once, on either side: a schedule frozen before
+      // the field carries none.
+      const same =
+        step.params.text === now.params.text &&
+        (step.params.repeat ?? 1) === (now.params.repeat ?? 1);
+      return same ? count : count + 1;
     }
     if (step.type === "WAIT" && now.type === "WAIT") {
       return step.params.seconds === now.params.seconds ? count : count + 1;

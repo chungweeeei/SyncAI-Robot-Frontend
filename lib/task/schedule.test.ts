@@ -366,6 +366,19 @@ describe("scheduleDrift", () => {
     expect(scheduleDrift(frozen, template)).toBe(0);
   });
 
+  it("counts a Speak whose count changed, and reads a missing one as once", () => {
+    const said = (repeat: number): TemplateStep => ({
+      id: "1",
+      type: "SPEAK",
+      params: { text: "Hi", repeat },
+      resolved_params: { text: "Hi", repeat },
+      ...ref,
+    });
+    expect(scheduleDrift([speak("1", "Hi")], [said(3)])).toBe(1);
+    // Frozen before the field existed, against a template saying it once.
+    expect(scheduleDrift([speak("1", "Hi")], [said(1)])).toBe(0);
+  });
+
   it("counts a waypoint that moved", () => {
     expect(scheduleDrift([move("1", 1, 2, 90)], [moveT("1", 1.5, 2, 90)])).toBe(1);
   });
