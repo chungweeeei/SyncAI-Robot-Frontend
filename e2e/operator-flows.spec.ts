@@ -1489,8 +1489,9 @@ test.describe("the task console", () => {
     ]);
   });
 
-  test("holds Save on two body steps linked together, and says why", async ({ page }) => {
-    // The robot has one body; the backend would refuse the group with a 400.
+  test("refuses to start two body steps together, and says why", async ({ page }) => {
+    // The robot has one body, so the editor never builds the group the
+    // backend would refuse: the seam stays, says why, and does nothing.
     const writes = await mockBackend(page);
     await page.goto("/tasks/editor");
     await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
@@ -1498,12 +1499,59 @@ test.describe("the task console", () => {
     await page.getByTitle("Stand up. Nothing to set.").click();
     await page.getByTitle("Lie down. Nothing to set.").click();
     const save = page.getByRole("button", { name: "Save", exact: true });
+
+    const seam = page.getByRole("button", { name: /^Can't start together: step 1 and step 2/ });
+    await expect(seam).toHaveAttribute("aria-disabled", "true");
+    // Forced: the seam is aria-disabled, and what it does when pressed anyway
+    // is what is under test.
+    await seam.click({ force: true });
+    await expect(page.getByRole("button", { name: /^Ungroup/ })).toHaveCount(0);
     await expect(save).toBeEnabled();
 
-    await page.getByRole("button", { name: "Start together: step 1 and step 2" }).click();
-    await expect(page.getByText(/one Move, Stand or Lie at a time/).first()).toBeVisible();
-    await expect(save).toBeDisabled();
+    // The row's menu, a finger's way to the same link, refuses it too.
+    await page.getByRole("button", { name: "More actions for step 2" }).click();
+    await expect(
+      page.getByRole("menuitem", { name: "Start together with step 1" }),
+    ).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByText(/one Move, Stand or Lie at a time/)).toBeVisible();
     expect(writes).toEqual([]);
+  });
+
+  test("marks the row a refused save names, in the backend's words", async ({ page }) => {
+    // For a rule the editor does not mirror: the backend names the step,
+    // and the row it was sent from carries the sentence.
+    await mockBackend(page);
+    const refusal = "Step '2-speak' cannot run here.";
+    const posted: { steps: { id: string }[] }[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      posted.push(route.request().postDataJSON() as { steps: { id: string }[] });
+      return route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: refusal, code: "invalid_step_group", step_id: "2-speak" }),
+      });
+    });
+    await page.goto("/tasks/editor");
+    await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
+    await page.getByRole("textbox", { name: "Task name" }).fill("greeting");
+    await page.getByTitle("Stay put for a set time, then go on.").click();
+    await page.getByRole("textbox", { name: "Duration" }).fill("5");
+    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByPlaceholder(/Delivery arrived/).fill("Arriving");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+
+    await expect.poll(() => posted.map((body) => body.steps.map((step) => step.id))).toEqual([
+      ["1-wait", "2-speak"],
+    ]);
+    const rows = page.getByRole("list").first().getByRole("listitem");
+    await expect(rows.nth(1)).toContainText(refusal);
+    await expect(rows.nth(0)).not.toContainText(refusal);
+    // Still in the heading too: the row says where, the heading says it happened.
+    await expect(page.locator("header").getByRole("alert").filter({ hasText: refusal })).toBeVisible();
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
+    // The 400 is the behaviour under test; Chromium logs every refusal it fetches.
+    errors = errors.filter((text) => !/status of 400/.test(text));
   });
 
   test("loads a saved group back as a box, and Ungroup takes it apart", async ({ page }) => {

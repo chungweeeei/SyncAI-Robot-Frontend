@@ -28,6 +28,8 @@ import {
   stepGroupError,
   stepGroupPlaces,
   stepIdFor,
+  stepLinkProblem,
+  stepMoveProblem,
   stepSpans,
   type StepDraft,
   type StepSpan,
@@ -54,6 +56,8 @@ export interface StepListProps {
   onRemove: (key: number) => void;
   onMoveTo: (key: number, index: number) => void;
   onUngroup: (keys: readonly number[]) => void;
+  /** The row the backend refused the last save over, and its sentence. */
+  refusal?: { key: number; message: string } | null;
 }
 
 /**
@@ -81,6 +85,7 @@ export function StepList({
   onRemove,
   onMoveTo,
   onUngroup,
+  refusal = null,
 }: StepListProps) {
   // One PointerSensor rather than Mouse + Touch: pointer events cover the mouse,
   // a pen and the tablet console alike. The distance threshold is what keeps a
@@ -134,6 +139,18 @@ export function StepList({
   }
   const showSeams = !disabled && !dragging;
 
+  // Why the last drop was refused. A drag has no control left to explain
+  // itself on once the row snaps back, so the list says it, until the next
+  // drag or a moment later.
+  const [dropRefused, setDropRefused] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!dropRefused) return;
+    const timer = setTimeout(() => setDropRefused(null), 6_000);
+    return () => clearTimeout(timer);
+  }, [dropRefused]);
+  const dropProblem = (active: UniqueIdentifier, over: UniqueIdentifier) =>
+    stepMoveProblem(steps, keys.indexOf(Number(active)), keys.indexOf(Number(over)));
+
   const handleUngroup = (span: StepSpan) => {
     const members = keys.slice(span.start, span.end + 1);
     onUngroup(members);
@@ -151,10 +168,13 @@ export function StepList({
       over
         ? `Step ${position(active.id)} is over position ${position(over.id)} of ${steps.length}.`
         : `Step ${position(active.id)} is no longer over the list.`,
-    onDragEnd: ({ active, over }) =>
-      over
-        ? `Step ${position(active.id)} moved to position ${position(over.id)} of ${steps.length}.`
-        : `Step ${position(active.id)} dropped back in place.`,
+    onDragEnd: ({ active, over }) => {
+      if (!over) return `Step ${position(active.id)} dropped back in place.`;
+      const problem = dropProblem(active.id, over.id);
+      return problem
+        ? `Step ${position(active.id)} stays in place. ${problem}`
+        : `Step ${position(active.id)} moved to position ${position(over.id)} of ${steps.length}.`;
+    },
     onDragCancel: ({ active }) =>
       `Reorder cancelled. Step ${position(active.id)} is back in place.`,
   };
@@ -162,6 +182,11 @@ export function StepList({
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     setDragging(false);
     if (!over || active.id === over.id) return;
+    const problem = dropProblem(active.id, over.id);
+    if (problem) {
+      setDropRefused(problem);
+      return;
+    }
     onMoveTo(Number(active.id), keys.indexOf(Number(over.id)));
   };
 
@@ -183,7 +208,10 @@ export function StepList({
                 "To reorder, press space to pick the step up, use the arrow keys to move it, then press space again to drop it, or escape to cancel.",
             },
           }}
-          onDragStart={() => setDragging(true)}
+          onDragStart={() => {
+            setDragging(true);
+            setDropRefused(null);
+          }}
           onDragCancel={() => setDragging(false)}
           onDragEnd={handleDragEnd}
         >
@@ -246,11 +274,15 @@ export function StepList({
                           }}
                           kind={joined ? "split" : "join"}
                           upper={index}
+                          blocked={joined ? null : stepLinkProblem(steps, index)}
                           onClick={() => onPatch(step.key, { withPrevious: !joined })}
                         />
                       ) : undefined
                     }
                     groupError={groupErrors[index] ?? null}
+                    linkProblem={stepLinkProblem(steps, index)}
+                    moveProblem={(to) => stepMoveProblem(steps, index, to)}
+                    refusal={refusal?.key === step.key ? refusal.message : null}
                     state={stepStates.get(stepIdFor(index, step.type)) ?? null}
                     onPatch={(changes) => onPatch(step.key, changes)}
                     onRemove={() => onRemove(step.key)}
@@ -263,6 +295,12 @@ export function StepList({
             </ul>
           </SortableContext>
         </DndContext>
+      )}
+
+      {dropRefused && (
+        <p role="status" className="text-[11px] leading-snug text-signal-warn">
+          {dropRefused}
+        </p>
       )}
 
       <div className="flex flex-wrap items-center gap-1.5 border-t border-hairline pt-2">

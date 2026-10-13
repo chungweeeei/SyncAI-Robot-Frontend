@@ -73,6 +73,16 @@ export interface StepRowProps {
   seam?: React.ReactNode;
   /** Why the row cannot run with the steps it is linked to; see stepGroupError. */
   groupError: string | null;
+  /** Why the row may not start together with the one above; see stepLinkProblem. */
+  linkProblem: string | null;
+  /** Why the row may not move to a 0-based position; see stepMoveProblem. */
+  moveProblem: (index: number) => string | null;
+  /**
+   * The backend's sentence when it refused the last save over this row, or
+   * null. Shown where the editor's own check would be, for a rule the
+   * editor does not mirror.
+   */
+  refusal: string | null;
   /** Tracked status + error_msg for this step, or null when nothing is tracked. */
   state: TaskStepState | null;
   onPatch: (changes: Partial<Omit<StepDraft, "key">>) => void;
@@ -98,6 +108,9 @@ export function StepRow({
   groupHeader,
   seam,
   groupError,
+  linkProblem,
+  moveProblem,
+  refusal,
   state,
   onPatch,
   onRemove,
@@ -105,7 +118,7 @@ export function StepRow({
   expanded: open,
   onExpandedChange,
 }: StepRowProps) {
-  const rowError = stepDraftError(step) ?? groupError;
+  const rowError = stepDraftError(step) ?? groupError ?? refusal;
   // Any row folds, errors included — an unfinished row that refused to fold made
   // the fold useless exactly while a list was being built. What a folded row
   // with a problem shows instead is the problem itself, in place of the summary
@@ -301,11 +314,19 @@ export function StepRow({
                     <ArrowUpToLineIcon aria-hidden />
                     Move to top
                   </DropdownMenuItem>
-                  <DropdownMenuItem disabled={first} onClick={() => onMoveTo(index - 1)}>
+                  {/* Up and down are the two that can land a row inside a
+                   * box; top and bottom never do. */}
+                  <DropdownMenuItem
+                    disabled={first || moveProblem(index - 1) !== null}
+                    onClick={() => onMoveTo(index - 1)}
+                  >
                     <ArrowUpIcon aria-hidden />
                     Move up
                   </DropdownMenuItem>
-                  <DropdownMenuItem disabled={last} onClick={() => onMoveTo(index + 1)}>
+                  <DropdownMenuItem
+                    disabled={last || moveProblem(index + 1) !== null}
+                    onClick={() => onMoveTo(index + 1)}
+                  >
                     <ArrowDownIcon aria-hidden />
                     Move down
                   </DropdownMenuItem>
@@ -318,12 +339,22 @@ export function StepRow({
                   {!first && (
                     <>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => onPatch({ withPrevious: !linked })}>
+                      <DropdownMenuItem
+                        disabled={!linked && linkProblem !== null}
+                        onClick={() => onPatch({ withPrevious: !linked })}
+                      >
                         {linked ? <Unlink2Icon aria-hidden /> : <Link2Icon aria-hidden />}
                         {linked
                           ? `Run after step ${ordinal - 1}`
                           : `Start together with step ${ordinal - 1}`}
                       </DropdownMenuItem>
+                      {/* Said under the item rather than in a title, which a
+                       * finger — the one this item is for — never sees. */}
+                      {!linked && linkProblem && (
+                        <p className="px-2 pb-1.5 text-[11px] leading-snug text-muted-foreground">
+                          {linkProblem}
+                        </p>
+                      )}
                     </>
                   )}
                 </DropdownMenuContent>

@@ -22,16 +22,24 @@ export function StepSeam({
   ref,
   kind,
   upper,
+  blocked = null,
   onClick,
 }: {
   ref?: React.Ref<HTMLButtonElement>;
   kind: "join" | "split";
   /** The ordinal of the step above the gap; the one below is the next. */
   upper: number;
+  /**
+   * Why the two may not start together (stepLinkProblem), for a join only.
+   * The seam stays where it is and says so rather than vanishing: a gap that
+   * offers a link on every row but this one would read as a bug.
+   */
+  blocked?: string | null;
   onClick: () => void;
 }) {
   const join = kind === "join";
   const lower = upper + 1;
+  const refused = join && blocked !== null;
   return (
     <div className="absolute inset-x-0 top-0 z-10 flex h-3.5 items-center justify-center pointer-coarse:hidden">
       <button
@@ -40,16 +48,24 @@ export function StepSeam({
         // Starts with the words the button shows, so a voice command that
         // reads them off the screen still finds it.
         aria-label={
-          join
-            ? `Start together: step ${upper} and step ${lower}`
-            : `Split here: run step ${lower} after step ${upper}`
+          refused
+            ? `Can't start together: step ${upper} and step ${lower}. ${blocked}`
+            : join
+              ? `Start together: step ${upper} and step ${lower}`
+              : `Split here: run step ${lower} after step ${upper}`
         }
-        onClick={onClick}
+        // aria-disabled rather than disabled, so the reason stays reachable:
+        // a disabled button takes no focus and shows no title.
+        aria-disabled={refused || undefined}
+        title={refused ? blocked! : undefined}
+        onClick={refused ? undefined : onClick}
         className={cn(
           "group/seam flex h-6 items-center gap-1 rounded-full border bg-panel px-1.5 text-muted-foreground transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-          join
-            ? "border-hairline hover:border-signal-cmd/50 hover:text-signal-cmd"
-            : "border-signal-cmd/30 hover:border-foreground/30 hover:text-foreground",
+          refused
+            ? "cursor-not-allowed border-hairline hover:border-signal-warn/50 hover:text-signal-warn"
+            : join
+              ? "border-hairline hover:border-signal-cmd/50 hover:text-signal-cmd"
+              : "border-signal-cmd/30 hover:border-foreground/30 hover:text-foreground",
         )}
       >
         {/* Scissors rather than a broken link: at this size the two link
@@ -61,7 +77,7 @@ export function StepSeam({
           <ScissorsIcon className="size-3" aria-hidden />
         )}
         <span className="instrument-label hidden group-hover/seam:inline group-focus-visible/seam:inline">
-          {join ? "Start together" : "Split here"}
+          {refused ? "Can't start together" : join ? "Start together" : "Split here"}
         </span>
       </button>
     </div>
