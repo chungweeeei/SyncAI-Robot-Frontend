@@ -4,8 +4,9 @@ import { cn } from "@/lib/utils";
 /**
  * The rail beside the read-only step lines that start together — a saved
  * job's steps, a schedule's frozen copy, a finished run's results — so they
- * read the way the editor drew them. The editor's own rows carry theirs on the
- * row border instead, since a row there is a bordered card.
+ * read as one block. A rail rather than the editor's box (step-group.tsx):
+ * these are one-line readouts with no controls, and a box with a header round
+ * every pair would outweigh the steps it holds.
  *
  * Absolutely placed in a `relative` line that reserves `pl-2.5` whether or not
  * it is in a group, so lines in and out of one keep their columns. `gap` is the

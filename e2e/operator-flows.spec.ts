@@ -1442,9 +1442,9 @@ test.describe("the task console", () => {
     await expect(page).toHaveURL(/\/tasks$/);
   });
 
-  test("saves steps linked to the one above as one group", async ({ page }) => {
-    // The robot starts a group's steps together; the composer's link is how
-    // an operator says so, and the wire has to carry it as a shared name.
+  test("saves steps boxed together as one group", async ({ page }) => {
+    // The robot starts a group's steps together; the seam between two rows is
+    // how an operator says so, and the wire has to carry it as a shared name.
     await mockBackend(page);
     const posted: { steps: Record<string, unknown>[] }[] = [];
     await page.route("**/api/v1/task_templates", (route) => {
@@ -1468,12 +1468,17 @@ test.describe("the task console", () => {
     await page.getByTitle("Stay put for a set time, then go on.").click();
     await page.getByRole("textbox", { name: "Duration" }).fill("5");
 
-    // No link on the first row: there is nothing above it to run with.
-    await expect(page.getByRole("button", { name: /together with step 0/ })).toHaveCount(0);
-    const link = page.getByRole("button", { name: "Run step 2 together with step 1" });
-    await expect(link).toHaveAttribute("aria-pressed", "false");
-    await link.click();
-    await expect(link).toHaveAttribute("aria-pressed", "true");
+    // A seam in each gap and none above the first row, which has nothing to
+    // run with.
+    await expect(page.getByRole("button", { name: /^(Start together|Split here):/ })).toHaveCount(2);
+    const seam = page.getByRole("button", { name: "Start together: step 1 and step 2" });
+    await expect(page.getByRole("button", { name: /^Ungroup/ })).toHaveCount(0);
+    await seam.click();
+    // The pair is one box now, and the seam between them offers to split it.
+    await expect(page.getByRole("button", { name: "Ungroup steps 1 to 2" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Split here: run step 2 after step 1" }),
+    ).toBeFocused();
 
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect.poll(() => posted).toHaveLength(1);
@@ -1495,13 +1500,13 @@ test.describe("the task console", () => {
     const save = page.getByRole("button", { name: "Save", exact: true });
     await expect(save).toBeEnabled();
 
-    await page.getByRole("button", { name: "Run step 2 together with step 1" }).click();
+    await page.getByRole("button", { name: "Start together: step 1 and step 2" }).click();
     await expect(page.getByText(/one Move, Stand or Lie at a time/).first()).toBeVisible();
     await expect(save).toBeDisabled();
     expect(writes).toEqual([]);
   });
 
-  test("loads a saved group back as linked steps", async ({ page }) => {
+  test("loads a saved group back as a box, and Ungroup takes it apart", async ({ page }) => {
     const speakStep = (id: string, text: string) => ({
       id,
       vertex_id: null,
@@ -1527,11 +1532,19 @@ test.describe("the task console", () => {
       .getByRole("button", { name: 'Load "Morning round" into the editor' })
       .click();
     await expect(page.getByRole("heading", { name: "Morning round" })).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Run step 2 together with step 1" }),
-    ).toHaveAttribute("aria-pressed", "true");
+    const ungroup = page.getByRole("button", { name: "Ungroup steps 1 to 2" });
+    await expect(ungroup).toBeVisible();
     // Opened and left as it was: nothing to save.
     await expect(page.getByText("Unsaved changes")).toHaveCount(0);
+
+    // The header goes with the box, so focus lands on the seam that would put
+    // it back rather than falling to the page.
+    await ungroup.click();
+    await expect(ungroup).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Start together: step 1 and step 2" }),
+    ).toBeFocused();
+    await expect(page.getByText("Unsaved changes")).toBeVisible();
   });
 
   test("renames a saved job through Save, and Escape backs out", async ({
@@ -3387,11 +3400,12 @@ test.describe("the step editor", () => {
     const rows = page
       .getByRole("listitem")
       .filter({ has: page.getByRole("button", { name: /^Reorder step/ }) });
-    // Each row's type label, top to bottom.
+    // Each row's type label, top to bottom: the one in its fold toggle, since
+    // the seam above a row carries a label of its own.
     const order = () =>
       rows.evaluateAll((items) =>
         items.map(
-          (item) => item.querySelector(".instrument-label")?.textContent,
+          (item) => item.querySelector("[aria-expanded] .instrument-label")?.textContent,
         ),
       );
     await expect.poll(order).toEqual(["Stand", "Lie", "Speak"]);

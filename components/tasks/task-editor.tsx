@@ -302,7 +302,7 @@ export function TaskEditor() {
             </Chip>
           )}
           <p className="mt-1 text-sm text-muted-foreground">
-            Steps run in order. Linked steps start together, and the next step
+            Steps run in order. Boxed steps start together, and the next step
             waits for all of them. If a step fails, the rest are skipped.
           </p>
         </div>
@@ -403,6 +403,7 @@ export function TaskEditor() {
             onPatch={drafts.patch}
             onRemove={drafts.remove}
             onMoveTo={drafts.moveTo}
+            onUngroup={drafts.ungroup}
           />
         </InstrumentGroup>
       </div>
