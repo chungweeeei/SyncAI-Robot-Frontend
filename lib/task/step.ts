@@ -325,6 +325,9 @@ export function stepSpans(drafts: readonly StepDraft[]): StepSpan[] {
 export function moveStepDraft(list: readonly StepDraft[], from: number, to: number): StepDraft[] {
   const span = stepSpans(list).find((each) => each.start <= from && from <= each.end);
   if (!span || !list[to]) return [...list];
+  // The editor asks stepMoveProblem first and says why; this is the rule
+  // itself, so no path that reaches the list can build the group anyway.
+  if (stepMoveProblem(list, from, to)) return [...list];
   if (span.end > span.start && span.start <= to && to <= span.end) {
     // The span keeps its slots, so relinking them in their new order is the
     // whole of it.
@@ -367,23 +370,80 @@ export function stepGroupNames(drafts: readonly StepDraft[]): (string | null)[] 
  */
 const BODY_STEP_TYPES: ReadonlySet<StepType> = new Set(["MOVE", "STANDUP", "LIEDOWN"]);
 
+const ONE_BODY_STEP = "The robot does one Move, Stand or Lie at a time";
+
+/** Whether any row of `span` moves the robot's body. */
+function spanMoves(drafts: readonly StepDraft[], span: StepSpan | undefined): boolean {
+  if (!span) return false;
+  return drafts.slice(span.start, span.end + 1).some((draft) => BODY_STEP_TYPES.has(draft.type));
+}
+
+function spanOf(drafts: readonly StepDraft[], index: number): StepSpan | undefined {
+  return stepSpans(drafts).find((span) => span.start <= index && index <= span.end);
+}
+
 /**
  * Why row `index` cannot run with the rows it is linked to, or null.
  *
  * Mirrors `step_group_problem`'s body rule, which the backend answers with a
  * 400: the first Move, Stand or Lie in a group is fine, every later one is
  * marked. Adjacency, the backend's other rule, is what the links guarantee.
+ *
+ * The editor no longer builds such a group (see stepLinkProblem and
+ * stepMoveProblem), so this is the backstop for one it was handed: a draft
+ * restored from before the guard, or a template written by another client.
  */
 export function stepGroupError(drafts: readonly StepDraft[], index: number): string | null {
   const draft = drafts[index];
   if (!draft || !BODY_STEP_TYPES.has(draft.type) || !linked(drafts, index)) return null;
   for (let at = index - 1; at >= 0; at -= 1) {
     if (BODY_STEP_TYPES.has(drafts[at]!.type)) {
-      return "The robot does one Move, Stand or Lie at a time — split the group above this step, or move it out.";
+      return `${ONE_BODY_STEP} — split the group above this step, or move it out.`;
     }
     if (!linked(drafts, at)) break;
   }
   return null;
+}
+
+/**
+ * Why row `index` may not start together with the row above, or null when it
+ * may (or already does).
+ *
+ * A link joins the whole item above the gap to the whole item below it, so it
+ * is refused when both bring a Move, Stand or Lie. Only a clash the link
+ * itself would make: a box that already holds two (see stepGroupError) does
+ * not stop a Speak being added to it.
+ */
+export function stepLinkProblem(drafts: readonly StepDraft[], index: number): string | null {
+  if (index <= 0 || index >= drafts.length || linked(drafts, index)) return null;
+  if (!spanMoves(drafts, spanOf(drafts, index - 1)) || !spanMoves(drafts, spanOf(drafts, index))) {
+    return null;
+  }
+  return `${ONE_BODY_STEP}, and both of these already have one.`;
+}
+
+/**
+ * Why moving row `from` to `to` would put it in a group it cannot run in, or
+ * null. Mirrors moveStepDraft's landing rule: only landing inside another box
+ * joins one, and only a Move, Stand or Lie landing in a box that already
+ * holds one is refused.
+ */
+export function stepMoveProblem(
+  list: readonly StepDraft[],
+  from: number,
+  to: number,
+): string | null {
+  const row = list[from];
+  if (!row || !list[to] || from === to || !BODY_STEP_TYPES.has(row.type)) return null;
+  const own = spanOf(list, from);
+  if (own && own.end > own.start && own.start <= to && to <= own.end) return null;
+  const rest = unlinkStep(list, from).filter((_, at) => at !== from);
+  if (!linked(rest, to)) return null;
+  const target = spanOf(rest, to)!;
+  if (!spanMoves(rest, target)) return null;
+  // Numbered as the list reads now, with the row still in it.
+  const shown = (at: number) => (at < from ? at : at + 1) + 1;
+  return `${ONE_BODY_STEP}, and steps ${shown(target.start)}–${shown(target.end)} already have one.`;
 }
 
 /**

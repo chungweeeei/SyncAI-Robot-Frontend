@@ -16,6 +16,8 @@ import {
   stepGroupNames,
   stepGroupPlaces,
   stepIdFor,
+  stepLinkProblem,
+  stepMoveProblem,
   stepShape,
   stepSpans,
   stepSummary,
@@ -525,6 +527,53 @@ describe("step groups", () => {
     it("does not link the row it pushes off the top", () => {
       // A link carried unread on the first row must not start to count at second.
       expect(shape(moveStepDraft([row("A", true), row("X")], 1, 0))).toBe("X A");
+    });
+
+    it("refuses to land a Move inside a box that already has one", () => {
+      // [Move Speak] then a lone Move dropped between them: the box would
+      // hold two body steps, so the list stays as it was.
+      const drafts = [move(), linked(speak("a")), move()];
+      expect(stepMoveProblem(drafts, 2, 1)).toMatch(/steps 1–2 already have one/);
+      expect(moveStepDraft(drafts, 2, 1)).toEqual(drafts);
+    });
+
+    it("lets a Move into a box with none, and a Speak into any box", () => {
+      const talk = [speak("a"), linked(speak("b")), move()];
+      expect(stepMoveProblem(talk, 2, 1)).toBeNull();
+      expect(stepGroupPlaces(moveStepDraft(talk, 2, 1))).toEqual(["start", "middle", "end"]);
+      const busy = [move(), linked(speak("a")), speak("x")];
+      expect(stepMoveProblem(busy, 2, 1)).toBeNull();
+    });
+
+    it("never refuses a reorder inside the row's own box", () => {
+      const drafts = [move(), linked(speak("a")), linked(newStepDraft("STANDUP"))];
+      expect(stepMoveProblem(drafts, 2, 0)).toBeNull();
+    });
+  });
+
+  describe("stepLinkProblem", () => {
+    it("refuses to start a body step together with one", () => {
+      // Move with Stand, Move with Lie, Move with Move: the robot has one body.
+      for (const type of ["MOVE", "STANDUP", "LIEDOWN"] as const) {
+        expect(stepLinkProblem([move(), newStepDraft(type)], 1)).toMatch(
+          /one Move, Stand or Lie at a time/,
+        );
+      }
+    });
+
+    it("judges the whole box on either side of the gap, not only the two rows", () => {
+      // [Move Speak] above, [Speak Stand] below: the rows at the gap are two
+      // Speaks, but the group it would make holds a Move and a Stand.
+      const drafts = [move(), linked(speak("a")), speak("b"), linked(newStepDraft("STANDUP"))];
+      expect(stepLinkProblem(drafts, 2)).not.toBeNull();
+    });
+
+    it("allows a link that brings at most one body step", () => {
+      expect(stepLinkProblem([move(), speak("a")], 1)).toBeNull();
+      expect(stepLinkProblem([speak("a"), wait("1")], 1)).toBeNull();
+      // Nothing to judge on the first row, or on a link already made.
+      expect(stepLinkProblem([move()], 0)).toBeNull();
+      expect(stepLinkProblem([move(), linked(move())], 1)).toBeNull();
     });
   });
 
