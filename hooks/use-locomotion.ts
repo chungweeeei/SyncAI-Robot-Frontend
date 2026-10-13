@@ -21,7 +21,7 @@ export type Policy = "PPO" | "HIMLOCO";
 /**
  * The motion keys that select a controller. Stand / lie down / damping are the
  * other three and are not this control's business — they are postures, and
- * PostureControl owns them.
+ * the drive panel's PanelPostureControl owns them.
  */
 const CONTROLLER_KEY: Record<Controller, MotionKey> = {
   RL: "1",
