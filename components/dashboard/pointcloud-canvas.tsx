@@ -10,10 +10,13 @@ import { cn } from "@/lib/utils";
 import { G23_JOINTS } from "@/lib/robot/g23-joints";
 import {
   DEFAULT_SPAN_M,
+  FRONT_DEFAULT_Z,
   TOP_DOWN_TILT,
   applyCameraMode,
   dollyStep,
   frameMap,
+  frontView,
+  frontViewAround,
   overheadDistance,
   type MapFrame,
 } from "@/lib/scene/camera";
@@ -38,7 +41,11 @@ import {
   warnedUnknownJoints,
 } from "@/lib/scene/robot-model";
 import { THEMES } from "@/lib/scene/theme";
-import { createVoxelLayer, thinGroundUnderVoxels } from "@/lib/scene/voxel-layer";
+import {
+  createVoxelLayer,
+  thinGroundUnderVoxels,
+  type VoxelLayer,
+} from "@/lib/scene/voxel-layer";
 import { createZoneLayer } from "@/lib/scene/zone-layer";
 import {
   createVertexLayer,
@@ -99,6 +106,12 @@ interface PointCloudCanvasProps {
    */
   voxels?: OccupiedVoxels | null;
   /**
+   * The heights of the 3D map to draw, metres, `[lo, hi)`: one floor of a
+   * map that spans several. Null draws them all. Moving it never rebuilds
+   * the layer (see VoxelLayer.setBand).
+   */
+  voxelBand?: { lo: number; hi: number } | null;
+  /**
    * The planner's remaining route, drawn as a band on the floor so an operator
    * can catch a route that hugs a wall before the robot is against it. An empty
    * `points` means the route is over.
@@ -156,6 +169,11 @@ interface PointCloudCanvasProps {
    */
   topDownNonce?: number;
   /**
+   * Bumped to look at the map level from the south, so storeys read as
+   * bands. A nonce for `topDownNonce`'s reason.
+   */
+  frontNonce?: number;
+  /**
    * Bumped to return to the opening view. The view also switches to "move" in
    * the same click, since focus mode would re-pin the target to the robot.
    */
@@ -200,6 +218,7 @@ export function PointCloudCanvas({
   telemetry,
   mapCloud = null,
   voxels = null,
+  voxelBand = null,
   path,
   dock = null,
   dockPath,
@@ -212,6 +231,7 @@ export function PointCloudCanvas({
   movingVertex = null,
   cameraMode = "move",
   topDownNonce = 0,
+  frontNonce = 0,
   recenterNonce = 0,
   zoomStep = null,
   mapCloudStream = false,
@@ -273,6 +293,13 @@ export function PointCloudCanvas({
    * since those effects are nonce-only on purpose.
    */
   const voxelFrameRef = React.useRef<MapFrame | null>(null);
+  /**
+   * The 3D map's layer while it is up, so a floor switch can move its band
+   * without a rebuild and Front can measure the heights it shows.
+   */
+  const voxelLayerRef = React.useRef<VoxelLayer | null>(null);
+  /** The band as last asked for, which a rebuilt layer starts from. */
+  const voxelBandRef = React.useRef(voxelBand);
 
   // Keep the latest onStatus without forcing the setup effect to re-run.
   const onStatusRef = React.useRef(onStatus);
@@ -851,6 +878,36 @@ export function PointCloudCanvas({
     controls.update();
   }, [topDownNonce]);
 
+  // ---- Front view (one-shot) --------------------------------------------
+  // Nonce-only deps, as for top-down. In focus the robot stays the target;
+  // otherwise the map's box, at the heights of the floor on show — the whole
+  // map's when no floor is picked, a person's height when no 3D map is up.
+  React.useEffect(() => {
+    if (!frontNonce) return;
+    const ctx = sceneRef.current;
+    if (!ctx) return;
+    if (cameraModeRef.current === "focus") {
+      frontViewAround(ctx.camera, ctx.controls);
+      return;
+    }
+    const band = voxelBandRef.current;
+    const z =
+      voxelLayerRef.current?.zExtent(band?.lo ?? -Infinity, band?.hi ?? Infinity) ??
+      FRONT_DEFAULT_Z;
+    frontView(
+      ctx.camera,
+      ctx.controls,
+      ctx.mapFrame ??
+        voxelFrameRef.current ?? {
+          cx: 0,
+          cy: 0,
+          widthM: DEFAULT_SPAN_M,
+          heightM: DEFAULT_SPAN_M,
+        },
+      z,
+    );
+  }, [frontNonce]);
+
   // ---- Recenter (one-shot) ----------------------------------------------
   // Declared after the camera-mode effect on purpose: the same click sets the
   // mode to "move", and effects run in order, so this one gets the last word.
@@ -1080,17 +1137,30 @@ export function PointCloudCanvas({
 
     const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const layer = createVoxelLayer(voxels);
+    const band = voxelBandRef.current;
+    if (band) layer.setBand(band.lo, band.hi);
     ctx.scene.add(layer.points);
+    voxelLayerRef.current = layer;
     const restoreGround = thinGroundUnderVoxels(ctx.ground, theme);
     if (!ctx.mapFrame) voxelFrameRef.current = layer.frame;
 
     return () => {
+      if (voxelLayerRef.current === layer) voxelLayerRef.current = null;
       ctx.scene.remove(layer.points);
       layer.dispose();
       restoreGround();
       if (voxelFrameRef.current === layer.frame) voxelFrameRef.current = null;
     };
   }, [voxels, meta, mapImageUrl, resolvedTheme]);
+
+  // ---- 3D map floor (band) ----------------------------------------------
+  // Two numbers on the layer, not a rebuild. Declared after the layer effect
+  // so a new layer is built before the band lands on it; the layer effect
+  // reads the ref for the same reason, should it rebuild on its own.
+  React.useEffect(() => {
+    voxelBandRef.current = voxelBand;
+    voxelLayerRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
+  }, [voxelBand]);
 
   // ---- Pose picking -----------------------------------------------------
   // The anchor keeps the raw pointer position beside the ground point so the

@@ -11,6 +11,7 @@ import {
   robotState,
   taskHistoryEntry,
   taskTemplate,
+  TWO_FLOORS,
   vertex,
   withOctomap,
 } from "./backend";
@@ -582,6 +583,66 @@ test.describe("the dashboard's 3D map layer", () => {
 
     await expect(page.getByRole("button", { name: "Top down" })).toBeVisible();
     await expect(toggle(page)).toHaveCount(0);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("shows one floor at a time of a map that spans storeys, and looks at it level", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, {
+      maps: [mapSummary(withOctomap())],
+      floors: { [MAP_NAME]: { detected: TWO_FLOORS } },
+    });
+    const floorReads: string[] = [];
+    page.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (pathname.endsWith("/floors")) floorReads.push(pathname);
+    });
+    await page.goto("/");
+    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+    // The floors are part of the 3D map: not read while it is hidden.
+    await expect(page.getByRole("group", { name: "Floor" })).toHaveCount(0);
+    expect(floorReads).toEqual([]);
+
+    await toggle(page).click();
+    const floors = page.getByRole("group", { name: "Floor" });
+    await expect(floors).toBeVisible();
+    await expect(floors.getByRole("button", { name: "All" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await floors.getByRole("button", { name: "2F" }).click();
+    await expect(floors.getByRole("button", { name: "2F" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(floors.getByRole("button", { name: "All" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    // Front view frames the floor on show, here one with no cells at all.
+    await page.getByRole("button", { name: "Front view" }).click();
+    await floors.getByRole("button", { name: "All" }).click();
+    await page.getByRole("button", { name: "Front view" }).click();
+    await page.waitForTimeout(500);
+    expect(floorReads).toEqual([`/api/v1/maps/${MAP_NAME}/floors`]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("offers no floors for a map of one storey", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, { maps: [mapSummary(withOctomap())] });
+    await page.goto("/");
+    // Front view is the 3D map's: a floor plan from the front is a line.
+    await expect(page.getByRole("button", { name: "Front view" })).toHaveCount(0);
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Front view" })).toBeVisible();
+    await page.waitForTimeout(500);
+    await expect(page.getByRole("group", { name: "Floor" })).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
 

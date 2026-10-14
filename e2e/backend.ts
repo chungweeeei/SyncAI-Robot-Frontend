@@ -342,6 +342,12 @@ export interface BackendOverrides {
    * (`fill_key` triples); none by default. A PUT replaces a map's list.
    */
   octomapEdits?: Record<string, number[][]>;
+  /**
+   * The floors by map name, as GET .../floors lists them: `detected` is what
+   * the walk found, `saved` an operator's list if there is one. One storey
+   * (nothing either way) by default; a PUT saves a map's list.
+   */
+  floors?: Record<string, { detected?: MapFloorFixture[]; saved?: MapFloorFixture[] }>;
   /** GET /robot/restart's record before any press; `idle` by default. */
   restart?: Record<string, unknown>;
   /** Forbidden zones by map name, as GET .../keepout lists them; none by default. */
@@ -359,6 +365,18 @@ export interface BackendOverrides {
   /** GET /network/wifi/scan's networks. */
   wifiNetworks?: Record<string, unknown>[];
 }
+
+/** One floor, as GET .../floors lists it. */
+export interface MapFloorFixture {
+  name: string;
+  level: number;
+}
+
+/** A building of two storeys, as the robot's walk finds them. */
+export const TWO_FLOORS: MapFloorFixture[] = [
+  { name: "1F", level: -0.2 },
+  { name: "2F", level: 5.5 },
+];
 
 /** A saved network, as GET /network/wifi/connections lists one. */
 export function wifiConnection(
@@ -429,6 +447,9 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     ...over.keepout,
   };
   const octomapEdits: Record<string, number[][]> = { ...over.octomapEdits };
+  const floors: Record<string, { detected?: MapFloorFixture[]; saved?: MapFloorFixture[] }> = {
+    ...over.floors,
+  };
   // The mapping run state; the run writes below move it, so the rail's next
   // poll sees a start land or a save end the run.
   let mappingStatus: Record<string, unknown> = over.mappingStatus ?? {
@@ -634,6 +655,33 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
           keys.length === 0
             ? `Cleared the ground patches of '${name}'.`
             : `Saved ${keys.length} ground ${keys.length === 1 ? "patch" : "patches"} for '${name}'. They take effect once applied to the robot's 3D map.`,
+      });
+    }
+    const floorsMatch = /^\/api\/v1\/maps\/([^/]+)\/floors$/.exec(path);
+    if (floorsMatch && method === "GET") {
+      const name = decodeURIComponent(floorsMatch[1]);
+      const entry = floors[name] ?? {};
+      const detected = entry.detected ?? [];
+      return json(route, {
+        name,
+        floors: entry.saved ?? detected,
+        detected,
+        saved: entry.saved !== undefined,
+      });
+    }
+    if (floorsMatch && method === "PUT") {
+      const name = decodeURIComponent(floorsMatch[1]);
+      const body = parseBody(route.request().postData()) as { floors?: MapFloorFixture[] } | null;
+      const saved = [...(body?.floors ?? [])]
+        .map((floor) => ({ name: floor.name.trim(), level: floor.level }))
+        .sort((a, b) => a.level - b.level);
+      floors[name] = { ...floors[name], saved };
+      return json(route, {
+        name,
+        floors: saved,
+        message: saved.length
+          ? `Saved ${saved.length} floor${saved.length === 1 ? "" : "s"} for '${name}'.`
+          : `Saved '${name}' as one floor.`,
       });
     }
     const keepoutMatch = /^\/api\/v1\/maps\/([^/]+)\/keepout$/.exec(path);

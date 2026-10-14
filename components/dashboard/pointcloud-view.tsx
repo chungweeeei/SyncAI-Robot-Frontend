@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { ArmedHint } from "@/components/console/armed-hint";
+import { FloorPicker } from "@/components/console/floor-picker";
 import { overlayPanel } from "@/components/console/instrument";
 import { AutoLocalizeControl } from "@/components/dashboard/auto-localize-control";
 import { GoalControl } from "@/components/dashboard/goal-control";
@@ -25,6 +26,7 @@ import { useAutoLocalize } from "@/hooks/use-auto-localize";
 import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useGoalTask } from "@/hooks/use-goal-task";
 import { useInitialPose } from "@/hooks/use-initial-pose";
+import { useMapFloors } from "@/hooks/use-map-floors";
 import { useMapKeepout } from "@/hooks/use-map-keepout";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
 import { useMapPointCloud } from "@/hooks/use-map-point-cloud";
@@ -33,6 +35,7 @@ import { useActiveMap } from "@/hooks/use-maps";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import { apiUrl } from "@/lib/api/config";
+import { floorBands } from "@/lib/map/floors";
 import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
 import { dispatchMapLock } from "@/lib/map/run-lock";
 import { liveDock } from "@/lib/task/run";
@@ -110,9 +113,26 @@ export function PointCloudView({
   const octomap = useMapOctomap(
     showVoxels && hasVoxels && activeMap ? activeMap.name : null,
   );
+  // One floor of the 3D map at a time, for a map that spans storeys. Read
+  // only while the layer is up; a map of one storey (or a failed read) has
+  // no floors and shows whole. Held by name, so a floor that is renamed or
+  // gone elsewhere falls back to the whole map instead of to a stale band.
+  const { floors } = useMapFloors(showVoxels && hasVoxels && activeMap ? activeMap.name : null);
+  const [floorName, setFloorName] = React.useState<string | null>(null);
+  const bands = React.useMemo(() => floorBands(floors), [floors]);
+  const floorBand = bands.find((band) => band.name === floorName) ?? null;
+  // Keyed on the two numbers: `floors` is a fresh list on every refetch, and
+  // a fresh band object would repaint the layer for nothing.
+  const bandLo = floorBand?.lo;
+  const bandHi = floorBand?.hi;
+  const voxelBand = React.useMemo(
+    () => (bandLo === undefined || bandHi === undefined ? null : { lo: bandLo, hi: bandHi }),
+    [bandLo, bandHi],
+  );
   const [cameraMode, setCameraMode] = React.useState<"move" | "focus">("move");
   // Counters, not booleans: the button must work again after orbiting away.
   const [topDownNonce, setTopDownNonce] = React.useState(0);
+  const [frontNonce, setFrontNonce] = React.useState(0);
   const [recenterNonce, setRecenterNonce] = React.useState(0);
   /** A fresh object per press; the factor is the floor plan editor's. */
   const [zoomStep, setZoomStep] = React.useState<{ factor: number } | null>(null);
@@ -311,6 +331,7 @@ export function PointCloudView({
         telemetry={feed}
         mapCloud={scan.cloud}
         voxels={octomap.voxels}
+        voxelBand={voxelBand}
         path={path}
         dock={dock}
         dockPath={dockPath}
@@ -327,6 +348,7 @@ export function PointCloudView({
         goal={task.goal}
         initialPose={estimate.pose}
         topDownNonce={topDownNonce}
+        frontNonce={frontNonce}
         recenterNonce={recenterNonce}
         zoomStep={zoomStep}
         pickMode={pick?.mode ?? null}
@@ -389,6 +411,7 @@ export function PointCloudView({
             cameraMode={cameraMode}
             onCameraMode={setCameraMode}
             onTopDown={() => setTopDownNonce((n) => n + 1)}
+            onFront={octomap.voxels ? () => setFrontNonce((n) => n + 1) : undefined}
             onZoomIn={() => setZoomStep({ factor: ZOOM_STEP_FACTOR })}
             onZoomOut={() => setZoomStep({ factor: 1 / ZOOM_STEP_FACTOR })}
             layers={layers}
@@ -400,6 +423,13 @@ export function PointCloudView({
           * Pointer-transparent with each panel opting back in, so the armed
           * hint never swallows the press it asks for. */}
         <div className="pointer-events-none flex min-h-0 w-56 flex-col gap-2 overflow-y-auto empty:hidden">
+          {/* Over the panels: it is part of what is drawn, not a job. */}
+          {octomap.voxels && bands.length > 1 && (
+            <div className={cn(overlayPanel, "pointer-events-auto px-2 py-1.5")}>
+              <p className="instrument-label mb-1 text-muted-foreground">3D map floor</p>
+              <FloorPicker floors={bands} value={floorBand?.name ?? null} onChange={setFloorName} />
+            </div>
+          )}
           {/* The next step happens on the map, away from the tooltip, so it
             * is spelled out here while the tool is armed. */}
           {pick?.mode === "goal" && (

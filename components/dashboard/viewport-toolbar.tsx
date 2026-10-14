@@ -3,6 +3,7 @@
 import * as React from "react";
 import {
   BanIcon,
+  Building2Icon,
   CrosshairIcon,
   CuboidIcon,
   FocusIcon,
@@ -50,6 +51,7 @@ export function ViewportToolbar({
   cameraMode,
   onCameraMode,
   onTopDown,
+  onFront,
   onZoomIn,
   onZoomOut,
   layers,
@@ -71,6 +73,12 @@ export function ViewportToolbar({
   cameraMode: CameraMode;
   onCameraMode: (mode: CameraMode) => void;
   onTopDown: () => void;
+  /**
+   * Look at the map level from the front. Omitted, no button: from the
+   * front a floor plan is a line, so it is offered while the 3D map is up,
+   * which also keeps the strip to one row on a phone the rest of the time.
+   */
+  onFront?: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   /** Only the layers that have something to draw. */
@@ -143,6 +151,15 @@ export function ViewportToolbar({
           icon={Grid2x2Icon}
           onClick={onTopDown}
         />
+        {/* Its pair: level, from the south, where storeys stack as bands. */}
+        {onFront && (
+          <ToolButton
+            label="Front view"
+            hint="look at the map level, from the front"
+            icon={Building2Icon}
+            onClick={onFront}
+          />
+        )}
 
         {layers.length > 0 && (
           <>
