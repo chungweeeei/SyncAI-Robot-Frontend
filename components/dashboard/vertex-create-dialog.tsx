@@ -25,10 +25,8 @@ import type { VertexType } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
 /**
- * One placement awaiting a name. `key` is what tells a second placement from
- * a re-aimed first one: the form is remounted per key, so the name typed for
- * one stop never carries over to the next, while Use robot position — which
- * replaces the pose under the same key — keeps it.
+ * One placement awaiting a name. The form remounts per `key`, so a typed name
+ * never carries to the next stop; Use robot position keeps the key and the name.
  */
 export interface Placement {
   key: number;
@@ -36,21 +34,12 @@ export interface Placement {
 }
 
 /**
- * "Create waypoint" — the question behind a released Add waypoint drag on the
- * viewport: what is this stop called, and what is it for.
+ * Names a waypoint after an Add waypoint drag. A dialog because the viewport
+ * has no room for an inline form. Nothing is written until Create, which is
+ * what makes the gesture safe to try.
  *
- * A dialog rather than the floor plan editor's inline panel because the
- * viewport has no panel to put a form in — its read-back column is sized for a
- * chip and a sentence — and because the gesture is already over by the time
- * the question is asked. Nothing is written until Create: a placed pose that
- * is cancelled here leaves no row and no marker, which is what makes the
- * gesture safe to try.
- *
- * The pose is shown in the commanded hue, the way the goal read-back shows the
- * pose a drag produced, so the operator can check the heading they aimed
- * before naming it. It is not editable here: the map is where a pose is set,
- * and Use robot position is the one other source, for the stop you mark by
- * driving to it (same as the editor's button of that name).
+ * The pose is shown, not editable: the map sets it, and Use robot position is
+ * the one other source.
  */
 export function VertexCreateDialog({
   placement,
@@ -65,11 +54,7 @@ export function VertexCreateDialog({
 }: {
   /** The placed pose being named, or null when the dialog is closed. */
   placement: Placement | null;
-  /**
-   * Why the map cannot take a new waypoint right now — a job is driving on
-   * it — or null. Greys Create and keeps the dialog up, so the name typed so
-   * far is still there when the job ends.
-   */
+  /** Why the map is read-only right now. Greys Create; the typed name survives. */
   lockedReason?: string | null;
   /** Where the robot stands on the active map, or null when that is unknown. */
   robotPose: PlanarPose | null;
@@ -83,9 +68,7 @@ export function VertexCreateDialog({
   onCreate: (name: string, type: VertexType) => void;
   onClose: () => void;
 }) {
-  // The close transition outlives the prop going null, so the last placement
-  // is kept and rendered while the popup animates out — the same reason and
-  // the same render-time derivation as VertexMoveDialog.
+  // Kept through the close animation, as in VertexMoveDialog.
   const [shown, setShown] = React.useState<Placement | null>(placement);
   if (placement && placement !== shown) setShown(placement);
 
@@ -145,9 +128,8 @@ function NameForm({
   const typeId = React.useId();
 
   const trimmed = name.trim();
-  // The backend's `min_length=1` would reject a blank name, but as a 422 whose
-  // detail is a validation *array* rather than a sentence. Refusing here is what
-  // keeps that off the operator's screen.
+  // The backend would refuse a blank name with a validation array, not a
+  // sentence, so it is refused here.
   const submittable = trimmed.length > 0 && !busy && lockedReason === null;
 
   return (
@@ -183,10 +165,8 @@ function NameForm({
         <p id={typeId} className="instrument-label mb-1 text-muted-foreground">
           Type
         </p>
-        {/* A list rather than the editor's segmented row: five short labels
-          * fit a 240 px panel, and a dialog has room for the full names and
-          * the one-line hint that says what each role is for. `items` is
-          * what makes the trigger show the label rather than the enum. */}
+        {/* A list, unlike the editor's segmented row, since a dialog has room
+          * for each type's hint. `items` makes the trigger show the label. */}
         <Select
           items={TYPE_ITEMS}
           value={type}
@@ -211,9 +191,7 @@ function NameForm({
         </Select>
       </div>
 
-      {/* Same three readouts, in the same order and the same commanded hue, as
-        * the goal read-back and the move dialog: this is a pose the operator
-        * produced, shown back before it is committed to. */}
+      {/* The same readouts as the goal read-back, so the aim can be checked. */}
       <div className="space-y-1 rounded-md border border-hairline bg-elevated/50 p-2.5">
         <Readout label="X" value={pose.x.toFixed(2)} unit="m" tone="cmd" />
         <Readout label="Y" value={pose.y.toFixed(2)} unit="m" tone="cmd" />
@@ -228,8 +206,7 @@ function NameForm({
       {lockedReason && (
         <p className="text-[11px] leading-snug text-signal-caution">{lockedReason}</p>
       )}
-      {/* Only while the button below is greyed: a disabled control with no
-        * reason is the failure mode useRobotMapPose spends its sentences on. */}
+      {/* Says why Use robot position is greyed. */}
       {!robotPose && robotPoseReason && (
         <p className="text-[11px] leading-snug text-muted-foreground">{robotPoseReason}</p>
       )}
@@ -238,8 +215,7 @@ function NameForm({
         <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onClose}>
           Cancel
         </Button>
-        {/* Between Cancel and Create, and secondary to both: it changes the
-          * pose being named, it does not finish or abandon the naming. */}
+        {/* Secondary: it changes the pose, it does not finish the naming. */}
         <Button
           type="button"
           variant="ghost"

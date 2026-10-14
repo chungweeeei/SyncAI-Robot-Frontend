@@ -2,21 +2,13 @@ import { networkInterfaces } from "node:os";
 import type { NextConfig } from "next";
 
 /**
- * Hosts the dev server will accept dev/HMR requests from.
+ * Hosts the dev server accepts dev/HMR requests from.
  *
- * Next 16 blocks cross-origin requests to dev-only endpoints and trusts only
- * `localhost` by default, so opening the dashboard from any other origin (a
- * robot's LAN address, a container's bridge IP) breaks the webpack-hmr
- * WebSocket unless that origin is listed. Hardcoding a list meant editing this
- * file every time the machine landed on a different network.
- *
- * Instead, enumerate this host's own addresses at startup: on a laptop that is
- * the current LAN IP, inside a container it is the bridge IP the browser
- * actually connects to. Next matches on hostname only — no scheme, no port —
- * so bare addresses are the right shape.
- *
- * The list is fixed when the dev server boots, so a network change (new Wi-Fi,
- * new DHCP lease) needs a restart to be picked up.
+ * Next 16 trusts only `localhost` by default, which breaks HMR when the
+ * console is opened from a LAN or container bridge IP. Rather than a
+ * hardcoded list, enumerate this host's own addresses at startup (bare
+ * hostnames: Next matches no scheme or port). A network change needs a
+ * dev server restart.
  */
 function localDevOrigins(): string[] {
   const origins = new Set<string>(["localhost", "127.0.0.1", "[::1]"]);

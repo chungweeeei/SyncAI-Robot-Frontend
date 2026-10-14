@@ -10,29 +10,15 @@ import { cn } from "@/lib/utils";
 export type RunPending = "start" | "save" | "reset" | null;
 
 /**
- * The run's controls, as one strip over the viewport: Start while nothing is
- * running, and once a run is on, a recording indicator beside Save and New
- * map.
+ * The run's controls as one strip over the viewport: Start while idle, then a
+ * recording indicator beside Save and New map. One strip because the faces
+ * are exclusive. Presentational: `face` comes from lib/map/run-face.ts, and
+ * the page owns the confirm (`onReset`) and the name dialog (`onSave`).
  *
- * It replaced three groups in the rail (2026-10), by request: the run is what
- * this screen is for, and its buttons belong on the picture they act on, the
- * way the dashboard's pose tools sit over the map they aim at. One strip
- * rather than three because the faces are exclusive — the robot is idle, or
- * building, or between the two — and a Start button greyed under a running
- * indicator would be the rail's old shape in a smaller box.
- *
- * Worded buttons, not the ToolStrip's icons: Start mapping is the one press
- * this screen exists for and its name should not live in a tooltip. Native
- * `<button>`s rather than the shadcn Button, because that one sets
- * `pointer-events-none` on a disabled control and the held Start's `title` —
- * the sentence saying why it is held — would never show. The indicator is
- * record-red, borrowed from the recorder: two capture surfaces disagreeing
- * about what "running" looks like would be worse than one borrowed hue.
- *
- * Presentational. `face` is the rule in lib/map/run-face.ts, read off the
- * robot's own run state; New map goes out through `onReset` because the page
- * owns the confirm that may stop it, and Save through `onSave` because the
- * name is asked for in a dialog the page keeps.
+ * Worded buttons, since Start mapping is what the screen is for. Native
+ * `<button>`s, because the shadcn Button sets `pointer-events-none` when
+ * disabled and the held Start's `title` (why it is held) would never show.
+ * The indicator borrows the recorder's red, so both capture surfaces agree.
  */
 export function RunStrip({
   face,
@@ -70,10 +56,8 @@ export function RunStrip({
         </button>
       ) : (
         <>
-          {/* A live region: the state word changes on a start, a save and a
-            * reset, which a screen reader should hear the way a sighted
-            * operator sees the dot start to pulse. A run shows the dot alone,
-            * by request, so its word is for the screen reader only. */}
+          {/* A live region so a screen reader hears the state change; a run
+            * shows the dot alone (by request), so the word is SR-only. */}
           <span
             role="status"
             className={cn(
@@ -102,8 +86,7 @@ export function RunStrip({
             <SaveIcon aria-hidden className="size-3.5" />
             {pending === "save" ? "Saving…" : "Save"}
           </button>
-          {/* Warn-bordered, not solid: the red is spent on the one press that
-            * loses the run, and the confirm it opens is where the red fills. */}
+          {/* Warn-bordered, not solid: the red fills in the confirm it opens. */}
           <button
             type="button"
             disabled={face.kind !== "run" || held}
@@ -119,10 +102,9 @@ export function RunStrip({
   );
 }
 
-// The "Top down" button's family, from the bottom-left of the same viewport:
-// a caps label on a hairline, 24 px under a mouse and 40 px under a finger.
-// `disabled:hover:bg-transparent` rather than `pointer-events-none`, so the
-// held Start still takes the hover that shows its title.
+// The "Top down" button's family: caps label on a hairline, 24 px / 40 px
+// under a finger. `disabled:hover:bg-transparent` rather than
+// `pointer-events-none`, so the held Start still shows its title.
 const BUTTON =
   "instrument-label flex h-6 items-center gap-1.5 rounded-sm border px-2 transition-colors pointer-coarse:min-h-10 disabled:opacity-40 disabled:hover:bg-transparent";
 const CMD =

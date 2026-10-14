@@ -3,9 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReconnectingSocketOptions } from "@/lib/ros/socket";
 
 /**
- * A frame is [uint32 count][float32 x, y, z] * count. The rule these hold is
- * the socket module's promise: a malformed frame is skipped, never thrown out
- * of onmessage, and a stored map's short download is an error with a sentence.
+ * A malformed frame is skipped, never thrown out of onmessage; a stored map's
+ * short download is an error with a sentence.
  */
 
 let captured: ReconnectingSocketOptions | null = null;

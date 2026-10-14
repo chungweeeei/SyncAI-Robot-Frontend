@@ -15,20 +15,13 @@ const MODES: readonly { value: SwitchableMode; label: string }[] = [
 ];
 
 /**
- * Which operating mode is commanded, and which one the robot reports.
+ * Which mode is commanded, and which the robot reports — LocomotionControl's
+ * two-row epistemics. A switch is acknowledged by the whole stack rebuilding,
+ * leaving 10–30 s with no link; the caption says so, so a dead status strip
+ * reads as expected rather than a fault.
  *
- * The same two-row epistemics as LocomotionControl, with the roles even
- * starker: the segments are a command whose acknowledgement channel is the
- * whole stack rebuilding, and the readout is sys_manager's answer relayed
- * through robot_state. Between the two sits a 10–30 s window where the console
- * has no link at all — the caption owns saying that, so the dead status strip
- * during a switch reads as the described behaviour instead of a fault.
- *
- * Selection goes through `onSelect` rather than straight to the hook, and no
- * press here commands anything on its own: the page confirms every switch in an
- * alert dialog first, and it is the only place that knows how loud that dialog
- * has to be (leaving MANUAL with an unsaved map is a different question from
- * the same switch with the map already on disk).
+ * Presses go to `onSelect`, not the hook: the page confirms every switch and
+ * knows how loud that dialog must be.
  */
 export function ModeControl({
   control,
@@ -39,8 +32,8 @@ export function ModeControl({
 }) {
   const { reported, stateStatus, pending, busy, error } = control;
 
-  // MAINTENANCE (or no frame yet) lights no segment — lighting the nearest
-  // one would be a claim about the robot, same rule as the policy row.
+  // MAINTENANCE (or no frame) lights no segment — lighting the nearest would
+  // be a claim about the robot.
   const lit =
     pending ??
     (reported === "MANUAL" || reported === "AUTO" ? reported : null);

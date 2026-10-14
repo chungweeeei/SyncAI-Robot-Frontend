@@ -24,76 +24,34 @@ const CONVERTING_REASON =
   "This map is still being prepared. Wait for it to finish.";
 
 /**
- * The corner itself — MapDeleteControl's geometry and surface, on the opposite
- * side. Shared by the live button and the greyed span so the two occupy exactly
- * the same place, and carrying its own `bg-panel` for the same reason: what is
- * underneath is a gridmap image or `bg-elevated` depending on the map, and a
- * bare glyph would sink into one of them.
- *
- * `top-2 left-2` is deliberately the slot MapCard's in-use badge occupies. The
- * two are mutually exclusive — the badge renders only when `map.active`, this
- * only when it is not — so one 24px tile sits in that corner on every card,
- * always about the same question.
+ * The corner tile, MapDeleteControl's shape on the opposite side; shared by
+ * the button and the greyed span, with its own `bg-panel` so the glyph doesn't
+ * sink into the thumbnail. It is the slot of MapCard's in-use badge — the two
+ * are mutually exclusive, so one tile sits there on every card.
  */
 const CORNER =
   "absolute top-2 left-2 z-10 flex size-6 items-center justify-center rounded-sm border border-hairline bg-panel/90 backdrop-blur-sm";
 
 /**
- * The card-side face of POST /api/v1/maps/{name}/activate.
+ * The card-side face of POST /api/v1/maps/{name}/activate: swap arrows in the
+ * in-use badge's corner, rendered only when the map is not active.
  *
- * A corner tile in the card's top-left, which is **the same slot MapCard's
- * in-use badge occupies** — and that is the design, not a collision. The two are
- * mutually exclusive, so exactly one 24px tile sits in that corner on every
- * card, always answering the same question: a solid check where the answer is
- * "this one", swap arrows where it is "press to make it this one".
+ * Swap arrows rather than an outlined check, which would read as "done,
+ * greyed out" and be confused with the real greyed state. `ArrowLeftRight`,
+ * to stay clear of Rebuild's `RefreshCw`. Greyed, with the reason in the
+ * tooltip, for a map with no floor plan, no scan, or mid-conversion — a span
+ * look-alike, since `disabled` swallows the tooltip's pointer events.
  *
- * Two glyphs rather than one, and deliberately. The same check outlined instead
- * of solid would be a radio button, which is a fair description of the grid —
- * exactly one map is loaded — but an unfilled check reads at least as easily as
- * *already done, greyed out*, and this control already has a real greyed state
- * it must not be confused with (see `reason` below). Swap arrows cannot be read
- * as a state at all: they only ever mean "change this", which is the one thing
- * pressing it does. `ArrowLeftRight` specifically, keeping clear of
- * `RefreshCw` on the Rebuild-grid control two rows down.
+ * Confirmed in an AlertDialog that names the map, because the consequence
+ * isn't guessable from an arrow: the pose resets to the new map's origin and
+ * must be set again (an old-frame pose would be meaningless there). One
+ * sentence, no backdrop dismiss — every extra line is read instead of the one
+ * that asks for action.
  *
- * It also completes the card's corner language: left is the in-use question
- * (state or action), right is MapDeleteControl's X. Two tiles, same geometry,
- * same surface, opposite corners — which is why this borrows that component's
- * `CORNER` shape verbatim rather than inventing one.
- *
- * **Never rendered on the active card**, which is what frees the slot for the
- * badge. The endpoint answers 200 `switched: false` there anyway, so this is not
- * a guard. Greyed, with the reason in the tooltip, for the three maps that
- * cannot be switched to at all: no gridmap, no point cloud, mid-conversion. A
- * look-alike span rather than a `disabled` button for MapDeleteControl's reason
- * — `disabled` swallows the pointer events the tooltip needs.
- *
- * The icon carries no label, so the dialog does the talking: its title names the
- * map, which is what confirms the operator hit the corner they meant to.
- *
- * Behind an AlertDialog because the one consequence that matters is not
- * guessable from an unlabelled arrow: the pose resets to the new map's origin,
- * so the robot does not know where it is until the operator says. (A pose
- * measured in the old map's frame is not merely wrong in the new one, it is
- * meaningless — carried over, it can drop the robot inside a wall with every
- * indicator green. The dialog does not explain that; it just says what to do.)
- *
- * One sentence, and what was cut is the point. "The nav stack keeps running
- * throughout" was true and reassuring and earned nothing: it answers a worry
- * only someone who remembers the restart-based switch would have, and it is one
- * more line read *instead of* the one that asks for an action — the failure
- * MapDeleteControl's dialog is written against too. No dismiss-by-backdrop for
- * the same reason the delete uses one: the only ways out are the buttons.
- *
- * A refusal keeps the dialog open and shows the backend's sentence there, which
- * matters most for 409 `task_running` — it names the tasks still running, and
- * closing the dialog would take the list away with it.
- *
- * On success the card does *not* unmount (unlike rename and delete), but the
- * check badge moves to it from another card, so the sentence still goes up
- * through `onSwitched` to the library: it is about the robot, not about this
- * map, and it outlives the dialog it came from. The cache consequences — which
- * keys a switch makes stale — live in useActivateMap, not here.
+ * A refusal keeps the dialog open, which matters for 409 `task_running`: it
+ * names the running tasks. On success the badge moves here, so the sentence
+ * goes up through `onSwitched` — it is about the robot and outlives the
+ * dialog. Cache consequences live in useActivateMap.
  */
 export function MapActivateControl({
   map,
@@ -107,10 +65,8 @@ export function MapActivateControl({
   const [confirming, setConfirming] = React.useState(false);
 
   const busy = activate.isPending;
-  // Every refusal arrives as the backend's own sentence, written to be shown.
-  // ActivateConflictError's code is not branched on here: each one already
-  // says what to do, and none has a retry this control can offer the way the
-  // rebuild's `gridmap_hand_edited` does.
+  // Every refusal is the backend's sentence; ActivateConflictError's code isn't
+  // branched on, since none has a retry to offer here.
   const error = activate.error?.message ?? null;
 
   const submit = () => {
@@ -128,7 +84,6 @@ export function MapActivateControl({
     activate.reset();
   };
 
-  // The active card says "in use" with its badge; it has no use for this.
   if (map.active) return null;
 
   const reason =
@@ -193,11 +148,8 @@ export function MapActivateControl({
           )}
 
           <AlertDialogFooter>
-            {/* Icon and label both, the house pattern: the glyph tells the two
-              * apart at a glance, the word makes the committing one
-              * unmistakable. Not `destructive` — nothing is destroyed, and
-              * spending the red here would leave the delete dialog nothing
-              * louder to say. */}
+            {/* Icon and label, the house pattern. Not `destructive` — nothing
+              * is destroyed, and the delete dialog needs the louder red. */}
             <Button variant="ghost" size="sm" disabled={busy} onClick={close}>
               <ArrowLeftIcon data-icon="inline-start" />
               Cancel

@@ -10,9 +10,8 @@ import { StatusStrip } from "@/components/console/status-strip";
 import { QueryProvider } from "@/components/query-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 
-// `axes: ["wdth"]` is what makes the condensed instrument labels possible —
-// without it next/font ships the wght-only subset and `instrument-label` in
-// globals.css silently renders at normal width.
+// `axes: ["wdth"]`, or next/font ships the wght-only subset and
+// `instrument-label` silently renders at normal width.
 const archivo = Archivo({
   variable: "--font-archivo",
   subsets: ["latin"],
@@ -30,10 +29,8 @@ export const metadata: Metadata = {
   description: "Live telemetry, map and navigation control for one robot",
 };
 
-// The console is a fixed-frame instrument panel: no page zoom-scroll, and the
-// viewport is sized in dvh so mobile browser chrome does not clip the rail.
-// `cover` is what makes env(safe-area-inset-bottom) non-zero, so the rail can
-// pad itself above the home indicator instead of being sat on by it.
+// `cover` makes env(safe-area-inset-bottom) non-zero, so the rail can pad
+// itself above the home indicator.
 export const viewport: Viewport = {
   viewportFit: "cover",
   themeColor: [
@@ -61,34 +58,21 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           {/*
-           * Two polls for the whole console, and only two. The status strip and
-           * whichever page is mounted read the same RobotState snapshot, so the
-           * header clock can never disagree with the pose in the rail — which it
-           * would if each of them called useRobotState() on its own interval.
-           *
-           * The second one answers "is the robot executing a task", which is a
-           * fact about the machine rather than about any one screen: it has to
-           * survive navigation, and it has to be true for runs this browser
-           * never started. They stay separate providers because they fail
-           * differently — see ActiveTaskProvider.
-           *
-           * QueryProvider sits outside both because both polls now live in the
-           * TanStack Query cache it owns.
+           * The console's two polls, mounted once so every screen reads the
+           * same snapshot and the job state survives navigation. Separate
+           * providers because they fail differently (see ActiveTaskProvider).
            */}
           <QueryProvider>
             <RobotStateProvider>
               <ActiveTaskProvider>
-                {/* Inside both polls: the stop reads the robot's own ESTOP
-                  * report from the first and the jobs to cancel from the
-                  * second. */}
+                {/* Inside both polls: the stop reads the robot's lock from the
+                  * first and the jobs to cancel from the second. */}
                 <EstopProvider>
                   <div className="flex h-dvh flex-col lg:flex-row">
                     <NavRail />
                     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                       <StatusStrip />
-                      {/* Pages own their own scrolling: the dashboard must not
-                       * scroll (the viewport is sized to what is left), settings
-                       * must. */}
+                      {/* Pages own their scrolling. */}
                       <main className="min-h-0 flex-1 overflow-hidden">
                         {children}
                       </main>

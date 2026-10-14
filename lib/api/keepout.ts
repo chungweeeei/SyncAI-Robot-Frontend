@@ -1,15 +1,9 @@
-// Client for the forbidden-zone half of the map router: GET and PUT
-// /api/v1/maps/{name}/keepout.
+// Forbidden zones: GET and PUT /api/v1/maps/{name}/keepout.
 //
-// Its own file for the reason lib/api/vertex.ts is one: plain JSON with
-// nothing in common with the gridmap's binary round trip in lib/api/map.ts.
-//
-// The zones travel as polygons in map-frame metres, and only that way. The
-// mask the planner actually reads is rasterised from them on the robot, in the
-// gridmap's exact geometry, so the two files agree cell for cell; the console
-// never sends or reads the mask itself. A GET therefore answers what was last
-// *saved through this API* — a mask drawn any other way reads as no zones, and
-// the next save replaces it.
+// Zones travel only as polygons in map-frame metres; the robot rasterises the
+// planner's mask from them. So a GET answers what was last saved through this
+// API: a mask drawn any other way reads as no zones, and the next save
+// replaces it.
 
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
@@ -22,7 +16,7 @@ import type { ZonePolygon } from "@/lib/types/map";
 export interface MapKeepout {
   name: string;
   zones: ZonePolygon[];
-  /** Whether this is the map the stack is running on. */
+  /** Whether this is the map the robot is running on. */
   active: boolean;
 }
 
@@ -39,9 +33,8 @@ export interface SaveKeepoutResult {
   zones: ZonePolygon[];
   active: boolean;
   /**
-   * Whether the running planner re-read the zones. False for any map that is
-   * not the active one — nothing to reload — and for an active map whose
-   * reload failed, which is the case worth telling the operator about.
+   * Whether the running planner re-read the zones. False for an inactive map,
+   * and for an active one whose reload failed (worth telling the operator).
    */
   reloaded: boolean;
   /** Operator-facing sentence; render it verbatim. */
@@ -65,21 +58,16 @@ export function fetchKeepout(name: string, signal?: AbortSignal): Promise<MapKee
 }
 
 /**
- * Replace the map's zones with `zones`, whole.
+ * Replace the map's zones, whole (an empty list clears them). A caller that
+ * sends before reading erases them, which is why the editor waits for the read.
  *
- * The whole list, not a diff: the endpoint has no per-zone verbs, and an
- * empty list is how every zone is cleared. So a caller that sends before it
- * has read the map's zones erases them — which is why the editor will not
- * let a zone be drawn until the read has answered.
- *
- * No `AbortSignal`, saveMapGrid's reason: the robot writes three files and
- * reloads the planner, and leaving the page must not tear that.
+ * No `AbortSignal`: leaving the page must not tear the robot's write and
+ * planner reload.
  */
 export function saveKeepout(name: string, zones: readonly ZonePolygon[]): Promise<SaveKeepoutResult> {
   return requestJson<SaveKeepoutResult>(keepoutPath(name), {
     method: "PUT",
-    // Only the two fields the backend models; an editor-side field added to
-    // ZonePolygon later must not ride along into a 422.
+    // Only the fields the backend models, so an editor-side field cannot 422.
     body: JSON.stringify({
       zones: zones.map(({ id, points }) => ({ id, points: points.map(({ x, y }) => ({ x, y })) })),
     }),

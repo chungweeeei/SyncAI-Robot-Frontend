@@ -13,7 +13,6 @@ import { mapRunLock, type RunLock } from "@/lib/map/run-lock";
 export function useMapRunLock(mapName: string | null): RunLock {
   const { tasks, status } = useConsoleActiveTasks();
   const { locked, reason } = mapRunLock({ mapName, tasks, status });
-  // Memoised on the two values, so a poll that changed nothing about this map
-  // hands back the same object and a memoised child does not re-render.
+  // Memoised so a poll that changed nothing here keeps the same object.
   return React.useMemo(() => ({ locked, reason }), [locked, reason]);
 }

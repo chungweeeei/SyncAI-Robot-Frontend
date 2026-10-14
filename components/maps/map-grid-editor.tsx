@@ -73,58 +73,32 @@ import { cn } from "@/lib/utils";
 const DEFAULT_BRUSH = 7;
 
 /**
- * The editor opens in Pan, not in Brush.
- *
- * Opening armed with a brush means the first thing an operator does on a freshly
- * loaded map — drag it to the corner they came here to look at — is a stroke,
- * and on a 1602x1502 grid at fit scale that stroke is hundreds of cells wide
- * before they notice. Undo would reach it, but only if they realised; the map is
- * blitted literally and a Free stroke across free space is invisible.
- *
- * Painting therefore costs two clicks — what to draw, then Brush — which is
- * the trade this makes: explicit arming for the destructive default, in
- * exchange for "look around" being the safe thing that needs no decision. The
- * editor now opens one step further back still, with nothing chosen to draw at
- * all (see DrawKind), and every change of Draw choice lands back on Pan.
- * Right/middle-drag and Space still pan whatever the tool is — Pan being the
- * *default* does not make it the only way.
+ * The editor opens in Pan, not Brush. Opening armed means the first drag to
+ * look around is a stroke hundreds of cells wide, and a Free stroke over free
+ * space is invisible, so nobody thinks to undo it. Painting costs an explicit
+ * arm instead; every Draw change also lands on Pan (see DrawKind). Right- and
+ * middle-drag and Space pan whatever the tool.
  */
 const DEFAULT_TOOL: EditTool = "pan";
 
 /**
- * Vertex mode opens in Pan too, for the same reason and one more.
- *
- * The same reason: the first thing an operator does on arriving is drag the map
- * to the corner they came for, and until this existed that drag placed a vertex
- * — a whole staged draft, panel and all — because vertex mode had no unarmed
- * state at all. Every press on bare map was a placement.
- *
- * The one more: a press on bare map in Place stages a whole draft, panel and
- * name field included, and Escape is then the only way out of it. A placed
- * waypoint can be taken back with Undo, but a draft is not an edit yet, and
- * opening on one by accident is still a step the operator did not ask for.
- *
- * Placing therefore costs one click on the Tool row, and Escape gives the map
- * back — the same trade grid mode makes for its brush.
+ * Waypoint mode opens in Pan too: otherwise the first drag stages a draft
+ * (panel, name field and all) that only Escape gets out of.
  */
 const DEFAULT_VERTEX_TOOL: VertexTool = "pan";
 
 /**
- * Zone mode opens in Pan as well, for DEFAULT_VERTEX_TOOL's reason. A stray
- * corner is cheap to drop, unlike a stray vertex; what Pan-as-resting buys
- * here is the moment the editor dims the map and asks which tool to pick,
- * which is the one place the console tells the operator what a zone tool is.
+ * Zone mode opens in Pan as well. A stray corner is cheap, but resting on Pan
+ * is what lets the editor dim the map and ask which tool — the one place a
+ * zone tool is explained.
  */
 const DEFAULT_ZONE_TOOL: ZoneTool = "pan";
 
 /**
  * Loads the map and shows the guard states; EditorSurface does the editing.
- *
- * The split exists so that everything belonging to one loaded grid — the undo
- * history — is initialised by *mounting* the surface rather than
- * by clearing state in an effect when the session changes. Patches index into a
- * specific buffer, so carrying a history across a load would corrupt the new one,
- * and a remount makes that impossible by construction.
+ * The split means everything tied to one loaded grid (the undo history, whose
+ * patches index into a specific buffer) starts fresh by remounting, not by
+ * clearing state in an effect.
  */
 export function MapGridEditor({
   name,
@@ -133,32 +107,22 @@ export function MapGridEditor({
 }: {
   name: string;
   /**
-   * The mode the surface opens in. Grid unless a link asked for Waypoints —
-   * the task editor's does, for an operator who came here to add one stop.
-   * No link asks for zones. The tool still opens on Pan either way; see the
-   * note above DEFAULT_TOOL.
+   * The mode to open in: grid, unless a link asks for waypoints (the task
+   * editor's does). The tool still opens on Pan.
    */
   initialMode?: EditMode;
-  /** Lets the page guard its back button; see its comment on why it needs this. */
+  /** Lets the page guard its back button; see the page. */
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { session, status, error } = useMapGrid(name);
   /**
-   * Loaded here rather than inside EditorSurface, and that placement is the
-   * point of the split. EditorSurface is keyed on the session, so it remounts
-   * whenever the grid is reloaded; the vertex list belongs to the *map*, not to
-   * one buffer of its cells, and would otherwise be refetched by something
-   * that has nothing to do with it. Handed down as the surface's starting
-   * list, like the zones below: a save writes what landed into the cache, so a
-   * remount starts from what the robot holds.
+   * Loaded here, not in EditorSurface: the surface remounts on every grid
+   * reload, but waypoints belong to the map and would be refetched for no
+   * reason. Handed down as the starting list; a save writes what landed into
+   * the cache, so a remount starts from what the robot holds.
    */
   const vertices = useMapVertices(name);
-  /**
-   * The zones too, and for the same reason: they belong to the map. Read
-   * here and handed down as the surface's starting list, so a remount on a
-   * grid reload starts from what the robot holds — which, after a save, the
-   * save itself wrote into the cache.
-   */
+  /** The zones, for the same reason. */
   const keepout = useMapKeepout(name);
 
   if (status === "error") {
@@ -172,10 +136,9 @@ export function MapGridEditor({
     );
   }
 
-  // Held until the zones and the waypoints answer, not only the grid: a
-  // surface that opened with none and took the answer later would have to
-  // merge it into edits already made. A failed read does not hold it — see
-  // `initialZones` and `initialVertices`.
+  // Wait for zones and waypoints as well as the grid: an answer arriving after
+  // edits began would have to be merged. A failed read doesn't wait (see
+  // `initialZones`).
   if (!session || keepout.status === "loading" || vertices.status === "loading") {
     return (
       <p className="instrument-label flex h-full items-center justify-center text-muted-foreground">
@@ -200,12 +163,9 @@ export function MapGridEditor({
 }
 
 /**
- * The editor shell: everything except pixels.
- *
- * It owns the tool state, the undo history, the keyboard shortcuts and the save
- * flow; GridCanvas owns the buffer, the mirror and the view. The two meet at
- * `GridSession` — see lib/map/session.ts for why the repaint hook lives there
- * rather than behind an imperative handle.
+ * The editor shell: tool state, undo, shortcuts and the save flow.
+ * GridCanvas owns the buffer, mirror and view; they meet at `GridSession`
+ * (lib/map/session.ts).
  */
 function EditorSurface({
   session,
@@ -219,19 +179,16 @@ function EditorSurface({
 }: {
   session: GridSession;
   /**
-   * The map's waypoints as saved, or null when they could not be read. Null
-   * locks the waypoint layer, for `initialZones`'s reason: a Save writes the
-   * difference from this list, and a difference from "unknown" is nothing
-   * anyone meant to send.
+   * The map's waypoints as saved, or null if unreadable — which locks the
+   * layer: Save sends a diff, and a diff from "unknown" means nothing.
    */
   initialVertices: MapVertex[] | null;
   verticesError: string | null;
   saveVertices: UseMapVertices["save"];
   /**
-   * The map's zones as saved, or null when they could not be read. Null
-   * locks the zone layer rather than starting it empty: a save is the whole
-   * list, so drawing on top of "unknown" and saving would erase every zone
-   * the robot holds. The floor plan stays editable either way.
+   * The map's zones as saved, or null if unreadable — which locks the layer:
+   * a save is the whole list, so drawing over "unknown" would erase every zone
+   * the robot holds. The floor plan stays editable.
    */
   initialZones: ZonePolygon[] | null;
   zonesError: string | null;
@@ -239,9 +196,8 @@ function EditorSurface({
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   /**
-   * What a press puts on the map, or nothing — the Draw strip's choice, and
-   * the one `mode` and `value` below follow from (see editStateOf). Opens with
-   * nothing chosen, unless a link asked for Waypoints.
+   * The Draw strip's choice, which `mode` and `value` follow (editStateOf).
+   * Nothing, unless a link asked for waypoints.
    */
   const [drawKind, setDrawKind] = React.useState<DrawKind | null>(
     initialMode === "vertex" ? "waypoint" : null,
@@ -250,7 +206,7 @@ function EditorSurface({
   const [tool, setTool] = React.useState<EditTool>(DEFAULT_TOOL);
   const [vertexTool, setVertexTool] = React.useState<VertexTool>(DEFAULT_VERTEX_TOOL);
   const [zoneTool, setZoneTool] = React.useState<ZoneTool>(DEFAULT_ZONE_TOOL);
-  // Free by default: erasing phantom obstacles is the reason this screen exists.
+  // Free by default: erasing phantom obstacles is why this screen exists.
   const [value, setValue] = React.useState<GridValue>(FREE);
   const [brush, setBrush] = React.useState<number>(DEFAULT_BRUSH);
 
@@ -260,11 +216,9 @@ function EditorSurface({
   const [save, setSaveState] = React.useState<SaveState>({ kind: "idle" });
 
   /**
-   * Bumped by every edit, so a save can tell whether the buffer moved under it.
-   *
-   * `fetch` copies a BufferSource body synchronously at the call, so a stroke
-   * painted while the request is in flight is *not* in what reached disk —
-   * clearing `dirty` on that response would mark unsaved cells saved.
+   * Bumped by every edit. `fetch` copies the body at the call, so a stroke
+   * painted mid-request isn't on disk — clearing `dirty` on that response
+   * would mark it saved.
    */
   const revisionRef = React.useRef(0);
 
@@ -277,11 +231,9 @@ function EditorSurface({
   const historyRef = React.useRef(createUndoStack<EditorEdit>(editBytes));
 
   /*
-   * Vertex-layer state. The waypoints are staged like the zones: Create,
-   * Apply and Delete change `vertexList`, the list on screen, and Save writes
-   * its difference from `savedVertices`, the rows as last loaded or saved —
-   * see useMapVertices for why, and lib/map/vertex-stage.ts for the diff. So
-   * they feed the Save dot and the back-button guard through `verticesDirty`.
+   * Waypoints are staged like the zones: Create, Apply and Delete change
+   * `vertexList`, and Save writes its diff from `savedVertices`
+   * (lib/map/vertex-stage.ts), feeding `verticesDirty`.
    */
   const verticesLocked = initialVertices === null;
   const [vertexList, setVertexList] = React.useState<MapVertex[]>(initialVertices ?? []);
@@ -289,7 +241,7 @@ function EditorSurface({
     initialVertices ?? [],
   );
   const verticesDirty = !verticesLocked && !sameVertices(savedVertices, vertexList);
-  /** What the last waypoint save did, kept apart for `zoneSave`'s reason. */
+  /** The last waypoint save, kept apart for `zoneSave`'s reason. */
   const [vertexSave, setVertexSave] = React.useState<SaveState>({ kind: "idle" });
   const vertexWriting = vertexSave.kind === "saving";
   /** Numbers the local ids of waypoints placed here and not yet saved. */
@@ -297,111 +249,69 @@ function EditorSurface({
   const [vertexType, setVertexType] = React.useState<VertexType>(DEFAULT_VERTEX_TYPE);
   const [draft, setDraft] = React.useState<PlanarPose | null>(null);
   /**
-   * Every highlighted vertex, not just the one the form is editing.
-   *
-   * A list rather than a nullable id because the Select tool's band produces
-   * sets, and rather than a Set because it is handed to GridCanvas, which is
-   * memoized — React state keeps its identity between changes, a Set rebuilt in
-   * a render would not. One entry is the ordinary case and behaves exactly as
-   * the old single selection did; the panel only opens its editing form at
-   * exactly one, because none of what that form does (rename, retype, re-aim)
-   * has a sensible meaning spread across several.
+   * Every highlighted vertex. A list (the band yields sets) rather than a Set
+   * (GridCanvas is memoized and needs a stable identity). The form opens only
+   * at exactly one.
    */
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   /**
-   * A re-aim of the selected vertex, awaiting Save.
-   *
-   * Only ever a new *heading* now: a vertex is re-aimed by dragging on its own
-   * marker, which anchors at the stored position (see GridCanvas's pointer-down).
-   * Moving one to a different place is the dashboard's job — there the stop is
-   * drawn over the live cloud, which is the view that can actually show it half
-   * inside a wall.
+   * A re-aim of the selected vertex, awaiting Save — heading only. Moving a
+   * stop is the dashboard's job, where it is drawn over the live scan that
+   * can show it half inside a wall.
    */
   const [stagedPose, setStagedPose] = React.useState<PlanarPose | null>(null);
   /** The last point the shell asked the canvas to centre on; see GridCanvas.focus. */
   const [focus, setFocus] = React.useState<{ x: number; y: number } | null>(null);
 
   /*
-   * Zone-layer state. Unlike the vertex layer's, it is not written through:
-   * the endpoint takes the map's whole list, and the planner reloads on
-   * every write, so a PUT per dragged corner would reload it dozens of times
-   * for one reshape. The zones wait for Save instead, beside the cells, and
-   * so they feed the Save dot and the back-button guard through `zonesDirty`
-   * — measured against `savedZones`, the list as last loaded or saved.
-   *
-   * Only finished zones are saved. A shape in flight is not a zone yet, and
-   * Save leaves it in flight.
+   * Zones wait for Save rather than writing through: the endpoint takes the
+   * whole list and the planner reloads on each write, so a PUT per dragged
+   * corner would reload it dozens of times. `zonesDirty` measures against
+   * `savedZones`. Only finished zones are saved; a shape in flight stays.
    */
   const zonesLocked = initialZones === null;
   const [zones, setZones] = React.useState<ZonePolygon[]>(initialZones ?? []);
   const [savedZones, setSavedZones] = React.useState<ZonePolygon[]>(initialZones ?? []);
   const zonesDirty = !zonesLocked && !sameZones(zones, savedZones);
-  /**
-   * What the last zone save did — the grid's `save`, for the other half.
-   * Kept apart because the two writes are separate requests and either can
-   * fail while the other lands.
-   */
+  /** The last zone save — separate from the grid's, since either can fail alone. */
   const [zoneSave, setZoneSave] = React.useState<SaveState>({ kind: "idle" });
   /** Which press `zoneSave` reports on: Save, or a Remove, which writes at once. */
   const [zoneAction, setZoneAction] = React.useState<"save" | "remove">("save");
   /**
-   * One zone write at a time. Save and Remove each send a whole list the
-   * other did not see, so whichever landed second would undo the first.
+   * One zone write at a time: Save and Remove each send a whole list the
+   * other didn't see, so the second to land would undo the first.
    */
   const zoneWriting = zoneSave.kind === "saving";
-  // `mutate` alone, for the reason given at useSaveMapGrid below. Up here
-  // because Remove writes too.
+  // `mutate` alone (see useSaveMapGrid below); up here because Remove writes too.
   const { mutate: saveZones } = useSaveMapKeepout();
   const [zoneDraft, setZoneDraft] = React.useState<ZonePoint[]>([]);
   /**
-   * The finished zone's corner the shape in flight is attached to, when it
-   * is. Beside the draft rather than folded into it because the draft then
-   * holds a *copy* of the zone's corner, and what the merge needs is which
-   * corner — the copy would go stale the moment that corner was dragged.
+   * The finished zone's corner the shape in flight is attached to. Kept
+   * beside the draft, not in it: the draft holds a copy of the corner, which
+   * goes stale once that corner is dragged.
    */
   const [zoneDraftAnchor, setZoneDraftAnchor] = React.useState<ZoneAnchor | null>(null);
-  /**
-   * The zones Remove would take, and whose corners drag. Several, by
-   * Shift-click (or a tap, on a phone), so a cluster of mis-drawn zones
-   * goes in one press; a band over them is not worth a Select tool of its
-   * own here.
-   */
+  /** The zones Remove takes and whose corners drag; several by Shift-click or tap. */
   const [selectedZoneIds, setSelectedZoneIds] = React.useState<string[]>([]);
 
   /**
-   * The robot's pose, when it is a pose on the map open here.
-   *
-   * It is both the source of the panel's capture button and what the canvas
-   * draws the robot's footprint from, so the two can never disagree about where
-   * the robot is — the mark on the map is the pose the button would stage.
-   *
-   * Read at 1 Hz from the console's shared poll, so this component re-renders at
-   * that rate; the hook memoises on the values, so a parked robot costs one
-   * bailed-out memo compare and no repaint. See useRobotMapPose for why it is
-   * not the 20 Hz telemetry socket.
+   * The robot's pose on this map, both drawn and what Use robot position
+   * stages, so the two can't disagree. From the 1 Hz shared poll, memoised on
+   * value (see useRobotMapPose for why not the 20 Hz socket).
    */
   const { pose: robotPose, reason: robotPoseReason } = useRobotMapPose(session.name);
 
   /**
-   * Whether a job is driving on this map, which makes every write here wait:
-   * a floor plan, a zone or a waypoint changed under a running job is picked
-   * up by the planner mid-route. The card's Edit is greyed by the same lock,
-   * but this page is one typed URL away from any map, and the job may start
-   * after the page opened — so the editor asks for itself.
-   *
-   * Only the writes stop. Painting, drawing and typing go on, and nothing
-   * is thrown away: the edits are the operator's, and they are still worth
-   * saving once the job ends. Each write path also checks this, because a
-   * keyboard shortcut does not go through a greyed button.
+   * Whether a job drives on this map: a write now would be picked up
+   * mid-route. The card's Edit greys on the same lock, but a URL reaches any
+   * map and a job can start after opening, so the editor asks itself. Only
+   * writes stop — edits go on and are kept — and each write path checks too,
+   * since a shortcut skips a greyed button.
    */
   const runLock = useMapRunLock(session.name);
   const writeLocked = runLock.locked;
 
-  /**
-   * The rows on screen that Save would write: placed here, or changed or
-   * re-aimed since the last save. The panel marks them, since the canvas
-   * draws a stored stop and a staged one alike.
-   */
+  /** The rows Save would write; the panel marks them, since the canvas draws staged and stored alike. */
   const pendingVertexIds = React.useMemo(() => {
     if (verticesLocked) return new Set<string>();
     const plan = planVertexSave(savedVertices, vertexList);
@@ -423,20 +333,14 @@ function EditorSurface({
   const changeMode = React.useCallback(
     (next: EditMode) => {
       setMode(next);
-      // Both directions land unarmed. Arriving in vertex mode still holding
-      // Place from last time means the drag that was meant as "show me the other
-      // end of the corridor" stages a vertex instead — which is the whole thing
-      // DEFAULT_VERTEX_TOOL exists to stop, and a mode toggle is exactly when it
-      // would come back.
+      // Both directions land unarmed, or a mode toggle would bring back the
+      // stray placement DEFAULT_VERTEX_TOOL exists to stop.
       setVertexTool(DEFAULT_VERTEX_TOOL);
       setZoneTool(DEFAULT_ZONE_TOOL);
-      // Back to grid mode with a draft still staged would leave a dashed marker
-      // on the canvas and no panel to commit or dismiss it.
+      // A draft left staged in grid mode would have no panel to dismiss it.
       if (next === "grid") clearVertexEdit();
-      // The same for a shape in flight: out of zone mode nothing can finish
-      // it, so the dashed corners would just sit there. Finished zones stay,
-      // drawn in every mode like the vertices, but none stays selected — no
-      // other mode offers Remove.
+      // Likewise a shape in flight. Finished zones stay drawn, unselected,
+      // since no other mode offers Remove.
       setZoneDraft([]);
       setZoneDraftAnchor(null);
       setSelectedZoneIds([]);
@@ -445,11 +349,8 @@ function EditorSurface({
   );
 
   /**
-   * Arm a waypoint tool. Going back to Pan also drops whatever waypoint is
-   * selected or staged, by request: Pan is "I am done with that one, let me
-   * look around", and a marker left lit — or a just-placed draft left open in
-   * the panel — would keep claiming the operator's attention for an edit they
-   * have walked away from.
+   * Arm a waypoint tool. Back to Pan also drops the selection or draft, by
+   * request: Pan means "done with that one".
    */
   const chooseVertexTool = React.useCallback(
     (next: VertexTool) => {
@@ -459,11 +360,7 @@ function EditorSurface({
     [clearVertexEdit],
   );
 
-  /**
-   * Arm a zone tool. Pan drops the shape in flight, chooseVertexTool's rule:
-   * it is "I am done with that one", and half a shape left dashed on the map
-   * would keep asking to be finished.
-   */
+  /** Arm a zone tool. Pan drops the shape in flight, as for waypoints. */
   const chooseZoneTool = React.useCallback((next: ZoneTool) => {
     setZoneTool(next);
     if (next === "pan") {
@@ -474,10 +371,8 @@ function EditorSurface({
   }, []);
 
   /**
-   * A corner on bare map also drops the selection: the operator has moved on
-   * to drawing, and a zone left lit would keep offering a Remove for the
-   * wrong shape. Not for an anchored shape, whose zone stays lit because it
-   * is the shape's own — the corners go into it.
+   * A corner on bare map drops the selection, so Remove can't target the
+   * wrong shape — except for an anchored shape, whose zone stays lit.
    */
   const addZonePoint = React.useCallback(
     (point: ZonePoint) => {
@@ -488,12 +383,10 @@ function EditorSurface({
   );
 
   /**
-   * Attach the shape in flight to a finished zone's corner — starting it
-   * there, or reaching the zone with a shape begun on bare map. A copy of
-   * the zone's corner joins the draft, so the shape visibly runs through
-   * it, and the zone is selected so the operator sees which one the shape
-   * will go into. Reads the draft from the closure for its length,
-   * closeZone's reason: no nested updaters, StrictMode runs them twice.
+   * Attach the shape in flight to a finished zone's corner (as its start, or
+   * its next corner). A copy joins the draft and the zone is selected to show
+   * which one it will join. Reads the draft from the closure (closeZone's
+   * reason).
    */
   const anchorZoneDraft = React.useCallback(
     (corner: ZoneCornerRef) => {
@@ -509,11 +402,9 @@ function EditorSurface({
   );
 
   /**
-   * End an anchored shape on another corner of its zone: the shape's own
-   * corners replace the zone's edge between the two (mergeIntoZone says
-   * which corners and which edge). The zone stays selected, so the result
-   * is the lit shape and Remove still has it. Reads the draft from the
-   * closure, closeZone's reason.
+   * End an anchored shape on another corner of its zone, replacing the edge
+   * between them (mergeIntoZone). The zone stays selected. Reads the draft
+   * from the closure (closeZone's reason).
    */
   const mergeZoneDraft = React.useCallback(
     (corner: ZoneCornerRef) => {
@@ -534,12 +425,9 @@ function EditorSurface({
   );
 
   /**
-   * A corner was dragged: it now sits at `point`. Of the shape in flight
-   * (`zoneId` null) or of a finished zone. Out of range is a no-op rather
-   * than an append, because the index came from the polygon the canvas was
-   * drawn with and a Done or Remove pressed mid-drag could have taken it
-   * since. Like every other zone edit, none of this feeds `dirty`; see the
-   * note on the zone-layer state above.
+   * A dragged corner, of the shape in flight (`zoneId` null) or a finished
+   * zone. Out of range is a no-op, not an append: a Done or Remove mid-drag
+   * may have removed it.
    */
   const moveZoneCorner = React.useCallback(({ zoneId, index }: ZoneCornerRef, point: ZonePoint) => {
     const moved = (points: ZonePoint[]) =>
@@ -553,12 +441,7 @@ function EditorSurface({
     );
   }, []);
 
-  /**
-   * A click inside a zone: it becomes the selection, or with Shift held (a
-   * tap, on a phone) it toggles in and out of the selection so several can
-   * be taken in one Remove — the vertex layer's Shift-click, for the same
-   * reason.
-   */
+  /** A click inside a zone: select it, or toggle with Shift (a tap on a phone). */
   const pickZone = React.useCallback((id: string, additive: boolean) => {
     setSelectedZoneIds((current) => {
       if (!additive) return [id];
@@ -567,20 +450,13 @@ function EditorSurface({
   }, []);
 
   /**
-   * Remove the selected zones — on screen, and on the robot at once, without
-   * waiting for Save. A shape anchored to one of them goes with it: one of
-   * its corners was that zone's, and there is nothing left to merge into.
+   * Remove the selected zones, on the robot at once (no Save). An anchored
+   * shape on one goes too.
    *
-   * What goes to the robot is the list *last saved* minus these zones, not
-   * the list on screen: a remove deletes and nothing else, so a zone drawn
-   * or reshaped since the last Save stays unsaved for Save to write. The
-   * endpoint only takes whole lists, and that subtraction is what makes a
-   * whole list delete one zone. A selection of zones never saved sends
-   * nothing — the robot has no such zone to lose.
-   *
-   * Taken off the screen before the answer, since the robot may take many
-   * seconds to reload; put back where they stood if it refuses, so the map
-   * never shows a zone as gone that the planner still keeps to.
+   * Sends the *last saved* list minus these, not the screen's: a remove only
+   * deletes, so unsaved zone edits stay for Save. Never-saved zones send
+   * nothing. Taken off screen before the answer (a reload can take seconds)
+   * and put back on a refusal, so the map never hides a zone the planner keeps.
    */
   const removeZone = React.useCallback(() => {
     if (selectedZoneIds.length === 0 || zoneWriting || writeLocked) return;
@@ -622,21 +498,13 @@ function EditorSurface({
     setZoneDraftAnchor(null);
   }, []);
 
-  /**
-   * Done and Enter close a shape into a zone of its own, which an anchored
-   * shape is not: one of its corners is a zone's, and only another corner
-   * of that zone ends it.
-   */
+  /** Done and Enter close only an unanchored shape; an anchored one ends on its zone. */
   const canClose = zoneDraftAnchor === null && canCloseZone(zoneDraft);
 
   /**
-   * Close the shape in flight into a zone.
-   *
-   * Reads `zoneDraft` from the closure, so its identity changes with every
-   * corner; that is fine, because GridCanvas re-renders on the `zoneDraft`
-   * prop anyway. What it must not be is `setZones` nested inside a
-   * `setZoneDraft` updater to keep the identity stable: StrictMode runs an
-   * updater twice, and the zone would be added twice.
+   * Close the shape in flight into a zone. Reads `zoneDraft` from the closure
+   * rather than nesting `setZones` in a `setZoneDraft` updater: StrictMode runs
+   * updaters twice, which would add the zone twice.
    */
   const closeZone = React.useCallback(() => {
     if (!canClose) return;
@@ -645,12 +513,8 @@ function EditorSurface({
   }, [canClose, zoneDraft]);
 
   /**
-   * Put a Draw choice down on the map, or pick it up again (`null`).
-   *
-   * Every change lands on Pan, in both tool axes, for DEFAULT_TOOL's reason:
-   * the choice says what a press *would* put there, and the tool is a second,
-   * deliberate step. Through changeMode, never setMode, so leaving Waypoint
-   * with a draft staged still drops it.
+   * Put a Draw choice down, or pick it up (`null`). Lands on Pan in both tool
+   * axes (DEFAULT_TOOL's reason). Via changeMode, so a staged draft drops.
    */
   const chooseDraw = React.useCallback(
     (next: DrawKind | null) => {
@@ -663,12 +527,7 @@ function EditorSurface({
     [changeMode],
   );
 
-  /**
-   * Make `id` the subject of the panel, dropping whatever the last one was.
-   *
-   * Selecting is also how you leave a draft or a staged re-aim: neither survives
-   * a change of subject.
-   */
+  /** Make `id` the panel's subject; a draft or staged re-aim doesn't survive the change. */
   const selectVertex = React.useCallback(
     (id: string | null) => {
       clearVertexEdit();
@@ -678,12 +537,8 @@ function EditorSurface({
   );
 
   /**
-   * Shift-click on a marker: add it, or drop it if it is already in.
-   *
-   * The half of multi-select a rectangle cannot do — three stops scattered down
-   * a corridor have no band that catches them and nothing else. Toggling down to
-   * exactly one is not a special case: the panel simply opens its editing form
-   * again, because that is what one selected vertex means everywhere else.
+   * Shift-click on a marker: add or drop it — for stops a band can't catch
+   * alone. Toggling down to one simply reopens the form.
    */
   const toggleVertex = React.useCallback(
     (id: string) => {
@@ -715,9 +570,8 @@ function EditorSurface({
   const handleVertexGesture = React.useCallback(
     ({ id, pose }: VertexGesture) => {
       if (id !== null) {
-        // Re-aimed in place. The canvas echoes the stored heading back verbatim
-        // when the drag stayed inside its deadzone, so this exact comparison
-        // holds and a plain click-to-select does not arm the Save button.
+        // The canvas echoes the stored heading on a click inside the deadzone,
+        // so a plain select doesn't arm Save.
         const existing = vertexList.find((vertex) => vertex.id === id);
         if (existing && existing.theta === pose.theta) return;
         setStagedPose(pose);
@@ -732,28 +586,22 @@ function EditorSurface({
   );
 
   /**
-   * Stage a draft where the robot is standing, and go and look at it.
-   *
-   * A snapshot, not a live binding: `robotPose` keeps moving after this, and a
-   * draft that crept across the map while its name was being typed would be a
-   * vertex nobody placed. The same clearing as a press on the map — a draft and
-   * a selection are mutually exclusive — so it is usable with a vertex already
-   * open in the form.
+   * Stage a draft where the robot stands, and centre on it. A snapshot, not a
+   * binding, or the draft would creep while being named. Clears like a press
+   * on the map, so it works with a vertex open.
    */
   const placeAtRobot = React.useCallback(() => {
     if (!robotPose) return;
     setSelectedIds([]);
     setStagedPose(null);
     setDraft(robotPose);
-    // A fresh object every press, because identity is what triggers the canvas:
-    // pressing again after panning away has to bring the marker back.
+    // A fresh object every press: identity triggers the canvas.
     setFocus({ x: robotPose.x, y: robotPose.y });
   }, [robotPose]);
 
   /**
-   * Make `next` the staged list, as one step Undo can take back. Every
-   * waypoint edit goes through here; a save's rebase does not, since it
-   * changes ids rather than anything the operator did.
+   * Make `next` the staged list as one undo step. A save's rebase doesn't go
+   * through here: it changes ids, not anything the operator did.
    */
   const recordWaypoints = React.useCallback(
     (next: MapVertex[]) => {
@@ -765,11 +613,7 @@ function EditorSurface({
     [vertexList],
   );
 
-  /**
-   * Stage the draft as a waypoint. Nothing is sent: Save writes it, with the
-   * rest of the edits. A held map (a job driving on it) stages all the same,
-   * for the reason given at `runLock` — only Save waits.
-   */
+  /** Stage the draft as a waypoint; Save sends it. Stages even under a run lock. */
   const createFromDraft = React.useCallback(
     (name: string, type: VertexType) => {
       if (!draft || verticesLocked) return;
@@ -784,8 +628,7 @@ function EditorSurface({
         theta: draft.theta,
       };
       recordWaypoints([...vertexList, staged]);
-      // Cleared rather than selected: placing a run of stops is the common case,
-      // and the list view is where the next one starts.
+      // Cleared rather than selected: placing a run of stops is the common case.
       setDraft(null);
     },
     [draft, verticesLocked, session.name, vertexList, recordWaypoints],
@@ -803,9 +646,8 @@ function EditorSurface({
   );
 
   /**
-   * Take everything selected off the screen — one waypoint from the form, or
-   * a whole band. A stored one is deleted on Save; one placed since the last
-   * save simply never gets sent. Undo brings either back.
+   * Take everything selected off screen. A stored one is deleted on Save; an
+   * unsaved one simply never gets sent. Undo brings either back.
    */
   const deleteSelected = React.useCallback(() => {
     if (verticesLocked) return;
@@ -827,9 +669,8 @@ function EditorSurface({
     setCanRedo(false);
     setDirty(true);
     revisionRef.current += 1;
-    // The note describes the buffer as it was saved; once the buffer moves on it
-    // is stale, and "Saved" next to a lit Unsaved chip is the one genuinely
-    // confusing pair this panel can show.
+    // The note described the buffer as saved; "Saved" beside a lit Unsaved is
+    // the one confusing pair this can show.
     setSaveState({ kind: "idle" });
   }, []);
 
@@ -843,19 +684,16 @@ function EditorSurface({
 
       const side = direction === "undo" ? "before" : "after";
       if (edit.kind === "waypoints") {
-        // The list either side of the edit, as it was then. Whatever is open
-        // in the panel is dropped: the stop it was about may be the one that
-        // just went, and a form over a row that changed under it would
-        // write its old values back on Apply. Whether Save has anything to
-        // do is the diff's to say (`verticesDirty`), not this.
+        // Whatever is open in the panel drops: its row may have changed, and
+        // Apply would write the old values back.
         setVertexList([...edit[side]]);
         clearVertexEdit();
         return;
       }
       applyPatch(session.grid, edit.patch, side);
       session.repaint?.(edit.patch.bounds);
-      // Still dirty after undoing to the start: the stack is byte-capped, so an
-      // empty undo stack does not prove the buffer matches what was loaded.
+      // Still dirty: the stack is byte-capped, so an empty one doesn't prove
+      // the buffer matches what was loaded.
       setDirty(true);
       revisionRef.current += 1;
       setSaveState({ kind: "idle" });
@@ -870,31 +708,22 @@ function EditorSurface({
   const zoomIn = React.useCallback(() => setZoomStep({ factor: ZOOM_STEP_FACTOR }), []);
   const zoomOut = React.useCallback(() => setZoomStep({ factor: 1 / ZOOM_STEP_FACTOR }), []);
 
-  // `mutate` alone, not the whole result: it is bound once per observer, so
-  // `onSave` keeps its identity across the mutation's state changes.
+  // `mutate` alone: bound once per observer, so `onSave` keeps its identity.
   const { mutate: saveGrid } = useSaveMapGrid();
 
   /**
-   * Write back whatever changed — the buffer, the zones, the waypoints — and
-   * report what the running stack made of each.
+   * Write whatever changed — buffer, zones, waypoints — side by side, since
+   * none's outcome says anything about another's; each has a note.
    *
-   * Three writes, sent side by side rather than one after the other: they
-   * change different things on the robot, so no one's outcome says anything
-   * about another's, and each has a note.
-   *
-   * The grid is not refetched afterwards, deliberately (useSaveMapGrid says
-   * why): the local buffer *is* what was written, byte for byte. The outcome
-   * is kept in `save` rather than read off the mutation because it is
-   * entangled with the revision guard — "saved" is only true of the bytes as of
-   * `sent`, and a stroke painted since has to put it back to idle.
+   * The grid isn't refetched (useSaveMapGrid says why). Its outcome lives in
+   * `save` rather than on the mutation because "saved" is only true of the
+   * bytes as of `sent`; a stroke since puts it back to idle.
    */
   const onSave = React.useCallback(() => {
     if (writeLocked) return;
     if (zonesDirty) {
-      // The list as of the press. What reaches disk is this snapshot, so it
-      // is what `savedZones` becomes — a corner dragged while the request is
-      // in flight is still unsaved afterwards, by comparison rather than by
-      // a revision counter, since the zones are values and not a buffer.
+      // The list as of the press becomes `savedZones`, so a corner dragged
+      // mid-request is still unsaved after, by comparison.
       const sent = zones;
       setZoneAction("save");
       setZoneSave({ kind: "saving" });
@@ -915,9 +744,8 @@ function EditorSurface({
       );
     }
     if (verticesDirty && !vertexWriting) {
-      // The plan as of the press. What lands is folded into each list on its
-      // own terms (rebaseVertices), so a stop edited while this is in flight
-      // stays unsaved afterwards, as a dragged zone corner does.
+      // The plan as of the press; rebaseVertices folds in what landed, so an
+      // edit mid-request stays unsaved.
       setVertexSave({ kind: "saving" });
       void saveVertices(planVertexSave(savedVertices, vertexList)).then(({ landed, failure }) => {
         const { ids } = rebaseVertices([], [], landed);
@@ -928,8 +756,7 @@ function EditorSurface({
         setVertexSave(
           failure
             ? { kind: "failed", message: vertexSaveFailure(landed, failure) }
-            : // A waypoint reloads nothing on the robot, so there is no
-              // "in force now" to report — the note is the plain one.
+            : // A waypoint reloads nothing, so the note is the plain one.
               { kind: "saved", active: false, reloaded: false, message: vertexSaveSummary(landed) },
         );
       });
@@ -943,8 +770,7 @@ function EditorSurface({
       { name: session.name, grid: session.grid },
       {
         onSuccess: (result) => {
-          // Only the bytes as of `sent` are on disk; anything painted since is
-          // not.
+          // Only the bytes as of `sent` are on disk.
           if (revisionRef.current === sent) setDirty(false);
           setSaveState({
             kind: "saved",
@@ -977,26 +803,13 @@ function EditorSurface({
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       /*
-       * Escape is deliberately above the typing guard, unlike every other
-       * shortcut here.
+       * Escape sits above the typing guard: a staged draft autofocuses the
+       * name field, and that is exactly when Escape is pressed ("didn't mean
+       * that"). One press drops what's staged and disarms every tool.
        *
-       * A staged draft autofocuses VertexPanel's name field, so an Escape that
-       * respected the guard would be dead in precisely the state an operator
-       * presses it in — "I did not mean to place that". Nothing in this editor's
-       * fields wants Escape for itself, so there is nothing to swallow.
-       *
-       * It does both halves of "put the mouse back": it drops whatever is staged
-       * and disarms every tool axis. One press, not two, because the operator
-       * pressing it wants the map back and does not care which of the states
-       * is the one holding it.
-       *
-       * The one exception is a zone shape in flight, which Escape drops while
-       * keeping Forbidden zone and Shape armed. A waypoint draft is one click
-       * to redo, so throwing it out with everything else costs nothing; five
-       * corners are not, and the next thing after dropping a mis-drawn shape
-       * is drawing it again. A selected zone is put down the same way — it
-       * is the lit thing on screen, and the press is aimed at it. The next
-       * press then puts the choice down as usual.
+       * Except a zone shape in flight (or a selected zone): Escape drops it but
+       * keeps Shape armed, since five corners are worth redrawing at once. The
+       * next press puts the choice down.
        */
       if (event.key === "Escape") {
         event.preventDefault();
@@ -1008,27 +821,23 @@ function EditorSurface({
           setSelectedZoneIds([]);
           return;
         }
-        // Puts the Draw choice down as well, which drops a staged draft and
-        // lands every tool axis on Pan — one press for "give me the map back".
+        // Putting the Draw choice down drops a draft and lands every axis on Pan.
         chooseDraw(null);
         return;
       }
 
-      // VertexPanel's name field is the case this was written in anticipation of:
-      // `0` and Space are single-key shortcuts, and an editor's shortcuts are
-      // exactly what silently eats typing. Ctrl+Z falls through to the field too,
-      // becoming the browser's native text undo, which is what you want there.
+      // `0` and Space would eat typing in the name field; Ctrl+Z falls through
+      // to the field's native undo.
       if (isTypingTarget(event.target)) return;
 
-      // Below the typing guard, unlike Escape: Enter in the waypoint form is
-      // the form's submit, and a shape can only be in flight in zone mode,
-      // where no form is mounted.
+      // Below the guard: Enter in the waypoint form submits it, and no form
+      // is mounted in zone mode.
       if (event.key === "Enter" && canClose) {
         event.preventDefault();
         closeZone();
         return;
       }
-      // Below the guard for the same reason: Backspace in a field is editing.
+      // Below the guard: Backspace in a field is editing.
       if ((event.key === "Delete" || event.key === "Backspace") && selectedZoneIds.length) {
         event.preventDefault();
         removeZone();
@@ -1048,8 +857,7 @@ function EditorSurface({
         return;
       }
       if (event.code === "Space" && !event.repeat) {
-        // Stop the page-scroll default even though this page does not scroll: it
-        // would still scroll an ancestor if the layout ever gains one.
+        // In case the layout ever gains a scrolling ancestor.
         event.preventDefault();
         setSpacePan(true);
         return;
@@ -1063,11 +871,10 @@ function EditorSurface({
     const onKeyUp = (event: KeyboardEvent) => {
       if (event.code === "Space") setSpacePan(false);
     };
-    // A window blur mid-Space would otherwise leave the editor stuck in pan mode.
+    // Without this a window blur mid-Space leaves the editor stuck panning.
     const onBlur = () => setSpacePan(false);
 
-    // On window rather than the canvas: the shortcuts have to work without having
-    // clicked the canvas first.
+    // On window, so shortcuts work without clicking the canvas first.
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
@@ -1077,14 +884,12 @@ function EditorSurface({
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
     };
-    // Re-subscribing on every corner is harmless: the listeners are on window
-    // and capture nothing that a pointer gesture in flight depends on.
+    // Re-subscribing per corner is harmless: no gesture depends on these.
   }, [undo, redo, fit, chooseDraw, zoneDraft, dropZoneDraft, canClose, closeZone, selectedZoneIds, removeZone]);
 
   /**
-   * Covers reload and tab close only. The App Router has no navigation blocker, so
-   * an in-app link away from here cannot be intercepted — the page's back button
-   * asks for confirmation itself.
+   * Reload and tab close only: the App Router can't block in-app navigation,
+   * so the page's back button confirms itself.
    */
   React.useEffect(() => {
     if (!anyDirty) return;
@@ -1094,10 +899,8 @@ function EditorSurface({
   }, [anyDirty]);
 
   /**
-   * Forbidden zone chosen, no tool armed yet: the map dims and asks. The
-   * other kinds do not need this — a brush and a pin are self-explanatory —
-   * but "Shape" is a word the operator meets here for the first time, and
-   * the dim is what says the map is waiting on that choice rather than broken.
+   * Forbidden zone chosen, no tool armed: the map dims and asks, since "Shape"
+   * is new to the operator and the dim says the map is waiting, not broken.
    */
   const zoneUnarmed = drawKind === "zone" && zoneTool === "pan";
 
@@ -1107,8 +910,7 @@ function EditorSurface({
     error: verticesLocked
       ? `Waypoints could not be loaded, so they cannot be edited here.${verticesError ? ` ${verticesError}` : ""}`
       : null,
-    // Held only while a save is out: an edit made then is still staged
-    // correctly, but a Create beside a spinner reads as if it were sending.
+    // Held only while a save is out: a Create beside a spinner reads as sending.
     busy: vertexWriting,
     locked: verticesLocked,
     pendingIds: pendingVertexIds,
@@ -1122,9 +924,8 @@ function EditorSurface({
     robotPoseReason,
     onUseRobotPose: placeAtRobot,
     onSelect: selectVertex,
-    // A draft and a selection are mutually exclusive by construction, so
-    // clearing the whole vertex edit *is* "drop the draft", and the same call
-    // is what the band selection's Clear does.
+    // A draft and a selection are mutually exclusive, so clearing the edit is
+    // "drop the draft" and also the band's Clear.
     onCancelDraft: clearVertexEdit,
     onClearSelection: clearVertexEdit,
     onCreate: createFromDraft,
@@ -1133,13 +934,9 @@ function EditorSurface({
   };
 
   return (
-    // data-zoom is the view's scale in percent, for the e2e suite: nothing on
-    // screen shows it since the readout lost its Zoom row, and the pinch test
-    // has to prove the second finger zoomed rather than only that it did not
-    // paint. An attribute, not text, so it can never become an on-screen
-    // diagnostic by accident. data-zones is the finished zone count, for the
-    // same suite and the same reason: the canvas exposes nothing, and the
-    // test has to prove a shape closed rather than only that clicks landed.
+    // For the e2e suite only, as attributes so they can't become on-screen
+    // diagnostics: data-zoom (scale %) proves a pinch zoomed, data-zones
+    // (finished count) proves a shape closed.
     <div
       className="relative h-full w-full"
       data-zoom={Math.round(scale * 100)}
@@ -1180,23 +977,16 @@ function EditorSurface({
         onZonePick={pickZone}
       />
 
-      {/* The wash is a sibling placed before the strips, so DOM order alone
-        * stacks the toolbars, the save note and the status readout above it.
-        * Pointer-transparent, so right-, middle- and Space-drag still pan the
-        * dimmed map. Grey rather than a theme surface because the grid never
-        * follows the theme (see lib/map/draw.ts), and the wash has to read
-        * the same over white free space in both. The hint it asks with sits
-        * under the Editor strip, below. */}
+      {/* The wash comes before the strips, so DOM order stacks them above it.
+        * Pointer-transparent so the dimmed map still pans; grey because the
+        * grid ignores the theme (lib/map/draw.ts). */}
       {zoneUnarmed && (
         <div aria-hidden className="pointer-events-none absolute inset-0 bg-black/25" />
       )}
 
-      {/* One row across the top, as on the dashboard: Editor at the left, Draw
-        * at the right, wrapping onto two lines on a phone rather than
-        * overlapping. The overlay covers the canvas but is pointer-transparent,
-        * so the map behind its empty stretches still takes a drag — only the
-        * strips and the panels in it catch the pointer. It spans the full
-        * height so the waypoint panel can drop to its bottom edge on a phone. */}
+      {/* One row across the top, Editor left and Draw right, wrapping on a
+        * phone. Pointer-transparent; full height so the waypoint panel can
+        * drop to the bottom on a phone. */}
       <div className="pointer-events-none absolute inset-3 flex flex-col gap-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <EditorToolBar
@@ -1236,31 +1026,18 @@ function EditorSurface({
           />
         </div>
 
-        {/* Under each strip, what it reports into: the save note under the
-          * strip that holds Save, the waypoint panel under the one that chose
-          * Waypoint. On a phone the panel drops to the bottom of the canvas
-          * instead, where the stacked strips leave it room — one panel, placed
-          * by CSS, so there is one form to type in.
-          *
-          * The panel is mounted only in vertex mode, because unmounting
-          * discards nothing that the mode switch was not already discarding —
-          * changeMode("grid") clears draft / selectedIds / stagedPose, and
-          * VertexForm is keyed on "draft" or selected.id, so its local
-          * name/type state is already gone by then. The one thing worth
-          * keeping across the toggle, `vertexType`, lives up here for exactly
-          * that reason. */}
+        {/* Under each strip, what it reports into: the save note under Save,
+          * the waypoint panel under Draw — on a phone at the canvas bottom, by
+          * CSS, so there is one form. The panel mounts only in waypoint mode:
+          * leaving it already clears its state, and `vertexType`, the one
+          * thing worth keeping, lives up here. */}
         <div className="flex min-h-0 items-start justify-between gap-2">
-          {/* The zone hint sits under the strip that holds Shape, the tool it
-            * asks for, rather than in the middle of the dimmed map: the eye
-            * goes from the line to the button without crossing the canvas,
-            * and the map stays clear for the shape about to be drawn. Outside
-            * the aria-hidden wash so its status role is heard. */}
+          {/* The zone hint sits under the strip holding Shape, the tool it asks
+            * for, and outside the aria-hidden wash so its status is heard. */}
           <div className="flex flex-col items-start gap-2">
             {zoneUnarmed && <ArmedHint tone="cmd">Select the shape to work with</ArmedHint>}
-            {/* Above the save notes: it is why Save is greyed, and the first
-              * thing the operator needs on opening a map a job is driving on.
-              * A status, not an alert — nothing failed, and it may be on
-              * screen for the whole of a run. */}
+            {/* Above the save notes: it is why Save is greyed. A status, not an
+              * alert — nothing failed, and it may stay for a whole run. */}
             {runLock.reason && (
               <p
                 role="status"
@@ -1270,12 +1047,8 @@ function EditorSurface({
               </p>
             )}
             <SaveNote save={save} className="pointer-events-auto max-w-72" />
-            {/* A save's note only while it is still true of the zones on
-              * screen: a zone edited since "Saved" is unsaved again, and the
-              * grid's note goes idle on the next stroke for the same reason.
-              * A remove's note is about the zones it took, which later edits
-              * do not change, and a failure stays until the next attempt,
-              * since both are still true. */}
+            {/* A save's note only while still true of the zones on screen; a
+              * remove's note and a failure stay, since edits don't change them. */}
             {(zoneAction === "remove" || zoneSave.kind === "failed" || !zonesDirty) && (
               <SaveNote
                 save={zoneSave}
@@ -1283,8 +1056,7 @@ function EditorSurface({
                 className="pointer-events-auto max-w-72"
               />
             )}
-            {/* The same rule as the zones' note: only while still true of
-              * the waypoints on screen, and a failure until the next try. */}
+            {/* Same rule as the zones' note. */}
             {(vertexSave.kind === "failed" || !verticesDirty) && (
               <SaveNote
                 save={vertexSave}
@@ -1308,16 +1080,12 @@ function EditorSurface({
         </div>
       </div>
 
-      {/* The other half of "Use robot position" — the pose you capture is the
-        * one you drove the robot to — is now the masthead's drive panel
-        * (DriveDisclosure), which this editor no longer mounts itself. It still
-        * cannot eat this editor's shortcuts: it comes up disarmed and takes no
-        * keyboard until it is armed, and its WASD/QE/AD set does not overlap
-        * Space / 0 / Ctrl+Z in any case. */}
+      {/* Driving to a pose for Use robot position is the masthead's drive
+        * panel; it can't eat these shortcuts (disarmed by default, and WASD/QE
+        * doesn't overlap Space / 0 / Ctrl+Z). */}
 
-      {/* Not on a phone, nor on any screen too short to hold it beside the
-        * toolbar: its cell readout follows a hover, which a finger does not
-        * have, and the bottom of a phone is the waypoint panel's. */}
+      {/* Hidden on a phone or a short screen: the readout follows a hover, and
+        * the phone's bottom edge is the waypoint panel's. */}
       <GridStatus
         className="absolute bottom-3 left-3 hidden sm:block [@media(max-height:480px)]:hidden"
         meta={session.meta}

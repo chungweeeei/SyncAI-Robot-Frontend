@@ -3,16 +3,12 @@ import { deflateSync } from "node:zlib";
 import type { Page, Route } from "@playwright/test";
 
 /**
- * A fake `syncai_backend`, installed per test.
+ * A fake `syncai_backend`, installed per test. Routes match on path and ignore
+ * the host, so a test need not know which port the client resolved.
  *
- * The console targets `<page hostname>:3000` (see lib/api/config.ts), so the
- * routes below match on path and ignore the host — a test does not have to know
- * which port the client resolved.
- *
- * Every fixture is written from the interfaces in `lib/api/*` and
- * `lib/types/*`, which is also what the zod schemas mirror: a fixture that
- * drifts from the wire shape fails the schema at the boundary, loudly, which is
- * the behaviour we want from a stale fixture rather than a green test.
+ * Fixtures are written from the interfaces in `lib/api/*` and `lib/types/*`,
+ * which the zod schemas mirror: a drifted fixture fails loudly at the schema
+ * rather than passing quietly.
  */
 
 export const MAP_NAME = "dp2f";
@@ -24,15 +20,13 @@ const PNG_1PX = Buffer.from(
 );
 
 /**
- * A floor plan the editor can actually paint on: an 8-bit greyscale PNG of
- * `width` x `height` cells, every one `byte` (254 is free, 0 an obstacle, 205
+ * A floor plan the editor can paint on: an 8-bit greyscale PNG of
+ * `width` x `height` cells, every one `byte` (254 free, 0 obstacle, 205
  * unknown — see classify in lib/map/grid.ts).
  *
- * The 1x1 default is enough for a card's thumbnail and the viewport's ground
- * texture, but the editor reads the image *as the grid*: one pixel is one
- * cell, fitted to the whole canvas, and any zoom then shrinks it to 32 px —
- * so a test that strokes or pinches after zooming was touching nothing.
- * Hand this to `gridImage` for those.
+ * The editor reads the image *as the grid*, so the 1x1 default is one cell
+ * fitted to the canvas, and any zoom shrinks it out from under the pointer.
+ * Hand this to `gridImage` in a test that strokes or pinches after zooming.
  */
 export function floorPlanPng(
   width: number,
@@ -230,10 +224,9 @@ export function taskState(over: Record<string, unknown> = {}) {
 }
 
 /**
- * The finished runs a history read's filter names, the way the backend
- * applies it: outcome, kind and name are exact matches, and the two bounds
- * are on the close time. Shared by the page and the stats routes so the
- * counts above the list can never disagree with the rows in it.
+ * A history filter, applied the way the backend does: outcome, kind and name
+ * match exactly, the bounds are on the close time. Shared by the page and
+ * stats routes so the counts cannot disagree with the rows.
  */
 function historyRows(
   rows: Record<string, unknown>[],
@@ -332,11 +325,9 @@ export function wifiConnection(
 }
 
 /**
- * Every write body a test asserts on is JSON, but not every write body is: the
- * WHEP handshake posts an SDP offer. Parsing that as JSON used to throw inside
- * the route handler, which never fulfilled the request -- so the page hung and
- * the failure surfaced as whatever the test happened to be waiting for. A
- * non-JSON body is logged as its own text instead.
+ * Not every write body is JSON (WHEP posts an SDP offer). A throw here would
+ * leave the request unfulfilled and hang the page, so a non-JSON body is
+ * logged as text.
  */
 function parseBody(raw: string | null): unknown {
   if (!raw) return null;
@@ -348,9 +339,8 @@ function parseBody(raw: string | null): unknown {
 }
 
 /**
- * Install the whole surface. Returns a log of the non-GET requests that
- * reached it, so a test can assert the console actually sent what the button
- * promised rather than only that the screen changed.
+ * Install the whole surface. Returns a log of the non-GET requests, so a test
+ * can assert what the console sent, not only what the screen shows.
  */
 export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   const writes: { method: string; path: string; body: unknown }[] = [];
@@ -363,15 +353,13 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     });
 
   const state = over.state === undefined ? robotState() : over.state;
-  // The driver's safety lock, read back on every state frame. The estop
-  // write below moves it the way the driver would, so the strip's next poll
-  // sees a lock land or lift; a fixture that starts locked starts here.
+  // The driver's safety lock; the estop write below moves it, so the strip's
+  // next poll sees a lock land or lift.
   let safetyLocked = Boolean(
     (state?.low_level_mode as { safety_locked?: boolean } | undefined)?.safety_locked,
   );
   const maps = over.maps ?? [mapSummary()];
-  // Typed as rows rather than left to the fixture's exact shape, because the
-  // POST route below appends whatever the console sent.
+  // Typed as rows: the POST route below appends whatever the console sent.
   const vertices: Record<string, unknown>[] = over.vertices ?? [vertex()];
   let createdSerial = 0;
   const recordings = over.recordings ?? [recording()];
@@ -384,13 +372,13 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   const taskHistoryPageSize = over.taskHistoryPageSize ?? 20;
   const taskStates = over.taskStates ?? {};
   const gridImage = over.gridImage ?? PNG_1PX;
-  // Copied, because the PUT below replaces a map's list the way the robot's
-  // would, and a test's fixture object must not change under it.
+  // Copied: the PUT below replaces a map's list, and a test's fixture must
+  // not change under it.
   const keepout: Record<string, Record<string, unknown>[]> = {
     ...over.keepout,
   };
-  // pgo's run state; the three run writes below move it the way the robot's
-  // would, so the rail's next poll sees a start land or a save end the run.
+  // The mapping run state; the run writes below move it, so the rail's next
+  // poll sees a start land or a save end the run.
   let mappingStatus: Record<string, unknown> = over.mappingStatus ?? {
     state: "unknown",
     key_poses: 0,
@@ -495,9 +483,7 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       return json(route, historyStats(taskHistory, url.searchParams));
     }
     if (path === "/api/v1/task_history") {
-      // Filters and a cursor the way the backend applies them (see
-      // historyRows); the token is only meaningful to the fake that issued
-      // it — here, the offset of the next page's first row.
+      // The fake's cursor is the offset of the next page's first row.
       const rows = historyRows(taskHistory, url.searchParams);
       const offset = Number(url.searchParams.get("page_token") ?? 0);
       const end = offset + taskHistoryPageSize;
@@ -507,9 +493,8 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       });
     }
     if (path === "/api/v1/tasks" && method === "POST") {
-      // The ack the console parses: its id is what the tracker then polls.
-      // Without this the catch-all's `{ message }` fails the ack schema, and a
-      // dispatch test would be testing a parse error.
+      // The ack's id is what the tracker polls; the catch-all's `{ message }`
+      // would fail the ack schema.
       const body = parseBody(request.postData()) as { id?: string } | null;
       return json(route, {
         id: body?.id ?? "robot01-task-0-0",
@@ -519,10 +504,8 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     }
     const holdMatch = /^\/api\/v1\/tasks\/([^/]+)\/(pause|resume)$/.exec(path);
     if (holdMatch && method === "POST") {
-      // The backend's signal routes. Like the robot's, the ack is a claim
-      // about the request (PAUSING, not PAUSED); the run's own state is what
-      // changes, and it changes here so the console's next read sees the
-      // hold land — the screen half of a pause test is otherwise untestable.
+      // The ack is a claim about the request (PAUSING, not PAUSED); the run's
+      // state moves here so the console's next read sees the hold land.
       const id = decodeURIComponent(holdMatch[1]);
       const run = taskStates[id] as
         | { status: string; steps?: { status: string }[] }
@@ -545,12 +528,9 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     const taskMatch = /^\/api\/v1\/tasks\/([^/]+)$/.exec(path);
     if (taskMatch && method === "GET") {
       const id = decodeURIComponent(taskMatch[1]);
-      // A job the active list carries has a state by construction, so one a
-      // test did not spell out answers with the default rather than a 404:
-      // the masthead reads every running job's state, and a 404 there is a
-      // logged resource error that would fail the console-error guard in
-      // every test that merely has a job running. An id nobody listed still
-      // answers 404, the way the backend does for a run it never had.
+      // A listed job without a spelled-out state answers the default: the
+      // masthead reads every running job, and a 404 would trip the
+      // console-error guard. An unlisted id still answers 404.
       const state =
         taskStates[id] ??
         (activeTasks.some((task) => task.id === id) ? taskState({ id }) : undefined);
@@ -571,9 +551,8 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     }
     const verticesMatch = /^\/api\/v1\/maps\/([^/]+)\/vertices$/.exec(path);
     if (verticesMatch && method === "GET") {
-      // Per map, the way the backend answers: the editor can now read a map
-      // the robot is not on, and a fake that handed every map the same list
-      // would pass a picker that ignored the choice.
+      // Per map: one list for every map would pass a picker that ignored the
+      // choice.
       const name = decodeURIComponent(verticesMatch[1]);
       return json(
         route,
@@ -603,17 +582,15 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       return json(route, schedules);
     }
 
-    // Writes. Enough of a body for the hook that reads the echo; anything
-    // a test needs to be specific about it overrides with its own route.
+    // Writes. Enough of a body for the hook that reads the echo; a test that
+    // needs more routes it itself.
     if (verticesMatch && method === "POST") {
-      // The batch endpoint: an array in, the stored rows out. Echoed with an
-      // id and the map from the URL, which is what the hook's schema checks
-      // and splices into the list the layer draws.
+      // The batch endpoint: an array in, the stored rows (with id and map)
+      // out.
       const name = decodeURIComponent(verticesMatch[1]);
       const drafts = parseBody(request.postData()) as Record<string, unknown>[];
-      // Numbered across the fake's whole life, not per request: the editor
-      // matches rows by id, and a second save that reissued the first one's
-      // ids would leave two stops answering to one.
+      // Numbered across the fake's life, not per request: the editor matches
+      // rows by id, and reissued ids would leave two waypoints answering to one.
       const stored = drafts.map((draft) => ({
         ...draft,
         id: `33333333-3333-3333-3333-${String(createdSerial++).padStart(12, "0")}`,
@@ -625,8 +602,7 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     }
     const vertexMatch = /^\/api\/v1\/maps\/([^/]+)\/vertices\/([^/]+)$/.exec(path);
     if (vertexMatch && method === "PUT") {
-      // The stored row with the changes merged, which is what the editor's
-      // save splices into the shared list.
+      // The stored row with the changes merged.
       const id = decodeURIComponent(vertexMatch[2]);
       const index = vertices.findIndex((entry) => entry.id === id);
       if (index < 0) return json(route, { detail: "Waypoint not found." }, 404);
@@ -678,9 +654,8 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     }
     const scheduleMatch = /^\/api\/v1\/schedules\/([^/]+)$/.exec(path);
     if (scheduleMatch && method === "PATCH") {
-      // Applied to the list, the way Temporal's would be: the hook re-reads
-      // after an edit, and a fake that still answered the old trigger would
-      // put it back on the row mid-assertion.
+      // Applied to the list: the hook re-reads after an edit, and the old
+      // trigger would reappear mid-assertion.
       const id = decodeURIComponent(scheduleMatch[1]);
       const entry = schedules.find((row) => row.id === id);
       if (!entry)
@@ -694,10 +669,9 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       });
     }
     if (path === "/api/v1/maps/import" && method === "POST") {
-      // Lands in the catalogue the way the robot's would, so the refetch the
-      // hook fires mounts a card for it. `name` is the console's override;
-      // without one the robot reads the archive's manifest, which this fake
-      // cannot, so it stands in a fixed name.
+      // Lands in the catalogue so the refetch mounts a card. Without the
+      // console's `name` override the robot reads the archive's manifest,
+      // which this fake cannot, so it uses a fixed name.
       const name = url.searchParams.get("name") ?? "imported";
       const replaced = maps.some((entry) => entry.name === name);
       if (!replaced) maps.push(mapSummary({ active: false, name }));
@@ -736,9 +710,8 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       });
     }
     if (path === "/api/v1/maps" && method === "POST") {
-      // A save ends the run: the robot goes idle, and the console's next poll
-      // is what moves the rail from Save back to Start. Without this the
-      // catch-all's `{ message }` fails the save schema.
+      // A save ends the run, so the next poll moves the rail back to Start.
+      // The catch-all's `{ message }` would fail the save schema.
       const body = parseBody(request.postData()) as { name?: string } | null;
       const name = body?.name ?? "map";
       mappingStatus = { state: "idle", key_poses: 0, loop_closures: 0 };
@@ -758,9 +731,8 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       });
     }
     if (path === "/api/v1/robot/restart" && method === "POST") {
-      // Dispatched, the usual answer: the robot reports back only once the
-      // rebuild is over, and that lands on the GET below. A test that needs
-      // the rebuild to end, or the press refused, routes it itself.
+      // Dispatched; the outcome lands on the GET below. A test that needs the
+      // rebuild to end, or the press refused, routes it itself.
       restart = {
         status: "restarting",
         message: "",
@@ -820,16 +792,14 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     return json(route, { message: "ok" });
   });
 
-  // Binary assets the map card and the canvas ask for. Answered with real,
-  // minimal payloads rather than a 404: the browser logs a failed subresource
-  // as a console error, and a suite that has to ignore those would also ignore
-  // the ones that mean something.
+  // Binary assets, answered with minimal real payloads rather than a 404: a
+  // failed subresource is a console error, and ignoring those would also
+  // ignore the ones that mean something.
   await page.route(/\/api\/v1\/maps\/[^/]+\/(image|thumbnail)$/, (route) =>
     route.fulfill({ status: 200, contentType: "image/png", body: gridImage }),
   );
   await page.route(/\/api\/v1\/maps\/[^/]+\/export$/, (route) =>
-    // The console never opens the archive; a few bytes under the right media
-    // type is all the download path needs to hand to the operator's disk.
+    // The console never opens the archive; a few bytes of the right type do.
     route.fulfill({
       status: 200,
       contentType: "application/zip",
@@ -849,12 +819,9 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
 }
 
 /**
- * Fail a test on any console error the page logs.
- *
- * Hydration mismatches, a thrown render and a failed schema parse all land
- * here, and all three are things that reach a screen looking merely odd. The
- * WebSocket streams are the one expected noise: there is no robot, so the
- * telemetry and cloud sockets cannot connect.
+ * Fail a test on any console error the page logs: a hydration mismatch, a
+ * thrown render, a failed schema parse. WebSocket errors are filtered, since
+ * there is no robot to connect to.
  */
 export function failOnConsoleErrors(page: Page, errors: string[]) {
   page.on("console", (message) => {

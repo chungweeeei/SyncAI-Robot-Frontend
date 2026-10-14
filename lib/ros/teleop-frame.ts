@@ -1,14 +1,11 @@
 import type { TeleopVector } from "@/lib/types/robot";
 
 /**
- * Wire codec for the WS teleop channel (`/api/v1/robot/teleop`) — pure
- * functions only, no React, no config.ts (which touches process.env/window),
- * so `node --experimental-strip-types` can exercise this file directly.
+ * Wire codec for the teleop channel (`/api/v1/robot/teleop`). Pure, and free
+ * of config.ts (process.env/window), so it runs under plain node.
  *
- * The wire carries [-1, 1] per axis, which the backend clamps again and
- * publishes as-is (full stick = 1.0 m/s / 1.0 rad/s — the scale-down below
- * the clamp was deliberately dropped). If a ceiling comes back, it belongs
- * backend-side in RobotGateway.teleop_cmd_vel, not here.
+ * The wire carries [-1, 1] per axis, published as-is (full stick = 1.0 m/s /
+ * 1.0 rad/s). A speed ceiling, if one returns, belongs in the backend.
  */
 
 function clampAxis(value: number): number {
@@ -17,9 +14,8 @@ function clampAxis(value: number): number {
 }
 
 /**
- * One command frame. Clamps to [-1, 1] and collapses NaN/±Infinity to 0 —
- * useJoystick already guarantees the range, but this is the last gate before
- * the wire, so the guarantee is re-made where it is actually needed.
+ * One command frame, clamped to [-1, 1] with NaN/±Infinity as 0. useJoystick
+ * already guarantees the range; this is the last gate before the wire.
  */
 export function encodeTeleopFrame(v: TeleopVector): string {
   return JSON.stringify({
@@ -30,11 +26,8 @@ export function encodeTeleopFrame(v: TeleopVector): string {
 }
 
 /**
- * The backend only ever speaks to say no: `{"error": "<message>"}` frames
- * (teleop refused during an autonomous move, or a malformed frame skipped).
- * Anything else — binary payloads, malformed JSON, an error that is not a
- * string — answers null and is skipped, mirroring the telemetry stream's
- * malformed-frame policy: an unexpected frame must not kill the channel.
+ * The backend only speaks to refuse: `{"error": "<message>"}`. Anything else
+ * answers null and is skipped, so an unexpected frame cannot kill the channel.
  */
 export function parseTeleopError(data: string | ArrayBuffer | Blob): string | null {
   if (typeof data !== "string") return null;

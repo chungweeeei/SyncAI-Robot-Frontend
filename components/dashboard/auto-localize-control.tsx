@@ -7,18 +7,10 @@ import { cn } from "@/lib/utils";
 import type { AutoLocalize } from "@/hooks/use-auto-localize";
 
 /**
- * Read-back for Auto localize: the robot searching, where it found itself, or
- * why it could not. Pressing it is the viewport toolbar's Auto localize.
- *
- * In the caution hue, like the initial pose read-back above it, for the same
- * reason: both override the robot's own idea of where it is, which is the
- * quieter and worse kind of mistake than a goal sent to the wrong place.
- *
- * "Localized", not "Sent", unlike its neighbour: this request is held until
- * the robot has matched its surroundings against the map and settled there,
- * so a success is the reading, not a request still waiting on one.
- *
- * Presentation only; everything lives in `useAutoLocalize`.
+ * Read-back for Auto localize: searching, where it found itself, or why not.
+ * Caution hue, like the initial pose: both override the robot's estimate.
+ * "Localized", not "Sent": the request is held until the match settles, so a
+ * success is a reading. Presentation only (`useAutoLocalize`).
  */
 export function AutoLocalizeControl({
   localize,
@@ -69,8 +61,7 @@ export function AutoLocalizeControl({
         )}
       </div>
 
-      {/* The search can take a quarter of a minute, and a pulsing icon alone
-        * reads as hung long before then. */}
+      {/* The search can take ~15 s; a pulsing icon alone reads as hung. */}
       {busy && (
         <p className="mt-2.5 text-[11px] leading-snug text-muted-foreground">
           Matching the surroundings against the map — up to 15 s.
@@ -85,8 +76,7 @@ export function AutoLocalizeControl({
 
       {!busy && (
         <div className="mt-2.5 flex gap-1.5">
-          {/* Only after a failure: a match that held has nothing to retry,
-            * and the toolbar button is there for a deliberate second search. */}
+          {/* Only after a failure; the toolbar button runs a second search. */}
           {error && (
             <button
               type="button"

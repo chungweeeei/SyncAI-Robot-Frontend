@@ -40,22 +40,14 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * What the robot will set off to do on its own, at the top of the rail.
+ * What the robot will do on its own, at the top of the rail: name, next run,
+ * cadence, and Pause / Delete (by request). Editing stays on /tasks.
  *
- * A glance, not the list: a name, when it next runs and how often, and the
- * controls worth having beside the map — holding a schedule back while someone
- * works in front of the robot, and, by request, deleting one. Editing and
- * registering stay on /tasks, where the row has the width for its steps; this
- * group links there.
+ * Actions sit behind one ⋯ per row: rows are read far more than acted on, and
+ * a Delete beside Pause is one a finger hits by mistake.
  *
- * The rows are read far more often than they are acted on, so the actions sit
- * behind one ⋯ per row rather than as a pair of icons on every line: five rows
- * used to carry ten buttons, five of them red, on a group that is mostly
- * looked at, and a delete a finger could hit while reaching for Pause.
- *
- * It shares `useSchedules` and its cache entry with /tasks, which is why it
- * costs the dashboard no poll: the list is re-read just after its soonest run,
- * not on an interval (see `nextScheduleRefetchMs`).
+ * Shares `useSchedules` with /tasks, so it costs no poll: the list is re-read
+ * just after its soonest run (see `nextScheduleRefetchMs`).
  */
 export function ScheduleGlance() {
   const {
@@ -85,9 +77,7 @@ export function ScheduleGlance() {
     <InstrumentGroup
       label="Schedules"
       action={
-        // An icon, by request, sized like the other header actions. The words
-        // move to the accessible name and the tooltip, which is what tells a
-        // mouse and a screen reader where the arrow goes.
+        // An icon, by request; the words are on the name and tooltip.
         <Link
           href="/tasks"
           aria-label="View all schedules"
@@ -103,10 +93,8 @@ export function ScheduleGlance() {
       ) : status === "error" ? null : rows.length === 0 ? (
         <Line>No schedules are registered on this robot.</Line>
       ) : (
-        // Bounded rather than cut (see glanceSchedules): four rows and half of
-        // a fifth, then the list scrolls, so a robot with many schedules does
-        // not push Locomotion off a short rail. The half row is the scroll cue;
-        // a height that showed a sliver of one read as a rendering fault.
+        // Four and a half rows, then it scrolls; the half row is the scroll
+        // cue (a sliver read as a rendering fault).
         <ul className="-mx-1 max-h-48 space-y-0.5 overflow-y-auto">
           {rows.map(({ schedule, next }, index) => (
             <ScheduleGlanceRow
@@ -114,8 +102,7 @@ export function ScheduleGlance() {
               schedule={schedule}
               next={next}
               readAtMs={readAtMs}
-              // Sorted soonest first, so only the top row can be the next run,
-              // and only if it has one — a list of paused rows has none.
+              // Sorted soonest first; a list of paused rows has no next run.
               upNext={index === 0 && next !== undefined}
               busy={busy}
               onPause={() => void pause(schedule.id)}
@@ -129,18 +116,14 @@ export function ScheduleGlance() {
         </ul>
       )}
 
-      {/* The read's failure or the last pause / resume refusal, in the
-        * backend's own words. A delete's refusal is the dialog's to show. */}
+      {/* A delete's refusal is the dialog's to show. */}
       {error && !deleting && (
         <p role="alert" className="text-[11px] leading-snug text-signal-warn">
           {error}
         </p>
       )}
 
-      {/* The house confirm rather than the browser's: the same dialog the
-        * recordings and the map library delete through. A refusal keeps it
-        * open with the backend's sentence; a success closes it and the row
-        * leaves with the re-read. */}
+      {/* A refusal keeps it open with the backend's sentence. */}
       <AlertDialog
         open={deleting !== null}
         onOpenChange={(open) => {
@@ -190,11 +173,7 @@ export function ScheduleGlance() {
   );
 }
 
-/**
- * One schedule on two lines: the name with the whole width to itself, then
- * when it next runs and how often, muted. One line used to hold the name, the
- * time and two buttons, and in a 288 px rail the name was what gave way.
- */
+/** One schedule on two lines, so the name has the rail's width to itself. */
 function ScheduleGlanceRow({
   schedule,
   next,
@@ -214,13 +193,9 @@ function ScheduleGlanceRow({
   onResume: () => void;
   onDelete: (name: string) => void;
 }) {
-  // The job it was frozen from names it, as a history row is named; the id is
-  // the fallback for a schedule registered without one.
   const name = schedule.task_template_name ?? schedule.id;
-  // The snapshot's read time, not the clock, as `now`: the row is a function
-  // of the list it came with. An absolute time rather than a countdown for the
-  // same reason — "in 28 min" would need a clock of its own to stay true
-  // between two reads of a list that is only re-read when a run is due.
+  // Measured from the snapshot's read time, and absolute rather than a
+  // countdown, which would need its own clock between re-reads.
   const when = schedule.paused
     ? "paused"
     : next
@@ -230,15 +205,12 @@ function ScheduleGlanceRow({
   return (
     <li
       className={cn(
-        // The bar marks what the robot will do next, in the commanded hue —
-        // it is something the operator set up, not a reading. Transparent on
-        // the other rows so every name starts at the same x.
+        // The bar marks the next run; transparent elsewhere to keep names aligned.
         "flex items-center gap-1 border-l-2 py-1 pr-0.5 pl-2",
         upNext ? "border-signal-cmd" : "border-transparent",
       )}
     >
-      {/* Dimmed rather than badged: a paused schedule is the one that needs
-        * the least attention, and a bright chip made it the loudest row. */}
+      {/* Dimmed, not badged: a chip made the least urgent row the loudest. */}
       <div className={cn("min-w-0 flex-1", schedule.paused && "opacity-55")}>
         <p className="flex items-center gap-1 text-[13px] leading-tight">
           {upNext && <span className="sr-only">Up next: </span>}
@@ -263,17 +235,14 @@ function ScheduleGlanceRow({
         >
           <EllipsisIcon className="size-3.5" aria-hidden />
         </DropdownMenuTrigger>
-        {/* Dressed as the console's own panels rather than shadcn's default
-          * popover: the hairline, the small radius and the 12 px type every
-          * other surface on this rail uses. Overridden here and not in
-          * components/ui, so the task editor's step menu keeps its look. */}
+        {/* Styled like the rail's panels here, not in components/ui, so the
+          * task editor's menu keeps its look. */}
         <DropdownMenuContent
           align="end"
           sideOffset={2}
           className="w-44 rounded-sm border border-hairline bg-panel p-1 shadow-md ring-0"
         >
-          {/* Which schedule the menu is about. On a phone the ⋯ is 40 px from
-            * the next row's, and the row under a finger is hidden by it. */}
+          {/* Names the schedule: on a phone the finger hides the row. */}
           <DropdownMenuGroup>
             <DropdownMenuLabel className="instrument-label truncate px-2 pt-1 pb-1.5 text-muted-foreground">
               {name}
@@ -290,9 +259,7 @@ function ScheduleGlanceRow({
               </DropdownMenuItem>
             )}
           </DropdownMenuGroup>
-          {/* Set apart from Pause by a rule, in the console's fault hue, so
-            * the one act that cannot be undone is never the item a slip of
-            * the pointer lands on by accident. */}
+          {/* Ruled off from Pause so a slip cannot land on it. */}
           <DropdownMenuSeparator className="my-1 bg-hairline" />
           <DropdownMenuItem
             onClick={() => onDelete(name)}

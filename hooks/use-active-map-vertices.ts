@@ -18,50 +18,28 @@ export interface UseActiveMapVertices {
   /** Sorted by name. Empty unless `status` is "ok". */
   vertices: MapVertex[];
   status: ActiveVerticesStatus;
-  /** True while a re-place or a create write is in flight. */
   busy: boolean;
-  /** The last write failure, or null. Rendered verbatim. */
+  /** The last write failure, rendered verbatim. */
   writeError: string | null;
-  /**
-   * Move one vertex to a new pose. True when the row is stored.
-   *
-   * Position only — name and type are not writable here (see the note on this
-   * hook about why the rest of the CRUD surface stays out of it).
-   */
+  /** Move one vertex (position only). True when the row is stored. */
   moveVertex: (id: string, pose: PlanarPose) => Promise<boolean>;
-  /**
-   * Store a new vertex on the active map. The created row, or null when the
-   * request failed (see `writeError`) or there is no active map to put it on.
-   */
+  /** The created row, or null on failure or with no active map. */
   createVertex: (draft: VertexDraft) => Promise<MapVertex | null>;
-  /** Delete one vertex from the active map. True when the row is gone. */
+  /** True when the row is gone. */
   removeVertex: (id: string) => Promise<boolean>;
   clearWriteError: () => void;
 }
 
 /**
- * The active map's vertices: the markers the dashboard draws on the floor, and
- * — through `moveVertex`, `createVertex` and `removeVertex` — what it may
- * write.
+ * The active map's vertices (useMapVertexList keyed by the loaded map) plus
+ * the writes the dashboard may make.
  *
- * The list itself is useMapVertexList, keyed by the loaded map's name; this
- * hook adds where that name comes from and the writes. (The task editor used
- * to read through here too, and now reads useMapVertexList directly with
- * whichever map it is authoring for.)
+ * Placing writes live here because the dashboard is where *where* is visible:
+ * a stop inside a wall is obvious over the live scan and invisible on the
+ * editor's flat raster. Rename and retype stay in the editor.
  *
- * Both writes are about *where* a stop is, and both exist because the dashboard
- * is where that is visible: a stop drawn half a metre inside a wall is obvious
- * with the live cloud drawn over it and invisible on the editor's flat raster,
- * and the spot an operator wants a new stop at is the one they are looking at
- * on the same view. Requiring a trip to another screen for either would mean
- * placing from the one view that cannot see the problem. Delete joined them
- * by request, from the same dialog a tap on a stop opens: the stop that is in
- * a wall is also the one you want gone. Rename and retype stay in the editor.
- *
- * `writeError` is separate from `status` rather than shared the way
- * useMapVertices shares its `error`: here the two really can be live at once —
- * the list loads fine and a write fails — and a failed write must not make the
- * layer read as unloaded.
+ * `writeError` is apart from `status`: a failed write must not make the layer
+ * read as unloaded.
  */
 export function useActiveMapVertices(): UseActiveMapVertices {
   const { map, status: mapsStatus } = useActiveMap();
@@ -69,24 +47,19 @@ export function useActiveMapVertices(): UseActiveMapVertices {
   const queryClient = useQueryClient();
   const list = useMapVertexList(name);
 
-  // The map name travels in the variables rather than being read from the
-  // closure: a write that lands after the active map changed must patch the
-  // list it was made against — the keyed cache is the old `loaded.name === name`
-  // guard, and it only works if the key is the one the request used.
+  // The map name travels in the variables: a write landing after the active
+  // map changed must patch the list it was made against.
   const move = useMutation({
     mutationFn: ({ map, id, pose }: { map: string; id: string; pose: PlanarPose }) =>
       updateVertex(map, id, { x: pose.x, y: pose.y, theta: pose.theta }),
     onSuccess: (updated, { map, id }) => {
-      // Patched into the cache from the row the server echoes back, for the
-      // same reason useMapVertices splices: the response *is* the stored row,
-      // so a GET would cost a round trip to learn nothing.
+      // The response is the stored row, so it is spliced rather than refetched.
       queryClient.setQueryData<MapVertex[]>(
         queryKeys.mapVertices(map),
         (current) =>
           current?.map((vertex) => (vertex.id === id ? updated : vertex)),
       );
-      // Every template with a MOVE step on this vertex now resolves to the new
-      // pose server-side; the library's rows say so once re-read.
+      // Templates with a MOVE step on this vertex now resolve to the new pose.
       void queryClient.invalidateQueries({ queryKey: queryKeys.taskTemplates });
     },
   });
@@ -99,9 +72,7 @@ export function useActiveMapVertices(): UseActiveMapVertices {
         queryKeys.mapVertices(map),
         (current) => (current ? [...current, created] : current),
       );
-      // The same two keys useMapVertices marks on a create: the catalogue's
-      // vertex_count, and the templates whose step pickers list this map's
-      // stops.
+      // The catalogue's vertex_count and the templates' resolution.
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       void queryClient.invalidateQueries({ queryKey: queryKeys.taskTemplates });
     },
@@ -114,8 +85,7 @@ export function useActiveMapVertices(): UseActiveMapVertices {
         queryKeys.mapVertices(map),
         (current) => current?.filter((vertex) => vertex.id !== id),
       );
-      // vertex_count on the catalogue, and every template with a MOVE step on
-      // this stop now has a missing vertex — the same two keys a create marks.
+      // vertex_count, and templates with a MOVE step here now miss a vertex.
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       void queryClient.invalidateQueries({ queryKey: queryKeys.taskTemplates });
     },
@@ -161,8 +131,7 @@ export function useActiveMapVertices(): UseActiveMapVertices {
     resetRemove();
   }, [resetMove, resetCreate, resetRemove]);
 
-  // The catalogue's own state first: until it answers there is no name, and
-  // "no-map" must mean the robot has none loaded, not that we have not asked.
+  // The catalogue first, so "no-map" means none loaded, not "not asked yet".
   const status: ActiveVerticesStatus =
     mapsStatus === "loading" ? "loading" : mapsStatus === "error" ? "error" : list.status;
 

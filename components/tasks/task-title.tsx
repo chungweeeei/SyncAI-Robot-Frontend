@@ -24,21 +24,12 @@ export interface TaskTitleProps {
 }
 
 /**
- * The editor's heading, and the one place a job is named: an input that is
- * always open, in the heading's face.
+ * The editor's heading and the one place a job is named: an always-open input.
+ * The name is part of the draft and is written by the same Save as the steps,
+ * so the page has one moment that writes.
  *
- * The name is part of the draft and goes to the robot with the steps, on the
- * one Save. It used to be a field behind a settings button with its own
- * confirm, and confirming renamed a saved job on the spot — so a new job took
- * a confirm before Save would take it, and a saved one had two moments that
- * wrote and two rules for what each wrote. One Save is the rule everything
- * else on this page already follows, so the name follows it too; what that
- * gives up is renaming without also saving step edits, which nobody missed
- * next to being able to just type.
- *
- * Enter saves, since a name is usually the last thing typed before saving;
- * Escape puts back the saved name. The visible heading is this field, so a
- * screen reader's heading is kept beside it, out of sight.
+ * Enter saves; Escape restores the saved name. A screen reader's heading sits
+ * beside the field, out of sight.
  */
 export function TaskTitle({
   value,
@@ -53,8 +44,7 @@ export function TaskTitle({
 }: TaskTitleProps) {
   const hintId = React.useId();
   const trimmed = value.trim();
-  // A warning, not a gate: duplicate names are allowed by design (the id is the
-  // identity, exactly as for map vertices). Saying so beats refusing.
+  // A warning, not a gate: duplicates are allowed, the id is the identity.
   const duplicate =
     taskTemplateNameOk(value) &&
     trimmed !== savedName?.trim() &&
@@ -68,15 +58,12 @@ export function TaskTitle({
         if (!busy) onSubmit();
       }}
     >
-      {/* The job's own name, not "Editing …": being on this page already
-        * says it is being edited. The saved name rather than the typed one, so
-        * the heading does not move with every keystroke. */}
+      {/* The saved name, not the typed one, so it does not move per keystroke. */}
       <h1 className="sr-only">{savedName ?? "New task"}</h1>
       <Input
         ref={ref}
         value={value}
-        // Read-only rather than disabled while a save is out: disabling drops
-        // the focus, and Enter is how most saves from here are made.
+        // Read-only, not disabled, during a save: disabling drops the focus.
         readOnly={busy}
         maxLength={TASK_TEMPLATE_NAME_MAX}
         onChange={(event) => onChange(event.target.value)}

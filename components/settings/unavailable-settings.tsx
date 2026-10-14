@@ -1,10 +1,9 @@
 import { Card, CardContent } from "@/components/ui/card";
 
 /**
- * A settings section the robot cannot be configured for yet. The route and
- * its card exist ahead of the backend, by request; until then the page says
- * so plainly, because a form that looked settable but saved nothing was
- * worse than none (see NetworkSettings).
+ * A settings section the robot can't be configured for yet. The route exists
+ * ahead of the backend, by request, and says so rather than show a form that
+ * saves nothing.
  */
 export function UnavailableSettings({ section }: { section: string }) {
   return (

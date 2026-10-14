@@ -5,23 +5,13 @@ import Link from "next/link";
 import type { MapSummary } from "@/lib/types/map";
 
 /**
- * How the 2D-grid conversion of the map just saved is going.
+ * How the floor plan conversion of the map just saved is going. Saving writes
+ * the scan, then the backend converts it on a background thread for tens of
+ * seconds after the POST answers; to the operator it is one act, so the save
+ * dialog says how it went. After Close the outcome is on the Maps screen.
  *
- * The other half of Save, and the reason this line exists: saving writes
- * the cloud, then the backend converts it to the gridmap the nav stack actually
- * loads — on a background thread, over tens of seconds, long after the POST has
- * answered. Until this line existed the flow ended at "converting in the
- * background", with the outcome visible only on the Maps screen, so an operator
- * who saved and stayed here was never told whether the map they just made is
- * usable. Saving and converting are one act to the person doing it; only the
- * backend has a reason to see two.
- *
- * Shown in the save dialog, under its receipt. It used to follow the
- * operator under the run strip once the dialog closed; that copy was dropped
- * by request (2026-10), so the outcome after Close is on the Maps screen.
- *
- * Renders nothing until the catalogue has an entry to report, which covers the
- * seconds between the save landing and the first poll.
+ * Renders nothing until the catalogue has an entry, which covers the seconds
+ * before the first poll.
  */
 export function ConversionLine({ map }: { map: MapSummary | null }) {
   if (map === null) return null;
@@ -43,10 +33,8 @@ export function ConversionLine({ map }: { map: MapSummary | null }) {
         </p>
       );
     case "failed":
-      // The backend's own diagnosis, verbatim. It names what the pipeline
-      // rejected ("intensity/normal gate selected no ground points"), which is
-      // the only thing that tells an operator whether to try the other recipe
-      // or go and look at the cloud.
+      // The backend's diagnosis, verbatim: what the pipeline rejected is what
+      // tells the operator whether to retry or go look at the scan.
       return (
         <p className="text-[11px] leading-snug text-signal-warn">
           The floor plan could not be built:{" "}
@@ -62,9 +50,8 @@ export function ConversionLine({ map }: { map: MapSummary | null }) {
         </p>
       );
     default:
-      // "none": the save answered before the conversion started, or it never
-      // did (no map.pcd). The backend's save message already says to run the
-      // conversion by hand, so a second sentence here would only repeat it.
+      // "none": the save answered before conversion started, or it never did;
+      // the save's own message already says so.
       return null;
   }
 }

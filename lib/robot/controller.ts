@@ -1,16 +1,12 @@
-// Which locomotion controller the console shows as commanded, and the two
-// readings that are allowed to overrule it. The controller itself cannot be read
-// back (MPC has no motion code the backend can name), so the lit segment is a
-// command; this is the rule for when the robot has plainly left it, kept pure
-// so the edge is tested and not remembered.
+// The commanded locomotion controller and the readings that overrule it. The
+// controller cannot be read back (MPC has no motion code of its own), so the
+// lit segment is a command; this is when the robot has plainly left it.
 
-/** Which locomotion controller the gait controller should run. */
 export type Controller = "RL" | "MPC";
 
 /**
- * The motion label for code 8: the motors are not driven by any controller.
- * The backend names it rather than folding it into `UNKNOWN`, because MPC's
- * own code does fold into `UNKNOWN` and this rule has to tell the two apart.
+ * Motion code 8, no controller driving. Named, not `UNKNOWN`, because MPC's
+ * code folds into `UNKNOWN` and this rule must tell them apart.
  */
 export const IDLE_MOTION = "IDLE";
 
@@ -18,27 +14,20 @@ export const IDLE_MOTION = "IDLE";
 export const LOCOMOTION_MOTION = "LOCOMOTION";
 
 /**
- * Readings that say MPC is not what is running. IDLE because the controller
- * comes back up under RL once the motors stop; LOCOMOTION because it *is* RL —
- * an MPC pressed while the robot lay down, then a stand, lands here, and the
- * robot is walking under RL whatever the console last sent.
+ * Readings that say MPC is not running: IDLE because the controller restarts
+ * under RL, LOCOMOTION because it *is* RL (e.g. MPC pressed while lying, then
+ * a stand).
  */
 const NOT_MPC_MOTIONS: ReadonlySet<string> = new Set([IDLE_MOTION, LOCOMOTION_MOTION]);
 
 /**
- * The commanded controller after one motion reading.
- *
- * An *arrival* at IDLE or LOCOMOTION ends a commanded MPC (see
- * `NOT_MPC_MOTIONS`), so leaving MPC lit would claim a mode the robot has
- * dropped. It is the edge and not the level on purpose — an MPC pressed while
- * the robot already reads one of the two has not been answered yet, and
- * resetting it on the very next poll would undo the operator's click before
- * the robot had a chance to act on it. RL is never touched: it is already
- * what both readings mean.
+ * The commanded controller after one motion reading: an *arrival* at IDLE or
+ * LOCOMOTION drops MPC to RL. The edge, not the level, so an MPC pressed while
+ * already in one of them is not undone by the next poll before the robot acts.
  *
  * `prevMotion` is null before the first reading, which counts as a change.
- * Returns `commanded` itself when nothing changes, so a caller adjusting React
- * state during render can compare by identity and settle.
+ * Returns `commanded` itself when unchanged, so a render-time state
+ * adjustment can settle by identity.
  */
 export function controllerAfterMotion(
   commanded: Controller,

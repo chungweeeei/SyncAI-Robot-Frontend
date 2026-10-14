@@ -8,17 +8,9 @@ import { useUpdateScheduleTrigger } from "@/hooks/use-schedules";
 import type { ScheduleState } from "@/lib/api/schedule";
 
 /**
- * Change when a registered schedule fires, inside its own row.
- *
- * An edit rather than a delete and a re-create, which is what changing a time
- * used to cost: the backend swaps the trigger in place, so the schedule keeps
- * its name, the steps it froze, the job it came from and a pause. Only the
- * trigger is offered because only the trigger is editable — the steps are
- * frozen on purpose, and the name is the schedule's identity to the scheduler.
- *
- * In the row rather than at the top of the list like TemplateScheduleForm:
- * that form's schedule does not exist yet, this one does, and the operator is
- * looking at it.
+ * Change when a registered schedule fires, inside its own row. The backend
+ * swaps the trigger in place, keeping the name, frozen steps, source and
+ * pause; only the trigger is editable.
  */
 export function ScheduleTriggerForm({
   schedule,

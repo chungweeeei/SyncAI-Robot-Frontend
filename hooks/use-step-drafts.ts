@@ -17,46 +17,29 @@ export interface StepDrafts {
   /** Take the row out; the rows it ran with stay linked (see unlinkStep). */
   remove: (key: number) => void;
   /**
-   * Take the row out and put it back at `index` (0-based), shifting the rows in
-   * between. An out-of-range index is a no-op, so "up" on the first row and
-   * "down" on the last need no guard at the call site. Where the row lands
-   * decides its group: see moveStepDraft.
+   * Move the row to `index` (0-based). Out of range is a no-op, so callers
+   * need no guard. Where it lands decides its group: see moveStepDraft.
    */
   moveTo: (key: number, index: number) => void;
   patch: (key: number, changes: Partial<Omit<StepDraft, "key">>) => void;
-  /** Every one of these rows starts after the row above it: a box's Ungroup. */
+  /** A box's Ungroup: each of these rows starts after the row above it. */
   ungroup: (keys: readonly number[]) => void;
   /**
-   * Swap the whole list, for loading a template into the editor.
-   *
-   * The drafts must be freshly built (via `fromTemplateSteps`, which calls
-   * `newStepDraft`) rather than reused, so every row arrives with a key that has
-   * never been mounted — otherwise React would reconcile the incoming rows into
-   * the outgoing ones and carry over the focused input.
+   * Swap the whole list. The drafts must be freshly built (`fromTemplateSteps`)
+   * so their keys were never mounted, or React would carry the focused input
+   * over into the incoming rows.
    */
   replace: (drafts: StepDraft[]) => void;
   clear: () => void;
 }
 
 /**
- * The step list an operator is authoring. Pure edits over a list somebody else
- * holds — no network, no error, no busy flag.
+ * Pure edits over the step list being authored — no network.
  *
- * The list and its setter are passed in rather than owned here: the console
- * keeps them in the task draft (hooks/use-task-draft.ts), so a trip to the map
- * editor and back finds the same rows. `setSteps` takes an updater, the way
- * React's does, and every edit below is written as one.
- *
- * Kept apart from useTaskDispatch because the schedule path sends the identical
- * list and has nothing to do with task tracking: one combined hook would carry a
- * `taskStatus` into a schedule footer that has no status to show.
- *
- * Reordering is drag-and-drop on a per-row handle, with a row menu for the
- * one-click jumps (top, bottom, one either way). It used to be two neighbour-swap
- * buttons on the assumption that a task is three to six rows; patrol templates
- * run to twenty and beyond, and fifteen clicks to make step 16 the first one is
- * not an edit anyone should have to make. Every gesture lands here as one
- * `moveTo`, so the hook knows nothing about how the operator asked for it.
+ * The list lives in the task draft (use-task-draft.ts), passed in so a trip to
+ * the map editor and back keeps the rows. Apart from useTaskDispatch because
+ * the schedule path sends the same list with no tracking. Every reorder
+ * gesture lands as one `moveTo`.
  */
 export function useStepDrafts(
   steps: StepDraft[],
@@ -65,8 +48,7 @@ export function useStepDrafts(
 
   const add = React.useCallback(
     (type: StepType) => {
-      // Built outside the updater so the key returned is the key stored: an
-      // updater may run twice in development, and each run would mint its own.
+      // Outside the updater, which may run twice in development and mint two keys.
       const draft = newStepDraft(type);
       setSteps((current) => [...current, draft]);
       return draft.key;
@@ -89,8 +71,7 @@ export function useStepDrafts(
     (key: number, index: number) => {
       setSteps((current) => {
         const from = current.findIndex((step) => step.key === key);
-        // Checked here, so a drop back where the row started is still the
-        // no-op moveStep promises rather than a quiet unlink.
+        // A drop back where it started must stay a no-op, not a quiet unlink.
         if (from === index || from === -1 || index < 0 || index >= current.length) {
           return current;
         }
@@ -112,10 +93,8 @@ export function useStepDrafts(
   );
 
   /**
-   * One addressed setter rather than a setter per field, because picking a vertex
-   * writes four fields at once (x, y, theta and the provenance id) and that has
-   * to be a single state update — two updates would render a frame whose numbers
-   * are the new vertex's but whose provenance label is still the old one.
+   * One setter for several fields: picking a vertex writes x, y, theta and the
+   * provenance id in one update, or a frame would mix old and new.
    */
   const patch = React.useCallback(
     (key: number, changes: Partial<Omit<StepDraft, "key">>) => {

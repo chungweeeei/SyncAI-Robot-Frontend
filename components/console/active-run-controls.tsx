@@ -20,55 +20,29 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * What the robot is executing, on every screen, and the two things an operator
- * may do to it from there: hold or release it, and stop it.
+ * The running job, on every screen: Pause / Resume and Cancel, then one bar
+ * reading job, step and — flush right — state. Icon buttons by request; the
+ * names are on `aria-label` and `title`.
  *
- * Laid out as a control cluster and then one bar, by request. The buttons come
- * first and stay together, so the two presses are in one place the hand learns
- * once; the bar after them is one long readout. Inside it, left to right:
- * which job, which step, and — flush right, where the eye lands last — what
- * that job is doing.
+ * **Nothing here comes and goes.** A vanishing control would slide its
+ * neighbour under a finger mid-press, so an unholdable job greys Pause instead
+ * of dropping it. And an empty bar looks like a broken one, so idle is said
+ * in words.
  *
- * **Nothing here comes and goes.** Both the cluster and the bar are drawn in
- * every state, and what changes is what they say and whether they are enabled.
- * Two reasons, and they are different reasons:
- *
- *  - A control that disappears moves the one beside it, and these two sit a
- *    gap apart from each other precisely so a finger cannot slip between
- *    them. A Cancel that slides left into where Pause used to be, between the
- *    press starting and the finger landing, is the one thing this layout is
- *    built to prevent. So a job that cannot be held greys its Pause instead of
- *    dropping it, and the title says why.
- *  - An empty slot is also what a broken readout looks like. The bar used to
- *    render nothing while idle, on the grounds that "nothing is happening"
- *    needs no words; an operator asked for the opposite, and a bar that says
- *    in so many words that the queue is empty cannot be mistaken for one that
- *    failed to draw.
- *
- * The three states it holds are still not symmetric. **Error is never drawn
- * as idle**: a failed poll means the console does not know, and a confident
- * "no job" over a robot that is driving is the one way this readout can do
- * harm. It says so in the caution hue. And **a job never hides** at any
- * width — what gives way as the strip narrows is the job id, then the step's
- * name, never the state word.
- *
- * The buttons are icons only, by request; the name is on `aria-label` and
- * `title`.
+ * **Error is never drawn as idle**: a confident "no job" over a driving robot
+ * is the one way this readout can do harm. As the strip narrows the job id
+ * gives way first, then the step name, never the state word.
  */
 export function ActiveRunControls() {
   const { run, status, asOf } = useActiveRun();
 
   if (run) {
-    // Keyed by the run, so the hold and cancel mutations below — and the
-    // refusal one of them may be showing — start over with the next job
-    // rather than carrying a previous job's sentence under a new one.
+    // Keyed by the run so the mutations (and any refusal shown) start over
+    // with the next job.
     return <RunControls key={run.task.id} run={run} asOf={asOf} />;
   }
 
-  // Nothing to act on, so both controls are out and the bar says which of
-  // the three "no run" states this is. Loading is not idle: the console has
-  // not been told yet, and a dash is what every other unread instrument in
-  // this strip shows.
+  // Loading is not idle: it gets the dash every unread instrument shows.
   const idle =
     status === "loading"
       ? { tone: "neutral" as Tone, text: "—", title: undefined }
@@ -116,11 +90,8 @@ const STATE_WORD: Record<RunState, string> = {
   canceled: "Canceled",
 };
 
-// Read off the task chip's table rather than restated, which is the whole
-// reason that table is exported: a held run cannot be one colour in the
-// masthead and another on /tasks. A request the reading has not caught up
-// with takes the colour of the state it is heading for — Pausing… is already
-// PAUSING's caution on the wire, and Resuming… is heading back to running.
+// From the task chip's table, so a run is one colour here and on /tasks. A
+// pending request takes the colour of the state it is heading for.
 const STATE_TONE: Record<RunState, Tone> = {
   running: STATUS_TONE.IN_PROGRESS,
   pausing: STATUS_TONE.PAUSING,
@@ -140,11 +111,7 @@ const HOLD_BUTTON =
 const CANCEL_BUTTON =
   "border-signal-warn/50 bg-signal-warn/12 text-signal-warn hover:bg-signal-warn/20 disabled:hover:bg-signal-warn/12";
 
-/**
- * The fixed pair: hold (as Pause or as Resume) and Cancel, in that order and
- * at that spacing in every state. See the note above on why neither ever
- * leaves the row.
- */
+/** The fixed pair, in the same place in every state (see above). */
 function Controls({
   hold,
   holdDisabled,
@@ -194,12 +161,9 @@ function Controls({
 }
 
 /**
- * The long readout itself: a frame that keeps its height and its right edge
- * whatever is inside it, so the strip does not reflow as jobs come and go.
- *
- * `role="status"` so a step change, and a hold landing, are announced rather
- * than just redrawn. It is on the frame rather than on the state word alone
- * because the two halves are one sentence to a screen reader.
+ * A fixed frame, so the strip does not reflow as jobs come and go.
+ * `role="status"` on the whole frame, so a step change or a hold is announced
+ * as one sentence.
  */
 function RunBar({
   tone,
@@ -220,25 +184,14 @@ function RunBar({
       role="status"
       title={title}
       className={cn(
-        // min-w-0 and flex-1: the bar is what absorbs the strip's spare width,
-        // and the one thing in it allowed to be cut is the text on the left.
-        // The strip is bg-panel, so the bar reads as recessed into it — the
-        // same relation the viewport well has to the panels around it.
+        // Absorbs the spare width; only the text on the left may be cut.
         "flex h-7 min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-sm border border-hairline bg-elevated px-2.5",
-        // A bar with no run carries its tone on the whole frame, since it
-        // has no state word to put it on.
+        // No run, no state word: the tone goes on the whole frame.
         muted && (tone === "neutral" ? "text-muted-foreground" : TONE_TEXT[tone]),
       )}
     >
-      {/* Nothing animates in here, by request. A job that is going says so
-        * in the state word, and the step changing is the other thing that
-        * moves; a looping sweep behind a readout an operator reads all day
-        * is motion that repeats a fact already on the row. The strip's
-        * bottom edge still carries the one animation in the console, and
-        * that one encodes an arrival. */}
-      {/* Sentence case, not the strip's uppercase instrument label: the job
-        * id is a string an engineer copies and greps for, and an uppercased
-        * copy of it is a different string. */}
+      {/* Nothing animates in here, by request. Not uppercased: the job id is
+        * copied and grepped for, and an uppercased id is a different string. */}
       <span className="min-w-0 flex-1 truncate text-[12px] font-semibold">
         {children}
       </span>
@@ -265,10 +218,8 @@ function RunControls({ run, asOf }: { run: ActiveRun; asOf: string | null }) {
   const progress = stepProgress(run.steps);
   const { title } = describeRun(run.task);
   const holdable = holdOffered(run.task.kind, run.status);
-  // The active list lags the run's own read by its poll interval plus the
-  // backend's cache, so a closed run sits here for a moment longer. Both
-  // controls go out for it: there is nothing left to hold or to stop, and a
-  // press would only earn a refusal.
+  // The active list lags the run's own read, so a closed run lingers a moment;
+  // both controls grey for it.
   const closed = runClosed(state);
   const error = hold.error ?? cancel.error?.message ?? null;
 
@@ -294,8 +245,7 @@ function RunControls({ run, asOf }: { run: ActiveRun; asOf: string | null }) {
         onCancel={() => cancel.mutate(run.task.id)}
       />
 
-      {/* A finger has no hover, so the bar is also the way to /tasks, where
-        * the run is listed with its per-step detail. */}
+      {/* A finger has no hover, so the bar links to /tasks for the detail. */}
       <Link
         href="/tasks"
         aria-label={`${title} — open the job list`}
@@ -305,10 +255,7 @@ function RunControls({ run, asOf }: { run: ActiveRun; asOf: string | null }) {
         className="flex min-w-0 flex-1 rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
         <RunBar tone={STATE_TONE[state]} state={state}>
-          {/* The id is what the orchestrator calls this run — an engineer's
-            * handle, so it is set in the readout face, muted, and is the
-            * first thing to give way. The step is what an operator is
-            * actually watching, so it keeps the room. */}
+          {/* The id is an engineer's handle: muted, and first to give way. */}
           <span className="readout hidden text-muted-foreground lg:inline">
             {run.task.id} ·{" "}
           </span>
@@ -320,9 +267,7 @@ function RunControls({ run, asOf }: { run: ActiveRun; asOf: string | null }) {
                 </span>
               )}
               <span>{progress.label}</span>
-              {/* What the robot says it is doing, after the step and in the
-                * normal weight: it is the detail of the step, so it is the
-                * first thing the truncation eats, before the step itself. */}
+              {/* The step's detail, truncated before the step itself. */}
               {progress.message && (
                 <span className="font-normal text-muted-foreground">
                   {" "}
@@ -336,10 +281,8 @@ function RunControls({ run, asOf }: { run: ActiveRun; asOf: string | null }) {
         </RunBar>
       </Link>
 
-      {/* Under the strip rather than in it: the row has no room for a
-        * sentence, and shifting the page below for a refusal would move
-        * the viewport an operator may be aiming on. The header is the
-        * positioned ancestor. Verbatim — it is the backend's sentence. */}
+      {/* Hangs under the strip (the header is the positioned ancestor), so a
+        * refusal does not shift the viewport an operator may be aiming on. */}
       {error && (
         <p
           role="alert"

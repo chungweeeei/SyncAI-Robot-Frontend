@@ -35,19 +35,14 @@ function LoadingList() {
 }
 
 /**
- * Finished jobs on this robot: how the ones in the window ended, counted, and
- * then listed newest first.
+ * Finished jobs on this robot: counted, then listed newest first.
  *
- * One toolbar scopes both. The counts and the list are read under the same
- * window, kind and name, from the same anchored window, which is the only way
- * the numbers above can be true of the rows below. The outcome is the one
- * field the two reads differ on: it narrows only the list, so the dashboard
- * stays how the window's jobs ended rather than a tautology about the rows.
+ * One toolbar scopes both from the same anchored window, so the numbers are
+ * true of the rows. The outcome narrows only the list, so the dashboard stays
+ * how the window's jobs ended rather than a tautology.
  *
- * The Name picker's choices come from the template library and the schedule
- * list — the two places a name can be given to a job — which means this
- * screen mounts useSchedules and its one derived refetch at the next run;
- * that is the hook's normal cost and no more than /tasks pays.
+ * The Name picker draws on the template library and the schedule list, so
+ * this screen mounts useSchedules — no more than /tasks pays.
  */
 export function TaskHistory() {
   const { filter, query, statsQuery, setFilter } = useHistoryFilter();
@@ -144,10 +139,8 @@ function HistoryList({
 
   return (
     <div className="space-y-3">
-      {/* Above the list, not under it: a row opens into its steps in place, so
-        * a pager at the bottom moves every time one is opened, and on a full
-        * page it sits below the fold. No pager at all for a history that fits
-        * on one page. */}
+      {/* Above the list: rows expand in place, so a pager below would move
+        * and fall under the fold. */}
       {(history.hasPrev || history.hasNext) && (
         <nav aria-label="History pages" className="flex items-center justify-end gap-3">
           <Button
@@ -176,9 +169,8 @@ function HistoryList({
         </nav>
       )}
 
-      {/* A last page can come back empty when the one before it ended exactly
-        * on a page boundary; the backend only knows there is nothing left once
-        * it has looked. */}
+      {/* A last page can be empty when the one before ended on a page
+        * boundary; the backend only knows once it has looked. */}
       {!history.entries.length && (
         <p className="text-[11px] leading-tight text-muted-foreground">
           No more jobs.
@@ -190,14 +182,12 @@ function HistoryList({
         aria-busy={history.switching || undefined}
         className={cn(
           "divide-y divide-hairline overflow-hidden rounded-md border border-hairline bg-panel transition-opacity",
-          // The previous page stays up while the next one loads; dimmed, so it
-          // does not read as the answer.
+          // The previous page stays up, dimmed, while the next one loads.
           history.switching && "opacity-60",
         )}
       >
         {history.entries.map((entry) => (
-          // run_id, not id: the backend guarantees nothing about a workflow id
-          // being used once, and a run id is unique by construction.
+          // run_id, not id: a workflow id may be reused, a run id is unique.
           <HistoryRow key={entry.run_id} entry={entry} />
         ))}
       </ul>

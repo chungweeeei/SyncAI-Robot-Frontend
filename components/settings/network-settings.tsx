@@ -30,29 +30,17 @@ import { cn } from "@/lib/utils";
 
 /**
  * Add network: pick a network the robot can see, give it a password, join.
- * The robot saves what it joins, so a success goes back to the Wi-Fi page,
- * where the new network is now one of the cards.
+ * A success goes back to the Wi-Fi page, where the robot now has it saved; a
+ * dropped connection stays here, since it probably means the join worked and
+ * the notice on how to find the robot again is what matters.
  *
- * A dropped connection stays here instead: it is the join probably working,
- * but this console may have just lost the robot, and the notice saying how
- * to find it again is the one thing on screen worth keeping.
+ * Takes no props and always renders: scanning and joining don't depend on the
+ * state poll, and a console that has never heard from the robot is the one
+ * that most needs to fix its Wi-Fi.
  *
- * The robot's current network and addresses are no longer read out here —
- * they are on the live network's card on the Wi-Fi page, one step back.
- *
- * Takes no props. The card used to receive `network_status` from the page and
- * was hidden entirely until the first state frame — but scanning and joining
- * do not depend on the state poll, and a console that has *never* heard from
- * the robot is exactly the one that needs to fix its WiFi. So the card always
- * renders; the state poll only decides which network the dropdown opens on.
- *
- * There is no DHCP / static-IP block any more: the backend has no endpoint for
- * addressing (only scan + connect), and a form that looked settable but saved
- * nothing was worse than none. The IP and MAC are a readout on the live card.
- *
- * The dropdown is the whole story of "which network": the backend's scan
- * skips hidden SSIDs and there is deliberately no free-text entry — an
- * operator typing an SSID by hand was the bug the picker replaces.
+ * No addressing form: the backend only scans and connects, and a form that
+ * saved nothing was worse than none. No free-text SSID either (the scan skips
+ * hidden ones): hand-typed SSIDs were the bug the picker replaced.
  */
 export function NetworkSettings() {
   const router = useRouter();
@@ -68,12 +56,10 @@ export function NetworkSettings() {
   // `picked` is only what the operator changed it to.
   const ssid = picked ?? currentSsid;
 
-  // The scan does not mark the network the robot is on, and may not even list
-  // it (a rescan mid-roam, or the AP falling below nmcli's floor). The
-  // controlled Select needs an item for every value it can hold, or the
-  // trigger shows nothing for the very network the operator cares most about
-  // — so the connected network is synthesised into the list from the state
-  // poll when the scan missed it, and always sorts first.
+  // The scan may not list the network the robot is on (a rescan mid-roam, a
+  // weak AP), and the controlled Select shows nothing for a value with no
+  // item — so the connected network is synthesised from the state poll when
+  // missing, and always sorts first.
   const options = React.useMemo<WifiNetwork[]>(() => {
     const scanned = scan.networks ?? [];
     const list =
@@ -93,8 +79,8 @@ export function NetworkSettings() {
   const submit = async () => {
     if (!canConnect || ssid === null) return;
     const outcome = await wifi.connect(ssid, password);
-    // A secret should not sit in React state once it has been used. Kept only
-    // on a refusal, so a typo can be fixed and resubmitted without retyping.
+    // Don't keep a used secret in state; keep it only on a refusal so a typo
+    // can be fixed without retyping.
     if (outcome !== "error") setPassword("");
     if (outcome === "ok") router.push("/settings/wifi");
   };
@@ -118,8 +104,7 @@ export function NetworkSettings() {
         </CardDescription>
       </CardHeader>
       <form
-        // A form so Enter in the password field connects, which is what a
-        // pick-and-type row is expected to do.
+        // A form so Enter in the password field connects.
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -130,8 +115,7 @@ export function NetworkSettings() {
             <Label htmlFor="wifi-ssid">Network</Label>
             <div className="flex items-center gap-2">
               <Select
-                // `items` is what makes SelectValue render the *label* — here the
-                // bars + name + dBm row — instead of the raw SSID string.
+                // `items` makes SelectValue render the label row, not the raw SSID.
                 items={options.map((network) => ({
                   value: network.ssid,
                   label: (
@@ -176,8 +160,7 @@ export function NetworkSettings() {
             {scan.scanning ? (
               <Hint>Scanning for networks — this takes up to 45 seconds.</Hint>
             ) : scan.status === "error" && scan.error ? (
-              // The backend's own sentence, verbatim. A failed rescan keeps
-              // the previous list in the dropdown, so this is a note, not a wall.
+              // A failed rescan keeps the previous list, so this is a note.
               <Hint className="text-signal-warn">{scan.error}</Hint>
             ) : null}
           </div>
@@ -193,8 +176,7 @@ export function NetworkSettings() {
             />
           </div>
 
-          {/* Result lines, in place rather than a toast: the operator is
-              looking at this card for the next minute anyway. */}
+          {/* In place rather than a toast: the operator is watching this card. */}
           {wifi.pending && (
             <Hint className="text-signal-caution">
               Connecting to <span className="readout">{wifi.pending}</span>… the
@@ -222,10 +204,8 @@ export function NetworkSettings() {
 }
 
 /**
- * One network as a row: bars, name, dBm, and a Connected chip for the one the
- * robot is on. Used for both the Select's `items[].label` (what the trigger
- * shows) and each SelectItem's children (what the list shows), so the two can
- * never drift apart.
+ * One network as a row: bars, name, dBm, and a Connected chip. Used for both
+ * the trigger and the list items so the two cannot drift.
  */
 function WifiOptionLabel({
   network,

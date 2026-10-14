@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/card";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 
-// Each setting is its own route, so a new one is a row here and a page beside
-// the others — the index never grows a second form.
+// Each setting is its own route: a new one is a row here and a page beside
+// the others.
 const settingsSections = [
   // Planner and Controller come first and have no backend yet: their pages
   // say so rather than show a form that saves nothing.
@@ -44,12 +44,8 @@ const settingsSections = [
 ];
 
 /**
- * The Settings landing: a card per section, and the robot's restart.
- *
- * The cards read no state, by request: they are a way in, and a summary on
- * them would be a second readout of what the page behind them shows.
- * Restart stays here rather than on a section, because it belongs to none
- * of them — it is the robot's, not the network's or the console's.
+ * The Settings landing: a card per section, and the robot's restart. The
+ * cards read no state, by request — they are a way in, not a second readout.
  */
 export function SettingsIndex() {
   const { state } = useConsoleRobotState();
@@ -57,8 +53,7 @@ export function SettingsIndex() {
   return (
     // Settings is the one screen that scrolls; the shell's <main> does not.
     <div className="h-full overflow-y-auto">
-      {/* /tasks' and /history's width: the grid widens with the window
-        * rather than leaving a narrow column in the middle of it. */}
+      {/* /tasks' and /history's width. */}
       <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:py-8">
         <header className="mb-6 flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -71,9 +66,8 @@ export function SettingsIndex() {
         </header>
 
         <nav aria-label="Settings sections">
-          {/* Square tiles, more to a row as the window widens (two on a
-            * phone, up to five), so a section added later fills a row rather
-            * than lengthening a list. */}
+          {/* Square tiles, more per row as the window widens, so a new
+            * section fills a row rather than lengthening a list. */}
           <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {settingsSections.map(({ title, description, href, icon: Icon }) => (
               <li key={href}>

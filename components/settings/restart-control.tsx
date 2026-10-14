@@ -18,13 +18,9 @@ import { cn } from "@/lib/utils";
 import type { RobotMode } from "@/lib/types/robot";
 
 /**
- * Why the button is greyed, in the operator's terms. Mapping is refused by the
- * robot itself, because a map not yet saved lives only in memory and a
- * restart would throw it away; saying so up front beats a press that comes
- * back with a refusal.
- *
- * An unreachable robot gets no sentence here, by request: the status strip
- * already reads "No signal" when the robot is not reporting, on every screen.
+ * Why the button is greyed. The robot refuses a restart while Mapping (an
+ * unsaved map lives only in memory), so say so up front. An unreachable robot
+ * gets no sentence, by request: the status strip already reads "No signal".
  */
 function unavailableReason(
   mode: RobotMode | null,
@@ -38,17 +34,12 @@ function unavailableReason(
 }
 
 /**
- * Restart the robot's software in the mode it is already in: the recovery
- * step for a robot that has stopped responding to navigation.
+ * Restart the robot's software in its current mode: the recovery step for a
+ * robot that has stopped responding to navigation.
  *
- * In the Settings header rather than the status strip on purpose. The strip
- * is on every screen, and this is a rare, disruptive press that takes the
- * robot's navigation down for about 30 seconds — it belongs on the screen
- * where an operator changes things about the robot itself, one deliberate
- * step away. Solid red
- * because it is the one control on that screen that stops the machine's
- * software, and confirmed in a dialog for the same reason every stack
- * teardown in this console is.
+ * Lives on Settings rather than the status strip because it is rare and takes
+ * navigation down for ~30 s; solid red and confirmed in a dialog because it
+ * stops the machine's software.
  */
 export function RestartControl() {
   const control = useRobotRestart();
@@ -62,19 +53,14 @@ export function RestartControl() {
   const close = () => setConfirming(false);
 
   const submit = async () => {
-    // A refusal keeps the dialog open to show its sentence; otherwise the
-    // restart is under way, and the hint below the button reports it.
+    // A refusal keeps the dialog open to show its sentence.
     if (await control.restart()) setConfirming(false);
   };
 
-  // Nothing to say while the button can simply be pressed: the dialog carries
-  // the consequences, and a caption repeating them would crowd the header.
-  // A failure is the robot's own sentence, verbatim; a success is this
-  // console's words, since the robot's names its internal session. "Done"
-  // alone did not read as "the robot is running again", so the sentence says
-  // what the operator was waiting for, and it may claim Navigation because
-  // that is what `succeeded` means: a rebuild that came up in another mode
-  // is recorded as failed.
+  // Nothing to say while the button can simply be pressed — the dialog carries
+  // the consequences. A failure is the robot's sentence; a success is ours,
+  // since the robot's names its internal session. It may claim Navigation
+  // because a rebuild that came up in another mode is recorded as failed.
   const unavailable = unavailableReason(reported, stateStatus);
   const hint: { text: string; failed: boolean } | null = pending
     ? { text: "Restarting. This takes about 30 seconds.", failed: false }
@@ -102,9 +88,6 @@ export function RestartControl() {
         }}
       >
         <RotateCcwIcon data-icon="inline-start" />
-        {/* One word, the same one the dialog confirms with; the heading beside
-          * it already says it is the robot, and the hint below says when it
-          * is under way. */}
         Restart
       </Button>
       {/* Always in the tree, so a screen reader hears the outcome land. */}

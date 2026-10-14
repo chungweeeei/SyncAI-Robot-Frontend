@@ -35,9 +35,8 @@ const TIME_ITEMS: readonly { value: TimeChoice; label: string }[] = [
 ];
 
 /**
- * The Select's value for "no narrowing": an empty string, which no kind and no
- * template name can be. The primitive treats "" as nothing selected and shows
- * the placeholder, so each picker's placeholder is that choice's own label.
+ * "No narrowing": "", which no kind or template name can be. The Select shows
+ * its placeholder for "", so each placeholder is that choice's label.
  */
 const ANY = "";
 
@@ -53,7 +52,7 @@ const OUTCOME_ITEMS: readonly { value: HistoryStatusFilter; label: string }[] = 
   { value: "CANCELED", label: "Canceled" },
 ];
 
-/** One labelled picker of the toolbar; the three read the same so the row reads as one control. */
+/** One labelled picker; the four share a shape so the row reads as one control. */
 function Picker({
   label,
   items,
@@ -76,8 +75,7 @@ function Picker({
         {label}
       </label>
       <Select
-        // `items` is what makes SelectValue render the label; without it the
-        // trigger shows the raw value.
+        // `items` makes SelectValue render the label, not the raw value.
         items={items}
         value={value}
         disabled={disabled}
@@ -110,28 +108,19 @@ export interface HistoryFiltersProps {
 }
 
 /**
- * The toolbar that scopes everything under it: the counts and the list read
- * the same window, kind and name, so the numbers are always about the rows.
+ * The toolbar that scopes everything under it: counts and list read the same
+ * window, kind and name. The outcome scopes the list alone (see
+ * toHistoryStatsQuery). Reset appears only once something is narrowed.
  *
- * Four pickers of one shape, window first because it is the control every
- * reader reaches for, and a Reset that only appears once something is
- * narrowed — so a plain screen has nothing to clear and says so by having no
- * button. The outcome is the one picker that scopes the list alone: the
- * dashboard is how the window's jobs ended, whichever of them are listed
- * (see toHistoryStatsQuery).
- *
- * A custom range gets its own line under the toolbar rather than a slot in
- * it: two date fields are wider than any picker, and in the row they pushed
- * the other controls onto a second line on every desktop and a fifth on a
- * phone. Picking it seeds the bounds from the window that was on screen, so
- * the fields are never blank; a bound that is not yet a time leaves the
- * filter alone, so a half-typed field never reaches the backend.
+ * A custom range gets its own line under the toolbar: two date fields pushed
+ * the other pickers onto extra lines. Picking it seeds the bounds from the
+ * window on screen, and a bound that isn't a time yet leaves the filter alone,
+ * so a half-typed field never reaches the backend.
  */
 export function HistoryFilters({ filter, onChange, names, timeZone }: HistoryFiltersProps) {
   const fromId = React.useId();
   const toId = React.useId();
 
-  // Narrowed once: null while a preset is picked, the two bounds otherwise.
   const custom = "preset" in filter.range ? null : filter.range;
   const timeValue: TimeChoice = "preset" in filter.range ? filter.range.preset : "custom";
 
@@ -235,9 +224,8 @@ export function HistoryFilters({ filter, onChange, names, timeZone }: HistoryFil
               className="h-7 w-auto rounded-sm text-[12px] md:text-[12px] pointer-coarse:h-10"
             />
           </label>
-          {/* Which clock the two fields are in: the operator's, which the
-            * server render cannot know, so the caption only appears once the
-            * browser has said. */}
+          {/* Which clock the fields are in; unknown to the server render, so
+            * it appears once the browser has said. */}
           {timeZone && (
             <span className="pb-1.5 text-[11px] leading-tight text-muted-foreground">
               Times in {timeZone}

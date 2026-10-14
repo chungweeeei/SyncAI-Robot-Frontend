@@ -1,11 +1,6 @@
-// What the floor plan editor's Undo and Redo step over: a stroke, or a
-// waypoint edit. One stack for both, so Ctrl+Z takes back whatever the
-// operator did last, whichever layer it was on.
-//
-// A waypoint edit is a snapshot of the whole staged list either side of it
-// rather than an inverse operation. A map carries tens of stops, not
-// millions of cells, so a copy costs a few kilobytes — and a snapshot has no
-// inverse to get wrong for a band delete, a rename and a re-aim alike.
+// The floor plan editor's one Undo stack over strokes and waypoint edits, so
+// Ctrl+Z takes back whatever came last. A waypoint edit is a snapshot of the
+// whole list (a few KB), so there is no inverse operation to get wrong.
 
 import { patchBytes, type GridPatch, type UndoStack } from "@/lib/map/patch";
 import type { MapVertex } from "@/lib/types/map";
@@ -24,11 +19,8 @@ export function editBytes(edit: EditorEdit): number {
 }
 
 /**
- * Give every waypoint the history remembers the id a save just issued it.
- *
- * Without this, undoing past a save would bring back the staged row under its
- * local id, and the next Save would delete the stored row and create a copy
- * of it — the same stop on the map, under an id nothing else knows.
+ * Give every waypoint in the history the id a save just issued it, or undoing
+ * past a save would revive the local id and the next Save would duplicate it.
  */
 export function remapWaypointIds(
   stack: UndoStack<EditorEdit>,

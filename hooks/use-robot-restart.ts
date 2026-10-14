@@ -13,56 +13,36 @@ import type { RobotMode } from "@/lib/types/robot";
 const RESTART_POLL_MS = 1000;
 
 export interface RobotRestart {
-  /** The mode the robot last reported, or null before the first state frame. */
   reported: RobotMode | null;
-  /** The state poll's health. */
   stateStatus: "loading" | "ok" | "error";
-  /**
-   * Whether a press here can do anything: the link is up, the robot is in
-   * Navigation (the backend refuses every other mode), and no restart is
-   * already under way.
-   */
+  /** Link up, in Navigation (the backend refuses other modes), none under way. */
   canRestart: boolean;
-  /**
-   * A restart is under way, whichever console asked for it — the backend's
-   * own record says so, not anything this tab remembers.
-   */
+  /** A restart is under way, whichever console asked — the backend's record. */
   pending: boolean;
   /**
-   * How the restart this tab asked for ended, once it has. Null before, and
-   * for a restart some other console started: that operator is the one
-   * waiting on the answer.
+   * How the restart *this tab* asked for ended; null for one another console
+   * started, whose operator is the one waiting.
    */
   outcome: Pick<RestartRecord, "status" | "message"> | null;
-  /** True while the POST itself is in flight (well before `pending` clears). */
+  /** The POST is in flight (well before `pending` clears). */
   busy: boolean;
-  /** The backend's refusal of the POST, verbatim. */
   error: string | null;
-  /**
-   * Ask for the restart. Resolves false when it was refused — the one outcome
-   * the caller keeps its dialog open for, to show the sentence. Never rejects.
-   */
+  /** Resolves false when refused, so the dialog stays open. Never rejects. */
   restart: () => Promise<boolean>;
-  /** Clear a previous refusal, before the dialog opens again. */
   reset: () => void;
 }
 
 /**
- * Restart the robot's software in the mode it is already in, and report how
- * it ended.
+ * Restart the robot's software in its current mode, and report how it ended.
  *
- * The confirmation channel is GET /api/v1/robot/restart, not the robot-state
- * poll: the backend keeps answering throughout (it is not part of the stack
- * being rebuilt) and keeps serving the last state frame, so that poll never
- * notices. The restart record is read once on mount and polled only while it
- * says `restarting` — the backend is changing it on its own then, and the
- * status that started the poll is what stops it.
+ * Confirmed by GET /api/v1/robot/restart, not the state poll: the backend is
+ * not part of the rebuilt stack and keeps serving the last frame, so that poll
+ * never notices. The record is polled only while it says `restarting`.
  */
 export function useRobotRestart(): RobotRestart {
   const queryClient = useQueryClient();
   const { state, status } = useConsoleRobotState();
-  // Whether this tab pressed Restart, so the outcome is shown to the operator
-  // who asked for it and not to every console that happens to be on Settings.
+  // Whether this tab pressed Restart, so only its operator sees the outcome.
   const [asked, setAsked] = React.useState(false);
 
   const record = useQuery({
@@ -78,9 +58,8 @@ export function useRobotRestart(): RobotRestart {
       setAsked(false);
     },
     onSuccess: (result) => {
-      // Written before `asked` is read: until the refetch below lands, the
-      // cache still holds the *previous* restart's record, and this tab would
-      // otherwise announce that one's outcome as the answer to this press.
+      // Written before `asked` flips, or the cache's *previous* record would be
+      // announced as this press's outcome.
       const now = new Date().toISOString();
       queryClient.setQueryData<RestartRecord>(
         queryKeys.robotRestart,
@@ -94,8 +73,7 @@ export function useRobotRestart(): RobotRestart {
             },
       );
       setAsked(true);
-      // The backend's own record, which is also what starts the poll. Not
-      // awaited.
+      // The backend's own record, which also starts the poll.
       void queryClient.invalidateQueries({ queryKey: queryKeys.robotRestart });
     },
   });

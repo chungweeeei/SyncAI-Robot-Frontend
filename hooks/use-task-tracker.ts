@@ -12,34 +12,22 @@ import {
   type TaskStepState,
 } from "@/lib/api/task";
 
-// A workflow reports through a Temporal query, which is only as fresh as the
-// poll; 1 Hz matches the robot-state poll and is plenty for either a nav goal
-// (minutes) or a posture command (seconds).
+// 1 Hz, like the robot-state poll: plenty for a nav goal or a posture command.
 const TASK_POLL_MS = 1000;
 
-/**
- * Shared so the pre-first-response window does not hand a fresh array to every
- * render — useTaskDispatch keys a Map off this and would rebuild it each time.
- */
+/** Stable empty list: useTaskDispatch keys a Map off it. */
 export const NO_STEPS: TaskStepState[] = [];
 
 /**
  * The `queryFn` every poller of `queryKeys.task(id)` must use.
  *
- * It reads the id off the key, not off a closure: the key is what the request
- * belongs to, and it cannot go stale relative to the entry it writes. And it
- * never overwrites a known step list with an empty one. get_task_state
- * degrades `steps` to [] whenever the workflow query fails — in the window
- * before the workflow's first task executes, when no worker is polling this
- * robot's queue, and again once the execution has closed — and each of those
- * would otherwise blank the per-step readback the operator is watching. An
- * empty list is never meaningful here: the composer refuses to dispatch a
- * zero-step task.
+ * Reads the id off the key so it cannot go stale relative to the entry. Never
+ * replaces a known step list with an empty one: the backend degrades `steps`
+ * to [] whenever the workflow query fails (before the first task runs, with no
+ * worker, after close), and a real task never has zero steps.
  *
- * Exported because the entry has more than one poller (see the key's note):
- * TanStack runs whichever observer's `queryFn` triggered the fetch, so a
- * second observer with a bare `fetchTaskState` would blank the first one's
- * held list on its own tick.
+ * Exported because TanStack runs whichever observer's `queryFn` fired, so a
+ * second poller with a bare `fetchTaskState` would blank the held list.
  */
 export async function fetchHeldTaskState({
   signal,
@@ -49,9 +37,7 @@ export async function fetchHeldTaskState({
   const state = await fetchTaskState(queryKey[1], signal);
   if (state.steps.length) return state;
   const held = client.getQueryData<TaskStateResponse>(queryKey);
-  // The held list keeps status and error on screen; a step's `message` is a
-  // live reading, and one from a read that has since failed would go on
-  // claiming the robot is replanning when nobody knows any more.
+  // Keep status and error; drop `message`, a live reading nobody can vouch for now.
   return held?.steps.length
     ? { ...state, steps: held.steps.map((step) => ({ ...step, message: "" })) }
     : state;
@@ -65,65 +51,35 @@ export interface TaskTracker {
   cancelable: boolean;
   /** The error message of the first failed step, if any. */
   error: string | null;
-  /**
-   * Per-step state of the tracked task, as the workflow query last reported it.
-   * Empty until the first poll answers with a populated list — a multi-step flow
-   * joins it to its own rows by step id.
-   */
+  /** Per-step state as last reported; empty until a populated list arrives. */
   steps: TaskStepState[];
-  /**
-   * Id of the task being polled, for callers that need to cancel it. Null once
-   * the run is terminal, which is the signal that there is nothing left to
-   * stop; the *status* stays on screen until `reset`.
-   */
+  /** Id to cancel; null once terminal, while the status stays until `reset`. */
   taskId: string | null;
-  /** Start polling a freshly submitted task. */
   track: (id: string) => void;
   /** Forget the tracked task and its outcome. */
   reset: () => void;
 }
 
 /**
- * Follows one submitted task until it is terminal.
+ * Follows one submitted task until it is terminal; shared by every flow that
+ * dispatches one, so its subtleties do not drift between copies.
  *
- * Shared by every one-step-task flow in the console (nav goal, posture) rather
- * than reimplemented per flow: the subtleties below — holding a step list the
- * backend degraded to empty, going quiet at a terminal status while the status
- * itself stays on screen, and swallowing query errors instead of showing them —
- * are the kind that drift apart once there are two copies.
- *
- * A keyed query rather than the hand-rolled `setInterval` it replaces. The key
- * is what makes two surfaces following the same run share one poll instead of
- * opening one each, and it is also what clears the readback for free: `track`
- * points the hook at a new id, so the previous run's status, steps and error
- * are simply not this entry's data. Nothing here has to null them.
- *
- * Everything this hook returns is derived from that one entry. There is no
- * second copy of the status in state that could disagree with it.
+ * A keyed query, so two surfaces following one run share a poll, and `track`
+ * pointing at a new id leaves the previous run's readback behind for free.
+ * Everything returned is derived from that one entry.
  */
 export function useTaskTracker(): TaskTracker {
-  /**
-   * The run being followed. Survives a terminal status — the query stops
-   * polling but its data is what keeps the outcome on screen — and is cleared
-   * only by `reset`.
-   */
+  /** Survives a terminal status (its data keeps the outcome on screen); cleared only by `reset`. */
   const [followedId, setFollowedId] = React.useState<string | null>(null);
 
   const query = useQuery({
     queryKey: queryKeys.task(followedId ?? ""),
     queryFn: fetchHeldTaskState,
     enabled: followedId !== null,
-    // Silent, for the same reason the hand-rolled version swallowed its
-    // errors: the workflow query fails while Temporal is starting the
-    // workflow, and again once the task ages out of Temporal's retention.
-    // Neither is worth showing, and `data` survives an errored refetch, so the
-    // last known status stays put. `error` below is the *task's* failure, not
-    // the poll's.
-    //
-    // Off at a terminal status, which is what tears the poll down while the
-    // outcome stays on screen. The interval also pauses while the tab is
-    // hidden and resumes on return, so a readback is at most one tick stale —
-    // the same deal the active-task poll next door takes.
+    // Poll errors are silent: the workflow query fails while the workflow is
+    // starting and after it ages out of retention, and `data` survives an
+    // errored refetch. `error` below is the task's failure, not the poll's.
+    // Off at a terminal status, so the outcome stays without a poll.
     refetchInterval: (entry) =>
       isTerminalTaskStatus(entry.state.data?.status) ? false : TASK_POLL_MS,
   });
@@ -131,21 +87,14 @@ export function useTaskTracker(): TaskTracker {
   const track = React.useCallback((id: string) => setFollowedId(id), []);
 
   /**
-   * **Not to be called while `running`.** Forgetting the id is what clears the
-   * readback, so unlike the poll effect this replaced — which kept ticking and
-   * put the status back on the next tick — this one does not come back. A run
-   * abandoned here keeps going on the robot with no status and no Cancel on
-   * this surface, recoverable only through ActiveRunBanner.
-   *
-   * Every caller today is gated: the three `clear` buttons render only in a
-   * `!running` branch, and the dispatch paths that reset first are all disabled
-   * while a task is in flight. That gating is load-bearing, not tidiness.
+   * **Not to be called while `running`.** A run abandoned here keeps going on
+   * the robot with no status and no Cancel on this surface (only
+   * ActiveRunBanner can recover it). Every caller is gated on `!running`, and
+   * that gating is load-bearing.
    */
   const reset = React.useCallback(() => setFollowedId(null), []);
 
-  // Before the first response there is no data, and "we have just dispatched"
-  // has to read as PENDING rather than as nothing — the caller's panel is
-  // already showing the goal it sent.
+  // Just dispatched reads as PENDING, not as nothing.
   const taskStatus: TaskStatus | null =
     query.data?.status ?? (followedId !== null ? "PENDING" : null);
   const terminal = isTerminalTaskStatus(query.data?.status);
@@ -155,11 +104,8 @@ export function useTaskTracker(): TaskTracker {
     taskStatus,
     running: taskStatus !== null && !terminal,
     cancelable: followedId !== null && !terminal,
-    // Read off the *held* list, so a response that degraded `steps` to [] no
-    // longer takes the sentence away while leaving the failed rows on screen.
-    // The hand-rolled version recomputed this from each fresh response and did
-    // exactly that, most visibly on the terminal poll of a run whose execution
-    // had already closed: FAILED with nothing saying why, and no Retry.
+    // Off the held list, so a degraded `steps: []` (typically on the terminal
+    // poll) cannot leave FAILED with nothing saying why.
     error: steps.find((step) => step.error_msg)?.error_msg || null,
     steps,
     taskId: terminal ? null : followedId,

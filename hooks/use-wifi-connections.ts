@@ -8,21 +8,15 @@ import {
 import { queryKeys } from "@/lib/api/query-keys";
 
 export interface UseWifiConnections {
-  /** The saved networks, or null before the first answer. */
   connections: WifiConnection[] | null;
   status: "loading" | "ok" | "error";
-  /** The backend's sentence for a failed read. */
   error: string | null;
   /** When the list was read, for "… ago" — never Date.now() in render. */
   readAtMs: number;
   retry: () => void;
 }
 
-/**
- * The networks saved on the robot. Not polled — see the key's note: every
- * change to the list that this console can see coming is its own write, and
- * those invalidate.
- */
+/** The networks saved on the robot. Not polled (see the key's note). */
 export function useWifiConnections(): UseWifiConnections {
   const query = useQuery({
     queryKey: queryKeys.wifiConnections,
@@ -44,8 +38,7 @@ export function useForgetWifiConnection() {
   return useMutation({
     mutationFn: (uuid: string) => forgetWifiConnection(uuid),
     onSuccess: () => {
-      // The list is the only thing a forget changes; the network the robot
-      // is on cannot be forgotten, so the state poll is untouched.
+      // The live network cannot be forgotten, so the state poll is untouched.
       void queryClient.invalidateQueries({ queryKey: queryKeys.wifiConnections });
     },
   });

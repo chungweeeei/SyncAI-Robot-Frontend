@@ -17,18 +17,12 @@ const COMMANDS: ReadonlyArray<{
 ];
 
 /**
- * Stand up / lie down, as a one-step task each, in the manual drive panel.
+ * Stand up / lie down, a one-step task each, in the drive panel (the robot
+ * must stand before the sticks mean anything). Not gated on the arm switch,
+ * which is about the sticks and keys.
  *
- * The panel is their only home: the dashboard's rail had a Posture group too,
- * and dropped it by request once the panel — which every screen can open —
- * carried the same two buttons. The sticks are why they belong here: the robot
- * has to be standing before a stick means anything. Not gated on the panel's
- * arm switch — that switch is about the sticks and the keys, and these are a
- * one-press task.
- *
- * The button that was pressed stays lit until its task is terminal, which is
- * the only feedback the operator gets that the command is still in flight: the
- * posture itself is not in any telemetry the console reads.
+ * The pressed button stays lit until its task ends: the posture itself is in
+ * no telemetry the console reads, so that is the only feedback.
  */
 export function PanelPostureControl({
   robotId,
@@ -47,9 +41,8 @@ export function PanelPostureControl({
           <button
             key={command.posture}
             type="button"
-            // One posture at a time: a second command while the first is still
-            // running would race the gait controller's mode change. None at
-            // all under the emergency stop: standing up is moving.
+            // One at a time, or two would race the gait mode change. None
+            // under the stop: standing up is moving.
             disabled={busy || running || stopped}
             onClick={() => posture.send(command.posture)}
             className={cn(

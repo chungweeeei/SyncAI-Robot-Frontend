@@ -1,20 +1,13 @@
 # Operator console as a container. Two services on purpose:
 #
-#   frontend-build  builds the image and tags it. It sits behind the `build`
-#                   profile so `docker compose up` never triggers a multi-minute
-#                   `next build` on the robot by accident; naming the service
-#                   enables its profile:
+#   frontend-build  builds and tags the image, behind the `build` profile so
+#                   `up` never starts a `next build` on the robot by accident:
 #                       docker compose build frontend-build
-#   frontend        runs that tag. It has no `build:` block, so `up` only ever
-#                   starts an image that already exists (built here, or pulled
-#                   after a `docker compose pull`).
+#   frontend        runs that tag (built here or pulled). No `build:` block.
 #
-# Values come from .env (copy .env.example). The NEXT_PUBLIC_* pair is a build
-# arg, not a runtime environment variable — see the note in the Dockerfile.
-#
-# The backend is not in this file. The console is a browser client: the page's
-# JavaScript calls the backend on :3000 of the host the page was opened from,
-# so the two processes need no shared network, only the same host name.
+# Values come from .env (copy .env.example); NEXT_PUBLIC_* are build args (see
+# the Dockerfile). The backend is not here: the page calls :3000 of the host it
+# was opened from, so no shared network is needed.
 
 services:
   frontend-build:

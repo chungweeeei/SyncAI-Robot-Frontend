@@ -21,14 +21,9 @@ export interface MapPickerProps {
 }
 
 /**
- * Which map a job's Move steps are placed on.
- *
- * Defaults to the map the robot has loaded, and that is the only case most
- * operators ever see. It exists for the other one: a job for the site's second
- * floor, authored while the robot is on the first. The waypoints, the floor
- * plan and the saved `map_name` all follow this choice; what does not is
- * running — a job for another map can be saved here and run once that map is
- * loaded, and the dispatch pane says so.
+ * Which map a job's Move steps are placed on. Defaults to the loaded map; the
+ * choice is for authoring a job for another floor, which saves here and runs
+ * once that map is loaded.
  */
 export function MapPicker({ maps, value, disabled, onPick }: MapPickerProps) {
   const id = React.useId();
@@ -43,8 +38,7 @@ export function MapPicker({ maps, value, disabled, onPick }: MapPickerProps) {
 
   const items = (maps ?? []).map((map) => ({
     value: map.name,
-    // "loaded" rather than "active": the word on the status strip and the
-    // Maps screen for the map the robot is on.
+    // "loaded", the status strip's and Maps screen's word, not "active".
     label: map.active ? `${map.name} · loaded` : map.name,
   }));
 
@@ -54,8 +48,7 @@ export function MapPicker({ maps, value, disabled, onPick }: MapPickerProps) {
         Map
       </label>
       <Select
-        // `items` is what makes SelectValue render the label; without it the
-        // trigger shows the raw value.
+        // Without `items`, SelectValue shows the raw value instead of the label.
         items={items}
         value={value}
         disabled={disabled || maps === null}

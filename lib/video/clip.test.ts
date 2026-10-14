@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Far from UTC on purpose: clipFilename must name the same instant the same
-// file everywhere, so an implementation that reached for a locale formatter
-// fails here rather than in Berlin. ESM hoists the imports above this line,
-// which is harmless — nothing reads a Date until a test runs.
+// Far from UTC on purpose, so a locale-formatted filename fails here. (ESM
+// hoists the imports above this; nothing reads a Date until a test runs.)
 process.env.TZ = "Asia/Taipei";
 
 import {
@@ -235,8 +233,7 @@ describe("startClipCapture", () => {
   });
 
   it("delivers once however many times it is stopped", () => {
-    // The window closing stops it explicitly while the ended track has the UA
-    // flushing it too. Two copies in the downloads folder would be the bug.
+    // Explicit stop and the UA's own flush race; two downloads would be the bug.
     const track = new FakeTrack("video");
     const { handle, recorder, delivered, outcomes } = capture(new FakeStream([track]));
     recorder.emit(4);
@@ -261,8 +258,7 @@ describe("startClipCapture", () => {
   });
 
   it("asks for chunks rather than one blob at the end", () => {
-    // Without a timeslice the whole clip arrives in a single dataavailable at
-    // stop, which is both one huge allocation and a readout that never ticks.
+    // Without one, the clip is one huge chunk at stop and the readout never ticks.
     const { recorder } = capture(new FakeStream([new FakeTrack("video")]));
     expect(recorder.timeslice).toBe(1_000);
   });

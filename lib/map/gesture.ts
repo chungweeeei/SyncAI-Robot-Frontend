@@ -1,32 +1,18 @@
-// What a pointer gesture means on the two map surfaces, as rules rather than
-// handlers: which gesture a press starts, when a drag is a drag rather than a
-// click, which way a drag aims, and what a rubber band selects.
-//
-// The canvases keep everything that touches a canvas, a cell buffer, pointer
-// capture or React. What is here is the decision each of those acts on, pure
-// so vitest can hold it. Most of it used to be inline in grid-canvas.tsx's
-// pointer handlers, and the heading rule was written twice, once in each
-// canvas, with deadzones that had drifted to 8 px and 10 px.
+// The gesture rules both map surfaces share: which gesture a press starts, when
+// a drag is a drag, which way it aims, and what a rubber band selects. Pure, so
+// both canvases use one copy (they once had deadzones drifting to 8 and 10 px).
 
 import type { EditMode, EditTool, VertexTool, ZoneTool } from "@/lib/map/editor";
 
 /**
- * Screen distance, in CSS px, below which a press that moved is still a
- * click. One number for both map surfaces and every use on them: whether a
- * drag aims a heading, whether a Pan-tool press picks a waypoint, and whether
- * a rubber band opened. Screen pixels rather than metres, because a metric
- * threshold would be huge at the far end of a perspective view and tiny up
- * close.
+ * CSS px below which a press that moved is still a click, for every use on
+ * both surfaces. Screen px, not metres, which would vary with perspective.
  */
 export const DRAG_DEADZONE_PX = 10;
 
 /**
- * How much one press of a toolbar's Zoom in / Zoom out changes the view, on
- * both map surfaces: the floor plan editor scales its view transform by it,
- * the 3D viewport scales the camera's distance to its target by it. One number
- * so a step feels the same size whichever map the operator is looking at;
- * √2 so two presses are exactly one doubling, which is where the wheel and the
- * pinch already land after a comfortable nudge.
+ * One toolbar Zoom in / out step on both surfaces (view scale in 2D, camera
+ * distance in 3D). √2 so two presses are exactly one doubling.
  */
 export const ZOOM_STEP_FACTOR = Math.SQRT2;
 
@@ -36,14 +22,11 @@ const ZOOM_PER_PX = 0.0015;
 const WHEEL_LINE_PX = 16;
 
 /**
- * How much a wheel event zooms the view it landed on, on both map surfaces.
+ * How much a wheel event zooms, on both surfaces.
  *
- * deltaMode 1 is lines (Firefox) and 2 is pages; a raw deltaY would zoom ~16x
- * per notch there, so each unit is turned into pixels first — a page being
- * the height of the surface, which the caller passes. Exponential rather than
- * 1 + k·delta so zoom is multiplicative: N notches up then N down returns to
- * the same scale, which is what makes a wheel feel like a dial and not a
- * spring.
+ * Line (Firefox) and page deltas are converted to px first, or a notch would
+ * zoom ~16x; a page is the surface height the caller passes. Exponential, so
+ * N notches up then N down returns to the same scale.
  */
 export function wheelZoomFactor(deltaY: number, deltaMode: number, pageHeight: number): number {
   const unit = deltaMode === 1 ? WHEEL_LINE_PX : deltaMode === 2 ? pageHeight : 1;
@@ -56,14 +39,10 @@ export function isDrag(fromX: number, fromY: number, toX: number, toY: number): 
 }
 
 /**
- * The heading, in degrees, of a displacement in the map frame (ROS: x right,
- * y up, counter-clockwise positive), or null for no displacement.
- *
- * Null rather than 0, because a zero vector has no direction and 0° is a
- * claim. The caller keeps whatever heading it had. The floor plan editor
- * passes a screen delta with y negated, since canvas rows grow downward. The
- * 3D viewport passes a world delta raycast from the floor, because its camera
- * can look from any azimuth and screen-right is not world +x.
+ * The heading in degrees of a map-frame displacement (x right, y up, CCW
+ * positive), or null for none — a zero vector has no direction, so the caller
+ * keeps its heading. The editor passes a screen delta with y negated; the 3D
+ * viewport a floor-raycast world delta, since its camera can face any way.
  */
 export function headingDegrees(dx: number, dy: number): number | null {
   if (dx === 0 && dy === 0) return null;
@@ -104,24 +83,18 @@ export interface PressInput {
 /**
  * Which gesture a press starts.
  *
- * Both modes open with Pan armed, and arming a brush or a waypoint tool is
- * what claims the left button. Right and middle pan regardless, so the
- * operator never has to disarm to reach another part of the map, and Space
- * pans with any button. Each mode reads its own tool and ignores the other's,
- * which keeps the mode toggle from carrying an armed tool across.
+ * An armed tool claims the left button; right, middle and Space always pan,
+ * so the operator never has to disarm to move the map. Each mode reads only
+ * its own tool.
  *
- * With Select armed, Shift on a marker toggles it and arms nothing, and a
- * press on bare map starts a rubber band. A finger has no Shift, so under
- * Select a plain tap on a marker toggles it too — re-aiming is still there
- * under Pan and Place, which is where a finger does it. A plain mouse press
- * on a marker re-aims it under either waypoint tool, so fixing a heading
- * does not depend on which tool is held. With Place armed, bare map places
- * a new waypoint; the caller still has to check the press landed on the grid.
+ * Under Select, Shift on a marker toggles it and bare map starts a rubber
+ * band; a finger has no Shift, so a tap toggles too (a finger re-aims under
+ * Pan or Place). A plain mouse press on a marker re-aims it under either
+ * waypoint tool. Under Place, bare map places a waypoint; the caller checks
+ * it landed on the grid.
  *
- * With a zone chosen, Shape claims the left button the way Place does, and
- * every press is a point. Whether that point is a new corner or the one that
- * closes the shape is classifyZonePress's question (lib/map/zone.ts), asked
- * by the canvas, because answering it takes the view.
+ * Under Shape every press is a point; whether it adds or closes is
+ * classifyZonePress's question, asked by the canvas because it needs the view.
  */
 export function classifyPress(input: PressInput): PressIntent {
   const { button, spacePan, shiftKey, touch, mode, tool, vertexTool, zoneTool, onVertex } = input;
@@ -143,10 +116,9 @@ export function classifyPress(input: PressInput): PressIntent {
 }
 
 /**
- * Whether a pan press doubles as a waypoint pick when it turns out to be a
- * click. Only a plain left press with Pan armed in waypoint mode does: right,
- * middle and Space pan work under every tool, and must not also change the
- * selection. Zone mode's Pan picks nothing — there is no zone selection.
+ * Whether a pan press that turns out a click picks a waypoint: only a plain
+ * left press with Pan armed in waypoint mode, so right/middle/Space pan never
+ * change the selection.
  */
 export function panPicks(input: Pick<PressInput, "button" | "spacePan" | "mode" | "vertexTool">): boolean {
   return (
@@ -174,11 +146,7 @@ export function bandBetween(ox: number, oy: number, cx: number, cy: number): Ban
   };
 }
 
-/**
- * Whether a band never opened, which makes it a click on bare map. Both
- * sides have to stay inside the deadzone: a long thin band is a real
- * selection of the markers along it.
- */
+/** Whether a band never opened (a click): both sides inside the deadzone, since a thin band is a real selection. */
 export function bandIsClick(band: Band): boolean {
   return (
     band.right - band.left < DRAG_DEADZONE_PX &&
@@ -186,11 +154,7 @@ export function bandIsClick(band: Band): boolean {
   );
 }
 
-/**
- * The ids of the markers whose centres lie inside the band, edges included.
- * Centres, not hit radii: a waypoint is a pose with no extent, so "inside the
- * rectangle" is the only test that matches what the operator drew around.
- */
+/** Ids of the markers whose centres lie inside the band, edges included; a waypoint has no extent. */
 export function idsInBand(
   band: Band,
   markers: Iterable<{ id: string; cx: number; cy: number }>,

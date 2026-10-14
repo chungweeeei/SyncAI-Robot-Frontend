@@ -21,23 +21,14 @@ import type { MapGrid } from "@/lib/map/grid";
 import type { GridRecipe, ZonePolygon } from "@/lib/types/map";
 
 /*
- * The writes against one map, one hook each, wrapping TanStack's useMutation.
+ * The writes against one map. Each hook owns the request and every cache key
+ * its response affects, so cross-key invalidations live in one place rather
+ * than in whichever card control happened to know about its own key.
  *
- * What a hook here owns is the request and its consequences for the cache:
- * which keys the response makes stale, and which entries it makes meaningless.
- * That used to be repeated in every card control alongside its own busy/error
- * state, which meant the answer to "who invalidates `taskTemplates` when a map
- * is renamed" was "nobody, because each control only knew about its own key".
- * Holding the invalidations next to the request is what makes that question
- * answerable in one place.
- *
- * What a hook here does NOT own is the UI reaction — closing a dialog, handing
- * the backend's sentence up to the library. Those go in the per-call
- * `mutate(vars, { onSuccess })`, which TanStack only fires while the caller is
- * still mounted; the hook-level `onSuccess` below fires regardless, so the
- * cache is corrected even when the response lands after the card is gone. The
- * invalidations are not awaited for the same reason: an awaited refetch would
- * unmount a deleted map's card before its own callback could run.
+ * UI reactions go in the per-call `mutate(vars, { onSuccess })`, which only
+ * fires while the caller is mounted; the hook-level `onSuccess` always fires.
+ * Invalidations are not awaited: an awaited refetch would unmount a deleted
+ * map's card before its own callback ran.
  */
 
 /** PATCH /api/v1/maps/{name}. Variables are the old and the new name. */
@@ -46,16 +37,11 @@ export function useRenameMap() {
   return useMutation({
     mutationFn: ({ from, to }: { from: string; to: string }) => renameMap(from, to),
     onSuccess: (_result, { from }) => {
-      // The per-map vertex, raster and scan caches are keyed by the old name and
-      // nothing will read them again; drop them rather than let them sit
-      // until eviction.
+      // Per-map caches keyed by the old name will never be read again.
       queryClient.removeQueries({ queryKey: queryKeys.mapVertices(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(from) });
-      // The zones moved with the directory; the new name reads them afresh.
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(from) });
-      // The catalogue now lists the map under its new name; the refetch is
-      // what replaces its card with one keyed on that name.
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       // `templates_moved`: every template bound to the old name now carries
       // the new one, and the task console scopes its library on `map_name`.
@@ -74,9 +60,8 @@ export function useDeleteMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(name) });
-      // The catalogue no longer lists the map; the refetch is what unmounts
-      // its card. Templates need nothing: the backend refuses the delete while
-      // any template is still bound (409 `template_bound`).
+      // Templates need nothing: the backend refuses the delete while any
+      // template is still bound (409 `template_bound`).
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
     },
   });
@@ -88,9 +73,8 @@ export function useActivateMap() {
   return useMutation({
     mutationFn: (name: string) => activateMap(name),
     onSuccess: (result, name) => {
-      // `active` moved between two cards, and the dashboard reads the active
-      // map's vertices — nothing else forces either refresh, because a live
-      // swap (unlike the stack restart this replaced) drops no socket.
+      // `active` moved between two cards and the dashboard reads the active
+      // map's vertices; a live swap drops no socket, so nothing else refreshes.
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       void queryClient.invalidateQueries({ queryKey: queryKeys.mapVertices(name) });
       if (result.previous) {
@@ -98,8 +82,7 @@ export function useActivateMap() {
           queryKey: queryKeys.mapVertices(result.previous),
         });
       }
-      // `map_matches_active` flipped on every template: the ones scoped to the
-      // new map are now dispatchable and the old map's are not.
+      // `map_matches_active` flipped on every template.
       void queryClient.invalidateQueries({ queryKey: queryKeys.taskTemplates });
       // The keepout answer carries `active` too, and it moved with the switch.
       void queryClient.invalidateQueries({ queryKey: queryKeys.mapKeepout(name) });
@@ -130,19 +113,16 @@ export function useConvertMapGrid() {
       convertMapGrid(name, { recipe, overwriteEdits }),
     onSuccess: (_result, { name }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
-      // The conversion is about to replace the .pgm the preview raster was
-      // decoded from. Dropped rather than invalidated: an immediate refetch
-      // would race the conversion and cache the *old* bytes as fresh; the next
-      // mount after the catalogue reports `ok` reads the new ones.
+      // Dropped, not invalidated: an immediate refetch would race the
+      // conversion and cache the old raster as fresh.
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(name) });
     },
   });
 }
 
 /**
- * The one convert refusal a control reacts to structurally: the grid holds
- * hand edits and the request did not say to overwrite them. Matched on the
- * stable `code`, never on the sentence, which exists to be reworded.
+ * The grid holds hand edits and the request did not say to overwrite them.
+ * Matched on the stable `code`, never on the sentence.
  */
 export function isHandEditConflict(error: unknown): error is ConvertConflictError {
   return error instanceof ConvertConflictError && error.code === "gridmap_hand_edited";
@@ -151,11 +131,9 @@ export function isHandEditConflict(error: unknown): error is ConvertConflictErro
 /**
  * PUT /api/v1/maps/{name}/grid — the edited cell buffer, whole.
  *
- * The grid itself is deliberately not refetched: the caller's buffer *is* what
- * was written, byte for byte, and a reload would need a new GridSession and
- * throw away the operator's undo history as the reward for saving. The
- * catalogue is marked stale, for the `modified_at` and size its card shows,
- * and so is the preview raster the task editor draws from the same file.
+ * The grid is not refetched: the caller's buffer is what was written, and a
+ * reload would need a new GridSession and lose the undo history. The catalogue
+ * (`modified_at`, size) and the task editor's preview raster go stale.
  */
 export function useSaveMapGrid() {
   const queryClient = useQueryClient();
@@ -172,11 +150,8 @@ export function useSaveMapGrid() {
 /**
  * PUT /api/v1/maps/{name}/keepout — the map's forbidden zones, whole.
  *
- * The answer *is* the next value of the zone read, so it is written into
- * the cache rather than refetched. The catalogue is marked stale because
- * the save writes files into the map's directory, which moves the
- * `modified_at` its card shows. Neither raster is touched: the zones are a
- * file of their own, and the floor plan and the scan do not include them.
+ * The answer is the next zone read, so it is written into the cache. The
+ * catalogue goes stale for its `modified_at`; neither raster includes zones.
  */
 export function useSaveMapKeepout() {
   const queryClient = useQueryClient();
@@ -195,15 +170,11 @@ export function useSaveMapKeepout() {
 }
 
 /**
- * GET /api/v1/maps/{name}/export, then hand the archive to the operator's
- * machine.
+ * GET /api/v1/maps/{name}/export, then download the archive.
  *
- * A read wrapped in useMutation rather than useQuery: the archive is built for
- * one click and is never the cached state of anything, and what the control
- * wants from it is exactly a mutation's surface — `isPending` while the robot
- * zips tens of megabytes, and the 409 sentence when the floor plan is still
- * being rebuilt. The download is the hook-level consequence, not the per-call
- * one, so a card that re-rendered away mid-transfer still delivers the file.
+ * A mutation, not a query: the archive is built per click and never cached,
+ * and the control wants `isPending` and the 409 sentence. The download is the
+ * hook-level consequence so a card that unmounted mid-transfer still delivers.
  */
 export function useExportMap() {
   return useMutation({
@@ -219,17 +190,12 @@ export interface ImportMapVariables {
 }
 
 /**
- * POST /api/v1/maps/import, plus the one mutation here that can be called off.
+ * POST /api/v1/maps/import, with `cancel` to abort the upload in flight.
  *
- * `cancel` aborts the upload in flight. The controller lives in a ref rather
- * than in the component because it is the hook that knows which request is
- * current, and because it must *not* be tied to an unmount: the fetcher's
- * note explains why a navigation never decides whether an upload lands. The
- * abort is reworded before it reaches the mutation's `error`, since the DOM's
- * own sentence is not written for an operator. A cancel is also a cache
- * consequence, which is why the refetch sits beside it and not in the dialog:
- * a body that had already arrived whole may still be committed by the robot,
- * and the catalogue is the only place that would show it.
+ * The controller is a ref in the hook, not tied to an unmount (see the
+ * fetcher's note on why a navigation never decides whether an upload lands).
+ * The DOM's abort sentence is reworded for operators. A cancel refetches the
+ * catalogue: a body that already arrived whole may still be committed.
  */
 export function useImportMap() {
   const queryClient = useQueryClient();
@@ -244,26 +210,21 @@ export function useImportMap() {
           throw cause;
         })
         .finally(() => {
-          // Only its own: a cancel followed at once by a retry has already
-          // put the retry's controller here, and this settle must not drop it.
+          // Only its own: a retry right after a cancel already put its
+          // controller here.
           if (controller.current === own) controller.current = null;
         });
     },
     onSuccess: (result) => {
-      // Keyed by the answer's `name`, not the variable: the archive's manifest
-      // names the map when the operator left the field empty. When the import
-      // replaced a map every file and every vertex under that name is new, so
-      // the per-map entries are stale rather than merely old; when it did not,
-      // there is nothing under the name to drop and this is a no-op.
+      // Keyed by the answer's `name`: the manifest names the map when the field
+      // was left empty. A replaced map makes every per-map entry stale.
       queryClient.removeQueries({ queryKey: queryKeys.mapVertices(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(result.name) });
-      // The catalogue has a new (or rewritten) row; the refetch mounts its card.
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       // Not `taskTemplates`: the backend refuses to replace a map any template
-      // still targets (409 `template_bound`), so a success never changes what
-      // a template resolves to.
+      // still targets (409 `template_bound`).
     },
   });
   const cancel = React.useCallback(() => {

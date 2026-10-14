@@ -21,21 +21,11 @@ import { draftFromTemplate, draftWouldBeLost } from "@/lib/task/draft-store";
 import { toDispatchSteps } from "@/lib/task/step";
 
 /**
- * /tasks: what this robot already has — the saved jobs and the registered
- * schedules — and the run a library row starts. Building or changing a job is
- * the editor's page (TaskEditor, /tasks/editor).
+ * /tasks: the saved jobs, then the registered schedules, and the run a row
+ * starts. Building a job is the editor's page (/tasks/editor).
  *
- * **The library is first.** The complaint this answers is that returning to
- * the page showed nothing saved, so the first thing under the header has to
- * answer "what do I have". The schedules sit right under it because they
- * answer the same question for what runs unattended.
- *
- * **Run and Schedule stay here; Load goes to the editor.** A row's Run
- * dispatches the saved template as it is, and the tracker that reports its
- * steps back belongs to this mount, so the row's readback works without a trip
- * anywhere. Its Schedule opens the trigger form at the top of the schedule
- * list, where the new schedule will appear. Load is the only one that needs
- * the editor, so it writes the template into the tab's draft and navigates.
+ * Run and Schedule stay here, where the run's tracker and the schedule list
+ * are; Load writes the template into the tab's draft and navigates.
  */
 export function TaskOverview({ robotId }: { robotId: string | null }) {
   const router = useRouter();
@@ -47,32 +37,20 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
   const { maps } = useMaps();
   const activeMapName = maps?.find((map) => map.active)?.name ?? null;
 
-  /**
-   * Which template the in-flight run came from; null before any row has run.
-   * Only used to decide which library row shows the readback, so the
-   * two degenerate cases (row deleted mid-run, row not in the current scope)
-   * resolve to "no badge" rather than to a lost run.
-   */
+  /** Which row shows the run's readback; a row gone mid-run just shows none. */
   const [dispatchedFrom, setDispatchedFrom] = React.useState<string | null>(null);
 
   /**
-   * Schedules that name no template, i.e. the ones registered from loose steps
-   * through `POST /api/v1/schedules`. Nothing ties them to a library row, so
-   * they are counted in the library's footnote instead — see TaskLibrary.
-   *
-   * (Older schedules can also land here: the provenance did not always exist in
-   * the memo, so one registered before it did reads as unlinked whatever it was
-   * made from.)
+   * Schedules naming no template (registered from loose steps, or from before
+   * the memo carried provenance), counted in the library's footnote instead.
    */
   const unlinkedScheduleCount = schedules.schedules.filter(
     (entry) => !entry.task_template_id,
   ).length;
 
   /**
-   * Open a saved job in the editor. The draft is on another page from here,
-   * so replacing steps the operator built is asked about rather than done;
-   * declining still goes to the editor, on the work they kept. Reopening the
-   * template already loaded keeps its unsaved edits.
+   * Replacing unsaved work is asked about; declining still opens the editor
+   * on the kept work. Reopening the loaded template keeps its edits.
    */
   const openInEditor = (template: TaskTemplate) => {
     const keep =
@@ -86,10 +64,8 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
   };
 
   /**
-   * The saved job whose schedules are lit in the list, after its clock chip
-   * was pressed; null otherwise. A flash rather than a selection: it answers
-   * "which of these are that job's" once, and a highlight that stayed would
-   * be one more state for the list to explain.
+   * The job whose schedules are lit after its clock chip was pressed. A flash,
+   * not a selection, so the list has no extra state to explain.
    */
   const [highlighted, setHighlighted] = React.useState<string | null>(null);
   const scheduleFrame = React.useRef<HTMLDivElement>(null);
@@ -104,9 +80,8 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
 
   const showSchedules = (template: TaskTemplate) => {
     flash(template.id);
-    // Scrolled and focused here, in the handler: the rows are already on
-    // screen, so there is no render to wait for. Focus goes to the first row
-    // so a keyboard or screen reader lands where the eye was sent.
+    // Focus the first row so a keyboard or screen reader lands where the eye
+    // was sent; the rows are already rendered.
     const first = scheduleFrame.current?.querySelector<HTMLElement>(
       `[data-template-id="${CSS.escape(template.id)}"]`,
     );
@@ -116,24 +91,16 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
     first.focus({ preventScroll: true });
   };
 
-  /**
-   * The saved job whose trigger form is open over the schedule list, by id,
-   * so a job deleted meanwhile closes its form rather than leaving one that
-   * would schedule a template that is gone.
-   */
+  /** By id, so a job deleted meanwhile closes its form. */
   const [schedulingId, setSchedulingId] = React.useState<string | null>(null);
   const scheduling =
     library.templates.find((template) => template.id === schedulingId) ?? null;
 
   const dispatchTemplate = (template: TaskTemplate) => {
     setDispatchedFrom(template.id);
-    // Deliberately does NOT load the template into the editor: that would
-    // silently discard whatever the operator was authoring, which is the same
-    // class of data loss the draft exists to prevent.
-    // The name rides along so the history can count this template's jobs
-    // apart from everything else dispatched from this screen.
-    // And its map, so a switch made since this list was read is refused by
-    // the backend rather than driven on the map that replaced it.
+    // Not loaded into the editor, which would discard the draft. The name
+    // labels the run in history; the map lets the backend refuse a map
+    // switched since this list was read.
     void dispatch.send(
       toDispatchSteps(template.steps),
       template.name,
@@ -150,9 +117,8 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
 
   return (
     <>
-      {/* Above the library, because it is the most urgent thing this screen can
-        * say: a robot is executing something this page is not following. A
-        * run started from a library row here is followed by the row itself. */}
+      {/* First: a run this page is not following is the most urgent news.
+        * One started from a row here is followed by the row. */}
       <ActiveRunBanner trackedTaskId={dispatch.taskId} />
 
       <div className="mb-4 overflow-hidden rounded-md border border-hairline bg-panel">
@@ -184,9 +150,7 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
               {library.error}
             </p>
           )}
-          {/* A Run the robot would not start, in its own words — another map
-            * loaded, a floor plan mid-rebuild, a job already running. A job
-            * that never started has no row readback to say it in. */}
+          {/* A refused Run never started, so has no row readback to say it in. */}
           {dispatch.refused && (
             <p
               role="alert"
@@ -212,16 +176,14 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
             onSchedule={(template) => setSchedulingId(template.id)}
             onShowSchedules={showSchedules}
             onDelete={(template) => {
-              // A confirm rather than an undo: there is no local history to step
-              // back over. Same stance as the vertex panel and the schedule list.
+              // A confirm, since there is no undo.
               if (
                 window.confirm(
                   `Delete task template "${template.name}"? This cannot be undone.`,
                 )
               ) {
                 void library.remove(template.id).then((gone) => {
-                  // The editor's link to a row that is gone; its steps stay,
-                  // to be saved as new if they are still wanted.
+                  // Unlink the editor; its steps stay, to save as new.
                   if (!gone) return;
                   updateDraft((current) =>
                     current.editing?.id === template.id
@@ -235,10 +197,7 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
         </InstrumentGroup>
       </div>
 
-      {/* Its own frame, because the registered schedules are a different object
-       * from the saved jobs: one is what could run, the other what will run on
-       * its own. Always shown, so an empty list says so rather than leaving
-       * the operator to wonder whether anything is registered. */}
+      {/* Always shown, so an empty list says so. */}
       <div
         ref={scheduleFrame}
         className="mb-4 overflow-hidden rounded-md border border-hairline bg-panel"
@@ -266,8 +225,7 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
               existingIds={schedules.schedules.map((entry) => entry.id)}
               onScheduled={() => {
                 setSchedulingId(null);
-                // The new row is the list's own re-read away; lighting the
-                // job's rows is what says which one just arrived.
+                // Light the job's rows to show which one just arrived.
                 flash(scheduling.id);
               }}
               onCancel={() => setSchedulingId(null)}

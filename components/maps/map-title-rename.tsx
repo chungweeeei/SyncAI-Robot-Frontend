@@ -11,29 +11,18 @@ const DIRTY_REASON =
   "Save your changes first. Renaming a map reloads it, which would throw away anything you have not saved.";
 
 /**
- * The editor's title, and the way to change it — the header-side face of
- * PATCH /api/v1/maps/{name}.
+ * The editor's title, and the header-side face of PATCH /api/v1/maps/{name}.
  *
- * Double-click the name and it becomes the input, same face and size; Enter
- * saves, Escape cancels. No Rename button, deliberately: this header is two
- * lines of chrome above a full-viewport canvas, and a button that is pressed
- * once in the life of a map does not earn permanent space beside the one control
- * (Back) that is pressed every visit. The card on /maps keeps its button —
- * there the title is one of nine in a grid, and a double-click on a grid of
- * names is a gesture nobody goes looking for. Here there is exactly one name on
- * screen and it is the page's subject.
+ * Double-click (or Enter / F2) turns the name into an input; Enter saves,
+ * Escape cancels. No Rename button: a once-per-map press doesn't earn
+ * permanent space in a two-line header over the canvas. The /maps card keeps
+ * its button, where a double-click on a grid of names is undiscoverable.
  *
- * The `title` tooltip and the hover ground are what make the gesture findable;
- * `MapRenameControl`'s doc explains the rest of the rename's rules, which this
- * shares — the backend refuses `map_active`, `conversion_running` and
- * `name_taken` with a sentence written to be shown, and this shows it rather
- * than pre-greying. It has no MapSummary to pre-grey from, and the editor is
- * reachable for a map in any of those states.
- *
- * The one refusal that is this component's own is `dirty`, and it is not a
- * nicety: a successful rename navigates to /maps/<new>/edit, which reloads the
- * grid from the new directory and drops the buffer. Renaming with unsaved cells
- * would therefore throw them away as a side effect of a name change.
+ * Shares MapRenameControl's rules, but shows the backend's refusals
+ * (`map_active`, `conversion_running`, `name_taken`) rather than pre-greying —
+ * it has no MapSummary to grey from. Its own refusal is `dirty`: a rename
+ * navigates to the new route, which reloads the grid and would throw unsaved
+ * cells away.
  */
 export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }) {
   const router = useRouter();
@@ -41,16 +30,11 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
 
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(name);
-  /**
-   * This component's own refusal (`dirty`), which is not a request outcome and
-   * so does not live in the mutation. The backend's refusals do — 409 (active,
-   * converting, taken) and 400 arrive as its own sentence, written to be shown.
-   */
+  /** The `dirty` refusal — not a request outcome, so not on the mutation. */
   const [refusal, setRefusal] = React.useState<string | null>(null);
   /**
    * Held locally rather than read off `rename.data`: the success handler
-   * navigates, and a cancel-on-blur racing that navigation resets the mutation
-   * — the sentence must survive it.
+   * navigates, and a blur-cancel racing it resets the mutation.
    */
   const [note, setNote] = React.useState<string | null>(null);
 
@@ -63,9 +47,7 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
 
   const begin = () => {
     if (dirty) {
-      // Refused before the input opens rather than on submit: there is nothing
-      // the operator could type that would make it allowed, so letting them
-      // type first would only be a longer way to say no.
+      // Refused before the input opens: nothing typed could make it allowed.
       setRefusal(DIRTY_REASON);
       return;
     }
@@ -79,15 +61,14 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
   const cancel = () => {
     setEditing(false);
     setRefusal(null);
-    // Not while the request is out: `disabled` on the input fires a blur in
-    // some browsers, and resetting a pending mutation would detach the success
-    // handler that has the navigation in it.
+    // Not while pending: `disabled` fires a blur in some browsers, and a reset
+    // would detach the success handler that navigates.
     if (!rename.isPending) rename.reset();
   };
 
   const submit = () => {
     if (busy) return;
-    // Enter on an unchanged name is "I am done here", not a request: close.
+    // Enter on an unchanged name just closes.
     if (!changed) {
       cancel();
       return;
@@ -100,11 +81,8 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
         onSuccess: (result) => {
           setEditing(false);
           setNote(result.message);
-          // replace, not push: the URL this page was opened at names a
-          // directory that no longer exists, so leaving it in the history is
-          // leaving a Back button that lands on a 404.
-          // The query rides along: it is what says which mode this editor
-          // opened in and where its back button leads (see the page).
+          // replace, not push: the old URL names a directory that no longer
+          // exists. The query (editor mode, back target) rides along.
           router.replace(`/maps/${encodeURIComponent(trimmed)}/edit${window.location.search}`);
         },
       },
@@ -128,17 +106,13 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
             onKeyDown={(event) => {
               if (event.key !== "Escape") return;
               event.preventDefault();
-              // Stopped here, or the editor's window-level Escape — which is
-              // deliberately above its typing guard, so that a staged vertex can
-              // be dropped from inside its name field — would also fire and
-              // disarm the tools because someone abandoned a rename.
+              // Stopped here, or the editor's window-level Escape (above its
+              // typing guard on purpose) would also disarm the tools.
               event.stopPropagation();
               cancel();
             }}
-            // Blur cancels rather than saves. The next thing under this header is
-            // the canvas, so the click that takes focus away is almost always a
-            // map gesture: committing a directory rename because the operator
-            // looked at something else is the wrong way for this to fail.
+            // Blur cancels rather than saves: the click that takes focus is
+            // almost always a map gesture, not a decision to rename.
             onBlur={cancel}
             aria-label="New map name"
             aria-invalid={trimmed.length > 0 && !valid ? true : undefined}
@@ -147,8 +121,7 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
           />
         </form>
 
-        {/* The rule, shown only while the name breaks it — the same line the
-          * card and the save-map row show, because it is the same rule. */}
+        {/* Shown only while the name breaks the rule, as on the card and save. */}
         {trimmed.length > 0 && !valid && (
           <p className="mt-0.5 text-[11px] leading-snug text-signal-caution">
             Letters, digits, dot, dash and underscore only, up to 64 characters.
@@ -160,13 +133,8 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
 
   return (
     <div className="min-w-0">
-      {/* No "Floor plan editor" eyebrow over the name, by request: the rail
-        * marks the Maps screen and the strips say what this one is for. */}
-      {/* Focusable, and Enter or F2 opens it: a double-click is a mouse-only
-        * gesture, and refusing to add a button is not a reason to make the one
-        * rename path unreachable from the keyboard. F2 because that is what
-        * renames a thing in every file manager; Enter because the title is
-        * focused and there is only one thing it does. */}
+      {/* No eyebrow over the name, by request. Focusable, with Enter or F2
+        * (the file-manager key) opening it, so the rename isn't mouse-only. */}
       <h1
         tabIndex={0}
         onDoubleClick={begin}
@@ -186,10 +154,8 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
           {error}
         </p>
       )}
-      {/* The renamed title is the receipt that always survives; this sentence —
-        * how many vertices and templates were re-keyed with it — is the part
-        * worth reading once, and is dropped if the route change remounts the
-        * segment rather than re-rendering it. */}
+      {/* The renamed title is the lasting receipt; this sentence (what was
+        * re-keyed with it) is read once, and lost if the route remounts. */}
       {note && !error && (
         <p role="status" className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
           {note}

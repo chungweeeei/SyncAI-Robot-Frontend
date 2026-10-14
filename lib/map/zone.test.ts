@@ -91,16 +91,13 @@ describe("classifyZonePress", () => {
   });
 
   it("never adds a corner on top of a later one", () => {
-    // The press is kept for a drag, which moves the corner; a click there
-    // would otherwise stack a fifth dot the shape counts and the eye cannot.
+    // Kept for a drag; a click would stack a dot the shape counts and the eye cannot.
     expect(classifyZonePress(press({ count: 3, corner: 1 }))).toBe("ignore");
     expect(classifyZonePress(press({ count: 5, corner: 4 }))).toBe("ignore");
   });
 
   it("starts an anchored shape on a finished zone's corner", () => {
-    // Neither a first corner of its own nor a re-selection: the handle may
-    // sit a hair outside the polygon, and "add" there would start a shape
-    // that is not attached to anything.
+    // The handle may sit just outside the polygon; "add" would start an unattached shape.
     expect(classifyZonePress(press({ count: 0, onHandle: true }))).toBe("anchor");
     expect(classifyZonePress(press({ count: 0, onHandle: true, onZone: true }))).toBe("anchor");
   });
@@ -206,9 +203,7 @@ describe("reshapeZone", () => {
   });
 
   it("reads the same bump the same way from either corner", () => {
-    // Drawn C→B instead: the run arrives reversed, and the result is the
-    // same ring, so which corner the operator happened to start at cannot
-    // change the shape.
+    // Drawn C→B instead: the same ring, so the starting corner cannot change the shape.
     const bump = [
       { x: 3, y: 1.5 },
       { x: 3, y: 0.5 },
@@ -259,9 +254,7 @@ describe("mergeIntoZone", () => {
   });
 
   it("takes the corners before the anchor for a shape that reached the zone", () => {
-    // Started on bare map with the bump, reached C, ending on B: the same
-    // zone as the other way round — where the operator started cannot
-    // change the shape.
+    // Started on bare map, reached C, ending on B: the same zone as the other way round.
     const draft = [...bump, square[2]];
     const ring = mergeIntoZone(square, draft, { index: 2, position: 2 }, 1);
     expect(ring).toHaveLength(6);

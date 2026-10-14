@@ -16,36 +16,27 @@ import {
 
 export interface TaskDispatch {
   taskStatus: TaskStatus | null;
-  /** A submitted task that has not reached a terminal state yet. */
   running: boolean;
-  /** True while a submit / cancel request is in flight. */
+  /** A submit or cancel request is in flight. */
   busy: boolean;
-  /** Only true while the task id is still known — see the tracker's poll effect. */
   cancelable: boolean;
   error: string | null;
   /**
-   * Only the submit's refusal — the backend's sentence for a job it would not
-   * start (another map loaded, a floor plan mid-rebuild, the robot busy).
-   * Apart from `error` because a row already shows its own steps' failures,
-   * and a refused submit has no row readback to show it in.
+   * Only the submit's refusal, apart from `error` because a refused submit has
+   * no row readback to show it in.
    */
   refused: string | null;
-  /** Per-step state of the tracked task, keyed by step id. Empty before a dispatch. */
+  /** Per-step state of the tracked task, keyed by step id. */
   stepStates: ReadonlyMap<string, TaskStepState>;
   /**
-   * The run this hook is following, or null.
-   *
-   * Exposed so the console can tell a run it already has a readback and a Cancel
-   * for from one it has only heard about through GET /api/v1/active_tasks —
-   * without it, a task dispatched from this very tab would also be announced as
-   * an unattended run in the banner above the library.
+   * The run this hook follows, so a job dispatched from this tab is not also
+   * announced as an unattended run.
    */
   taskId: string | null;
   /**
-   * `name` is the template the steps were loaded from, when they were. It is
-   * recorded on the run so the history can tell one template's jobs apart;
-   * the composer's own steps send none. `mapName` is the map the steps'
-   * coordinates were saved on, so the backend can refuse them on another.
+   * `name` is the template the steps came from (recorded for the history);
+   * `mapName` is the map their coordinates were saved on, so the backend can
+   * refuse them on another.
    */
   send: (
     steps: readonly TaskStepRequest[],
@@ -57,24 +48,14 @@ export interface TaskDispatch {
 }
 
 /**
- * Dispatch an authored step list and follow it until it is terminal — the
- * multi-step sibling of useGoalTask / usePosture, composed the same way: two
- * mutations own the requests, useTaskTracker owns everything about the
- * submitted task, and the three error slots are read in the order that one
- * documents — submit, then the task's own failure, then a refused cancel.
+ * Dispatch an authored step list and follow it until terminal — the multi-step
+ * sibling of useGoalTask, with the same error order.
  *
- * Two differences from those two are deliberate:
+ * `send` takes the steps as an argument so this hook is not a second owner of
+ * the list (useStepDrafts is).
  *
- * `send` takes the steps as an argument rather than reading staged state. The
- * list lives in useStepDrafts and the conversion to wire shape is
- * lib/task/step.ts's job; threading the draft array through here would make this
- * hook a second owner of the list.
- *
- * `robotId` is nullable. GET /api/v1/robot/state 404s until localization is
- * valid, so `robot_id` — the prefix of every task id — is genuinely unavailable
- * on a freshly booted robot. Authoring has to keep working then, and the schedule
- * path has to keep working *entirely*, because a schedule id is operator-authored
- * and needs no robot id at all. That asymmetry is why only this hook is gated.
+ * `robotId` is nullable: robot state 404s until localization is valid, and
+ * authoring and schedules (whose ids need no robot id) must keep working.
  */
 export function useTaskDispatch(robotId: string | null): TaskDispatch {
   const task = useTaskTracker();
@@ -83,9 +64,7 @@ export function useTaskDispatch(robotId: string | null): TaskDispatch {
   const { engaged: stopped } = useConsoleEstop();
 
   const submit = useMutation({
-    // The robot id travels in the variables rather than being read from the
-    // closure, which is what keeps `submitTask`'s non-null argument honest
-    // without an assertion: `send` refuses before there is anything to submit.
+    // The robot id travels in the variables so it is non-null without an assertion.
     mutationFn: async ({
       robot,
       requests,
@@ -101,16 +80,13 @@ export function useTaskDispatch(robotId: string | null): TaskDispatch {
       if (stopped) throw new Error(ESTOP_REFUSAL);
       return submitTask(robot, requests, name, mapName);
     },
-    // Before the request, not after it: this is the one place that knows a new
-    // task is starting, so the previous task's per-step readback goes now
-    // instead of lingering under the new one's rows.
+    // Before the request, so the last task's readback does not linger under the new rows.
     onMutate: () => reset(),
     onSuccess: (id) => track(id),
   });
 
   const cancelRun = useMutation({
-    // No optimistic CANCELED: this is a *request*, and whether the workflow
-    // actually stopped is what the next poll answers.
+    // No optimistic CANCELED: whether the workflow stopped is the poll's answer.
     mutationFn: (id: string) => cancelTask(id),
   });
 
@@ -142,10 +118,8 @@ export function useTaskDispatch(robotId: string | null): TaskDispatch {
   }, [reset, resetSubmit, resetCancel]);
 
   /**
-   * A Map rather than the array the tracker hands over, because a row looks
-   * itself up by its derived step id. An index-based join would mis-attribute a
-   * status the moment the array is shorter than the list — which it legitimately
-   * is right after creation, before the workflow query has any state to report.
+   * Keyed by step id: an index join would mis-attribute a status while the
+   * array is shorter than the list, as it is right after creation.
    */
   const stepStates = React.useMemo(
     () => new Map(steps.map((step) => [step.id, step])),

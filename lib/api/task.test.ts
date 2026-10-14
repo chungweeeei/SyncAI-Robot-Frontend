@@ -9,14 +9,9 @@ import {
 } from "@/lib/api/task";
 
 /**
- * The dispatch ack is the one write whose answer the console cannot do without:
- * its `id` becomes the tracker's query key and poll target. An ack that lost
- * the field used to arrive as `undefined` and start a 1 Hz poll of
- * `/tasks/undefined` that nothing would ever stop.
- *
- * The hold routes are the opposite case: their ack is a claim the console
- * deliberately does not read, so what is pinned is the path they post to and
- * that a refusal arrives as the backend's own sentence.
+ * The dispatch ack's `id` is the tracker's poll target, so an ack without it
+ * must fail rather than poll `/tasks/undefined` forever. The hold routes'
+ * ack is deliberately unread, so their path and refusal are what is pinned.
  */
 
 let fetchMock: ReturnType<typeof vi.fn>;

@@ -8,23 +8,14 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
- * The frame every settings section sits in: the index's scroll, and one way
- * back up.
+ * The frame every settings section sits in: the index's scroll and one way
+ * back up — a link, not history.back(), since a bookmarked section has
+ * nothing behind it.
  *
- * The way back is a link rather than history.back(): a section opened
- * straight from a bookmark has nothing behind it. It is /settings unless the
- * page sits one level deeper (Wi-Fi's Add network goes back to Wi-Fi).
- *
- * `wide` is for a page that lays out a grid rather than one form — Wi-Fi's
- * saved networks — and takes the index's full column. Every other section is
- * one form, so the whole column, header included, narrows to a reading width
- * and centres: a form pinned to the left of a 6xl column left most of a wide
- * screen empty on one side.
- *
- * `action` sits opposite the title, where the index keeps Restart. A page
- * with one keeps its way back beside it, as an outline Go back, so the
- * header's buttons are one row the way the task editor's are; a page without
- * one keeps the quiet link above the title.
+ * `wide` is for a grid page (Wi-Fi's saved networks); every other section is
+ * one form, so the column narrows to a reading width and centres. With an
+ * `action`, the way back becomes an outline Go back beside it, so the header's
+ * buttons are one row.
  */
 export function SettingsSubpage({
   title,

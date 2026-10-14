@@ -1,10 +1,5 @@
-// Scene colours for the 3D viewport, as three.js hex numbers.
-//
-// The shared signal hues come from lib/theme/signal.ts rather than being
-// transcribed again; what is written out below is what this scene adds — the
-// ground, the two draft tints, the vertex family and the route — none of which
-// is a console surface with a CSS token behind it. The forbidden zones' hue is
-// a signal one, and so is not written out.
+// Scene colours for the 3D viewport, as three.js hex numbers. Signal hues come
+// from lib/theme/signal.ts; only the hues with no CSS token are written out.
 
 import { SIGNAL } from "@/lib/theme/signal";
 
@@ -14,64 +9,35 @@ export interface Theme {
   background: number;
   ground: number;
   groundOpacity: number;
-  /** Solid colour for the static map cloud, kept distinct from the
-   *  height-coloured body cloud. White on the dark background; a dark grey on
-   *  the near-white light background so it stays visible in both themes. */
+  /** Solid colour for the map scan, distinct from the height-coloured live scan. */
   mapCloud: number;
-  /** Committed / being-dragged goal marker. `signal-cmd` cyan from globals.css:
-   *  a goal is a commanded value, and it is the same cyan in the goal readback
-   *  and on the Send button. */
+  /** Committed / being-dragged goal marker: `signal-cmd`, a commanded value. */
   goal: number;
   goalDraft: number;
-  /** Staged initial-pose marker. `signal-caution` amber, matching its control:
-   *  it asserts where the robot *is*, not where it should go, and the two must
-   *  never be misread for each other on the floor. */
+  /** Staged initial pose: `signal-caution`, so it is never misread as a goal. */
   initialPose: number;
   initialPoseDraft: number;
   /**
-   * Stored map vertices. One hue for all five types, deliberately not a signal
-   * colour: see lib/map/vertex.ts on why the type is a glyph.
+   * Stored vertices, one hue for every type, not a signal colour.
    *
-   * Both themes get a *dark* hue, which is where this parts company with the
-   * gridmap editor's `PALETTES.vertex` (lib/map/draw.ts) — the
-   * two agree on the family, not on the value. The editor can flip to a light
-   * marker in night mode because it draws its own halo behind every mark; here
-   * the marker lies on a ground plane textured with the occupancy grid, which is
-   * white free space in *either* theme (lib/map/render.ts blits the bytes
-   * literally). The editor's dark-theme hue put a light mark on that white
-   * floor, which is how a stop became something you had to go looking for.
-   *
-   * The dark value is still mid-toned rather than ink, because a map that has
-   * not been converted to a gridmap has no ground plane at all and the mark
-   * falls back onto the near-black background.
+   * Dark in both themes, unlike the editor's `PALETTES.vertex`: there is no
+   * halo here, and the floor plan texture is white in either theme. Mid-toned
+   * rather than ink, because a map with no floor plan falls back onto the
+   * near-black background.
    */
   vertex: number;
-  /**
-   * The vertex under the pointer. The commanded hue, because that stop is one
-   * tap away from becoming the commanded pose — and because the gridmap
-   * editor already lights its selected vertex in `palette.cmd`.
-   */
+  /** The vertex under the pointer, in the commanded hue: one tap from being the goal. */
   vertexHover: number;
   /**
-   * The planner's route. In the goal's cyan family on purpose: the route is what
-   * the commanded pose turned into, and reading it as a separate kind of thing
-   * would hide that. But deliberately a step *darker* than `goal` — the route is
-   * the longest mark on the floor by far, and at the goal's brightness it takes
-   * the eye off the pose that was actually commanded.
+   * The planner's route: the goal's cyan family, since it is what the goal
+   * turned into, but a step darker so the longest mark does not outshine it.
    */
   path: number;
-  /**
-   * Forbidden zones. `signal-warn`, the hue the floor plan editor draws them
-   * in (lib/map/draw.ts): a zone is the one mark on this floor that says
-   * "not here", and it has to be the same mark on both maps.
-   */
+  /** Forbidden zones: `signal-warn`, the same mark as on the floor plan editor. */
   zone: number;
 }
 
-// Scene colours track the console surfaces so the viewport reads as a recessed
-// well in the panel rather than a pasted-in canvas. The ones that ARE a console
-// surface come from SIGNAL and are not transcribed again here; what is written
-// out below has no CSS token behind it.
+// Tracks the console surfaces so the viewport reads as a recessed well.
 export const THEMES: Record<"light" | "dark", Theme> = {
   light: {
     background: SIGNAL.light.background,

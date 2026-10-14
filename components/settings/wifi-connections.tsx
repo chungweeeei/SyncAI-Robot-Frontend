@@ -45,16 +45,13 @@ import { cn } from "@/lib/utils";
 export const ADD_NETWORK_HREF = "/settings/wifi/new";
 
 /**
- * The Wi-Fi page: every network the robot has saved, as a card that rejoins
- * or forgets it, the one it is on first and carrying its signal and addresses.
+ * The Wi-Fi page: each network the robot has saved, as a card that rejoins or
+ * forgets it, the live one first with its signal and addresses.
  *
- * Saved networks lead, and the scan sits a page further in (Add network),
- * because switching between known sites is the common case and a scan costs
- * ~45 s of radio time to answer a question the robot already knows. A saved
- * network is rejoined with the password the robot kept, so no card asks for one.
- *
- * Which card is live comes from the state poll, not the list's own `active`:
- * the list is only read again after a write, and the robot can roam on its own.
+ * Saved networks lead and the scan is a page in (Add network): switching
+ * between known sites is the common case, and a scan costs ~45 s of radio.
+ * Which card is live comes from the state poll, not the list's `active` — the
+ * list is only re-read after a write, and the robot can roam on its own.
  */
 export function WifiConnections() {
   const saved = useWifiConnections();
@@ -81,7 +78,6 @@ export function WifiConnections() {
         ) : saved.status === "error" ? (
           <Card>
             <CardContent className="flex flex-wrap items-center justify-between gap-3">
-              {/* The backend's sentence, verbatim. */}
               <p role="alert" className="text-sm text-signal-warn">
                 {saved.error}
               </p>
@@ -129,17 +125,12 @@ export function WifiConnections() {
 /**
  * One saved network. Connect rejoins it; Forget deletes it behind a dialog.
  *
- * Every card has the signal and address rows, filled on the network the robot
- * is on and blank on the rest, so the grid lines up and the live card is the
- * one place to read the address an engineer reaches the robot by.
+ * Every card has the signal and address rows (blank off the live network) so
+ * the grid lines up. The live card has neither button: it is already joined,
+ * and the robot refuses to forget the network it is on.
  *
- * The live network's card has neither: it is already joined, and the robot
- * refuses to forget the network it is on — forgetting it would take the robot
- * off the network, quite possibly the one this console reaches it over.
- *
- * The join hook is shared by every card (the robot can only join one network
- * at a time, so one Connect in flight disables the rest), so a card shows the
- * hook's lines only when the join was a rejoin of *this* network.
+ * The join hook is shared by every card (one join at a time), so a card shows
+ * its lines only when the join was a rejoin of this network.
  */
 function SavedNetworkCard({
   connection,
@@ -190,8 +181,8 @@ function SavedNetworkCard({
       <CardContent className="space-y-2">
         <LinkDetails readout={linkReadout(connection.ssid, wifi.current)} />
 
-        {/* Live by the list's flag with no state frame yet: say why the rows
-            are blank, which is otherwise what a card off the network reads. */}
+        {/* Live by the list's flag but no state frame yet: say why the rows
+            are blank. */}
         {live && !wifi.current && (
           <Hint>
             {wifi.stateStatus === "loading"
@@ -200,8 +191,7 @@ function SavedNetworkCard({
           </Hint>
         )}
 
-        {/* In place rather than a toast, as on Add network: the operator is
-            watching this card until the robot lands. */}
+        {/* In place rather than a toast, as on Add network. */}
         {pending && (
           <Hint className="text-signal-caution">
             Connecting to <span className="readout">{wifi.pending}</span>… the
@@ -317,9 +307,8 @@ function LinkDetails({ readout }: { readout: LinkReadout }) {
 
 function LinkRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    // Wraps rather than truncates: a three-column grid at lg leaves a card
-    // just short of a MAC address beside its label, and a clipped address is
-    // worse than one on the next line.
+    // Wraps rather than truncates: at lg a card is just short of a MAC address
+    // beside its label, and a clipped address is worse.
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="readout ml-auto flex items-center gap-2 whitespace-nowrap">{children}</dd>
@@ -328,8 +317,8 @@ function LinkRow({ label, children }: { label: string; children: React.ReactNode
 }
 
 /**
- * A value's blank. Hidden from a screen reader, which would otherwise spell
- * out every dash and colon, and said there as the one fact it stands for.
+ * A value's blank, hidden from a screen reader (which would spell out every
+ * dash) and replaced there by the fact it stands for.
  */
 function Blank({ children }: { children: React.ReactNode }) {
   return (

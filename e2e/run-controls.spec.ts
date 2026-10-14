@@ -9,16 +9,13 @@ import {
 
 /**
  * The masthead's running-job controls: the step readout and the hold,
- * release and cancel beside it. Each test asserts both halves — what the
- * strip says and what the console sent — because a pause is a request the
- * robot acts on when it can, and the screen must say which of the two it is
- * showing. The strip is the page's `<header>`, so `banner` scopes every
- * locator to it and away from the /tasks banner's own Cancel.
+ * release and cancel beside it. A pause is a request the robot acts on when
+ * it can, so the screen must say whether it shows the request or the
+ * reading. `banner` scopes locators to the strip, away from the /tasks
+ * banner's own Cancel.
  *
- * The console-error guard stays on, with the exception settings.spec.ts
- * records: a 409 or a 502 makes Chromium log "Failed to load resource", and
- * here that refusal is the behaviour being tested. A thrown render or a
- * schema failure still fails the test.
+ * A 409 or 502 logs "Failed to load resource", and here that refusal is the
+ * behaviour under test; a thrown render or schema failure still fails.
  */
 
 const ID = "robot01-task-1758000000-1";
@@ -53,9 +50,8 @@ test.describe("the running-job controls", () => {
     await mockBackend(page);
     await page.goto("/settings");
 
-    // The bar is drawn in every state: an empty slot is also what a readout
-    // that failed to render looks like, so idle has to say that it is idle.
-    // Both controls stay in the row and are out, so nothing moves under a
+    // Idle says so, because an empty bar is also what a failed render looks
+    // like. Both controls stay in the row, greyed, so nothing moves under a
     // finger when a job starts.
     await expect(strip(page).getByRole("link", { name: "robot01" })).toBeVisible();
     await expect(readout(page)).toContainText("No task message in queue");
@@ -99,9 +95,8 @@ test.describe("the running-job controls", () => {
       .poll(() => writes.filter((w) => w.method === "POST"))
       .toHaveLength(1);
     expect(writes[0].path).toBe(`/api/v1/tasks/${ID}/pause`);
-    // The fake flips the run's state on the pause, so the next read says
-    // PAUSED and the button turns into Resume. "Paused" is the reading; the
-    // ack's PAUSING is never shown as it.
+    // The fake flips the run to PAUSED, so the next read turns the button
+    // into Resume. "Paused" is the reading, never the ack's PAUSING.
     await expect(readout(page)).toContainText("Paused");
     await expect(resumeButton(page)).toBeEnabled();
     await expect(pauseButton(page)).toHaveCount(0);
@@ -206,8 +201,7 @@ test.describe("the running-job controls", () => {
     });
     await page.goto("/settings");
 
-    // Greyed rather than gone: the pair is a fixed cluster, and a Pause that
-    // dropped out would slide Cancel under a finger already on its way to it.
+    // Greyed rather than gone, so Cancel does not slide under a finger.
     await expect(readout(page)).toContainText("Stand");
     await expect(pauseButton(page)).toBeDisabled();
     await expect(resumeButton(page)).toHaveCount(0);
@@ -244,9 +238,8 @@ test.describe("the running-job controls", () => {
     await expect(readout(page)).toContainText("No task message in queue");
     await expect(cancelButton(page)).toBeDisabled();
 
-    // The distinction the bar exists to keep: "there is no job" and "the
-    // console cannot tell" are different sentences, and the second must
-    // never be drawn as the first.
+    // "There is no job" and "the console cannot tell" are different
+    // sentences, and the second must never be drawn as the first.
     await page.route("**/api/v1/active_tasks", (route) =>
       route.fulfill({ status: 502, body: "" }),
     );

@@ -9,12 +9,8 @@ import { TelemetryRail } from "@/components/dashboard/telemetry-rail";
 import { cn } from "@/lib/utils";
 
 /**
- * The operator screen: viewport left, instrument rail right, nothing above.
- *
- * The map used to be a 560 px card under a row of four stat cards, which meant
- * the one thing the screen exists to show was the smallest part of it and moved
- * whenever the cards reflowed. Here the viewport takes every pixel the strip and
- * the rail do not need, and the page never scrolls.
+ * The operator screen: the viewport takes every pixel the strip and the rail
+ * do not need, and from lg the page never scrolls.
  */
 export default function DashboardPage() {
   const { state, status } = useConsoleRobotState();
@@ -29,21 +25,16 @@ export default function DashboardPage() {
     <div className="flex h-full flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
       <section
         aria-label="Map viewport"
-        // A definite height at every breakpoint: the canvas sizes itself from
-        // the container, and a flex item sized only by min-height leaves its
-        // h-full children resolving against nothing. svh, not vh: the shell
-        // is h-dvh, and 55vh of the *largest* viewport put the rail under the
-        // browser chrome until the URL bar hid.
+        // A definite height at every breakpoint, since the canvas sizes from
+        // its container. svh, not vh: 55vh of the largest viewport put the rail
+        // under the browser chrome.
         className="relative h-[55svh] shrink-0 lg:h-full lg:flex-1"
       >
-        {/* The pose the viewport draws does not come from here: the canvas has
-          * its own ~20 Hz telemetry WebSocket. This page's 1 Hz state is what
-          * the rail, the strip and the pose overlay read. */}
+        {/* The canvas draws the pose from its own ~20 Hz socket, not this
+          * page's 1 Hz state. */}
         <PointCloudView robotId={state.robot_id} />
-        {/* Pointer-transparent: it is a reading, and the corner of the scene
-          * under it still has to take a drag. Bottom-left because the
-          * read-backs hang from the top-left and bottom-right is kept free
-          * for the drive panel (see PointCloudView). */}
+        {/* Pointer-transparent so the scene under it still takes a drag.
+          * Bottom-right stays free for the drive panel. */}
         <PoseOverlay
           state={state}
           className="pointer-events-none absolute bottom-3 left-3"
@@ -61,13 +52,8 @@ export default function DashboardPage() {
 }
 
 /**
- * No-telemetry state.
- *
- * Written for whoever is standing in front of the robot, because that is where
- * the fix is — the console has nothing to retry. It names things the reader can
- * check without opening a terminal: power, network, and whether the robot has
- * finished starting. The endpoint and the service name used to be printed here
- * and are deliberately gone; they told a customer nothing they could act on.
+ * No-telemetry state, written for whoever stands at the robot: it names what
+ * they can check (power, network, start-up), never an endpoint or a service.
  */
 function AwaitingTelemetry({ connecting }: { connecting: boolean }) {
   return (
@@ -77,8 +63,7 @@ function AwaitingTelemetry({ connecting }: { connecting: boolean }) {
           aria-hidden
           className={cn(
             "mx-auto size-8",
-            // A permanently animating icon on the error state would read as
-            // progress that is not happening.
+            // No animation on the error state: it would read as progress.
             connecting
               ? "animate-pulse text-signal-cmd motion-reduce:animate-none"
               : "text-signal-caution",

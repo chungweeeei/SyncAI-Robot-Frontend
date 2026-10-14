@@ -7,12 +7,11 @@ import { MapImportControl } from "@/components/maps/map-import-control";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMaps } from "@/hooks/use-maps";
 
-// More cards to a row as the window widens, like /settings: one on a phone,
-// up to four, where a card is still wide enough for its chips and Export on
-// one line.
+// More cards per row as the window widens, up to four — still wide enough
+// for a card's chips and Export on one line.
 const GRID = "grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
 
-/** Same panel shape /settings uses when a state frame has not arrived. */
+/** The empty / failed panel /settings uses. */
 function Notice({
   label,
   children,
@@ -49,37 +48,22 @@ function LoadingGrid() {
 }
 
 /**
- * The map catalogue: what is on the robot, and which map it is running on.
+ * The map catalogue: what is on the robot, and which map it runs on.
  *
- * That last fact used to come with a caveat this page had to spell out, because
- * the choice was made in the instance INI and taking effect meant restarting the
- * stack. It no longer does — the card's Switch control re-points the running
- * localizer and map_server and rewrites the INI in one call.
+ * The backend's sentence for a rename, delete, switch or import is held here:
+ * rename and delete unmount their card, an import's card doesn't exist yet,
+ * and a switch's sentence is about the robot (where it is, whether it needs a
+ * pose), not one card.
  *
- * Renaming, deleting and switching are calls: each card carries all three
- * controls, and the backend's sentence about any of them is held *here*. For a
- * rename or a delete that is because the card is keyed by its name and both
- * outcomes unmount it with the refetch. A switch leaves its card mounted, but
- * its sentence is about the *robot* — where it ended up, and whether it still
- * needs an initial pose — so it belongs above the grid rather than inside the
- * card of a map that is now merely one of several. An import's sentence lands
- * on the same line for the first reason: the card it is about does not exist
- * until the refetch mounts it.
- *
- * The toolbar — that line and the Import button — renders in every state,
- * including "no maps" and "unavailable". A robot with no maps is exactly the
- * one an operator is bringing an archive to, and hiding the only way in behind
- * the empty state would make the state permanent.
+ * The toolbar (that line and Import) renders in every state: a robot with no
+ * maps is the one someone is bringing an archive to.
  */
 export function MapLibrary() {
   const { maps, status } = useMaps();
   const [lastResult, setLastResult] = React.useState<string | null>(null);
 
-  // The backend's sentence, verbatim — same contract as the other map
-  // controls. It says how many vertices and templates followed the name, how
-  // many went with the deleted map, or what an import brought, which no card
-  // is around to show. One line for all of them: they are the same kind of
-  // answer, and the latest to arrive is the one worth reading.
+  // One line for every map control's sentence; the latest is the one worth
+  // reading.
   const toolbar = (
     <div className="mb-3 flex items-start gap-3">
       {lastResult && (
@@ -124,7 +108,7 @@ export function MapLibrary() {
     );
   }
 
-  // Loaded map first — it is the one an operator is looking for — then by name.
+  // Loaded map first, then by name.
   const ordered = [...maps].sort((a, b) => {
     if (a.active !== b.active) return a.active ? -1 : 1;
     return a.name.localeCompare(b.name);

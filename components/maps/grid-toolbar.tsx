@@ -48,40 +48,22 @@ import {
 } from "@/lib/map/editor";
 
 /*
- * The floor plan editor's controls, as two strips along the top of the canvas —
- * the dashboard viewport's arrangement, from the same primitives
- * (components/console/tool-strip.tsx).
+ * The floor plan editor's controls, as two strips along the top of the canvas
+ * built from components/console/tool-strip.tsx, like the dashboard viewport.
  *
- * They used to be one card at top-left that grew row by row: a Grid / Waypoints
- * mode switch, a tool row, a Paint row, a Size row, then history, zoom and
- * Save. Every choice was a labelled row of the same weight.
+ * Right, **Draw**: what a press on the map means — nothing, Wall, Floor,
+ * Unknown, Waypoint or Forbidden zone — beside the zoom. Left, **Editor**: fit,
+ * history, Save, then the tools the Draw choice allows, led by Pan.
  *
- * Right, **Draw**: the one choice that decides what a press on the map means —
- * nothing (where the editor opens), Wall, Floor, Unknown, Waypoint or Forbidden
- * zone — as a list, beside the zoom at the outer edge. Left, **Editor**: everything that
- * acts on the work — fit the view, history, Save — and then the tools the Draw
- * choice allows, led by Pan, which is always there.
- *
- * The left strip holds nothing but buttons. A read-only mark of the chosen kind
- * used to stand between Pan and that kind's tools; it was removed because an
- * icon the same size and in the same row as its neighbours reads as a button
- * that does not work. The Draw list names the choice, which is where it is made.
+ * The left strip holds only buttons: a read-only mark of the chosen kind there
+ * read as a broken button.
  */
 
 /**
- * One armable tool: what it is worth, what it does, and the shape it wears.
- *
- * Both tool rows are icons, and for the same reason. Four or five verbs of
- * similar length and similar shape, set in the same condensed caps as every
- * other label in a 224 px panel, are a row of grey text that has to be read
- * before it can be used; a hand, a brush, a stroke and a square are four
- * silhouettes, and which one is armed is legible from the shape alone. That
- * matters most here, because the armed tool is the whole difference between
- * dragging the map and painting on it — the trade that DEFAULT_TOOL and
- * DEFAULT_VERTEX_TOOL exist to make safe.
- *
- * `label` is not lost by that: it is the accessible name and half the tooltip,
- * and a finger reads it printed under the icon. Nothing here is icon-only.
+ * One armable tool. Both tool rows are icons: silhouettes make the armed tool
+ * legible at a glance, which matters because it is the difference between
+ * dragging the map and painting on it. `label` is the accessible name and
+ * tooltip, and is printed under the icon for a finger.
  */
 interface ToolOption<T extends string> {
   value: T;
@@ -92,14 +74,9 @@ interface ToolOption<T extends string> {
 }
 
 /*
- * Pan is first because it is what the editor opens in (see DEFAULT_TOOL in
- * map-grid-editor.tsx). The row reads left-to-right as "here is where you
- * start, here is what you can arm", and leaving Pan in the trailing slot it
- * used to occupy would put the lit segment at the far end of the row on load —
- * which reads as an odd leftover setting rather than a deliberate resting state.
- *
- * Line is a slash rather than a dash: a horizontal bar is the minus glyph and
- * reads as "remove", which is the one thing no tool on this row does.
+ * Pan first: it is what the editor opens in (DEFAULT_TOOL), so the lit
+ * segment rests at the start of the row. Line is a slash, since a dash reads
+ * as minus / "remove".
  */
 const TOOLS: readonly ToolOption<EditTool>[] = [
   { value: "pan", label: "Pan", hint: "drag the map", icon: HandIcon },
@@ -120,11 +97,7 @@ const VERTEX_TOOLS: readonly ToolOption<VertexTool>[] = [
   },
 ];
 
-/**
- * Zone mode's. A pentagon rather than Rect's square, because the shape is
- * whatever the operator's corners make it, and a square would promise the
- * one thing this tool does not draw.
- */
+/** Zone mode's. A pentagon, not a square: the shape is whatever the corners make. */
 const ZONE_TOOLS: readonly ToolOption<ZoneTool>[] = [
   { value: "pan", label: "Pan", hint: "drag the map", icon: HandIcon },
   {
@@ -136,9 +109,8 @@ const ZONE_TOOLS: readonly ToolOption<ZoneTool>[] = [
 ];
 
 /**
- * A paint kind's glyph: a square of the grey its cells are drawn in, so the
- * button shows the result rather than a metaphor for it. Bordered, because
- * Floor is near-white and would vanish on the light panel without one.
+ * A paint kind's glyph: a square of its cells' grey, showing the result.
+ * Bordered so near-white Floor doesn't vanish on the light panel.
  */
 function swatchIcon(kind: PaintKind): ToolIcon {
   function Swatch({ className }: { className?: string }) {
@@ -162,8 +134,7 @@ const DRAW_KINDS: readonly {
   { value: "floor", label: "Floor", icon: swatchIcon("floor") },
   { value: "unknown", label: "Unknown", icon: swatchIcon("unknown") },
   { value: "waypoint", label: "Waypoint", icon: MapPinIcon },
-  // The "not here" sign: what the zone means, since its shape is the
-  // operator's to draw.
+  // The "not here" sign: what the zone means, since its shape is the operator's.
   { value: "zone", label: "Forbidden zone", icon: BanIcon },
 ];
 
@@ -173,13 +144,9 @@ const SIZE_ITEMS = BRUSH_SIZES.map((size) => ({
 }));
 
 /**
- * What the last save attempt did, as a state rather than an event.
- *
- * The two things an operator must not miss — "not saved" and "saved but the
- * robot is still on the old map" — are properties of the editor as it stands,
- * so they are rendered in place next to the Unsaved chip. A toast is the wrong
- * container for them (and there is none in this app): anything that
- * auto-dismisses is guaranteed to dismiss the one message that matters.
+ * What the last save did, as a state rather than an event: "not saved" and
+ * "saved but the robot is still on the old map" are rendered in place, since
+ * anything that auto-dismisses would dismiss the one message that matters.
  */
 export type SaveState =
   | { kind: "idle" }
@@ -189,9 +156,8 @@ export type SaveState =
   | { kind: "failed"; message: string };
 
 /**
- * What a save wrote: the floor plan's cells, the map's forbidden zones, or
- * its waypoints. One Save button writes whichever have changes, and each
- * reports in a note of its own, because any can land while another fails.
+ * What a save wrote. One Save writes whichever have changes, and each reports
+ * in its own note, since any can land while another fails.
  */
 export type SaveSubject = "grid" | "zones" | "zonesRemoved" | "waypoints";
 
@@ -211,16 +177,14 @@ const SAVE_COPY: Record<
     saved: "Forbidden zones saved",
     stale: "Forbidden zones saved — the robot is still keeping to the old ones.",
   },
-  // A Remove writes at once, so it reports on its own words: "saved" would
-  // read as if the other unsaved edits had gone with it.
+  // Remove writes at once; "saved" would imply the other edits went with it.
   zonesRemoved: {
     failed: "Forbidden zone not removed",
     reloaded: "Removed · in force now",
     saved: "Removed",
     stale: "Removed — the robot is still keeping to the old zones.",
   },
-  // A waypoint write answers with no reload to report, so the editor sends
-  // it as plain "saved" and this note carries what it wrote as the detail.
+  // A waypoint write has no reload to report; the note carries what it wrote.
   waypoints: {
     failed: "Waypoints not saved",
     reloaded: "Waypoints saved",
@@ -230,11 +194,9 @@ const SAVE_COPY: Record<
 };
 
 /**
- * `active` is what keeps this from crying wolf: `reloaded: false` covers both
- * "this isn't the map the stack is running, so of course nothing reloaded"
- * (benign, and shouting at it teaches operators to ignore the shout) and "it IS
- * the running map and the reload failed" (the case this whole surface exists
- * for). The zones answer in the same two fields for the same two cases.
+ * `active` keeps this from crying wolf: `reloaded: false` is benign for a map
+ * the robot isn't running and serious for the one it is. Zones answer in the
+ * same two fields.
  */
 function saveNote(
   save: SaveState,
@@ -260,7 +222,7 @@ function saveNote(
 }
 
 
-/** The list's value for "nothing chosen": base-ui wants a string per item. */
+/** "Nothing chosen": base-ui wants a string per item. */
 const NONE = "none";
 
 const DRAW_ITEMS = [
@@ -269,17 +231,12 @@ const DRAW_ITEMS = [
 ];
 
 /**
- * The left strip: acting on the work, then drawing on it.
+ * The left strip: acting on the work, then drawing on it. Fit leads (the
+ * first thing reached for when lost in a zoom); Save shows its state by being
+ * greyed or carrying a caution dot.
  *
- * Fit leads, because "put the whole floor plan back in front of me" is the
- * first thing reached for after getting lost in a zoom. Save is an icon here
- * like its neighbours; what it cannot say by shape it says by state — greyed
- * with nothing to save, and a caution dot while there is.
- *
- * Pan is always offered, whatever is chosen, and with nothing chosen it is the
- * only tool, lit, so the strip still says what a drag does. Size follows only
- * while it means something: Brush and Line lay down a stroke that wide, Rect
- * fills its box whatever the size.
+ * Pan is always offered — with nothing chosen it is the only tool, lit, so
+ * the strip still says what a drag does. Size shows only for Brush and Line.
  */
 export function EditorToolBar({
   onFit,
@@ -317,10 +274,7 @@ export function EditorToolBar({
   dirty: boolean;
   /** A write of any of them is in flight. */
   saving: boolean;
-  /**
-   * Why nothing may be written to this map right now — a job is driving on
-   * it — or null. Holds Save and Remove; the edits themselves stay on screen.
-   */
+  /** Why nothing may be written (a job is driving on the map), or null. Holds Save and Remove. */
   writeLock?: string | null;
   onSave: () => void;
   drawKind: DrawKind | null;
@@ -337,7 +291,7 @@ export function EditorToolBar({
   selectedZones: number;
   /** A zone write — Save's or Remove's — is in flight; Remove waits for it. */
   zoneWriting: boolean;
-  /** The write in flight is a Remove, which is what the spinner is for. */
+  /** The write in flight is a Remove (the spinner's cue). */
   removingZones: boolean;
   onRemoveZone: () => void;
   brush: number;
@@ -367,9 +321,8 @@ export function EditorToolBar({
 
       <ToolDivider />
 
-      {/* The dot is the old Unsaved chip, shrunk to fit an icon strip. It is
-        * decoration for the eye; the button's own hint and its enabled state
-        * carry the same fact to a screen reader. */}
+      {/* The unsaved dot is for the eye; the hint and enabled state carry it
+        * to a screen reader. */}
       <span className="relative flex">
         <ToolButton
           label="Save"
@@ -443,11 +396,9 @@ export function EditorToolBar({
                 onClick={() => onZoneToolChange(option.value)}
               />
             ))}
-            {/* The one one-shot action in the Tool group, unlike Fit and
-              * Save at the strip's head: it belongs to the shape in flight,
-              * so it sits beside the tool that makes one. It is also how a
-              * finger, which has no Enter key, closes a shape whose first
-              * corner has ended up under a panel. */}
+            {/* Done belongs to the shape in flight, so it sits beside the tool;
+              * it is also how a finger (no Enter key) closes a shape whose
+              * first corner is under a panel. */}
             <ToolButton
               label="Done"
               hint={canCloseZone ? "close the shape" : "needs three corners first"}
@@ -455,9 +406,8 @@ export function EditorToolBar({
               disabled={!canCloseZone}
               onClick={onCloseZone}
             />
-            {/* Takes every selected zone at once, off the robot too, with no
-              * Save needed. Delete and Backspace do the same from the
-              * keyboard; this is the button a finger has. */}
+            {/* Removes every selected zone, off the robot too, without Save —
+              * the touch form of Delete / Backspace. */}
             <ToolButton
               label="Remove"
               hint={
@@ -477,10 +427,8 @@ export function EditorToolBar({
         )}
       </ToolGroup>
 
-      {/* Cells, not pixels — the number is the count of cells across, which is
-        * what you are actually deciding about. A list of the fixed sizes
-        * rather than a slider: knowing you are painting exactly 7 cells is
-        * worth more here than continuous control. */}
+      {/* Cells across, from fixed sizes rather than a slider: knowing it is
+        * exactly 7 cells is worth more than continuous control. */}
       {sized && (
         <Select
           items={SIZE_ITEMS}
@@ -489,24 +437,21 @@ export function EditorToolBar({
             if (next) onBrushChange(Number(next));
           }}
         >
-          {/* 32 px under a finger, the height of the compact buttons beside
-            * it, so the strip does not grow by the one control that is taller. */}
+          {/* 32 px under a finger, matching the compact buttons beside it. */}
           <SelectTrigger
             size="sm"
             aria-label="Brush size"
             title="Brush size — how many cells across a stroke is"
             className="ml-0.5 rounded-sm text-[12px] pointer-coarse:min-h-8"
           >
-            {/* The bare number below sm, by request: "7 cells" was the one
-              * control that pushed the strip to a second row on a phone, and
-              * the trigger's name and the open list still say what it counts. */}
+            {/* The bare number below sm, by request: "7 cells" pushed the
+              * strip to a second row on a phone. */}
             <SelectValue>
               {(value: string | null) =>
                 value === null ? null : (
                   <>
                     {value}
-                    {/* A margin, not a leading space: SelectValue is a flex
-                      * row, and a flex item's leading space is dropped. */}
+                    {/* A margin, not a leading space: flex drops it. */}
                     <span className="ml-1 max-sm:hidden">
                       {value === "1" ? "cell" : "cells"}
                     </span>
@@ -529,13 +474,9 @@ export function EditorToolBar({
 }
 
 /**
- * The right strip: what a press puts on the map, and the zoom.
- *
- * A list rather than a row of buttons because it is one choice among six and
- * changed rarely compared with the tools, so it can cost a click to open;
- * "No type" is an item of its own, so putting the choice down is as visible as
- * picking one (Escape does the same). Each item wears the mark the left strip
- * will show for it.
+ * The right strip: what a press puts on the map, and the zoom. A list since
+ * it is one of six choices changed rarely; "No type" is its own item so
+ * putting the choice down is visible (Escape does the same).
  */
 export function EditorDrawBar({
   drawKind,
@@ -548,9 +489,8 @@ export function EditorDrawBar({
   drawKind: DrawKind | null;
   onDrawKindChange: (kind: DrawKind | null) => void;
   /**
-   * The map's saved zones could not be read, so Forbidden zone is offered
-   * but not choosable: a zone drawn now would be saved as the map's whole
-   * list and erase the ones the robot already holds.
+   * The map's saved zones couldn't be read, so Forbidden zone is not
+   * choosable: a zone saved now would replace the robot's whole list.
    */
   zonesLocked?: boolean;
   onZoomIn: () => void;
@@ -575,11 +515,8 @@ export function EditorDrawBar({
         >
           <SelectValue />
         </SelectTrigger>
-        {/* A dropdown, not a native-style menu: the primitive's default
-          * lines the chosen item up over the trigger, so with Waypoint or
-          * Forbidden zone chosen the list grew *upward*, off the top of the
-          * map. This strip sits at the top edge, so the list always fits
-          * below and the choice reads top-down like the list it came from. */}
+        {/* alignItemWithTrigger off: the default lined the chosen item up over
+          * the trigger, so the list grew upward off the map. */}
         <SelectContent alignItemWithTrigger={false}>
           <SelectItem value={NONE}>
             <span className="text-muted-foreground">No type</span>
@@ -599,8 +536,7 @@ export function EditorDrawBar({
 
       <ToolDivider />
 
-      {/* At the strip's outer edge, as on the dashboard. Zoom is otherwise the
-        * wheel and, on a phone, the pinch; one press is a step to count. */}
+      {/* At the outer edge, as on the dashboard; besides wheel and pinch. */}
       <ToolGroup label="Zoom">
         <ToolButton label="Zoom out" hint="one step back" icon={ZoomOutIcon} onClick={onZoomOut} />
         <ToolButton label="Zoom in" hint="one step closer" icon={ZoomInIcon} onClick={onZoomIn} />
@@ -609,10 +545,7 @@ export function EditorDrawBar({
   );
 }
 
-/**
- * What the last save did, under the right strip — in place and until the
- * buffer moves on, for the reason SaveState gives.
- */
+/** What the last save did, under the right strip, until the buffer moves on (see SaveState). */
 export function SaveNote({
   save,
   subject = "grid",
@@ -641,8 +574,7 @@ export function SaveNote({
 }
 
 /*
- * The keyboard/mouse hint line that used to close the old card was removed on
- * request, and stays removed. The gestures it documented are all still live —
- * right-drag and middle-drag pan in every mode, Space pans while held, Escape
- * puts the Draw choice down, 0 fits, scroll zooms.
+ * No hint line, by request. The gestures still work: right- and middle-drag
+ * pan in every mode, Space pans while held, Escape puts the Draw choice down,
+ * 0 fits, scroll zooms.
  */

@@ -19,37 +19,22 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * Backend-free-standing test bench for the robot's WHEP camera stream.
- *
- * The dashboard has no camera panel yet, so without this route the only way to
- * exercise POST /api/v1/webrtc/whep is curl — which cannot complete an ICE
- * handshake, so it can prove the 400s and the 502s and nothing else. This page
- * is the first client that can actually establish a session, and it is built to
- * answer the questions that go wrong in that order:
+ * Test bench for the robot's WHEP camera stream and WHIP talkback. curl can't
+ * complete an ICE handshake, so this is the client that proves a session, in
+ * the order things go wrong:
  *
  *   1. Did signalling work?      — the session id and the Location URL
  *   2. Is CORS right?            — "Location readable" is the expose_headers
  *                                  check; without it teardown silently breaks
  *   3. Is video arriving?        — resolution, fps, kbps, frames decoded
- *   4. Is audio arriving?        — a level meter, because the Opus track rides
- *                                  the same GStreamer pipeline as the camera
- *                                  and speakers are the last thing to trust
+ *   4. Is audio arriving?        — a level meter; the Opus track rides the
+ *                                  camera's GStreamer pipeline
  *   5. How is the path?          — candidate pair and RTT
  *
- * Deliberately not in the nav rail: a developer tool, opened by hand at
- * /webrtc-test. It renders in a production build too, because the robot only
- * ever runs one (see that page for why).
- *
- * Both directions are here now. The robot's microphone reaches the browser as
- * the WHEP session's second track; the browser's microphone reaches the
- * robot's speaker over WHIP, which is a separate session with its own button
- * because the two are independent -- listening without talking is the common
- * case, and a single control would tie the camera to the microphone
- * permission.
- *
- * The WHIP half needs a secure context and this page is usually opened over
- * plain http, so it degrades to an explanation rather than a broken button;
- * see lib/video/whip.ts.
+ * Unlisted in the nav rail but rendered in production builds, since the robot
+ * only runs one. Talk (WHIP) is a separate session with its own button so
+ * listening doesn't require microphone permission; it needs a secure context
+ * and degrades to an explanation over plain http (see lib/video/whip.ts).
  */
 
 const STATS_POLL_MS = 500;
@@ -73,17 +58,12 @@ interface BackendStatus {
 type Phase = "idle" | "connecting" | "live" | "failed";
 
 /**
- * Which negotiation this page is exercising.
+ * Which negotiation to exercise. "split" is WHEP for the camera plus WHIP for
+ * the microphone (the default: watching needs no mic permission); "duplex" is
+ * one peer connection carrying both.
  *
- * "split" is two independent sessions — WHEP for the camera, WHIP for the
- * microphone — and is the default because watching without talking needs no
- * microphone permission. "duplex" is one peer connection carrying both, which
- * trades that independence for a single handshake.
- *
- * They contend: a duplex session holds the camera and the speaker together, so
- * the backend preempts whichever kind is live when the other is created. That
- * is why the switch is disabled while anything is connected rather than
- * silently stealing the devices from the session you are watching.
+ * They contend for the camera and speaker, so the backend preempts one when
+ * the other is created — hence the switch is disabled while connected.
  */
 type Mode = "split" | "duplex";
 
@@ -92,13 +72,7 @@ const MODE_OPTIONS = [
   { value: "duplex" as const, label: "Duplex" },
 ];
 
-/**
- * The camera-bearing session, whichever kind produced it.
- *
- * Both clients return the same four things the page needs, so normalising here
- * keeps the video element, the stats pump and the teardown path from each
- * growing a branch on the mode.
- */
+/** The camera-bearing session, normalised so video, stats and teardown don't branch on the mode. */
 interface ActiveSession {
   kind: Mode;
   stream: MediaStream;
@@ -127,12 +101,8 @@ export function WebRtcBench() {
   const [talkPhase, setTalkPhase] = React.useState<Phase>("idle");
   const [talkError, setTalkError] = React.useState<string | null>(null);
   const [whipStats, setWhipStats] = React.useState<WhipStats | null>(null);
-  // Resolved on the client only: navigator does not exist during SSR, and a
-  // server-rendered "unavailable" would be wrong on an https console. Via
-  // useSyncExternalStore rather than an effect because the value never changes
-  // after mount -- there is nothing to synchronise, only a browser fact to
-  // read once the browser exists. null is the server's answer, and the UI
-  // treats it as "not known yet" rather than as "unavailable".
+  // Client-only: navigator doesn't exist during SSR, and a server-rendered
+  // "unavailable" would be wrong on https. null means "not known yet".
   const micAvailable = React.useSyncExternalStore(
     neverChanges,
     microphoneAvailable,
@@ -163,10 +133,7 @@ export function WebRtcBench() {
     };
 
     try {
-      // The only place the two negotiations differ for this page: what the
-      // camera stream is called on the way back. Everything downstream — the
-      // <video> element, both stats pumps, teardown — works off the
-      // normalised session.
+      // The only place the two negotiations differ: where the camera stream comes from.
       const session: ActiveSession =
         mode === "duplex"
           ? await startDuplexSession(handlers).then((s) => ({
@@ -191,9 +158,8 @@ export function WebRtcBench() {
       const video = videoRef.current;
       if (video) {
         video.srcObject = session.stream;
-        // play() is called from inside the click handler's task, so the
-        // autoplay policy lets the audio track through unmuted. Starting this
-        // page on load instead would get a silent stream and no error.
+        // play() inside the click handler's task, so autoplay lets the audio
+        // through unmuted; on page load it would be silently muted.
         try {
           await video.play();
         } catch {
@@ -231,15 +197,13 @@ export function WebRtcBench() {
     }
   }, [stopTalking]);
 
-  // Teardown on unmount and on tab close. Without the pagehide half, closing
-  // the tab leaves the session (and the camera) held on the robot until the
-  // next POST preempts it -- there is no callback from the worker.
+  // Teardown on unmount and tab close: without pagehide the session (and the
+  // camera) stays held on the robot until the next POST preempts it.
   React.useEffect(() => {
     const onPageHide = () => {
       void sessionRef.current?.close();
       sessionRef.current = null;
-      // The WHIP session holds the robot's speaker, so it matters at least as
-      // much as the viewer slot that this fires on unload.
+      // The WHIP session holds the robot's speaker.
       void whipRef.current?.close();
       whipRef.current = null;
     };
@@ -250,9 +214,8 @@ export function WebRtcBench() {
     };
   }, []);
 
-  // Stats pump. Outside TanStack Query for the same reason the telemetry
-  // socket is: there is nothing to refetch, and the RTCPeerConnection is the
-  // source of truth rather than a URL.
+  // Stats pump, outside TanStack Query: the RTCPeerConnection is the source of
+  // truth, not a URL.
   React.useEffect(() => {
     if (phase !== "live") return;
     let previous: Parameters<typeof readWhepStats>[1] = {};
@@ -279,10 +242,8 @@ export function WebRtcBench() {
     };
   }, [phase]);
 
-  // The outbound half. In duplex mode the microphone rides the same peer
-  // connection as the camera, so the stats come off that one — getStats()
-  // reports both directions and readWhipStats only looks at the outbound and
-  // media-source entries.
+  // In duplex the mic rides the camera's connection; readWhipStats reads only
+  // the outbound entries of its getStats().
   const micLive = mode === "duplex" ? phase === "live" : talkPhase === "live";
 
   React.useEffect(() => {
@@ -311,9 +272,8 @@ export function WebRtcBench() {
     };
   }, [micLive, mode]);
 
-  // The backend's own view, polled independently: it is what says whether the
-  // .so has been loaded at all, and it keeps answering after a session drops,
-  // which is exactly when the browser side has nothing left to report.
+  // The backend's own view, polled separately: it says whether the plugin is
+  // loaded, and keeps answering after a session drops.
   React.useEffect(() => {
     let cancelled = false;
     const poll = async () => {
@@ -340,8 +300,6 @@ export function WebRtcBench() {
 
   const live = phase === "live";
   const duplex = mode === "duplex";
-  // In duplex mode the microphone is part of the one session, so "talking" is
-  // whatever the camera session is doing.
   const talking = duplex ? live : talkPhase === "live";
   const audioFlowing = (stats?.audioPacketsReceived ?? 0) > 0;
   const videoFlowing = (stats?.framesDecoded ?? 0) > 0;
@@ -354,9 +312,8 @@ export function WebRtcBench() {
       >
         <video
           ref={videoRef}
-          // playsInline so iOS Safari does not hijack it into a fullscreen
-          // player; controls as the fallback when the autoplay policy refuses
-          // the programmatic play().
+          // playsInline so iOS Safari doesn't force fullscreen; controls as the
+          // fallback when autoplay refuses play().
           playsInline
           controls
           muted={muted}
@@ -407,17 +364,14 @@ export function WebRtcBench() {
             {muted ? <VolumeXIcon data-icon="inline-start" /> : <Volume2Icon data-icon="inline-start" />}
             {muted ? "Unmute" : "Mute"}
           </Button>
-          {/* Duplex has no separate Talk control: the microphone is part of
-              the one session, so a second button would imply an independence
-              the negotiation does not have. */}
+          {/* Duplex has no Talk control: the mic is part of the one session. */}
           {!duplex && (
             <Button
               size="sm"
               variant={talking ? "destructive" : "outline"}
               aria-pressed={talking}
-              // Independent of the camera on purpose: talking without watching
-              // is a real case, and gating it on `live` would hide the control
-              // exactly when someone is debugging the speaker.
+              // Independent of the camera: gating on `live` would hide it when
+              // someone is debugging the speaker alone.
               disabled={micAvailable === false || talkPhase === "connecting"}
               title={micAvailable === false ? INSECURE_CONTEXT_MESSAGE : undefined}
               onClick={() => void (talking ? stopTalking() : startTalking())}
@@ -446,9 +400,7 @@ export function WebRtcBench() {
             value={mode}
             options={MODE_OPTIONS}
             stretch
-            // Switching mid-session would have the backend preempt the very
-            // session being watched, from a control that looks like a view
-            // filter. Disconnect first.
+            // Switching mid-session would preempt the session being watched.
             disabled={phase !== "idle" || talkPhase !== "idle"}
             onChange={setMode}
           />
@@ -591,13 +543,9 @@ function fmt(value: number | null | undefined, digits: number): string {
 }
 
 /**
- * Inbound audio level as a bar.
- *
- * A meter rather than a number because the question it answers is "is the
- * robot's microphone picking anything up", which is a shape over time, not a
- * reading. Browsers that do not report audioLevel on inbound-rtp fall back to
- * the packet counter above — packets arriving with no level is still proof the
- * track is alive.
+ * Inbound audio level as a bar — "is the mic picking anything up" is a shape
+ * over time. Without inbound audioLevel, the packet counter above still
+ * proves the track is alive.
  */
 function LevelMeter({ level }: { level: number | null }) {
   const pct = level == null ? 0 : Math.min(100, Math.round(level * 100));

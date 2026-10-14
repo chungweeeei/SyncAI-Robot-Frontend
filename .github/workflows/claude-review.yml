@@ -1,20 +1,10 @@
-# Claude reviews every pull request into main or dev.
+# Claude reviews every pull request into main or dev, against the conventions
+# CI cannot check (a missed invalidation, an unannotated zod schema, internal
+# names in UI copy). It reads CLAUDE.md and .claude/skills/ from the checkout,
+# which is what makes them enforceable.
 #
-# This is the half of review that ci.yml cannot do. CI proves the code
-# compiles, lints, passes 117 tests and builds; none of that catches the rules
-# this repo actually lives by, because they are conventions rather than types:
-# a write that forgets to invalidate a key its response affects, a zod schema
-# written without the z.ZodType<T> annotation, an error string that names a ROS
-# node or a shell command on a screen an end customer reads. All three are
-# written down in CLAUDE.md and in .claude/skills/, which the reviewer reads
-# from the checkout — so this workflow is what makes those files enforceable
-# instead of merely documented.
-#
-# Findings land on the PR itself, inline on the lines they concern. That is
-# what `--comment` buys: without it the review goes to the workflow run log,
-# where nobody reads it. It is also what makes the review arrive by email —
-# Claude posts as the GitHub App, a different actor from the PR author, so
-# GitHub sends its ordinary review notification. No SMTP step needed.
+# `--comment` posts findings inline on the PR rather than in the run log; as a
+# different actor from the author, the App also triggers GitHub's email.
 
 name: Claude Review
 
@@ -33,9 +23,8 @@ jobs:
   review:
     name: review
     runs-on: ubuntu-latest
-    # Read-only on the repository: a reviewer that can push is a reviewer that
-    # can land its own suggestions. id-token is the one write, and it is for
-    # the action's GitHub App authentication, not for the repo.
+    # Read-only, so the reviewer cannot land its own suggestions. id-token is
+    # for the action's GitHub App authentication, not the repo.
     permissions:
       contents: read
       pull-requests: read
@@ -46,8 +35,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          # The diff comes from the API; the checkout is here so the reviewer
-          # can read CLAUDE.md and .claude/skills/ — which is the whole point.
+          # The diff comes from the API; the checkout is for CLAUDE.md and
+          # .claude/skills/.
           fetch-depth: 1
 
       - uses: anthropics/claude-code-action@v1

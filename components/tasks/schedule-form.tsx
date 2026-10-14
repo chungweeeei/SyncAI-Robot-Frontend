@@ -51,11 +51,7 @@ export interface ScheduleFormProps {
   reason: string | null;
   busy: boolean;
   error: string | null;
-  /**
-   * The registered schedule being changed, when this edits one rather than
-   * making one. Its trigger seeds the fields; the name is not asked for,
-   * because a schedule cannot be renamed.
-   */
+  /** The schedule being edited; its trigger seeds the fields. No name field: a schedule cannot be renamed. */
   editing?: { id: string; trigger: ScheduleTrigger };
   onSubmit: (id: string, trigger: ScheduleTrigger) => void;
 }
@@ -63,43 +59,19 @@ export interface ScheduleFormProps {
 /**
  * Register the authored step list to run on a timer.
  *
- * One "Repeat" picker instead of a kind switch followed by a value: Daily,
- * Weekdays and Weekends are the patrols every site asks for and each is one
- * click, Custom opens the seven day toggles, Interval opens a count and a unit.
- * Only the selected kind is ever built into the request, which is what makes
- * the backend's cron-XOR-interval validator unreachable: "provide exactly one"
- * cannot fail.
+ * One Repeat picker (Daily, Weekdays, Weekends, Custom days, Interval), and
+ * only the selected kind is built into the request, so the backend's
+ * cron-XOR-interval check cannot fail. No cron is typed: `toCron` builds it,
+ * so what this console registers reads back as a sentence, and an interval is
+ * in minutes or hours.
  *
- * Nothing here is cron. The backend's timed trigger is a cron string and the
- * field used to be that string, with `0 9 * * 1-5` as its placeholder — the one
- * control on this screen an end customer could not fill in without asking an
- * engineer. The form builds it with `toCron` and is the only writer, so what
- * this console registers always reads back as a sentence in the list. The
- * interval is entered in minutes or hours for the same reason: nobody thinks in
- * 1800 seconds.
+ * The preview uses the list's `describeTrigger`, so it says what the list will
+ * say, plus the next run to answer "which 09:00". The timezone is the
+ * browser's, sent unasked (a bare cron is read in UTC); the preview waits for
+ * it so the server and first client render match.
  *
- * The preview line under the fields is the same `describeTrigger` the schedule
- * list renders with, so the words an operator reads before pressing Create are
- * the words that will appear in the list — one vocabulary, no translation
- * between the two. A timed trigger also shows its next run, which is the only
- * way to answer "which 09:00" before the request goes out.
- *
- * The timezone is this browser's, sent unasked and named in the preview rather
- * than offered as a field. A cron without one is read by the backend in UTC,
- * and an operator typing 09:00 means 09:00 where they are standing; the robot is
- * on the same LAN, so that zone is the right one in every case we have met.
- * Until the browser has reported it the local-time sentence is held back, which
- * is what keeps the server render and the first client render identical.
- *
- * The id is operator-authored with no prefill, unlike a task id. A schedule is a
- * durable named thing they have to recognise in the list a week later, and
- * `robot01-sched-1782786519` is not that.
- *
- * Reset is by remounting — TemplateScheduleForm closes, and so unmounts
- * this, after a successful create — rather than by clearing six fields in an
- * effect. Editing works the same way from the other end: the fields are seeded
- * once from the registered trigger (`scheduleFormSeed`), and the row mounts a
- * fresh form each time Edit is pressed.
+ * The name is the operator's, unprefilled: it has to be recognisable a week
+ * later. Reset and edit are by remount, with fields seeded once.
  */
 export function ScheduleForm({
   existingIds,
@@ -110,8 +82,7 @@ export function ScheduleForm({
   editing,
   onSubmit,
 }: ScheduleFormProps) {
-  // Read once, by the initialisers below: a seed that followed the prop would
-  // overwrite the operator's half-made change when the list re-read.
+  // Read once: following the prop would overwrite a half-made change on re-read.
   const [seed] = React.useState(() =>
     editing ? scheduleFormSeed(editing.trigger) : DEFAULT_FORM_SEED,
   );
@@ -143,8 +114,8 @@ export function ScheduleForm({
   const intervalSeconds =
     Number.isInteger(amount) && amount > 0 ? amount * SECONDS_PER[unit] : null;
 
-  // `id: str` has no min_length on the backend, so a blank one would reach
-  // Temporal and come back as a 502 rather than a sentence about the name.
+  // The backend has no min_length on the id: a blank one comes back as a 502,
+  // not a sentence, so it is refused here.
   const duplicate =
     !editing && trimmedId.length > 0 && existingIds.includes(trimmedId);
 
@@ -163,11 +134,8 @@ export function ScheduleForm({
             : null;
 
   /**
-   * What will be sent, built once so the preview and the request cannot drift.
-   * Null while the fields do not yet make a trigger. The zone is omitted rather
-   * than sent blank when the browser could not name one, and never sent for an
-   * interval: the backend applies it only to the cron path, and a request
-   * carrying a field with no effect is a lie in the log.
+   * Built once so the preview and the request cannot drift. The zone is
+   * omitted when unknown, and for an interval, where the backend ignores it.
    */
   const trigger: ScheduleTrigger | null =
     repeat === "interval"
@@ -185,10 +153,8 @@ export function ScheduleForm({
     fieldsReason ?? (unchanged ? "Change the time or how often it repeats." : null);
   const submittable = ready && !busy && !localReason;
 
-  // The preview is only shown once the browser has a zone: it is built from the
-  // browser's clock, so a server-rendered version would name a different
-  // moment than the one the operator sees after hydration. Both lines gate on
-  // the same value for that reason.
+  // Gated on the zone: built from the browser's clock, a server render would
+  // name a different moment than the hydrated one.
   const preview = (() => {
     if (!trigger || !timezone) return null;
     if (trigger.interval_seconds) {
@@ -330,12 +296,9 @@ export function ScheduleForm({
 }
 
 /**
- * Seven pressed/unpressed days, drawn as one strip in Segmented's clothes so
- * the row reads as the same instrument as the Repeat picker above it.
- * Segmented itself is not reused because it is single-select — a set of days is
- * the one control on the console where several segments can be lit at once.
- * Each button is a real button with `aria-pressed`, so the state is announced
- * and the keyboard reaches every day without a custom handler.
+ * Seven toggles styled like Segmented, which is not reused because it is
+ * single-select. Real buttons with `aria-pressed`, so state is announced and
+ * the keyboard reaches every day.
  */
 function DayToggles({
   days,

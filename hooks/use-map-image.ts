@@ -15,38 +15,19 @@ export interface UseMapImage {
 /**
  * One map's floor plan raster, for drawing under the waypoint preview.
  *
- * A query rather than an `Image()` in the component: the same bytes are wanted
- * by every expanded MOVE row at once, and the cache is what makes that one
- * request and one decode instead of one per row. `staleTime: Infinity` because
- * a refetch on every mount would re-decode a multi-megapixel PNG each time a
- * row is unfolded.
+ * A query so every expanded MOVE row shares one request and one decode;
+ * `staleTime: Infinity` so unfolding a row does not re-decode the PNG.
  *
- * What keeps that from caching a stale floor plan is the key. It carries the
- * catalogue's `modified_at` (the newest file in the map's directory) and its
- * `grid_status`, so any rewrite the catalogue can see retires the entry, by
- * whoever made it. It used to be keyed by name alone, which was only safe for
- * writes this console made: a conversion started elsewhere left the old raster
- * on screen until a reload.
+ * The key carries the catalogue's `modified_at` and `grid_status`, so a
+ * rewrite by any console retires the entry. The status only separates two
+ * readable states sharing a time; a conversion inside one second of the last
+ * read would keep the old bytes, which is safe only because conversions take
+ * tens of seconds.
  *
- * The status only separates two readable states that share a time, such as an
- * interrupted rebuild that left the old plan in place and a later one that
- * finished. It does not protect the case that looks like its reason: a
- * conversion that starts and ends within the second of the last read shows
- * "ok" on both sides, so the key is unchanged and the old bytes are kept.
- * What makes that safe in practice is that a conversion takes tens of
- * seconds, not the key.
- *
- * Nothing is fetched while the map converts. The file is being rewritten, so
- * any bytes read then are either the old plan or a partial one, and caching
- * either is what this hook used to get wrong. The preview draws its waypoints
- * without a floor plan until the conversion ends. Nothing is fetched for a map
- * with no floor plan either: there is no raster to read until one is built,
- * so the request could only earn a refusal.
- *
- * Unlike `useMapGrid`, which keeps its read out of the cache because a session
- * is mutable and has to be disposed, an ImageBitmap is immutable and safe to
- * hand to any number of readers. It is left to GC rather than `close()`d for
- * the same reason: no one owner could know it was the last reader.
+ * Nothing is fetched while the map converts (the bytes would be old or
+ * partial) or before it has a floor plan. An ImageBitmap is immutable, so
+ * unlike `useMapGrid` it can be shared, and is left to GC since no one owner
+ * knows it is the last reader.
  */
 export function useMapImage(name: string | null): UseMapImage {
   const entry = useMapEntry(name);

@@ -1,12 +1,6 @@
-// The task editor's floor plan: the picture the Steps group opens over the
-// step list, showing where each stop is and which steps of the job go there.
-// Pure like lib/map/draw.ts — the component owns the canvas, the pointer, the
-// view transform and the frame scheduling; this owns what a frame looks like.
-//
-// It borrows the editor's vocabulary on purpose (fitView, drawMarker, the
-// palette) rather than drawing its own dots: the operator learned what a
-// waypoint looks like on the editor, and the preview's whole job is to be
-// recognisably the same map.
+// The task editor's floor plan preview: where each stop is and which steps go
+// there. Pure like lib/map/draw.ts, and drawn with the editor's own markers and
+// palette so it is recognisably the same map.
 
 import {
   VERTEX_DOT_RADIUS,
@@ -30,15 +24,9 @@ export interface PreviewMarks {
 }
 
 /**
- * Room kept around the map for the marks that hang off its edge, in CSS px.
- *
- * The editor fits the grid edge to edge; the preview opens inside this inset
- * so a stop placed against the map's boundary keeps its arrow (18 px, any
- * direction) and its caption (drawn up and to the right of the dot, so the
- * right and top need the most) on screen at the first look. The preview can
- * pan now, so the inset is no longer the only way to those marks — but the
- * first look is the one most operators stop at, and a stop that cannot be
- * told from its neighbour by name defeats the purpose of the picture.
+ * Room around the map, in CSS px, so a stop on the boundary keeps its arrow and
+ * caption (up and right of the dot, hence the wider right) on screen at first
+ * look, which is the look most operators stop at.
  */
 export const PREVIEW_INSET = { top: 20, right: 48, bottom: 20, left: 20 } as const;
 
@@ -75,16 +63,10 @@ const CAPTION_HEIGHT = 11;
 const CAPTION_GAP = 2;
 
 /**
- * Which stops keep their name, given the order they matter in.
- *
- * At preview scale a real map puts stops a few pixels apart, and eleven-pixel
- * captions drawn for all of them become one unreadable smear — the opposite of
- * what the picture is for. So captions are placed greedily in priority order
- * and a candidate whose box would overlap one already placed is dropped to
- * its glyph. The caller passes the lit markers first, which is what makes the
- * pick and the hover always legible: they are placed before anything can be
- * in their way. `measure` is the text width, injected so the rule can be
- * tested without a canvas.
+ * Which stops keep their name. At preview scale captions would smear together,
+ * so they are placed greedily in priority order (the caller passes lit markers
+ * first) and one overlapping an earlier box drops to its glyph. `measure` is
+ * injected so this is testable without a canvas.
  */
 export function planCaptions(
   candidates: readonly CaptionCandidate[],
@@ -112,12 +94,8 @@ export function planCaptions(
 }
 
 /**
- * A lit marker's caption: its name and the steps that go to it.
- *
- * "dock · steps 1, 4" rather than a bare "dock", because the map is open to
- * answer "where does this job go, and in what order" — and the row numbers
- * are how the step list names them, so the map speaks the same way. drawMarker
- * puts the glyph in front itself.
+ * A lit marker's caption, "dock · steps 1, 4", numbered the way the step list
+ * is. drawMarker adds the glyph.
  */
 export function stepCaption(name: string, ordinals: readonly number[]): string {
   if (!ordinals.length) return name;
@@ -125,18 +103,12 @@ export function stepCaption(name: string, ordinals: readonly number[]): string {
 }
 
 /**
- * One frame: the well, the raster, its extent, then every marker.
+ * One frame: the well, the raster, its extent, then every marker, named where
+ * there is room (`planCaptions`). The job's stops are lit and drawn last, the
+ * earliest step on top.
  *
- * Every marker carries its name where there is room for it (see
- * `planCaptions`) — the operator is here because they forgot which stop is
- * which, and a glyph alone would send them back to the editor. The job's own
- * stops are lit, captioned with their step numbers, and drawn last so they
- * sit above their neighbours; among them the earliest step goes on top, since
- * it is the one the robot reaches first.
- *
- * `image` may be null while the raster loads or after it failed: the markers
- * are still drawn over the well, since where the stops are relative to each
- * other is most of the answer even without the walls.
+ * `image` may be null (loading or failed); the markers are still drawn, since
+ * their relative positions are most of the answer.
  */
 export function drawWaypointPreview(
   ctx: CanvasRenderingContext2D,
@@ -154,8 +126,7 @@ export function drawWaypointPreview(
   const w = meta.width * view.scale;
   const h = meta.height * view.scale;
   if (image) {
-    // Same rule as the editor: a filtered downscale keeps thin walls solid,
-    // which at preview size (scale well under 1) is the only case there is.
+    // As in the editor: a filtered downscale keeps thin walls solid.
     ctx.imageSmoothingEnabled = view.scale < 1;
     ctx.drawImage(image, view.ox, view.oy, w, h);
   }

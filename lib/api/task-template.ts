@@ -1,26 +1,12 @@
-// Client for the task-template API
-// (src/syncai_backend/syncai_backend/interfaces/rest/routers/task_template.py).
+// Task templates: /api/v1/task_templates — durable rows with full CRUD and no
+// dispatch of their own. Not under `/tasks/` because GET /tasks/{id} takes
+// any string, which would shadow a static sub-path.
 //
-// Separate from lib/api/task.ts for the third time the same argument applies.
-// That file's thesis is that creation *is* dispatch, there is no GET collection,
-// and an id is a per-page-load throwaway. A template is the exact inverse: a
-// durable row with a uuid identity, full CRUD, and no dispatch endpoint of its
-// own. Merging them would leave one file whose header has to explain both.
-//
-// The endpoint is `/api/v1/task_templates`, deliberately not under
-// `/api/v1/tasks/...`: GET /api/v1/tasks/{id} takes an unconstrained string (a
-// Temporal workflow id), so any static sub-path is either shadowed by it or
-// steals the workflow id "templates".
-//
-// **Vertex resolution is the server's job, not this client's.** A stored MOVE
-// step keeps both a vertex reference and a coordinate snapshot, and every read
-// reports `resolved_params` — what a dispatch should send *now*. Dispatching is
-// therefore a projection of three keys (`toDispatchSteps`, in lib/task/step.ts
-// with the rest of the step conversions) rather than a
-// reimplementation of "prefer the vertex, fall back to the snapshot". That rule
-// lives once, on the server, which holds every map's vertices — this client
-// reads one map at a time, and the loaded map's is the only list it can trust
-// to be the one a dispatch runs against.
+// **Waypoint resolution is the server's job.** A stored MOVE keeps a vertex
+// reference and a coordinate snapshot, and every read reports
+// `resolved_params`, what a dispatch should send *now*. Dispatch projects
+// that (`toDispatchSteps`) rather than re-deciding vertex vs snapshot here,
+// since only the server holds every map's vertices.
 
 import { z } from "zod";
 
@@ -47,14 +33,10 @@ export type TemplateStepRequest = TaskStepRequest & {
 };
 
 /**
- * Whether a stored MOVE step's vertex reference still resolves.
+ * Whether a stored MOVE's vertex reference still resolves.
  *
- * `NONE` — the coordinates were typed by hand, so there is nothing to resolve.
- * `CURRENT` — the vertex exists; `resolved_params` and `vertex_name` are its live
- * values, so this step follows the map.
- * `MISSING` — the vertex was deleted; `resolved_params` falls back to the
- * snapshot and `vertex_name` is the label it had when saved. Dispatch still
- * works; the operator is told.
+ * `NONE` — typed by hand. `CURRENT` — live values, the step follows the map.
+ * `MISSING` — deleted; the snapshot is used and the operator is told.
  */
 export type VertexRefStatus = "NONE" | "CURRENT" | "MISSING";
 
@@ -64,21 +46,14 @@ interface TemplateStepBase {
   /** Live name when CURRENT, the snapshot label when MISSING, else null. */
   vertex_name: string | null;
   vertex_status: VertexRefStatus;
-  /**
-   * Adjacent steps sharing a group run side by side. Null for a step on its
-   * own; absent (read as null) from a backend that predates groups.
-   */
+  /** Adjacent steps sharing a group run side by side; null on its own (or absent). */
   group: string | null;
 }
 
 /**
- * `TemplateStepResponse`, as a union discriminated on `type` — the same shape
- * argument as `TaskStepRequest`: `params` under a MOVE is a pose, under a SPEAK
- * it is a line of text, and one interface with `MoveStepParams |
- * SpeakStepParams | null` would make every consumer re-prove which it holds.
- * `params` is the snapshot exactly as saved; `resolved_params` is what a
- * dispatch should send right now — the two differ only for a MOVE whose vertex
- * still exists (see the file header).
+ * Discriminated on `type`, like `TaskStepRequest`. `params` is the snapshot as
+ * saved; `resolved_params` is what to send now — they differ only for a MOVE
+ * whose vertex still exists.
  */
 export type TemplateStep =
   | (TemplateStepBase & {
@@ -102,26 +77,21 @@ export type TemplateStep =
       resolved_params: null;
     });
 
-/** `TaskTemplateResponse`, verbatim. */
 export interface TaskTemplate {
-  /**
-   * This row's uuid. **Not** a task id — it cannot be passed to
-   * `fetchTaskState`, which wants the Temporal workflow id a dispatch returns.
-   */
+  /** A uuid, **not** a task id: `fetchTaskState` cannot take it. */
   id: string;
   name: string;
   description: string;
   /** Null when the template has no MOVE step and so runs anywhere. */
   map_name: string | null;
   steps: TemplateStep[];
-  /** False only when this template names a map that is not the one the robot is on. */
+  /** False only when it names a map other than the robot's. */
   map_matches_active: boolean;
   missing_vertex_count: number;
   created_at: string;
   updated_at: string;
 }
 
-/** What the operator supplies. `id` and the resolution come from the server. */
 export interface TaskTemplateDraft {
   name: string;
   description?: string;
@@ -130,14 +100,10 @@ export interface TaskTemplateDraft {
   steps: readonly TemplateStepRequest[];
 }
 
-/** Fields to change. Omitted ones are left alone by the backend's `exclude_unset`. */
+/** Omitted fields are left alone (`exclude_unset`). */
 export type TaskTemplateChanges = Partial<TaskTemplateDraft>;
 
-/**
- * The stored shape, checked. A plain union rather than a discriminated one for
- * the reason TaskStepRequestSchema gives: the posture branch's discriminator is
- * itself a pair of literals.
- */
+/** A plain union, as for TaskStepRequestSchema: posture's discriminator is two literals. */
 const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
   z.object({
     id: z.string(),
@@ -199,22 +165,15 @@ function taskTemplatePath(id?: string): string {
 }
 
 export function listTaskTemplates(signal?: AbortSignal): Promise<TaskTemplate[]> {
-  // Deliberately unfiltered, though the endpoint accepts `?map_name=`. The
-  // console scopes the library to the active map itself so it can also report how
-  // many rows it hid — silently dropping another map's templates is how an
-  // operator concludes their work was lost, which is the complaint this feature
-  // answers.
+  // Unfiltered on purpose: the console scopes to the active map itself so it
+  // can say how many it hid, rather than seem to have lost them.
   return requestJson<TaskTemplate[]>(taskTemplatePath(), {
     signal,
     schema: z.array(TaskTemplateSchema),
   });
 }
 
-/**
- * A save refused over one step, carrying the step's wire id (`3-move`) so
- * the editor can mark the row it was sent from. The message is the backend's
- * sentence, as for any refusal.
- */
+/** A save refused over one step, with its wire id (`3-move`) for the editor to mark. */
 export class StepRefusalError extends Error {
   constructor(
     message: string,
@@ -225,7 +184,6 @@ export class StepRefusalError extends Error {
   }
 }
 
-/** Any refusal that names a step; everything else stays a plain Error. */
 function stepRefusal({ detail, stepId }: ErrorBody): Error | undefined {
   return stepId ? new StepRefusalError(detail, stepId) : undefined;
 }
@@ -234,8 +192,6 @@ export function createTaskTemplate(draft: TaskTemplateDraft): Promise<TaskTempla
   return requestJson<TaskTemplate>(taskTemplatePath(), {
     method: "POST",
     body: JSON.stringify(draft),
-    // The echo is the stored row and is spliced into the cached list, so it is
-    // checked like a read rather than trusted because we sent it.
     schema: TaskTemplateSchema,
     mapError: stepRefusal,
   });
@@ -253,7 +209,6 @@ export function updateTaskTemplate(
   });
 }
 
-/** Delete a template. The `{message}` envelope is dropped, as everywhere else. */
 export function deleteTaskTemplate(id: string): Promise<void> {
   return requestJson<void>(taskTemplatePath(id), {
     method: "DELETE",
@@ -262,13 +217,9 @@ export function deleteTaskTemplate(id: string): Promise<void> {
 }
 
 /**
- * Freeze a template's current resolution into a Temporal schedule.
- *
- * Stricter than an immediate dispatch, by design on the backend: it refuses a
- * template whose map is not the active one, and refuses one with a MISSING
- * vertex. A scheduled run is unattended, so it does not get the snapshot
- * fallback an operator watching the screen is allowed. Both come back as a 400
- * sentence.
+ * Freeze a template's current resolution into a schedule. Stricter than a
+ * dispatch: an unattended run gets no snapshot fallback, so a map that is not
+ * active or a MISSING waypoint is refused (400).
  */
 export function scheduleTaskTemplate(
   id: string,

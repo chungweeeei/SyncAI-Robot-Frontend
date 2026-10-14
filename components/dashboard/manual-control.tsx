@@ -26,86 +26,43 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Manual drive panel: two thumbsticks (left = planar translation vx/vy — the
- * G23 can strafe — right = rotation wz) over the speed limit and the channel's
- * state line. Pointer and keyboard input (W/S drive, Q/E strafe, A/D turn),
- * merged in useJoystick. There is no readout of the commanded vector, by
- * request: the sticks' own deflection is the read, and the numbers were
- * three 5-char values nobody drove by.
+ * Manual drive panel: translation stick (vx/vy — the G23 strafes) and
+ * rotation stick (wz), plus keyboard W/S, Q/E, A/D merged in useJoystick. No
+ * readout of the commanded vector, by request: the deflection is the read.
  *
- * **Armed = sending.** While armed, TeleopFooter keeps a WS teleop channel
- * open and streams `vectorRef` at 10 Hz to the backend, which clamps, scales
- * and publishes cmd_vel (see use-teleop-sender.ts / lib/ros/teleop-channel.ts
- * for the no-reconnect and watchdog reasoning). If the channel drops, the
- * panel disarms itself — a dead link must not leave the button claiming the
- * robot is listening. Still not gated on RobotMode === "MANUAL", now as a
- * deliberate call rather than a vacuous one: the backend refuses teleop while
- * an autonomous MOVE is executing and the footer surfaces that refusal, which
- * covers the actual hazard without hiding the panel.
+ * **Armed = sending.** It comes up disarmed and hears nothing until armed,
+ * since an always-live window-level key hook would turn stray keys into
+ * motion. While armed, TeleopFooter streams `vectorRef` at 10 Hz; a dropped
+ * channel disarms the panel so the button never claims the robot is listening.
+ * Not gated on Mapping mode: the backend refuses teleop during an autonomous
+ * move and the footer shows that refusal.
  *
- * Input has to be ARMED (the header toggle) before the panel hears anything,
- * and it comes up disarmed. The same deliberate-act grammar as the pick-mode
- * arm buttons, for the same reason: the keyboard half is a window-level WASD
- * hook, and one that is always live would turn stray keys anywhere on the
- * dashboard into stick deflection — noise today, motion once a sender exists.
- * One switch for both input kinds rather than one per kind: pointer input is
- * scoped to the wells and near-harmless alone, so a separate toggle for it
- * would be a second decision with no second question behind it.
+ * Movable by the header only, because it parks over the scan's near field;
+ * everything below the header is a control, and a missed thumb must not both
+ * drive and move the panel. Dragging never interrupts the stream.
  *
- * Every number on this panel is in the cmd hue unconditionally: a joystick has
- * no measured half, so unlike the telemetry rail there is no live/cmd split to
- * draw — cf. the epistemics note in use-locomotion.ts.
- *
- * The panel is movable, by the header only. The callers anchor it bottom-right
- * over the point cloud, which is exactly where the cloud's near-field returns
- * land when the robot backs toward a wall — the operator has to be able to
- * shove the panel off whatever it is covering. The body is not a handle:
- * everything below the header is a control (wells that capture pointers, the
- * arm button), and a panel that slides when a thumb misses a well would turn
- * a bad grab into both a motion command and a moved panel. Dragging never
- * disarms or interrupts the stream — moving the panel mid-drive is the point.
- *
- * The Max speed slider limits translation, vx and vy together, as a fraction
- * of full stick; rotation is not limited. It is the only way to drive slowly
- * from the keyboard, whose deflection is always full. The limit is applied
- * where the command is computed (lib/teleop/stick.ts), so what is sent is
- * the scaled number, not the stick's raw deflection. It starts
- * at full on every page load, so the panel drives as it always has until an
- * operator asks for slower. It is not remembered, so a lowered limit does not
- * outlive the session that chose it, and it can be set before arming.
+ * Max speed scales translation only, applied where the command is computed
+ * (lib/teleop/stick.ts). It is the only way to drive slowly by keyboard. It
+ * starts at full on every load and is not remembered.
  */
 export function ManualControl({ className }: { className?: string }) {
   const [armed, setArmed] = React.useState(false);
   const { engaged: stopped } = useConsoleEstop();
   const robotId = useConsoleRobotState().state?.robot_id ?? null;
-  // The emergency stop disarms the panel, and keeps it disarmed after the
-  // release: arming again is the operator's own act, never a side effect of
-  // lifting the stop. A render-time adjust rather than an effect, so not one
-  // more frame goes out over the channel (unmounting the footer closes it,
-  // which sends the zero frame first).
+  // The stop disarms the panel and it stays disarmed after release: re-arming
+  // is the operator's act. During render rather than in an effect, so not one
+  // more frame goes out (unmounting the footer sends the zero frame).
   if (stopped && armed) setArmed(false);
   const [linearScale, setLinearScale] = React.useState(LINEAR_SCALE_DEFAULT);
   const stick = useJoystick(armed, linearScale);
-  // A WS event, not an effect body — the allowed place for setState.
   const handleDrop = React.useCallback(() => setArmed(false), []);
 
   const panelRef = React.useRef<HTMLDivElement>(null);
-  /**
-   * Displacement from the caller's anchor, applied as a translate so the
-   * `right-3 bottom-3` positioning stays the callers' business — the panel
-   * never rewrites top/left, so at {0,0} it sits exactly where it always did
-   * and the offset survives the caller changing its corner.
-   */
+  /** Displacement from the caller's anchor, applied as a translate. */
   const [offset, setOffset] = React.useState({ x: 0, y: 0 });
   /**
-   * The active grab, thumbstick's gestureRef idiom: pointer identity plus
-   * everything measured once at pointerdown. The clamp range comes from one
-   * getBoundingClientRect against the *window* viewport — not the canvas the
-   * callers anchor us in: the operator drags the panel off the point cloud
-   * precisely because the cloud is where it is in the way, so the whole
-   * screen is legal parking. pointermove never forces layout. A window
-   * resize mid-offset can strand the panel past the edge until the next grab
-   * re-measures and pulls it back in — a tap on the grip resets it for free.
+   * The active grab, measured once at pointerdown. Clamped to the window, not
+   * the viewport it is anchored in: the whole screen is legal parking.
    */
   const dragRef = React.useRef<{
     pointerId: number;
@@ -122,12 +79,9 @@ export function ManualControl({ className }: { className?: string }) {
   } | null>(null);
 
   const onGrab = (event: React.PointerEvent<HTMLElement>) => {
-    // The arm switch lives inside the header; a press on it is a press on it.
-    // It is a span with role="switch", not a button (the primitive's default),
-    // so it is named here beside the buttons, and so is the drive view's link:
-    // a captured press would land its click on the header instead. The grip
-    // is a button too, but it is the header's own, so a press on it is a drag
-    // (camera-window's rule).
+    // A press on a header control is not a grab, or capture would steal its
+    // click. The arm switch is a role="switch" span, hence the selector. The
+    // grip is the exception: a press on it is a drag.
     const button = (event.target as HTMLElement).closest("a, button, [role='switch']");
     if (dragRef.current || (button && !button.hasAttribute("data-move-handle"))) return;
     const panel = panelRef.current;
@@ -140,8 +94,7 @@ export function ManualControl({ className }: { className?: string }) {
       originY: event.clientY,
       baseX: offset.x,
       baseY: offset.y,
-      // How far the panel may still travel in each direction before its edge
-      // leaves the window — a panel dragged fully off-screen is unrecoverable.
+      // Keep every edge on screen, or the panel is unrecoverable.
       minX: offset.x - rect.left,
       maxX: offset.x + (window.innerWidth - rect.right),
       minY: offset.y - rect.top,
@@ -165,11 +118,8 @@ export function ManualControl({ className }: { className?: string }) {
     const drag = dragRef.current;
     if (drag?.pointerId !== event.pointerId) return;
     dragRef.current = null;
-    // A tap on the grip — released inside the drag deadzone of where it was
-    // pressed — puts the panel back. It is the finger's path to what the
-    // double-click does: a double-tap is not a gesture a phone reports
-    // reliably, and a panel parked somewhere bad had no other way home. Only
-    // a real release: a cancel or a lost capture is not a tap.
+    // A tap on the grip resets the panel: the touch form of the double-click.
+    // Only a real pointerup counts as a tap.
     if (
       event.type === "pointerup" &&
       drag.onGrip &&
@@ -185,12 +135,8 @@ export function ManualControl({ className }: { className?: string }) {
       style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
       className={cn(overlayPanel, "w-64 p-3", className)}
     >
-      {/* touch-none, or a touch drag scrolls the page and the browser answers
-        * with pointercancel mid-gesture (thumbstick's rule). 40 px under a
-        * finger: the same strip is the drag handle and the arm button, and a
-        * 16 px strip with a 20 px button in it was two targets in one thumb.
-        * onGrab refuses a press on the button, so at 40 px the two no longer
-        * share pixels. */}
+      {/* touch-none, or a touch drag scrolls and ends in pointercancel. 40 px
+        * under a finger so the handle and the arm switch are separate targets. */}
       <header
         onPointerDown={onGrab}
         onPointerMove={onDrag}
@@ -202,11 +148,8 @@ export function ManualControl({ className }: { className?: string }) {
         className="mb-3 flex h-5 cursor-grab touch-none items-center justify-between gap-2 select-none active:cursor-grabbing pointer-coarse:h-10"
       >
         <h2 className="instrument-label flex items-center gap-1.5 text-muted-foreground">
-          {/* The grip is the affordance — a bare label row does not announce
-            * that it can be grabbed. A button, so a keyboard has the reset
-            * too: a pointer's click never reaches it (the header captures
-            * the pointer, so the click lands there), which is why the tap is
-            * read in onRelease instead. */}
+          {/* A button so the keyboard has the reset. A pointer's click lands on
+            * the capturing header instead, hence the tap in onRelease. */}
           <button
             type="button"
             data-move-handle
@@ -220,11 +163,8 @@ export function ManualControl({ className }: { className?: string }) {
           Manual drive
         </h2>
         <div className="flex items-center gap-1">
-          {/* The way to the drive view, on a phone only: there the card puts
-            * both wells under one thumb, and the view is where they come
-            * apart to the two corners. From sm up the card is the better
-            * fit, so the link is not offered. A link rather than a button,
-            * so it is a page the operator can come back from. */}
+          {/* Phone only: the card puts both wells under one thumb, the drive
+            * view splits them to the corners. */}
           <Link
             href={DRIVE_PAGE}
             aria-label="Open the full-screen drive view"
@@ -236,10 +176,8 @@ export function ManualControl({ className }: { className?: string }) {
           <ArmSwitch armed={armed} onArmedChange={setArmed} stopped={stopped} />
         </div>
       </header>
-      {/* Stand and Lie down, above the sticks because that is the order they
-        * are used in: the robot has to be standing before driving it means
-        * anything. Absent until the robot state has named the robot, as the
-        * rail's are, since the task has to say which robot it is for. */}
+      {/* Above the sticks: the robot stands before it drives. Needs the robot
+        * id, which the posture task carries. */}
       {robotId !== null && <PanelPostureControl robotId={robotId} className="mb-3" />}
       <div className="flex items-start justify-center gap-4">
         <LabeledStick caption="Translate">
@@ -270,12 +208,8 @@ export function ManualControl({ className }: { className?: string }) {
         onLinearScaleChange={setLinearScale}
         armed={armed}
       />
-      {/* Mounting TeleopFooter only while armed is what opens/closes the
-        * channel AND what resets its per-session state — the mount boundary
-        * replaces any setState-in-effect reset (Next 16 lint). Disarmed shows
-        * no line at all, by request: the unlit arm button already says the
-        * panel is not listening, so arming grows the panel by one line rather
-        * than a placeholder holding the room. */}
+      {/* Mounted only while armed: the mount opens and closes the channel and
+        * resets its state. Disarmed shows no line, by request. */}
       {armed && (
         <div className="mt-2.5 border-t border-hairline">
           <TeleopFooter vectorRef={stick.vectorRef} onDrop={handleDrop} />
@@ -285,8 +219,7 @@ export function ManualControl({ className }: { className?: string }) {
   );
 }
 
-/** A stick over its one-word job. The key hints teach the fingers; this
- *  teaches the split — which hand translates and which rotates. */
+/** A stick over its one-word job. */
 function LabeledStick({
   caption,
   children,

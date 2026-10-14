@@ -19,32 +19,17 @@ import { MAP_NAME_RE } from "@/lib/map/name";
 import type { MapSummary } from "@/lib/types/map";
 
 /**
- * Name and save the map the current run has built.
+ * Name and save the map the current run built — the run's only durable exit,
+ * since the keyframes live in RAM. A save also ends the run.
  *
- * This is the only durable exit for a mapping run: the mapper holds the
- * keyframes in RAM and nothing else serialises them, so until this succeeds
- * the map exists only while the mapping session does. A successful save also
- * *ends* the run (the robot goes idle and clears its "map so far"); the next
- * map starts with the strip's Start.
+ * A dialog, by request: the name is the one thing to think about here, and a
+ * strip over a moving picture is not where to think.
  *
- * A dialog rather than a name field in the strip, by request: the name is
- * the one thing the operator has to think about on this screen, and a field
- * in a strip over a moving picture is not where to think.
- *
- * Two faces. Before the save it asks for the name; after it, it **stays
- * open** and turns into the receipt — the backend's sentence verbatim (it is
- * the one that knows whether the floor plan conversion was started or has to
- * be run by hand) and the conversion's progress under it — with a single
- * Close. An operator who has just waited a minute for a save should read
- * how it went where they were looking, not hunt for it elsewhere — and this
- * is the only place it is shown: nothing under the strip repeats it once
- * Close is pressed.
- *
- * Presentational over the page's save mutation, because the receipt and the
- * conversion it watches have to outlive this dialog. A refusal (name taken,
- * nothing to save, the wrong mode) keeps the form face and shows the sentence
- * under the field. Cancel is held while saving: there is no abort, and
- * closing mid-save would lose the receipt and the leave-guard's lift.
+ * After the save it stays open as the receipt — the backend's sentence and
+ * the conversion's progress — with one Close; it is the only place that is
+ * shown. Presentational over the page's mutation so the receipt outlives the
+ * dialog. Cancel is held while saving: there is no abort, and closing would
+ * lose the receipt and the leave-guard's lift.
  */
 export function SaveMapDialog({
   open,
@@ -79,17 +64,14 @@ export function SaveMapDialog({
     <AlertDialog
       open={open}
       onOpenChange={(next) => {
-        // Escape is this path; while saving nothing may close the dialog, so
-        // a stray key cannot take the receipt away.
+        // Escape lands here; nothing may close it mid-save.
         if (!next && !busy) close();
       }}
     >
       <AlertDialogContent>
         {saved === null ? (
           <form
-            // A form so Enter in the name field saves, the way a
-            // name-and-confirm row is expected to; the handler guards what
-            // the button's `disabled` does.
+            // A form so Enter saves; the handler repeats the button's guard.
             onSubmit={(event) => {
               event.preventDefault();
               if (valid && !busy) onSave(name);
@@ -118,9 +100,7 @@ export function SaveMapDialog({
                 disabled={busy}
                 className="readout h-8 rounded-sm"
               />
-              {/* The rule, shown only while the name breaks it — the same
-                * line the import and rename rows use, because it is the
-                * same rule. */}
+              {/* Shown only while the name breaks the rule, as on import and rename. */}
               {name.length > 0 && !valid && (
                 <p className="text-[11px] leading-snug text-signal-caution">
                   Letters, digits, dot, dash and underscore only, up to 64
@@ -129,8 +109,7 @@ export function SaveMapDialog({
               )}
             </div>
 
-            {/* 409 (name taken), the mapper's "NO POSES!", the wrong-mode 502
-              * — all arrive as the backend's own sentence, written to be shown. */}
+            {/* Name taken, nothing to save, wrong mode — the backend's sentence. */}
             {error && (
               <p role="alert" className="text-[11px] leading-tight text-signal-warn">
                 {error}
@@ -161,10 +140,8 @@ export function SaveMapDialog({
               <AlertDialogDescription>{saved}</AlertDialogDescription>
             </AlertDialogHeader>
 
-            {/* Under the receipt, not replacing it: the two say different
-              * things — that the scan is on disk (permanent, and the thing
-              * that makes the run safe to leave) and how the floor plan
-              * built from it went. */}
+            {/* Under the receipt, not replacing it: one says the scan is on
+              * disk, the other how the floor plan went. */}
             <ConversionLine map={conversion} />
 
             <AlertDialogFooter>

@@ -10,16 +10,10 @@ import type { TaskTemplate } from "@/lib/api/task-template";
 /**
  * Register a saved job on a schedule, at the top of the list it will join.
  *
- * This used to be a pane in the task editor, which could also schedule steps
- * that were never saved. Those schedules named no template, so no row could
- * show them and the stale check could not reach them; the editor had to carry
- * a paragraph warning about it. Here only a saved job can be scheduled, and
- * always through /task_templates/{id}/schedule: it re-resolves the waypoints
- * server-side, records the provenance the row's clock chip and stale badge
- * read, and refuses an unattended run on another map or a deleted waypoint —
- * so the row's own gate on the map is a courtesy, not the only guard.
- *
- * Inline rather than a modal, like every other form in this console.
+ * Only a saved job, always through /task_templates/{id}/schedule: it
+ * re-resolves the waypoints server-side, records the provenance the clock
+ * chip and stale badge read, and refuses another map or a deleted waypoint,
+ * so the row's own map gate is a courtesy. Inline, like every form here.
  */
 export function TemplateScheduleForm({
   template,
@@ -36,9 +30,8 @@ export function TemplateScheduleForm({
   const schedule = useScheduleTaskTemplate();
   const frame = React.useRef<HTMLDivElement>(null);
 
-  // Brought into view when it opens: the row's Schedule button is up in the
-  // library, and a form that appeared off screen would read as a button that
-  // did nothing. Scrolling is DOM work with nothing to set, so an effect.
+  // Scrolled into view: the Schedule button is up in the library, and a form
+  // opening off screen would read as a button that did nothing.
   React.useEffect(() => {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     frame.current?.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });

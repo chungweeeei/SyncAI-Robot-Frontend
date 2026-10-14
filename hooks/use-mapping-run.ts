@@ -11,7 +11,7 @@ import {
 } from "@/lib/api/mapping";
 import { queryKeys } from "@/lib/api/query-keys";
 
-/** The run-status poll's tick: the same cadence as the robot-state poll it is read beside. */
+/** The same cadence as the robot-state poll it is read beside. */
 const RUN_POLL_MS = 1000;
 
 export interface UseMappingStatus {
@@ -21,13 +21,10 @@ export interface UseMappingStatus {
 }
 
 /**
- * GET /api/v1/mapping — where the run stands, polled while it can move.
- *
- * `enabled` is "the robot reports Mapping and this screen is open": that is
- * the only time the answer is anything but `unknown`, and the only time it
- * changes on its own (keyframes bank as the robot drives). Off, the query is
- * not fetched at all rather than fetched once and parked, so a navigating
- * robot costs nothing and a mode switch's outage logs no failed reads.
+ * GET /api/v1/mapping — where the run stands. `enabled` is "the robot reports
+ * Mapping and this screen is open", the only time the answer is not `unknown`
+ * or changes on its own. Off means not fetched at all, so a mode switch's
+ * outage logs no failed reads.
  */
 export function useMappingStatus(enabled: boolean): UseMappingStatus {
   const { data, isPending, isError } = useQuery({
@@ -44,11 +41,8 @@ export function useMappingStatus(enabled: boolean): UseMappingStatus {
 }
 
 /**
- * POST /api/v1/mapping/start — begin the run.
- *
- * The response is a receipt, not the status, so the status is invalidated
- * rather than written: the next poll answers `mapping` from the same latched
- * topic every other console reads, and the rail switches on that.
+ * POST /api/v1/mapping/start. The response is a receipt, so the status is
+ * invalidated, not written: it travels a latched channel every console reads.
  */
 export function useStartMapping() {
   const queryClient = useQueryClient();
@@ -61,12 +55,8 @@ export function useStartMapping() {
 }
 
 /**
- * POST /api/v1/maps — save the run the current mapping session has built.
- *
- * The response says whether the pcd → gridmap conversion was started; the
- * conversion's *outcome* arrives through the catalogue, so invalidating it is
- * what gets `useMapConversion` its first reading and what makes the new map
- * appear on the Maps screen without a manual refresh.
+ * POST /api/v1/maps — save the current run. The conversion's outcome arrives
+ * through the catalogue, which is what `useMapConversion` watches.
  */
 export function useSaveMap() {
   const queryClient = useQueryClient();
@@ -74,28 +64,20 @@ export function useSaveMap() {
     mutationFn: (name: string) => saveMap(name),
     onSuccess: (_result, name) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
-      // A save ends the run: pgo goes idle, and the rail's Start control is
-      // what should light up next, not Save again.
+      // A save ends the run.
       void queryClient.invalidateQueries({ queryKey: queryKeys.mappingStatus });
-      // A save under a name that already exists replaces that map's floor
-      // plan once its conversion lands; a raster decoded from the old one must
-      // not outlive the file. Dropped, not invalidated, for the same reason as
-      // the convert hook: the new bytes are not there yet.
+      // A save over an existing name replaces its floor plan once converted.
+      // Dropped, not invalidated: the new bytes are not there yet.
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(name) });
-      // The same save writes that map's scan. Dropped rather than invalidated:
-      // nothing on the mapping screen shows it, so there is no reader to
-      // refetch into, and the dashboard's next toggle reads the new file.
+      // Dropped: nothing on this screen reads the scan.
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(name) });
     },
   });
 }
 
 /**
- * POST /api/v1/mapping/reset — discard the run in the robot's memory.
- *
- * Nothing on disk changes, so there is no catalogue cache to invalidate; the
- * run status is, because its keyframe count drops to zero and the readout
- * should say so without waiting a tick.
+ * POST /api/v1/mapping/reset — discard the run in the robot's memory. Nothing
+ * on disk changes, so only the run status is invalidated.
  */
 export function useResetMappingRun() {
   const queryClient = useQueryClient();

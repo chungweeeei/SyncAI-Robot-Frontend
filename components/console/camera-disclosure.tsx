@@ -9,23 +9,13 @@ import {
 } from "@/components/console/strip-disclosure";
 
 /**
- * The camera window's mount in the masthead, beside the drive panel.
+ * The camera window's mount in the masthead: a small picture that follows the
+ * operator across screens.
  *
- * The robot's camera existed only on /webrtc-test, a developer bench that fills
- * the screen with one video and a page of negotiation readouts. What an
- * operator wants is the opposite: a small picture that stays with them while
- * they work on some other screen — checking a waypoint on /maps, watching a job
- * run from /tasks — which is why this is a movable, resizable window rather
- * than a panel on any one page.
- *
- * **Closing it closes the session.** The robot's worker holds one viewer slot,
- * so a window kept alive behind a hidden flag would be holding the camera away
- * from whoever opens the next one — including the bench, which is where camera
- * faults get diagnosed. See `useCameraStream`: mounted is watching.
- *
- * Opening it therefore negotiates from scratch every time, a second or so of
- * "Connecting" before the first frame. That is the right trade for a panel
- * measured in how often it is *not* open.
+ * **Closing it closes the session.** The robot has one viewer slot, and a
+ * hidden-but-live window would hold it from the next viewer (see
+ * `useCameraStream`: mounted is watching). Each open therefore negotiates
+ * afresh, a second of "Connecting".
  */
 export function CameraDisclosure() {
   return (

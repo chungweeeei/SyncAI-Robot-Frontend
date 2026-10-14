@@ -15,28 +15,15 @@ const POLICIES: readonly { value: Policy; label: string }[] = [
 ];
 
 /**
- * Which locomotion controller is commanded, and which policy the robot reports.
+ * Locomotion controller and policy: modes the robot stays in, hence Segmented.
+ * The two rows are different kinds of value, and the labels say so:
  *
- * Segmented rather than the momentary posture buttons the drive panel uses,
- * because these are mutually exclusive *modes* the robot stays in, not verbs it
- * performs once.
- *
- * The two rows do not mean the same kind of thing, and the labels say so:
- *
- * - **Controller** is commanded, defaulting to RL. It cannot be read back —
- *   `low_level_mode.motion` has no code for MPC — so the lit segment is an
- *   assumption plus whatever the operator last pressed, except that an arrival
- *   at IDLE or LOCOMOTION drops MPC back to RL (`controllerAfterMotion`).
- * - **Policy** is reported. The lit segment is `low_level_mode.policy`, i.e. what
- *   the controller says it is running. A request that the robot has not confirmed
- *   yet shows as `confirming…` rather than silently looking applied, which is the
- *   whole reason the field was added to the state payload.
- *
- * The policy row is disabled only under a commanded MPC: a policy switch is
- * meaningless unless RL is running.
- *
- * The controller's motion state (`low_level_mode.motion`) is deliberately not
- * shown on the card; it is still read, by the fallback to RL above.
+ * - **Controller** is commanded (default RL) and cannot be read back, so the
+ *   lit segment is the last press — except an arrival at IDLE or LOCOMOTION
+ *   drops MPC back to RL (`controllerAfterMotion`).
+ * - **Policy** is reported (`low_level_mode.policy`); an unconfirmed request
+ *   shows as `confirming…` rather than looking applied. Disabled under MPC,
+ *   since a policy only means anything under RL.
  */
 export function LocomotionControl({
   lowLevelMode,
@@ -92,9 +79,7 @@ export function LocomotionControl({
         />
       </Row>
 
-      {/* Not in the segmented rows: the robot can report a policy this control
-        * cannot ask for (CHAMP / ISSAC are real and deliberately unexposed), and
-        * that must be visible rather than showing as no selection. */}
+      {/* A reported policy this control cannot ask for must still be visible. */}
       {policy === null && (
         <Readout label="Reported" value={lowLevelMode.policy} tone="caution" />
       )}

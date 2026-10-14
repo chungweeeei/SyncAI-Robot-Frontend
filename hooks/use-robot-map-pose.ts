@@ -7,38 +7,28 @@ import { useActiveMap } from "@/hooks/use-maps";
 import type { PlanarPose } from "@/lib/types/robot";
 
 export interface UseRobotMapPose {
-  /** Where the robot is standing on *this* map, or null when that is unknowable. */
+  /** Where the robot stands on *this* map, or null when unknowable. */
   pose: PlanarPose | null;
-  /** Why `pose` is null, as a sentence for the operator. Null when it is set. */
+  /** Why `pose` is null, as a sentence for the operator. */
   reason: string | null;
 }
 
 /**
- * The robot's own pose, but only when it is a pose on the map named here.
+ * The robot's pose, only when it is a pose on the map named here — otherwise
+ * the same numbers are on a different floor. Every "no" carries a sentence,
+ * because the answer feeds a disabled button that must say why.
  *
- * A vertex is map-frame metres, and the robot's pose is map-frame metres of
- * whichever map the running stack loaded — the two are the same numbers on two
- * different floors unless the names match. Every "no" this returns carries the
- * sentence that explains it, because the only place the answer is used is a
- * disabled button, and "greyed out with no reason" is the failure mode worth
- * spending a string on.
- *
- * Reads the console's shared 1 Hz poll rather than the telemetry socket, for the
- * `localization_valid` flag: the socket carries pose frames with no way to say
- * they stopped being true, so a dead localizer (or a mapping run, where the TF
- * chain never reaches base_link) would leave the last frame on screen looking
- * exactly like a live one. 1 Hz is also plenty — the robot is parked at the spot
- * being marked. Same reason as useModeSwitch for using the context: one poll for
- * the console.
+ * Reads the 1 Hz state poll, not the telemetry socket, for
+ * `localization_valid`: the socket cannot say its last frame stopped being
+ * true.
  */
 export function useRobotMapPose(name: string): UseRobotMapPose {
   const { state } = useConsoleRobotState();
   const { map: activeMap, status: mapsStatus } = useActiveMap();
 
   const position = state?.localization_status.position;
-  // Read off as primitives, never as `state`: the payload's timestamp moves every
-  // second, so keying the memo on the object would hand the editor a fresh pose
-  // — and re-render it — once a second while the robot stands still.
+  // Primitives, not `state`, whose timestamp moves every second and would
+  // re-render the editor while the robot stands still.
   const hasState = state !== null;
   const valid = state?.localization_valid ?? false;
   const x = position?.x ?? 0;
@@ -64,8 +54,7 @@ export function useRobotMapPose(name: string): UseRobotMapPose {
       return { pose: null, reason: "No signal from the robot yet." };
     }
     if (!valid) {
-      // The pose fields are a zeroed placeholder in this case, not a stale
-      // reading — see RobotState.localization_valid.
+      // The pose is a zeroed placeholder here (see RobotState.localization_valid).
       return { pose: null, reason: "The robot does not know where it is yet." };
     }
     return { pose: { x, y, theta }, reason: null };

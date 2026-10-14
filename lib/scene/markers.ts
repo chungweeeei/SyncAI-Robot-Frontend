@@ -4,11 +4,8 @@ import * as THREE from "three";
 
 import type { PlanarPose } from "@/lib/types/robot";
 
-// Pose marker (goal / initial pose), in metres. The marker sits on the ground in
-// a perspective view, so it has to be a real object of roughly robot size or it
-// stops reading as a place on the floor — a screen-space arrow of fixed pixel
-// length would grow into the horizon. Lifted off z=0 to keep it out of a
-// z-fight with the ground.
+// Pose marker (goal / initial pose), in metres: robot-sized, so it reads as a
+// place on the floor in perspective. Lifted off z=0 to avoid z-fighting.
 const MARKER_RING_INNER_M = 0.26;
 const MARKER_RING_OUTER_M = 0.34;
 const MARKER_SHAFT_LEN_M = 0.5;
@@ -18,14 +15,9 @@ const MARKER_HEAD_RADIUS_M = 0.1;
 const MARKER_Z_M = 0.05;
 
 /**
- * Ring + arrow marking a pose on the floor, built pointing down +x so the
- * group's rotation.z is the heading. Unlit (MeshBasicMaterial) like everything
- * else in the scene except the robot itself, so it keeps its colour whichever
- * way it faces.
- *
- * One material for all three meshes, which is also what lets `setMarkerColor`
- * recolour a marker in place — the draft marker changes hue with the pick mode
- * and must not force a scene rebuild to do it.
+ * Ring + arrow marking a pose on the floor, pointing down +x so the group's
+ * rotation.z is the heading. One shared material, so `setMarkerColor` can
+ * recolour the draft marker without a scene rebuild.
  */
 export function createPoseMarker(color: number, opacity: number): THREE.Group {
   const material = new THREE.MeshBasicMaterial({

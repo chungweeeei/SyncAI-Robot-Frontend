@@ -63,13 +63,9 @@ export interface StepListProps {
 /**
  * The ordered step list plus its add row. Presentation only.
  *
- * `disabled` is the whole list at once, not per control, and it is driven by a
- * task being in flight. The reason is that the backend step ids are positional
- * (`stepIdFor`): reorder or delete a row while a task is running and the tracked
- * statuses would silently attach to the wrong rows. Freezing the list is the
- * cheap fix. The rejected alternative — rendering a second, frozen, read-only
- * copy of the submitted steps below the editable one — is more code and puts each
- * status further from the row it describes.
+ * `disabled` freezes the whole list while a task is in flight: step ids are
+ * positional (`stepIdFor`), so a reorder mid-run would attach the tracked
+ * statuses to the wrong rows.
  */
 export function StepList({
   steps,
@@ -87,21 +83,16 @@ export function StepList({
   onUngroup,
   refusal = null,
 }: StepListProps) {
-  // One PointerSensor rather than Mouse + Touch: pointer events cover the mouse,
-  // a pen and the tablet console alike. The distance threshold is what keeps a
-  // tap on the handle (or a finger resting on it while scrolling) from lifting
-  // the row; the handle's `touch-none` stops the browser claiming the gesture as
-  // a scroll before the threshold is met.
+  // PointerSensor covers mouse, pen and touch. The distance threshold keeps a
+  // tap or a resting finger on the handle from lifting the row.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  // Which rows are unfolded. Presentation state, so it lives here rather than
-  // in the drafts: nothing sent to the backend depends on it. Folded is the
-  // default because a twenty-step patrol unfolded is three screens of inputs,
-  // and a template loaded to be reviewed or reordered wants the one-line view.
-  // Keys are never reused, so a removed row's key left in the set is inert.
+  // Unfolded rows. Here, not in the drafts: nothing sent depends on it. Folded
+  // by default so a long patrol stays one line a step. Keys are never reused,
+  // so a removed row's key left in the set is inert.
   const [expanded, setExpanded] = React.useState<ReadonlySet<number>>(
     () => new Set(),
   );
@@ -114,16 +105,13 @@ export function StepList({
     });
 
   const handleAdd = (type: StepType) => {
-    // A row just added is a row about to be filled in.
     setRowExpanded(onAdd(type), true);
   };
 
-  // The seams come away while a row is lifted: they ride on the rows the
-  // drag slides about, and a link offered mid-drag is a link to a row that is
-  // about to be somewhere else.
+  // No seams mid-drag: they would link to rows about to move.
   const [dragging, setDragging] = React.useState(false);
-  // Each row's seam by row key, so Ungroup can hand focus to the seam that
-  // would put the box back together: the header that held it goes with the box.
+  // By row key, so Ungroup can focus the seam that would rejoin the box (the
+  // header that held focus goes with it).
   const seamRefs = React.useRef(new Map<number, HTMLButtonElement>());
 
   const keys = steps.map((step) => step.key);
@@ -139,9 +127,8 @@ export function StepList({
   }
   const showSeams = !disabled && !dragging;
 
-  // Why the last drop was refused. A drag has no control left to explain
-  // itself on once the row snaps back, so the list says it, until the next
-  // drag or a moment later.
+  // A snapped-back drag has no control to explain itself on, so the list says
+  // why, for a few seconds.
   const [dropRefused, setDropRefused] = React.useState<string | null>(null);
   React.useEffect(() => {
     if (!dropRefused) return;
@@ -159,9 +146,7 @@ export function StepList({
   const allExpanded = keys.every((key) => expanded.has(key));
   const position = (id: UniqueIdentifier) => keys.indexOf(Number(id)) + 1;
 
-  // dnd-kit's default announcements read the raw ids ("draggable item 7"),
-  // which are client keys the operator never sees. These speak in the ordinals
-  // printed on the rows.
+  // dnd-kit's defaults read the raw client keys; these use the row ordinals.
   const announcements: Announcements = {
     onDragStart: ({ active }) => `Picked up step ${position(active.id)}.`,
     onDragOver: ({ active, over }) =>
@@ -232,8 +217,7 @@ export function StepList({
             </div>
           )}
           <SortableContext items={keys} strategy={verticalListSortingStrategy}>
-            {/* No gap of its own: each row carries the gap above it (see
-             * StepRow), so a box's sides can run through the gaps inside it. */}
+            {/* No gap: each row carries its own (see StepRow). */}
             <ul>
               {steps.map((step, index) => {
                 const span = spanAt[index]!;
@@ -241,8 +225,8 @@ export function StepList({
                 const joined = groupPlaces[index] === "middle" || groupPlaces[index] === "end";
                 return (
                   <StepRow
-                    // The client key, not the derived step id: that id is positional, so
-                    // reconciling on it would move a focused input's DOM mid-reorder.
+                    // The client key: the step id is positional, and keying on it would
+                    // move a focused input's DOM mid-reorder.
                     key={step.key}
                     step={step}
                     index={index}

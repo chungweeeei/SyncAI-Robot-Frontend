@@ -19,19 +19,13 @@ import type { MapVertex, VertexType } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
 /**
- * The vertex layer's operator surface: place, name, classify, re-aim, delete.
+ * The waypoint layer's operator surface: place, name, classify, re-aim,
+ * delete. It floats on the viewport (top right; the toolbar and GridStatus
+ * own the left corners) so the readback sits beside the gesture on the map.
  *
- * It floats on the viewport for the same reason GoalControl does — the gesture
- * that produces a pose happens on the map, and moving the readback into a side
- * rail would put the numbers and the thing they describe on opposite sides of
- * the screen. Top right, because the toolbar owns top left and GridStatus owns
- * bottom left.
- *
- * Presentation only. Create, Apply and Delete change the shell's staged list,
- * each one a step the toolbar's Undo can take back; nothing here reaches the
- * robot until the toolbar's Save, which writes the waypoints beside the cells
- * and the zones. See hooks/use-map-vertices.ts for
- * why, and `pendingIds` for how the panel says which rows are still unsaved.
+ * Presentation only: Create, Apply and Delete change the shell's staged list,
+ * each undoable, and nothing reaches the robot until the toolbar's Save (see
+ * hooks/use-map-vertices.ts). `pendingIds` marks the unsaved rows.
  */
 
 const TYPE_OPTIONS = VERTEX_TYPES.map(({ value, label }) => ({ value, label }));
@@ -44,9 +38,8 @@ export interface VertexPanelProps {
   /** A save is in flight; holds the staging controls until it answers. */
   busy: boolean;
   /**
-   * The list could not be loaded, so nothing may be staged against it. Holds
-   * Create, Apply and Delete. A job driving on the map does *not* set this:
-   * that holds the toolbar's Save, and staging goes on.
+   * The list couldn't be loaded, so nothing may be staged against it. A job on
+   * the map does *not* set this — that holds Save, and staging goes on.
    */
   locked?: boolean;
   /** Rows Save would write — placed or changed since the last save. */
@@ -61,18 +54,13 @@ export interface VertexPanelProps {
   /** The subject of the editing form: the selection, when it holds exactly one. */
   selected: MapVertex | null;
   /**
-   * Everything highlighted on the canvas, from the Select tool's band.
-   *
-   * At one entry this is just `selected.id` and the form is what is shown; at
-   * more, the form gives way to the band block, because renaming, retyping and
-   * re-aiming have no meaning spread across a set. Delete does, and is the one
-   * thing that block offers.
+   * Everything the Select tool's band highlighted. At one entry the form shows;
+   * at more, the band block, since only Delete means anything across a set.
    */
   selectedIds: readonly string[];
   /**
-   * A re-aim of `selected` that has not been written yet, from a drag on its own
-   * marker. There is no move-to-another-place control here — see the note on
-   * `stagedPose` in MapGridEditor for where that lives instead.
+   * An unwritten re-aim of `selected`, from a drag on its marker. Moves live
+   * elsewhere — see `stagedPose` in MapGridEditor.
    */
   stagedPose: PlanarPose | null;
 
@@ -99,11 +87,9 @@ export function VertexPanel(props: VertexPanelProps) {
   const { vertices, status, error, draft, selected, selectedIds, className } = props;
   const band = selectedIds.length > 1;
   /**
-   * Whether the list of waypoints is open. Shut by default, by request: a map
-   * can carry dozens of stops, and a list that long would cover the right of
-   * the canvas in the one mode where the canvas is what is being edited. The
-   * header keeps the count, so a shut list still says how many there are.
-   * Held here, so it survives a stop being opened and closed again.
+   * Whether the waypoint list is open. Shut by default, by request: dozens of
+   * rows would cover the canvas, and the header keeps the count. Held here so
+   * it survives opening and closing a row.
    */
   const [listOpen, setListOpen] = React.useState(false);
   const listView = !draft && !band && !selected;
@@ -152,10 +138,8 @@ export function VertexPanel(props: VertexPanelProps) {
       )}
 
       {draft ? (
-        // Keyed so the name field is a fresh mount per draft rather than state
-        // cleared in an effect — the same reason EditorSurface keys on the
-        // session. Re-dragging the same draft keeps the key, and so keeps the
-        // name the operator already typed.
+        // Keyed so the name field remounts per draft rather than being cleared
+        // in an effect; re-dragging the same draft keeps the typed name.
         <VertexForm
           key="draft"
           kind="create"
@@ -204,24 +188,16 @@ export function VertexPanel(props: VertexPanelProps) {
           onCancel={() => props.onSelect(null)}
           onDelete={props.onDelete}
         />
-        {/* No list under the form, by request: while one waypoint is being
-         * edited the panel is about that one. Another is still one click away
-         * on the map, and Close brings the list back. */}
+        {/* No list under the form, by request: the panel is about the one
+         * waypoint; Close brings the list back. */}
         </>
       ) : (
         <>
-          {/* One row, by request: the type the next waypoint is placed as, and
-            * the second way to place one. The type is a list rather than the
-            * form's segmented row, because this row also holds a button and
-            * five segments beside it would not fit a 240 px panel.
-            *
-            * Use robot position is for the stop you mark by driving to it: the
-            * operator parks the robot on the spot — a dock, a charger, a doorway
-            * they had to squeeze through — and takes the pose off the robot
-            * instead of hunting for the cell it is standing on. It stages a
-            * draft like a press on the map does, rather than creating the vertex
-            * outright, so naming and typing it stay one flow with the placed
-            * kind, and a mis-press is a Cancel rather than a row to delete. */}
+          {/* One row, by request: the next waypoint's type (a list — five
+            * segments plus a button won't fit 240 px) and Use robot position,
+            * for a spot marked by driving there (a dock, a doorway). It stages
+            * a draft like a press on the map, so naming stays one flow and a
+            * mis-press is a Cancel. */}
           <div>
             <div className="flex items-center gap-1.5">
               <Select
@@ -288,9 +264,7 @@ export function VertexPanel(props: VertexPanelProps) {
             )
           )}
 
-          {/* No how-to line here any more, by request. The tool buttons carry
-            * their own names and what a press does in their tooltips, and a
-            * finger reads the name printed under each icon. */}
+          {/* No how-to line, by request: the tools carry names and tooltips. */}
         </>
       )}
     </div>
@@ -298,13 +272,9 @@ export function VertexPanel(props: VertexPanelProps) {
 }
 
 /**
- * What a band selection can do, which is delete.
- *
- * Deliberately not a cut-down copy of VertexForm. A name, a type and a heading
- * are each one value, and offering them over a set would mean either a "mixed"
- * state for every field or silently flattening five vertices onto one operator's
- * last keystroke. Narrowing to one vertex is a click on any row, and that is
- * where editing lives.
+ * What a band selection can do, which is delete. Not a cut-down VertexForm:
+ * a name, type or heading over a set would need a "mixed" state or would
+ * flatten them all onto one keystroke.
  */
 function BandBlock({
   vertices,
@@ -352,8 +322,7 @@ function BandBlock({
       <button
         type="button"
         disabled={busy || locked || count === 0}
-        // No confirm, as for the single delete: it is staged, Undo brings
-        // the whole band back, and nothing reaches the robot before Save.
+        // No confirm: staged, Undo brings the band back.
         onClick={onDelete}
         className="instrument-label flex h-7 items-center justify-center gap-1.5 rounded-sm border border-signal-warn/50 text-signal-warn transition-colors hover:bg-signal-warn/12 disabled:opacity-50"
       >
@@ -387,8 +356,7 @@ function VertexList({
     ) : null;
   }
 
-  // By name, case-folded: a stop is found by what it was called, and the
-  // operator typing "Dock" means the one named "dock-a".
+  // By name, case-folded: typing "Dock" should find "dock-a".
   const needle = filter.trim().toLowerCase();
   const shown = needle
     ? vertices.filter((vertex) => vertex.name.toLowerCase().includes(needle))
@@ -415,10 +383,8 @@ function VertexList({
           No waypoint matches.
         </p>
       ) : (
-        // Five rows, by request, then its own scroll: the panel floats over the
-        // canvas, and a map with thirty stops would otherwise grow it past the
-        // viewport. 114 px is five 22 px rows and the four 1 px gaps between
-        // them, so the fifth row ends at the edge instead of being cut through.
+        // Five rows, by request, then its own scroll so a long list can't grow
+        // the panel past the viewport. 114 px = five 22 px rows + four 1 px gaps.
         <ul className="max-h-[114px] space-y-px overflow-y-auto">
           {shown.map((vertex) => (
             <li key={vertex.id}>
@@ -439,8 +405,7 @@ function VertexList({
                   {vertex.name}
                 </span>
                 {pendingIds.has(vertex.id) && (
-                  // The same dot the toolbar's Save carries, so the eye links
-                  // the two; the words are for a screen reader.
+                  // The toolbar Save's dot, so the eye links them; words for a screen reader.
                   <span className="flex shrink-0 items-center" title="Unsaved">
                     <span aria-hidden className="size-1.5 rounded-full bg-signal-caution" />
                     <span className="sr-only">(unsaved)</span>
@@ -490,9 +455,8 @@ function VertexForm({
   const nameId = React.useId();
 
   const trimmed = name.trim();
-  // The backend's `min_length=1` would reject a blank name, but as a 422 whose
-  // detail is a validation *array* rather than a sentence. Refusing here is what
-  // keeps that off the operator's screen.
+  // The backend's `min_length=1` would 422 a blank name with a validation
+  // array, not a sentence; refusing here keeps that off the screen.
   const submittable = trimmed.length > 0 && !busy && !locked;
   const dirty = kind === "create" || trimmed !== initialName || type !== initialType || moved;
 
@@ -504,10 +468,8 @@ function VertexForm({
         if (submittable) onSubmit(trimmed, type);
       }}
     >
-      {/* Name and type on one row, by request, with the type as a list — the
-        * same control the panel's placing row uses, so a waypoint's type is
-        * chosen one way wherever it is chosen. The label names the name field;
-        * the list carries its own accessible name. */}
+      {/* Name and type on one row, by request; the type is the same list as
+        * the placing row, so it is chosen one way everywhere. */}
       <div>
         <label
           htmlFor={nameId}
@@ -522,8 +484,7 @@ function VertexForm({
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="dock-a"
-            // Squared off and shortened to match the overlay's chrome; the
-            // shared Input is sized for the settings forms, which have room.
+            // Squared and shortened to the overlay's chrome.
             className="h-7 min-w-0 flex-1 rounded-sm md:text-[13px]"
           />
           <Select
@@ -569,8 +530,7 @@ function VertexForm({
           disabled={!submittable || !dirty}
           className="instrument-label h-7 flex-1 rounded-sm bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          {/* Apply, not Save: this stages the change, and Save is the
-            * toolbar's button that sends it. */}
+          {/* Apply, not Save: this stages; the toolbar's Save sends. */}
           {kind === "create" ? "Create" : "Apply"}
         </button>
         <button
@@ -587,8 +547,7 @@ function VertexForm({
             disabled={busy || locked}
             aria-label="Delete waypoint"
             title="Delete waypoint"
-            // No confirm: the delete is staged like every other edit here, so
-            // Undo is the way back and Save is the step that commits it.
+            // No confirm: staged, so Undo is the way back.
             onClick={onDelete}
             className="instrument-label flex h-7 items-center rounded-sm border border-signal-warn/50 px-2 text-signal-warn transition-colors hover:bg-signal-warn/12 disabled:opacity-50"
           >

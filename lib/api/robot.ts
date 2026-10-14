@@ -1,6 +1,3 @@
-// Client for the backend robot API
-// (src/syncai_backend/syncai_backend/interfaces/rest/routers/robot.py).
-
 import { z } from "zod";
 
 import { apiUrl } from "@/lib/api/config";
@@ -10,14 +7,9 @@ import { RobotStateSchema } from "@/lib/types/robot";
 import type { PlanarPose, RobotState } from "@/lib/types/robot";
 
 /**
- * The console's 1 Hz snapshot of the machine: mode, pose, battery, network,
- * motor health.
- *
- * Answers 404 until the robot has published a first state frame, which
- * useRobotState surfaces as an error with the last good frame still on screen.
- * Not a source of motion — the timestamp has whole-second resolution and this
- * is a frozen third-party contract, so the 3D viewer reads the telemetry
- * WebSocket instead.
+ * The console's 1 Hz machine snapshot. 404 until the robot's first frame. Not
+ * a source of motion (whole-second stamps, a frozen third-party contract):
+ * the 3D viewer reads the telemetry socket.
  */
 export function fetchRobotState(signal?: AbortSignal): Promise<RobotState> {
   return requestJson<RobotState>(apiUrl("/api/v1/robot/state"), {
@@ -27,15 +19,11 @@ export function fetchRobotState(signal?: AbortSignal): Promise<RobotState> {
 }
 
 /**
- * Seed localization with an operator-supplied pose (RViz's "2D Pose Estimate").
- *
- * The backend publishes it on `initialpose`, which the FAST-LIO2 localizer takes
- * as an ICP initial guess. That is fire-and-forget on the ROS side: a 200 here
- * means the sample went out, not that localization converged on it — the answer
- * to "did it work" is the pose feed moving to where the operator put the marker.
+ * Seed localization with an operator pose (RViz's "2D Pose Estimate"). Fire
+ * and forget: a 200 means it was sent, not that localization converged — the
+ * pose feed moving to the marker is the answer.
  */
 export async function setInitialPose(pose: PlanarPose): Promise<void> {
-  // parse: false — the 200 envelope carries nothing a caller reads.
   await requestJson<void>(apiUrl("/api/v1/robot/set_initial_pose"), {
     method: "POST",
     body: JSON.stringify({
@@ -48,24 +36,18 @@ export async function setInitialPose(pose: PlanarPose): Promise<void> {
 }
 
 /**
- * A gait-controller motion key, as the driver's numeric string.
- *
- * `"0"` stand, `"1"` locomotion (RL), `"2"` lie down, `"3"` damping,
- * `"4"` emergency stop, `"5"` MPC. Stand and lie down are not sent from here —
- * they go through the posture task (`sendPostureTask`), which is what owns
- * sequencing; this client exists for the two keys that select a *controller*.
+ * A gait-controller motion key: `"0"` stand, `"1"` locomotion (RL), `"2"` lie
+ * down, `"3"` damping, `"4"` emergency stop, `"5"` MPC. Stand and lie down go
+ * through the posture task instead; this is for the controller keys.
  */
 export type MotionKey = "0" | "1" | "2" | "3" | "4" | "5";
 
 export interface SetMotionKeyResult {
   key: MotionKey;
   /**
-   * Whether the key was forwarded to the driver.
-   *
-   * False only for `"4"`, which the backend accepts and deliberately does not
-   * forward — no emergency stop was sent. True means the driver reported writing
-   * the datagram, **not** that the robot moved: the command is one-way UDP with
-   * no acknowledgement.
+   * False only for `"4"`, which the backend deliberately does not forward.
+   * True means the datagram was written, **not** that the robot moved: it is
+   * one-way UDP.
    */
   sent: boolean;
   message: string;
@@ -89,16 +71,9 @@ export function setMotionKey(key: MotionKey): Promise<SetMotionKeyResult> {
 }
 
 /**
- * The gait controller's policy index: 0 PPO, 1 HIMLOCO.
- *
- * The backend accepts only these two of the four the controller defines (2 CHAMP
- * and 3 ISSAC are not exposed), so this union is the whole REST vocabulary —
- * anything else is a 422 whose `detail` is a validation *array*, not a sentence.
- * Keep the UI a fixed set of choices rather than free input and that cannot
- * happen.
- *
- * Not the robot mode in `GET /api/v1/robot/state` (MAINTENANCE / MANUAL / AUTO),
- * which is an unrelated thing also called "mode".
+ * The policy index: 0 PPO, 1 HIMLOCO — the only two the backend accepts.
+ * Anything else 422s with an array, not a sentence, so keep the UI a fixed
+ * set. Unrelated to the robot's MANUAL / AUTO "mode".
  */
 export type PolicyMode = 0 | 1;
 
@@ -113,13 +88,8 @@ const SetPolicyModeResultSchema: z.ZodType<SetPolicyModeResult> = z.object({
 });
 
 /**
- * Switch the learned locomotion policy. Only meaningful under the RL controller.
- *
- * Same fire-and-forget caveat as the motion key, and the backend cannot check the
- * precondition for you: nothing in the stack reports which controller is live, and
- * the driver forwards the policy index without consulting the current mode. A 200
- * under MPC means the datagram went out and the controller did whatever it does
- * with it.
+ * Switch the locomotion policy; meaningful only under RL, which nothing can
+ * check (the live controller is not reported). Fire and forget, like the key.
  */
 export function setPolicyMode(mode: PolicyMode): Promise<SetPolicyModeResult> {
   return requestJson<SetPolicyModeResult>(
@@ -133,12 +103,11 @@ export function setPolicyMode(mode: PolicyMode): Promise<SetPolicyModeResult> {
 }
 
 export interface SafetyLockResult {
-  /** The lock state that was asked for — not a reading of it. */
+  /** What was asked for, not a reading. */
   locked: boolean;
   /**
-   * True only when this request engaged a lock that was not already on: the
-   * backend has then started cancelling every running job and navigation
-   * goal. Started, not finished — the active list is what says they ended.
+   * True when this request engaged the lock, so the backend started (not
+   * finished) cancelling every running job.
    */
   cancel_requested: boolean;
   message: string;
@@ -151,18 +120,13 @@ const SafetyLockResultSchema: z.ZodType<SafetyLockResult> = z.object({
 });
 
 /**
- * Engage or release the driver's safety lock — the emergency stop.
+ * Engage or release the driver's safety lock — the emergency stop (not motion
+ * key `"4"`). While engaged the driver drops drive and motion keys, and the
+ * backend cancels every job on the rising edge whoever engaged it, so this
+ * console sends no cancels of its own.
  *
- * Not motion key `"4"`, which the backend still refuses to forward: that is a
- * datagram to the gait controller, this is the driver's gate in front of it.
- * While it is engaged the driver drops manual drive and every motion key, and
- * the backend cancels every running job on the lock's rising edge — for a
- * lock engaged here, by another console or by the driver itself alike, so
- * this console sends no cancels of its own.
- *
- * The answer is the request echoed; whether the lock is on is read from
- * `low_level_mode.safety_locked` on the robot state. A 502 means the driver
- * could not be reached, and then nothing was locked and nothing cancelled.
+ * The answer is an echo; the reading is `low_level_mode.safety_locked`. A 502
+ * means nothing was locked.
  */
 export function setSafetyLock(locked: boolean): Promise<SafetyLockResult> {
   return requestJson<SafetyLockResult>(apiUrl("/api/v1/robot/estop"), {
@@ -174,10 +138,8 @@ export function setSafetyLock(locked: boolean): Promise<SafetyLockResult> {
 
 export interface RestartResult {
   /**
-   * True when the rebuild was dispatched, which is the usual answer: the
-   * robot only reports back once it is over, and that report is read from
-   * fetchRestartStatus. False means it already finished inside the backend's
-   * ack window.
+   * Usually true (outcome via fetchRestartStatus); false if it already
+   * finished inside the ack window.
    */
   restarting: boolean;
   message: string;
@@ -189,19 +151,12 @@ const RestartResultSchema: z.ZodType<RestartResult> = z.object({
 });
 
 /**
- * Rebuild the software stack of the mode already live.
+ * Rebuild the live mode's stack — the only way to restart it in place, since
+ * a switch to the current mode is a no-op. The backend survives the rebuild,
+ * so this answers promptly; the outcome is read from GET /robot/restart.
  *
- * `POST /api/v1/robot/mode` treats a switch to the current mode as a no-op,
- * so this is the only way to restart a wedged stack without leaving the
- * mode. No body: the mode is whatever the robot reports.
- *
- * The backend is not part of the stack it rebuilds and keeps answering, so
- * this resolves within its ack window and the outcome is read afterwards
- * from GET /api/v1/robot/restart. Refusals arrive here, with nothing
- * touched: a 409 `restart_refused` in Mapping (an unsaved map may be in
- * memory), with nothing running or with both stacks up, and a 409
- * `restart_running` for a second press. The UI only shows their sentence,
- * so no `mapError`.
+ * 409 `restart_refused` in Mapping (an unsaved map) or with no / both stacks
+ * up, 409 `restart_running` on a second press.
  */
 export function restartRobotStack(): Promise<RestartResult> {
   return requestJson<RestartResult>(apiUrl("/api/v1/robot/restart"), {
@@ -213,13 +168,9 @@ export function restartRobotStack(): Promise<RestartResult> {
 export type RestartStatus = "idle" | "restarting" | "succeeded" | "failed";
 
 export interface RestartRecord {
-  /**
-   * The latest restart the backend dispatched. `idle` if none has been since
-   * the backend itself started — it keeps this in memory, and does not guess
-   * about a restart it did not watch.
-   */
+  /** `idle` if none since the backend started (it is kept in memory). */
   status: RestartStatus;
-  /** The robot's answer once there is one; the reason, on `failed`. */
+  /** The reason, on `failed`. */
   message: string;
   /** ISO 8601, UTC. Null when idle. */
   started_at: string | null;
@@ -235,13 +186,9 @@ const RestartRecordSchema: z.ZodType<RestartRecord> = z.object({
 });
 
 /**
- * How the latest restart is going, or went.
- *
- * The one place a restart's outcome can be read. GET /robot/state cannot say:
- * the backend keeps serving the last frame the robot published while its
- * software is down, so that poll stays healthy through the whole rebuild.
- * The backend fails a restart that goes unanswered for three minutes, so
- * `restarting` always ends.
+ * The only place a restart's outcome shows: GET /robot/state keeps serving
+ * the last frame through the rebuild. `restarting` always ends (the backend
+ * fails it after three minutes).
  */
 export function fetchRestartStatus(signal?: AbortSignal): Promise<RestartRecord> {
   return requestJson<RestartRecord>(apiUrl("/api/v1/robot/restart"), {

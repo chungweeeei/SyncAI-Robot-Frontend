@@ -1,8 +1,6 @@
-// The job history's rules: a run's duration arithmetic, the filter the screen
-// offers and how it travels (to the backend as a query, to the address bar as
-// search params), and the arithmetic behind the dashboard above the list.
-// React-free so each rule can be tested without a page, and kept apart from
-// lib/api/task.ts because none of it is a request.
+// The job history's rules: run durations, the filter and how it travels (to the
+// backend as a query, to the address bar as search params), and the dashboard's
+// arithmetic.
 
 import type {
   TaskHistoryFilterQuery,
@@ -12,12 +10,9 @@ import type {
 } from "@/lib/api/task";
 
 /**
- * Seconds between a run's start and its close, both server timestamps, or null
- * when the close time is missing.
- *
- * Null rather than 0: zero seconds is a claim about the run, and a row with no
- * close time has made no such claim. A negative span (clock skew inside the
- * backend) clamps to zero instead of rendering as a minus sign.
+ * Seconds between a run's start and close (server timestamps), or null without
+ * a close time — 0 would be a claim about the run. A negative span (backend
+ * clock skew) clamps to zero.
  */
 export function runSeconds(
   startedAt: string,
@@ -60,10 +55,7 @@ export interface HistoryFilter {
 
 const DEFAULT_RANGE_PRESET: TimeRangePreset = "24h";
 
-/**
- * The last day, every outcome, every kind. A plain `/history` is this, so the
- * default is also what "clear the filters" means.
- */
+/** The last day, every outcome, every kind: a plain `/history`, and what "clear the filters" means. */
 export const DEFAULT_HISTORY_FILTER: HistoryFilter = {
   status: "ALL",
   range: { preset: DEFAULT_RANGE_PRESET },
@@ -80,8 +72,7 @@ export const HISTORY_KINDS: readonly TaskHistoryKind[] = [
   "schedule",
 ];
 
-// The posture words are the drive panel's own buttons' ("Stand", "Lie down"),
-// so a job reads the same here as where it was pressed.
+// The posture words match the drive panel's buttons, so a job reads the same here as where it was pressed.
 const KIND_LABEL: Record<TaskHistoryKind, string> = {
   goal: "Navigation goal",
   standup: "Stand",
@@ -91,10 +82,8 @@ const KIND_LABEL: Record<TaskHistoryKind, string> = {
 };
 
 /**
- * What a kind is called on screen. The wire words (`goal`, `standup`, …) are
- * the id's vocabulary and never the operator's; a kind this build does not
- * know, and a run recorded without one, are both "Other" — a label that makes
- * no claim about what the run was.
+ * What a kind is called on screen. An unknown kind, or none, reads "Other" —
+ * a label that makes no claim about what the run was.
  */
 export function kindLabel(kind: string | null): string {
   return isHistoryKind(kind) ? KIND_LABEL[kind] : "Other";
@@ -113,11 +102,10 @@ const HOUR_MS = 3_600_000;
 /**
  * The close-time bounds a range asks the backend for.
  *
- * A preset is `since` only, on purpose: a job that finishes while the page is
- * open must land inside the window, so that the refresh the active-task poll
- * triggers can show it. An `until` of "now" would exclude every one of them.
- * `nowMs` is handed in rather than read, so the caller decides when the window
- * is anchored — see useHistoryFilter for why that is not every render.
+ * A preset is `since` only: a job finishing while the page is open must land
+ * inside the window for the active-task poll's refresh to show it, and an
+ * `until` of "now" would exclude it. `nowMs` is handed in so the caller decides
+ * when the window is anchored (see useHistoryFilter).
  */
 export function resolveTimeRange(
   range: HistoryRange,
@@ -130,7 +118,6 @@ export function resolveTimeRange(
   return { since: range.from, until: range.to };
 }
 
-/** The wire filter the list reads under — every field the operator set. */
 export function toHistoryQuery(filter: HistoryFilter, nowMs: number): TaskHistoryFilterQuery {
   const { since, until } = resolveTimeRange(filter.range, nowMs);
   return {
@@ -143,12 +130,9 @@ export function toHistoryQuery(filter: HistoryFilter, nowMs: number): TaskHistor
 }
 
 /**
- * The wire filter the dashboard counts under: the same window, kind and
- * name, but never the outcome. The dashboard is how the jobs in the window
- * ended; counting it under one outcome would zero the other three tiles and
- * make the success rate 0 % or 100 % by construction, which is not a reading.
- * The outcome narrows only the list, and the dashboard says so under its
- * tiles.
+ * The wire filter the dashboard counts under: the list's, minus the outcome.
+ * Counting under one outcome would zero the other tiles and make the success
+ * rate 0 % or 100 % by construction.
  */
 export function toHistoryStatsQuery(
   filter: HistoryFilter,
@@ -171,14 +155,9 @@ export interface RunDescription {
 }
 
 /**
- * How a finished run is named on screen.
- *
- * The template name first, because that is what the operator gave the job;
- * the kind when there is no name (a dragged goal, a posture button); and the
- * id only for a run nothing labelled — dispatched by the MCP server, curl, or
- * a build older than the ledger — because then the id is all there is. The
- * id itself stays in the row's expanded detail for whoever has to find the
- * run in the orchestrator's own log.
+ * How a finished run is named on screen: the template name the operator gave
+ * it, else its kind (a dragged goal, a posture button), else — for a run
+ * nothing labelled (MCP server, curl, an older build) — its id.
  */
 export function describeRun(entry: {
   id: string;
@@ -208,9 +187,8 @@ export function describeRun(entry: {
 }
 
 /**
- * A canonical string for a wire filter, in a fixed field order, so two objects
- * that ask for the same runs make the same query key whatever order their keys
- * were written in. JSON so a name containing any separator stays unambiguous.
+ * A canonical string for a wire filter, in fixed field order, so equal filters
+ * make the same query key. JSON so a name containing a separator stays unambiguous.
  */
 export function historyQueryKey(query: TaskHistoryFilterQuery): string {
   return JSON.stringify([
@@ -224,20 +202,19 @@ export function historyQueryKey(query: TaskHistoryFilterQuery): string {
 
 const STATUS_FILTERS: readonly HistoryStatusFilter[] = ["ALL", "COMPLETED", "FAILED", "CANCELED"];
 
-/** Is `iso` a time `Date` can read? The bounds in a custom range must be, or the backend answers 422. */
+/** A custom range's bounds must parse, or the backend answers 422. */
 function isIsoTime(value: string | null): value is string {
   return value !== null && !Number.isNaN(Date.parse(value));
 }
 
 /**
- * The filter a `/history?…` address names. Tolerant field by field: a value
- * this build cannot read falls back to that field's default rather than
- * refusing the whole address, so a bookmark made under an older build still
- * opens on something sensible.
+ * The filter a `/history?…` address names. Tolerant field by field: an
+ * unreadable value falls back to that field's default, so an old bookmark
+ * still opens on something sensible.
  *
- * Search params: `status`, `range` (a preset, or `custom` with `from` and
- * `to` as ISO 8601 UTC), `kind`, `name`. A custom range missing a bound, or
- * ending before it starts, is not a window and falls back to the default.
+ * Search params: `status`, `range` (a preset, or `custom` with `from` and `to`
+ * as ISO 8601 UTC), `kind`, `name`. A custom range missing a bound or ending
+ * before it starts falls back to the default.
  */
 export function parseHistoryFilter(params: URLSearchParams): HistoryFilter {
   const status = params.get("status");
@@ -269,10 +246,7 @@ export function parseHistoryFilter(params: URLSearchParams): HistoryFilter {
   };
 }
 
-/**
- * The address for a filter. Defaults are left out, so a plain `/history` stays
- * plain and only what the operator changed is in the link they copy.
- */
+/** The address for a filter. Defaults are left out, so a copied link carries only what changed. */
 export function serializeHistoryFilter(filter: HistoryFilter): URLSearchParams {
   const params = new URLSearchParams();
   if (filter.status !== "ALL") params.set("status", filter.status);
@@ -291,9 +265,8 @@ export function serializeHistoryFilter(filter: HistoryFilter): URLSearchParams {
 }
 
 /**
- * The bounds a custom range starts from when the operator picks "Custom": the
- * window they were already looking at, closed at now, so the two inputs are
- * never blank and changing one of them is a refinement of what was on screen.
+ * The bounds "Custom" starts from: the window already on screen, closed at
+ * now, so the inputs are never blank and an edit refines what was shown.
  */
 export function customRangeSeed(range: HistoryRange, nowMs: number): { from: string; to: string } {
   if (!("preset" in range)) return { from: range.from, to: range.to };
@@ -311,10 +284,9 @@ function pad(value: number): string {
 }
 
 /**
- * An ISO 8601 instant as `<input type="datetime-local">` wants it, in this
- * runtime's clock — the same trade formatLocalRunTime makes: `Date`'s local
- * getters, never Intl, so the string is the operator's wall clock and nothing
- * in it depends on a locale. Empty for a time `Date` cannot read.
+ * An ISO 8601 instant as `<input type="datetime-local">` wants it, via `Date`'s
+ * local getters rather than Intl so nothing depends on a locale. Empty for an
+ * unreadable time.
  */
 export function isoToLocalInput(iso: string): string {
   const date = new Date(iso);
@@ -323,11 +295,10 @@ export function isoToLocalInput(iso: string): string {
 }
 
 /**
- * The instant a `datetime-local` value names, read in this runtime's clock
- * through the Date constructor's local arguments — explicitly, rather than
- * trusting `new Date(string)` to treat an offset-less string as local, which
- * the spec says and at least one engine has got wrong. Null for a value that
- * is not a time, so a half-typed field leaves the filter alone.
+ * The instant a `datetime-local` value names, built from the Date
+ * constructor's local arguments rather than trusting `new Date(string)` to
+ * read an offset-less string as local, which at least one engine has got
+ * wrong. Null for a half-typed field, which leaves the filter alone.
  */
 export function localInputToIso(value: string): string | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
@@ -361,10 +332,9 @@ export interface OutcomeSegment {
 }
 
 /**
- * The dashboard's one bar: everything finished in the window, split by how
- * it ended, in Completed / Failed / Canceled order. A segment only for an
- * outcome that occurred — a zero-width fill is not nothing, it is a 2 px gap
- * claiming a category — and nothing at all when nothing finished.
+ * The dashboard's bar: everything finished in the window, by outcome. A
+ * segment only for an outcome that occurred — a zero-width fill still renders
+ * as a 2 px gap claiming a category.
  */
 export function outcomeSegments(
   stats: Pick<TaskHistoryStats, "total" | "by_status">,
@@ -377,10 +347,9 @@ export function outcomeSegments(
 }
 
 /**
- * The names the Name filter offers: every template on the robot and every
- * schedule's template, deduplicated and sorted — plus whatever is already
- * selected, so a name reached through a link, or whose template was since
- * deleted, keeps its place in the picker instead of silently showing "All".
+ * The names the Name filter offers: every template and schedule template,
+ * deduplicated and sorted, plus the current selection — so a name from a link
+ * or a deleted template does not silently show as "All".
  */
 export function historyNameOptions(
   templateNames: readonly string[],

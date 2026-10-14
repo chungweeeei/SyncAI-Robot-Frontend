@@ -8,21 +8,14 @@ import { MapGridEditor } from "@/components/maps/map-grid-editor";
 import { MapTitleRename } from "@/components/maps/map-title-rename";
 
 /**
- * The gridmap editor.
- *
- * Replaces a step that was being done in GIMP: `map/dp2f/gridmap.pgm` on the robot
- * carries ~30 000 hand-painted white cells and a `gridmap_raw.pgm` backup beside it.
- *
- * Chrome only — MapGridEditor owns the editing. The canvas sizes itself from its
- * container, so this column has to give it a definite height (`min-h-0` + `flex-1`)
- * rather than letting `h-full` resolve against nothing. The shell's <main> does not
- * scroll and neither does this page.
+ * The floor plan editor. Chrome only — MapGridEditor owns the editing. The
+ * canvas sizes from its container, so this column gives it a definite height
+ * (`min-h-0` + `flex-1`); the page does not scroll.
  */
 export default function MapEditPage() {
   return (
-    // The query readers below suspend during a static prerender, and Next
-    // insists on a boundary around them (see its useSearchParams docs); the
-    // fallback is the whole page a beat later, which is what it was anyway.
+    // useSearchParams suspends during a static prerender and Next requires a
+    // boundary around it.
     <React.Suspense fallback={null}>
       <MapEditScreen />
     </React.Suspense>
@@ -30,13 +23,8 @@ export default function MapEditPage() {
 }
 
 /**
- * The query this page reads, and who writes it.
- *
- * `mode=vertex` opens the editor in Waypoints mode, and `from=tasks` turns the
- * back button into a way back to the task editor: both are set by
- * `waypointEditorHref` in lib/map/links.ts, for the operator who noticed
- * mid-job that a stop was missing. Anything else falls back to the defaults
- * this page always had.
+ * `mode=vertex` opens Waypoints mode and `from=tasks` points Back at the task
+ * editor; both are written by `waypointEditorHref` in lib/map/links.ts.
  */
 function MapEditScreen() {
   const params = useParams<{ name: string }>();
@@ -47,12 +35,9 @@ function MapEditScreen() {
   const returnTo = search.get("from") === "tasks" ? "/tasks/editor" : "/maps";
 
   /**
-   * Mirrored out of the editor for two reasons. The App Router has no navigation
-   * blocker, so `beforeunload` in the editor catches a reload or a tab close but
-   * cannot see a client-side navigation, and the back button is the one in-app
-   * exit from this screen, so it has to ask. The title's rename needs the same
-   * bit for a related reason — it navigates, and what it navigates to reloads
-   * the grid; see MapTitleRename.
+   * Mirrored out of the editor: the App Router has no navigation blocker, so
+   * the back button has to ask itself, and the title's rename navigates too
+   * (see MapTitleRename).
    */
   const [dirty, setDirty] = React.useState(false);
 

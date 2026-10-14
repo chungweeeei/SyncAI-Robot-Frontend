@@ -4,31 +4,20 @@ import type { z } from "zod";
 
 /** A refusal as the backend describes it. */
 export interface ErrorBody {
-  /**
-   * Operator-facing sentence, rendered verbatim. The domain-exception handlers
-   * write these to be read ("Map vertex <id> was not found in 'dp2f'."), which
-   * is why unwrapping `detail` is what puts the actionable half on screen
-   * instead of a status code. Falls back to the status line.
-   */
+  /** Operator-facing sentence, rendered verbatim; else the status line. */
   detail: string;
-  /** A stable machine-readable reason, on the endpoints that publish one. */
+  /** A stable machine-readable reason, where the endpoint publishes one. */
   code?: string;
   /**
-   * The step of a task body the refusal is about (`step_id`), on the task,
-   * template and schedule writes that refuse a step. The editor marks that
-   * row, which also covers a rule it does not mirror.
+   * `step_id`: the task-body step a task, template or schedule write refuses.
+   * The editor marks that row, covering rules it does not mirror.
    */
   stepId?: string;
 }
 
 /**
- * Read a refusal body — **once**.
- *
- * Once is the point. A Response body can be consumed a single time, so an
- * endpoint whose 409 carries a `code` the UI branches on cannot unwrap the
- * sentence and then go looking for the code. Two of them do (the gridmap
- * convert and the map switch), and each used to carry its own copy of this
- * parse next to its own copy of the fallback string.
+ * Read a refusal body — **once**: a Response body can be consumed a single
+ * time, so the sentence and the `code` have to come out together.
  */
 export async function errorBody(res: Response): Promise<ErrorBody> {
   try {
@@ -45,7 +34,6 @@ export async function errorBody(res: Response): Promise<ErrorBody> {
   }
 }
 
-/** The operator-facing half of a refusal, for a caller with no code to read. */
 export async function errorDetail(res: Response): Promise<string> {
   return (await errorBody(res)).detail;
 }
@@ -55,36 +43,20 @@ function statusLine(res: Response): string {
 }
 
 export interface JsonRequestInit<T = unknown> extends RequestInit {
-  /**
-   * Pass `false` for an endpoint with no body — a 204, or a DELETE whose
-   * envelope nothing reads. The response is then not parsed.
-   */
+  /** `false` for an answer nothing reads (a 204, a DELETE's envelope). */
   parse?: boolean;
   /**
-   * Turn a refusal into a typed error, for the two endpoints whose `code` the
-   * UI branches on. Return undefined to fall through to a plain Error carrying
-   * the sentence, which is what every other refusal wants.
+   * Turn a refusal into a typed error, for an endpoint whose `code` the UI
+   * branches on; undefined falls through to a plain Error.
    */
   mapError?: (body: ErrorBody, res: Response) => Error | undefined;
   /**
-   * Check the answer before it is believed.
-   *
-   * Every read used to be an `as T` cast, which is a promise about the backend
-   * rather than a check on it — a renamed field arrived as `undefined` and
-   * surfaced pages later as a blank readout or a crash inside a render. Passing
-   * the schema turns that into one error, at the boundary, naming the field.
-   *
-   * Reads pass one; writes do not, because the risk there is the *request*
-   * shape and that is already closed by the request types.
+   * Check the answer before it is believed, so a renamed field fails here,
+   * named, rather than as a blank readout pages later.
    */
   schema?: z.ZodType<T>;
 }
 
-/**
- * The endpoint path, for an error an operator or an on-call engineer reads.
- * Falls back to the whole URL if it will not parse, which it always does —
- * apiUrl builds it.
- */
 function endpointOf(url: string): string {
   try {
     return new URL(url).pathname;
@@ -93,25 +65,17 @@ function endpointOf(url: string): string {
   }
 }
 
-/** Anything but a read changes something on the robot. */
 function isWrite(method: string): boolean {
   const verb = method.toUpperCase();
   return verb !== "GET" && verb !== "HEAD";
 }
 
 /**
- * Parse a response body, or throw one sentence naming the endpoint and the
- * field that did not match.
+ * Parse a body, or throw one sentence naming the endpoint and field: the
+ * useful action is comparing versions, not reading a validation dump.
  *
- * The message says the console and the robot disagree, rather than showing a
- * validation dump: by the time this fires the useful action is comparing the
- * two versions, not reading a stack. Everything in this console renders
- * `error.message` verbatim, so it has to stand on its own.
- *
- * A write adds one more sentence, because its failure means something a read's
- * does not: the status was 2xx, so the robot already did what was asked and
- * only the answer is unreadable. A Retry beside an error reads as "nothing
- * happened", and pressing it on a dispatched MOVE would send the robot again.
+ * A write adds a sentence: it was a 2xx, so the robot already acted, and a
+ * Retry on a dispatched MOVE would send the robot again.
  */
 function parseWire<T>(
   schema: z.ZodType<T>,
@@ -137,23 +101,14 @@ function parseWire<T>(
 }
 
 /**
- * A JSON round trip against the backend, throwing the backend's own sentence.
+ * A JSON round trip, throwing the backend's own sentence.
  *
- * **`Content-Type` is only sent when there is a body**, and that is not
- * tidiness. The console is served from :3001 and the backend answers on :3000,
- * so every request here is cross-origin; a GET carrying `Content-Type` leaves
- * the CORS safelist and costs an `OPTIONS` round trip before it. FastAPI has no
- * use for the header on a bodyless request either way, so the branch buys a
- * preflight back on every read — including the catalogue poll that runs while a
- * gridmap converts.
+ * **`Content-Type` only with a body:** every request is cross-origin (:3001 →
+ * :3000), and a GET carrying it leaves the CORS safelist and costs a preflight.
  *
- * The header is built through `Headers` rather than an object spread so that
- * all three shapes the DOM accepts work: spreading a `Headers` instance yields
- * `{}`, which would silently drop a caller's headers and send JSON instead — an
- * `application/octet-stream` PUT losing its type that way would have the server
- * parse a cell buffer as JSON. An explicit `Content-Type` always wins.
- *
- * Pass `T = void` with `parse: false` for an endpoint whose body nothing reads.
+ * Built through `Headers`, not an object spread: spreading a `Headers`
+ * instance yields `{}`, silently dropping a caller's (e.g. octet-stream) type.
+ * An explicit `Content-Type` always wins.
  */
 export async function requestJson<T>(
   url: string,
@@ -180,13 +135,8 @@ export async function requestJson<T>(
 }
 
 /**
- * A request whose *success* body is not JSON, for a caller that wants the
- * Response itself — the gridmap image is read as a Blob and decoded pixel by
- * pixel.
- *
- * Refusals still arrive as `{detail}`, so the failure half is identical to
- * requestJson's; only the success half differs, which is the whole reason this
- * is a second function rather than an option.
+ * For a success body that is not JSON (the floor plan image); refusals are
+ * still `{detail}`, handled as in requestJson.
  */
 export async function requestRaw(
   url: string,

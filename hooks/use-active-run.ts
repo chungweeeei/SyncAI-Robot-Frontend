@@ -14,19 +14,16 @@ import {
 } from "@/lib/api/task";
 
 /**
- * Slower than the tracker's 1 Hz: what this follows is a step changing, which
- * takes seconds to minutes, and for a run this tab dispatched the same entry
- * is already being refreshed at 1 Hz by the tracker beside it.
+ * Slower than the tracker's 1 Hz: a step changes over seconds to minutes, and
+ * a run this tab dispatched is already refreshed by the tracker.
  */
 const ACTIVE_RUN_POLL_MS = 2000;
 
 export interface ActiveRun {
-  /** The active list's entry: id, kind, name, start time, schedule, map. */
   task: ActiveTask;
   /**
-   * The run's own status, from `GET /tasks/{id}`, or null before the first
-   * read answers (or while it 404s — see below). This is the only place a
-   * paused run is visible: the active list says IN_PROGRESS for it.
+   * From `GET /tasks/{id}`, null before the first read (or while it 404s). The
+   * only place a paused run is visible: the active list says IN_PROGRESS.
    */
   status: TaskStatus | null;
   /** Per-step state as last read; empty until the first populated answer. */
@@ -35,48 +32,28 @@ export interface ActiveRun {
 
 export interface UseActiveRun {
   /**
-   * The job the robot is on, or null while the active list is loading,
-   * failing or empty. Null on a failing list rather than the last known run,
-   * because a Pause button over a memory would act on a job that may have
-   * ended — the status strip's own chip already says the list is stale.
+   * Null while the active list is loading, failing or empty — not the last
+   * known run, because a Pause over a memory would act on a job that may have
+   * ended.
    */
   run: ActiveRun | null;
-  /**
-   * The active list's own status, passed through so the one consumer can
-   * tell "no job" from "the list cannot be read" — the second must never be
-   * drawn as the first.
-   */
+  /** So "no job" is never drawn for "the list cannot be read". */
   status: ActiveTasksStatus;
-  /** The list's clock at its last good read, for the elapsed readout. */
+  /** The list's clock at its last good read. */
   asOf: string | null;
 }
 
 /**
- * The job running on the robot right now, with its per-step state — the
- * read behind the masthead's step readout and its Pause / Resume.
+ * The job running on the robot now, with its per-step state — the read
+ * behind the masthead's step readout and Pause / Resume.
  *
- * Composes the console-wide active-task poll (which run) with a second read
- * of that run's own state (which step, and whether it is held). The two are
- * not folded into ActiveTaskProvider on purpose: that provider's contract is
- * one endpoint at one rate whose failure means one thing, and every reader of
- * its context — the map lock, the /tasks banner, the restart dialog — would
- * re-render on each step tick here. Mounted once from the status strip, which
- * is in the root layout, this read has the same console-wide lifetime.
+ * Kept out of ActiveTaskProvider so that provider's every reader does not
+ * re-render on each step tick; mounted once from the status strip. Only the
+ * first listed run is followed (the backend refuses a second dispatch).
  *
- * Only the first listed run is followed. The backend refuses a second
- * dispatch while one runs (409 "Robot is busy"), so a longer list is a
- * transient the chip's "×N" already reports.
- *
- * Two off-switches, and both matter. `enabled` goes false the moment the run
- * leaves the active list, and a disabled observer does not tick. A terminal
- * read stops the poll earlier still, during the list's own lag (its poll
- * interval plus the backend's short cache), so a finished run is not read
- * again every two seconds until the list notices.
- *
- * Errors are silent for the tracker's reasons: the read 404s between the
- * dispatch and the workflow's first task, and the workflow query degrades
- * while no worker is polling. `data` survives an errored refetch, so the
- * last read stays on screen; before any read the component shows a dash.
+ * The poll stops when the run leaves the list, and earlier on a terminal read
+ * so a finished run is not re-read during the list's lag. Errors are silent
+ * for the tracker's reasons.
  */
 export function useActiveRun(): UseActiveRun {
   const { tasks, status, asOf } = useConsoleActiveTasks();

@@ -4,19 +4,13 @@ import { Link2Icon, ScissorsIcon, Unlink2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * The control in the gap between two items of the step editor: outside a box
- * it starts the two together (the item below joins the one above, either of
- * which may already be a box), inside one it splits the box there.
+ * The control in the gap between two steps: outside a box it starts them
+ * together, inside one it splits the box there. In the gap because that is
+ * where the link is, so there is no "together with which?". An icon until
+ * pointed at or focused, so words on every gap do not drown the steps.
  *
- * It sits in the gap because that is where the link is — between two steps,
- * not on either of them — so there is no "together with which?" to puzzle
- * out. An icon until pointed at or focused, when it says what it does: a word
- * on every gap of a twenty-step list would drown the steps.
- *
- * Absent under a finger, where the gap closes up and the row's ⋯ menu carries
- * the same link: a 40 px target in every gap would double a long list's
- * height. Placed absolutely over the top band of the item below (its own
- * `pt-3.5`), which is the gap whether or not that band is inside a box.
+ * Absent under a finger, where the ⋯ menu carries the link: a 40 px target in
+ * every gap would double the list's height. Sits over the item below's `pt-3.5`.
  */
 export function StepSeam({
   ref,
@@ -31,8 +25,7 @@ export function StepSeam({
   upper: number;
   /**
    * Why the two may not start together (stepLinkProblem), for a join only.
-   * The seam stays where it is and says so rather than vanishing: a gap that
-   * offers a link on every row but this one would read as a bug.
+   * The seam stays and says so; vanishing on one row would read as a bug.
    */
   blocked?: string | null;
   onClick: () => void;
@@ -45,8 +38,7 @@ export function StepSeam({
       <button
         ref={ref}
         type="button"
-        // Starts with the words the button shows, so a voice command that
-        // reads them off the screen still finds it.
+        // Starts with the visible words, so voice control finds it.
         aria-label={
           refused
             ? `Can't start together: step ${upper} and step ${lower}. ${blocked}`
@@ -54,8 +46,7 @@ export function StepSeam({
               ? `Start together: step ${upper} and step ${lower}`
               : `Split here: run step ${lower} after step ${upper}`
         }
-        // aria-disabled rather than disabled, so the reason stays reachable:
-        // a disabled button takes no focus and shows no title.
+        // aria-disabled: a disabled button takes no focus and shows no title.
         aria-disabled={refused || undefined}
         title={refused ? blocked! : undefined}
         onClick={refused ? undefined : onClick}
@@ -68,9 +59,7 @@ export function StepSeam({
               : "border-signal-cmd/30 hover:border-foreground/30 hover:text-foreground",
         )}
       >
-        {/* Scissors rather than a broken link: at this size the two link
-         * glyphs are one blur, and the seams in and out of a box have to
-         * read as opposites at a glance. */}
+        {/* Scissors, not a broken link: at this size the two link glyphs blur. */}
         {join ? (
           <Link2Icon className="size-3" aria-hidden />
         ) : (
@@ -84,11 +73,7 @@ export function StepSeam({
   );
 }
 
-/**
- * The top of a group's box: what the box means, and the one press that takes
- * it apart. Named by what the robot does with the steps rather than by the
- * wire's `group`, which is not a word an operator has any use for.
- */
+/** The top of a group's box: what it means, and Ungroup. Named for what the robot does, not the wire's `group`. */
 export function StepGroupHeader({
   first,
   last,

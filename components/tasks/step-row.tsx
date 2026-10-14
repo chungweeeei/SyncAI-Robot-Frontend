@@ -78,11 +78,7 @@ export interface StepRowProps {
   linkProblem: string | null;
   /** Why the row may not move to a 0-based position; see stepMoveProblem. */
   moveProblem: (index: number) => string | null;
-  /**
-   * The backend's sentence when it refused the last save over this row, or
-   * null. Shown where the editor's own check would be, for a rule the
-   * editor does not mirror.
-   */
+  /** The backend's refusal of the last save over this row, for a rule the editor does not mirror. */
   refusal: string | null;
   /** Tracked status + error_msg for this step, or null when nothing is tracked. */
   state: TaskStepState | null;
@@ -120,10 +116,8 @@ export function StepRow({
   onExpandedChange,
 }: StepRowProps) {
   const rowError = stepDraftError(step) ?? groupError ?? refusal;
-  // Any row folds, errors included — an unfinished row that refused to fold made
-  // the fold useless exactly while a list was being built. What a folded row
-  // with a problem shows instead is the problem itself, in place of the summary
-  // and in warn tone, so it is still the row the eye lands on.
+  // Any row folds, errors included, or folding is useless while a list is being
+  // built. A folded row shows its problem in place of the summary, in warn tone.
   const problem = rowError ?? state?.error_msg ?? null;
   const bodyId = React.useId();
   const [removeArmed, setRemoveArmed] = React.useState(false);
@@ -141,30 +135,21 @@ export function StepRow({
   const ordinal = index + 1;
   const first = index === 0;
   const last = index === total - 1;
-  // Whether this row starts together with the one above — the link the ⋯
-  // menu offers to make or break. The first row has nothing above it.
   const linked = !first && step.withPrevious;
   const joined = groupPlace === "middle" || groupPlace === "end";
 
-  // One patch, not four: two updates would render a frame whose numbers are
-  // this vertex's but whose label is still the old one. normalizeTheta on the
-  // way *in* because the vertex table has no range constraint while MoveParams
-  // is (-180, 180] — a row written by curl can hold exactly -180, which the
-  // task endpoint rejects.
+  // One patch, so no frame shows the new numbers under the old label.
+  // normalizeTheta on the way in: the vertex table has no range constraint and
+  // can hold exactly -180, which the task endpoint rejects.
   const pickWaypoint = (vertex: MapVertex) =>
     onPatch({
       x: formatDraftPosition(vertex.x),
       y: formatDraftPosition(vertex.y),
       theta: formatDraftAngle(normalizeTheta(vertex.theta)),
       vertexId: vertex.id,
-      // Re-picking resolves the provenance, so the stale-snapshot warning
-      // goes with it.
       vertexMissing: false,
     });
-  // The floor plan needs a map with one and nothing else — the waypoints are
-  // drawn as they arrive, and an empty map is still the map. Closed by
-  // default, and the choice lives with the row: folding it keeps the map open
-  // for when it is unfolded again.
+  // Closed by default; the choice lives with the row, so folding keeps it.
   const canPreview = mapName !== null && mapGrid !== null;
   const [previewOpen, setPreviewOpen] = React.useState(false);
   const previewId = React.useId();
@@ -183,28 +168,24 @@ export function StepRow({
     <li
       ref={setNodeRef}
       style={{
-        // Translate only: the default Transform also scales a row to the height
-        // of the one it is passing, which squashes a MOVE row's inputs into a
-        // STANDUP row's single line mid-drag.
+        // Translate only: Transform also scales a row to the height of the one
+        // it passes, squashing a MOVE row mid-drag.
         transform: CSS.Translate.toString(transform),
         transition,
       }}
       className={cn(
         "relative",
-        // The gap above an item is its own top padding rather than the list's
-        // margin: inside a box the gap has to sit between the box's sides, so
-        // it moves onto the slice below, and the seam lives in it either way.
+        // The gap is the item's own padding, not list margin: inside a box it
+        // has to sit between the box's sides, and the seam lives in it.
         !first && !joined && "pt-3.5 pointer-coarse:pt-1.5",
         isDragging && "z-10",
       )}
     >
       {seam}
-      {/* This row's slice of its group's box: the top with the header on the
-       * first row, the sides down every row, the bottom on the last. Drawn
-       * per row rather than as a wrapper around the group, so a row joining
-       * or leaving one keeps its place in the tree — its inputs, its open
-       * floor plan and the focused seam survive the change. Lifted, the slice
-       * goes clear but keeps its padding, or the row would jump wider. */}
+      {/* This row's slice of its group's box, drawn per row rather than as a
+       * wrapper so a row joining or leaving a group keeps its place in the
+       * tree (inputs, open floor plan, focused seam). Lifted, it goes clear
+       * but keeps its padding so the row does not jump wider. */}
       <div
         className={cn(
           groupPlace && "border-x px-1.5",
@@ -225,14 +206,11 @@ export function StepRow({
             isDragging && "bg-elevated shadow-lg ring-1 ring-signal-cmd/40",
           )}
         >
-          {/* One line, folded or not: that is what keeps a twenty-step list scannable.
-           * The toggle takes the slack and truncates its summary, so on a narrow
-           * console the text gives way before the controls do. */}
+          {/* One line, folded or not, so a long list stays scannable; the summary
+           * truncates before the controls do. */}
           <div className="flex items-center gap-2">
-            {/* The only part of the row that starts a drag. Making the whole row the
-             * activator would turn every press on an input, the type picker or the
-             * waypoint picker into a potential drag. `touch-none` stops the browser
-             * claiming a finger on the handle as a page scroll. */}
+            {/* The only drag activator, so presses on the row's inputs never start
+             * a drag. `touch-none` stops a finger here becoming a page scroll. */}
             <button
               type="button"
               ref={setActivatorNodeRef}
@@ -256,8 +234,7 @@ export function StepRow({
               type="button"
               aria-expanded={open}
               aria-controls={bodyId}
-              // Not disabled while a run is in flight: folding changes nothing that
-              // is sent, so a running list can still be read either way.
+              // Not disabled during a run: folding changes nothing that is sent.
               onClick={() => onExpandedChange(!open)}
               className="flex min-w-0 flex-1 items-center gap-2 rounded-sm py-0.5 text-left transition-colors hover:bg-elevated focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
@@ -268,18 +245,15 @@ export function StepRow({
                 )}
                 aria-hidden
               />
-              {/* The type spelled out rather than the glyph the library rows use:
-               * this is the line an operator scans to read the job, and there is
-               * room for the word. Fixed width so the summaries line up. */}
+              {/* The type as a word, not the library's glyph: this is the line
+               * that is scanned. Fixed width so the summaries line up. */}
               <span className="instrument-label w-11 shrink-0">{typeLabel}</span>
               {!open && problem ? (
                 <span className="min-w-0 truncate text-[11px] text-signal-warn">
                   {problem}
                 </span>
               ) : !open && state?.message ? (
-                // A running MOVE says what the robot is doing in place of the
-                // summary, the way a problem does, but muted: it is news about
-                // the row, not something wrong with it.
+                // Muted: news about the row, not something wrong with it.
                 <span className="min-w-0 truncate text-[11px] text-muted-foreground">
                   {state.message}
                 </span>
@@ -292,15 +266,11 @@ export function StepRow({
               )}
             </button>
 
-            {/* From sm the chips sit in the line. On a phone they do not fit
-             * beside a 40 px handle, two 40 px actions and the summary — "IN
-             * PROGRESS" is a third of the width — so they get a line of their own
-             * below (see StepChips), and hide here. */}
+            {/* Below sm the chips do not fit beside the 40 px targets, so they
+             * get their own line below (see StepChips). */}
             <StepChips step={step} state={state} className="hidden sm:contents" />
 
             <div className="flex shrink-0 items-center gap-0.5">
-              {/* The one-click jumps a drag makes fiddly: to either end of a long
-               * list, or a single slot without aiming at a neighbour. */}
               <DropdownMenu>
                 <DropdownMenuTrigger
                   aria-label={`More actions for step ${ordinal}`}
@@ -315,8 +285,7 @@ export function StepRow({
                     <ArrowUpToLineIcon aria-hidden />
                     Move to top
                   </DropdownMenuItem>
-                  {/* Up and down are the two that can land a row inside a
-                   * box; top and bottom never do. */}
+                  {/* Only up and down can land a row inside a box. */}
                   <DropdownMenuItem
                     disabled={first || moveProblem(index - 1) !== null}
                     onClick={() => onMoveTo(index - 1)}
@@ -335,8 +304,7 @@ export function StepRow({
                     <ArrowDownToLineIcon aria-hidden />
                     Move to bottom
                   </DropdownMenuItem>
-                  {/* The same link the seam above the row makes, for a finger,
-                   * which gets no seam, and for anyone who looks here first. */}
+                  {/* The seam's link, for a finger, which gets no seam. */}
                   {!first && (
                     <>
                       <DropdownMenuSeparator />
@@ -349,8 +317,7 @@ export function StepRow({
                           ? `Run after step ${ordinal - 1}`
                           : `Start together with step ${ordinal - 1}`}
                       </DropdownMenuItem>
-                      {/* Said under the item rather than in a title, which a
-                       * finger — the one this item is for — never sees. */}
+                      {/* Under the item, not in a title a finger never sees. */}
                       {!linked && linkProblem && (
                         <p className="px-2 pb-1.5 text-[11px] leading-snug text-muted-foreground">
                           {linkProblem}
@@ -360,13 +327,10 @@ export function StepRow({
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
-              {/* A finger has to tap twice; a mouse or a keyboard removes at
-               * once. The remove button sits 2 px from the ⋯ menu and a missed
-               * tap deleted a step with no way back, while a pointer that can
-               * aim never had that problem and would only be slowed down. The
-               * armed state is drawn on the button itself, since a title is not
-               * something a finger sees, and it lets go after a moment so a
-               * change of mind costs nothing. */}
+              {/* A finger taps twice, a mouse once: the button sits 2 px from the
+               * ⋯ menu and a missed tap deleted a step with no undo. The armed
+               * state is drawn on the button (a finger sees no title) and
+               * disarms after 3 s. */}
               <IconButton
                 label={removeArmed ? "Tap again to remove this step" : "Remove step"}
                 disabled={disabled}
@@ -392,8 +356,6 @@ export function StepRow({
 
           <StepChips step={step} state={state} className="mt-1.5 flex flex-wrap gap-1 sm:hidden" />
 
-          {/* Indented under the summary from sm; on a phone the 46 px would be a
-           * seventh of the row, and the body's own controls are how it reads. */}
           {open && (
             <div id={bodyId} className="mt-2 space-y-2 sm:pl-[46px]">
               <Segmented
@@ -404,22 +366,14 @@ export function StepRow({
                 onChange={(type) => onPatch({ type })}
               />
 
-              {/* Coordinates, the spoken line and the duration are kept in the draft
-               * across a type change, so switching to STANDUP and back does not lose
-               * what was typed — the wire shape is derived from the type, not stored
-               * alongside it. */}
-              {/* The waypoint is the whole of a MOVE row's input: no X / Y / heading
-               * fields. The draft still carries the numbers — they are what is sent,
-               * and a template saved with hand-typed ones still loads and runs — but
-               * an operator places a waypoint on the floor plan, not a coordinate. */}
-              {/* The picker and, on request, the floor plan beside it: a name in
-               * a list is not a place, and the map is what says which stop `v2`
-               * is. It sits with the row by request — it had moved up to the
-               * Steps header, out of sight of the pick it explains. Opened by its
-               * button rather than always shown, because a twenty-step patrol
-               * with a map under every row is a wall of maps. The map is still a
-               * view of the whole job (every Move step's stop lit with its
-               * number), not a picker: the dropdown is how a step is set. */}
+              {/* Every type's fields stay in the draft across a type change, so
+               * switching away and back loses nothing; the wire shape derives
+               * from the type. */}
+              {/* A MOVE row is set by its waypoint only, no X / Y / heading
+               * fields; the draft still carries the numbers that are sent. The
+               * floor plan sits with the row, behind a button so a long patrol
+               * is not a wall of maps. It shows the whole job and is not a
+               * picker: the dropdown sets the step. */}
               {step.type === "MOVE" && (
                 <div className="space-y-2">
                   <div className="flex items-start gap-2">
@@ -434,12 +388,9 @@ export function StepRow({
                         label={`Waypoint for step ${ordinal}`}
                       />
                     </div>
-                    {/* Icon only: the row is already dense with words, and the
-                     * pressed state says more than a label that would have to
-                     * flip between Show and Hide to keep up. Disabled rather than
-                     * absent without a floor plan, so the row keeps its shape
-                     * whichever map is picked. Not held by `disabled`: opening
-                     * the map changes nothing that is sent. */}
+                    {/* Disabled rather than absent without a floor plan, so the row
+                     * keeps its shape. Not held by `disabled`: opening the map
+                     * changes nothing that is sent. */}
                     <button
                       type="button"
                       aria-pressed={previewOpen && canPreview}
@@ -484,19 +435,15 @@ export function StepRow({
                     <Input
                       value={step.text}
                       disabled={disabled}
-                      // No maxLength attribute: it would silently truncate a paste, and
-                      // a hidden edit is worse than the row error below saying how far
-                      // over the limit the text is.
+                      // No maxLength: it would silently truncate a paste; the
+                      // row error says how far over the text is instead.
                       onChange={(event) => onPatch({ text: event.target.value })}
                       placeholder="Delivery arrived — please take your items."
-                      // No size below md, here and on every Input override: iOS
-                      // Safari zooms the page into any field under 16 px on
-                      // focus, and this console is a fixed frame that cannot
-                      // zoom back out.
+                      // No size below md, on every Input override: iOS Safari
+                      // zooms into any field under 16 px on focus.
                       className="mt-0.5 h-7 rounded-sm md:text-[13px]"
                     />
-                    {/* The counter appears only near the limit — a line short enough
-                     * to obviously fit does not need bookkeeping over it. */}
+                    {/* The counter appears only near the limit. */}
                     {step.text.length > SPEAK_TEXT_MAX - 100 && (
                       <span
                         className={
@@ -509,16 +456,13 @@ export function StepRow({
                       </span>
                     )}
                   </label>
-                  {/* Laid out as the Wait row's Duration is: a short field
-                   * with its unit and bound beside it. */}
                   <label className="mt-2 block">
                     <span className="instrument-label text-muted-foreground">Times</span>
                     <span className="mt-0.5 flex items-center gap-1.5">
                       <Input
                         value={step.repeat}
                         disabled={disabled}
-                        // Text with a numeric keypad, for the reason Duration
-                        // is: a number input reports "" mid-edit.
+                        // Not type="number", for the reason Duration gives.
                         inputMode="numeric"
                         onChange={(event) => onPatch({ repeat: event.target.value })}
                         placeholder="1"
@@ -543,9 +487,8 @@ export function StepRow({
                     <Input
                       value={step.seconds}
                       disabled={disabled}
-                      // Text with a decimal keypad rather than type="number": a
-                      // number input reports "" for "1." and "-" alike, which would
-                      // erase what the operator is halfway through typing.
+                      // Not type="number": it reports "" for "1." and "-",
+                      // erasing what is halfway typed.
                       inputMode="decimal"
                       onChange={(event) => onPatch({ seconds: event.target.value })}
                       placeholder="10"
@@ -564,8 +507,7 @@ export function StepRow({
             </div>
           )}
 
-          {/* Folded, the header line already carries the problem; saying it twice
-           * would make a folded row two lines again. */}
+          {/* Folded, the header line already carries the problem. */}
           {open && rowError && (
             <p
               role="alert"
@@ -596,10 +538,9 @@ export function StepRow({
 }
 
 /**
- * The row's two status chips: the loaded template's waypoint has been deleted,
- * and what the running job made of this step. Rendered twice with different
- * visibility so the phone gets them on a line of their own — the alternative
- * was a header that overflowed the moment a run started.
+ * The row's status chips: a deleted waypoint, and the running job's state.
+ * Rendered twice with different visibility so a phone gets them on a line of
+ * their own instead of an overflowing header.
  */
 function StepChips({
   step,
@@ -614,10 +555,8 @@ function StepChips({
   if (!missing && !state) return null;
   return (
     <div className={className}>
-      {/* Loaded from a template whose vertex has since been deleted, so these
-       * coordinates are the snapshot rather than a live pose. Not an error — the
-       * row dispatches fine — but the operator should know the map no longer
-       * agrees, and re-picking a vertex clears it. */}
+      {/* The coordinates are a snapshot of a since-deleted vertex. Not an
+       * error, the row dispatches fine; re-picking clears it. */}
       {missing && <Chip tone="caution">waypoint deleted</Chip>}
       {state && <TaskStatusChip status={state.status} />}
     </div>

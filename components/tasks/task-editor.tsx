@@ -28,44 +28,28 @@ import {
 } from "@/lib/task/step";
 import { taskTemplateNameOk } from "@/lib/task/template";
 
-/**
- * The step list's per-row run readback, which this page no longer has: it
- * dispatches nothing, so no row here is ever executing. One shared empty map
- * rather than a fresh one per render.
- */
+/** This page dispatches nothing, so no row has run state. Shared, not per render. */
 const NO_STEP_STATES: ReadonlyMap<string, TaskStepState> = new Map();
 
 /**
- * The header's three buttons: a 40 px target under a finger from sm up, and
- * a 32 px icon square below it (see the header). `!` because the button's own
- * inline-start padding is a more specific rule than a width variant.
+ * A 40 px finger target from sm up, a 32 px icon square below. `!` because the
+ * button's inline-start padding is more specific than a width variant.
  */
 const HEADER_BUTTON = "sm:pointer-coarse:min-h-10 max-sm:size-8 max-sm:px-0!";
 
 /**
- * The task editor, on a page of its own (/tasks/editor): the steps being
- * authored and the job's name. Go back, Save and Delete sit in the header, and
- * the name is the heading itself, an always-open field that Save writes with
- * the steps (TaskTitle).
+ * The task editor (/tasks/editor): the steps and the job's name, which is the
+ * heading itself and saved with the steps.
  *
- * **It does not run or schedule anything.** Both used to be panes here. A job
- * runs from its row on /tasks and is scheduled there too, where the schedule
- * list it joins already is — and only a saved job can be, which retires the
- * old trap of scheduling loose steps that no row could ever show.
- *
- * **Its own route, off the overview.** The draft outlives a navigation
- * (lib/task/draft-store.ts), so the overview hands a template over by writing
- * it into the draft and pushing here — there is no id in the URL to keep in
- * step with it — and Go back leaves it there for next time.
+ * It does not run or schedule anything: a job does both from its row on
+ * /tasks, so only a saved job can be scheduled. The overview hands a template
+ * over through the draft (lib/task/draft-store.ts), so the URL carries no id.
  */
 export function TaskEditor() {
   const router = useRouter();
   /**
-   * Everything authored and not yet saved — the steps, the loaded template,
-   * the map override and the name being typed — lives in the tab's task draft
-   * rather than in this component's state, so leaving for the map editor to
-   * place a missing stop and coming back finds the job as it was. The setters
-   * below keep the call sites reading like state.
+   * Everything unsaved lives in the tab's draft, not component state, so a
+   * trip to the map editor to place a missing stop finds the job as it was.
    */
   const [draft, updateDraft, clearDraft] = useTaskDraft();
   const { editing, chosenMap, name: draftName } = draft;
@@ -85,10 +69,8 @@ export function TaskEditor() {
   const activeMapName = maps?.find((map) => map.active)?.name ?? null;
 
   /**
-   * Leaving for another screen keeps the draft, so only the tab going away
-   * is asked about: sessionStorage ends with it, and a reload is asked about
-   * too because the browser cannot tell the two apart. Only while there is
-   * work to lose — the same stance as a clip being recorded.
+   * Navigating keeps the draft, so only closing the tab (and a reload, which
+   * the browser cannot tell apart) is asked about, and only with work to lose.
    */
   const unsaved = draftIsUnsaved(draft, library.templates);
   React.useEffect(() => {
@@ -99,42 +81,29 @@ export function TaskEditor() {
   }, [unsaved]);
 
   /**
-   * The map the editor is authoring for. `chosenMap` null means "follow the
-   * loaded map", which is what nearly every job wants and what a fresh editor
-   * starts on; a name is the operator's own choice (or the map of a template
-   * they loaded) and survives until the editor is emptied. Kept as an override
-   * rather than copied from the catalogue so a robot that switches maps
-   * underneath an untouched editor follows it, while one the operator pointed
-   * elsewhere stays pointed there.
+   * `chosenMap` null follows the loaded map; a name is the operator's (or a
+   * loaded template's) choice. An override rather than a copy, so an untouched
+   * editor follows a map switch and a pointed one stays put.
    */
   const mapName = chosenMap ?? activeMapName;
   const editorMap = React.useMemo(
     () => maps?.find((map) => map.name === mapName) ?? null,
     [maps, mapName],
   );
-  // The editor map's geometry, for the floor plan a Move row can open; null
-  // when the map has no floor plan to show. Read here rather than in each row
-  // so unfolding a row never refetches the catalogue.
+  // Read here, not per row, so unfolding a row never refetches the catalogue.
   const mapGrid = editorMap?.grid ?? null;
   const list = useMapVertexList(mapName);
   const vertices = list.vertices;
-  // The catalogue's own state first: until it answers there is no name, and
-  // "no-map" must mean there is nothing to author for, not that we have not
-  // asked yet.
+  // The catalogue's state first, so "no-map" never means "not asked yet".
   const verticesStatus =
     mapsStatus === "loading" ? "loading" : mapsStatus === "error" ? "error" : list.status;
 
-  /**
-   * Which stops the job's Move steps go to, for the floor plan each Move row
-   * can open: the map there still shows the whole route, not only that row's
-   * pick, so it reads the same whichever row it was opened from.
-   */
+  /** The whole route, so each row's floor plan reads the same. */
   const stepMarks = React.useMemo(() => stepWaypointOrdinals(drafts.steps), [drafts.steps]);
 
   /**
-   * Set when Save is pressed on a job with no usable name, which turns Save
-   * into a pointer at the field rather than a dead button: the name is the one
-   * thing the step list's captions cannot say is missing. Typing clears it.
+   * Set when Save is pressed without a usable name, so Save points at the
+   * field instead of being a dead button. Typing clears it.
    */
   const [nameMissing, setNameMissing] = React.useState(false);
   const nameRef = React.useRef<HTMLInputElement>(null);
@@ -147,8 +116,7 @@ export function TaskEditor() {
   const stepReason = !drafts.steps.length
     ? "Add at least one step."
     : !stepsOk
-      ? // Not "coordinates": a SPEAK row fails this for an empty line, and each
-        // row already says exactly what it is missing.
+      ? // Generic: each row already says what it is missing.
         "Some steps are incomplete — the marked rows say what is missing."
       : null;
 
@@ -161,21 +129,13 @@ export function TaskEditor() {
       ? "Pick a map for this job\u2019s Move steps."
       : null);
 
-  /**
-   * A job for another map can be saved but not run or scheduled: its
-   * coordinates are in that map's frame. Those two buttons live on its row
-   * on /tasks, which holds them; this only says so where the job is built.
-   */
+  /** A job for another map saves but cannot run: its coordinates are in that map's frame. */
   const mapMismatch = draftMapName !== null && draftMapName !== activeMapName;
   const mismatchReason = mapMismatch
     ? `This job is for ${draftMapName}; the robot has ${activeMapName ?? "no map"} loaded, so it can be saved but not run or scheduled until that map is loaded.`
     : null;
 
-  /**
-   * Point the editor at another map. A waypoint already picked belongs to the
-   * map it was picked on and means nothing on the new one, so those rows are
-   * emptied — behind a confirm, because there is no undo.
-   */
+  /** Picked waypoints mean nothing on another map, so they are cleared, behind a confirm. */
   const selectMap = (next: string) => {
     if (next === mapName) return;
     const picked = drafts.steps.filter(
@@ -204,21 +164,9 @@ export function TaskEditor() {
   };
 
   /**
-   * One Save: an update when a template is loaded, a new one otherwise. The
-   * name goes with the steps, so a rename is a Save like any other edit. A job
-   * with no name yet sends the operator to the heading's field instead.
-   *
-   * A new job's Save also leaves for /tasks, by request: the job is done being
-   * authored and its row there is where it runs and is scheduled. The draft
-   * is emptied first, since it now duplicates a saved row and Create task
-   * would otherwise ask before clearing it. An update stays put, so a second
-   * press updates what the first saved instead of making another copy.
-   */
-  /**
    * Which row each step id of the last save was sent from. The ids are
-   * positional (stepIdFor), so a refusal naming `3-move` has to be read
-   * against the list as it was sent, not as it is after the operator has
-   * since moved a row — and a row deleted since marks nothing.
+   * positional (stepIdFor), so a refusal is read against the list as sent,
+   * not as it is after a row has moved.
    */
   const [sentKeys, setSentKeys] = React.useState<ReadonlyMap<string, number>>(
     () => new Map(),
@@ -228,6 +176,11 @@ export function TaskEditor() {
     refusedKey !== undefined && library.error ? { key: refusedKey, message: library.error } : null;
 
   const canSave = stepsOk && saveReason === null && !library.busy;
+  /**
+   * An update when a template is loaded, a create otherwise. A create empties
+   * the draft (it now duplicates a saved row) and leaves for /tasks, where the
+   * job runs; an update stays put so a second press does not make a copy.
+   */
   const save = () => {
     if (!canSave) return;
     if (!taskTemplateNameOk(draftName)) {
@@ -259,11 +212,9 @@ export function TaskEditor() {
   };
 
   /**
-   * Delete the loaded template, then leave: what is left in the editor would
-   * be a draft of a job that no longer exists, and Save would quietly
-   * re-create it under a new id. Behind a confirm, as on the library row —
-   * there is no undo. Its schedules are named because they survive it: each
-   * holds its own copy of the steps and keeps running until deleted itself.
+   * Delete, then leave, or Save would quietly re-create the job under a new id.
+   * The confirm names its schedules because they survive: each holds its own
+   * copy of the steps.
    */
   const remove = () => {
     if (!editing) return;
@@ -302,19 +253,14 @@ export function TaskEditor() {
             onRevert={() => setName(editing?.name ?? "")}
             onSubmit={save}
           />
-          {/* The library's write error — a refused save, rename or delete —
-            * in the backend's own words, under the name it was about. */}
           {library.error && (
             <p role="alert" className="mt-1 text-[11px] leading-snug break-words text-signal-warn">
               {library.error}
             </p>
           )}
-          {/* Said on the page, not only in a prompt on the way out: the draft
-            * survives leaving, so nothing else here tells the operator that
-            * what they see is not yet what the robot holds. Held back until
-            * the library answers for a loaded job — before then it would
-            * flash on every open, which is the false alarm the comparison
-            * exists to avoid. */}
+          {/* The draft survives leaving, so the page has to say it is unsaved.
+            * Held back until the library answers for a loaded job, or it
+            * would flash on every open. */}
           {unsaved && (draft.editing === null || library.status === "ok") && (
             <Chip tone="caution" className="mt-1">
               Unsaved changes
@@ -325,14 +271,10 @@ export function TaskEditor() {
             waits for all of them. If a step fails, the rest are skipped.
           </p>
         </div>
-        {/* Below sm the three are icons alone, 32 px square, by request: with
-          * their words they took most of a phone's width and squeezed the
-          * heading to one letter. Their names stay as aria-labels, and the
-          * words come back from sm up, where there is room for both. */}
+        {/* Icons only below sm: with words they squeezed the heading to one
+          * letter on a phone. */}
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-          {/* Leaves the draft as it is: unsaved steps are still there next
-            * time, and Create task on /tasks is what asks before clearing
-            * them. It used to be Stop editing, which emptied the editor. */}
+          {/* Keeps the draft; Create task on /tasks asks before clearing it. */}
           <Button
             variant="outline"
             onClick={() => router.push("/tasks")}
@@ -345,8 +287,6 @@ export function TaskEditor() {
           <Button
             onClick={save}
             disabled={!canSave}
-            // The step list says which rows are unfinished; this is for the
-            // operator whose eyes are on the button.
             title={saveReason ?? undefined}
             aria-label="Save"
             className={HEADER_BUTTON}
@@ -383,11 +323,9 @@ export function TaskEditor() {
                 disabled={false}
                 onPick={selectMap}
               />
-              {/* The stop that is missing gets placed on the map, not here:
-               * this opens that map's editor in Waypoints mode, and its back
-               * button returns to this draft. A map with no floor plan has
-               * nothing to place on, so the link is a disabled span (the
-               * map card's Edit makes the same choice). */}
+              {/* Opens the map's editor in Waypoints mode; its back button
+               * returns here. No floor plan means nothing to place on, so a
+               * disabled span. */}
               {mapName !== null && mapGrid !== null ? (
                 <Link
                   href={waypointEditorHref(mapName, { from: "tasks" })}

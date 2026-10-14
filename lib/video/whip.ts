@@ -5,14 +5,9 @@ import { resolveSessionUrl, waitForIceGathering } from "@/lib/video/signalling";
 /**
  * WHIP client: the operator's microphone out of the robot's speaker.
  *
- * The mirror image of the WHEP client, with one difference that decides
- * whether it can run at all. WHEP only receives, so a plain-http LAN console
- * can open it; WHIP needs getUserMedia, and `navigator.mediaDevices` does not
- * exist outside a secure context. On http://<robot>:3001 the microphone is
- * therefore unavailable, and the failure is worth naming precisely because the
- * symptom — a property that is simply `undefined` — reads as a browser bug.
- *
- * Ways out, in the order they are worth trying:
+ * Unlike WHEP it needs getUserMedia, and `navigator.mediaDevices` is
+ * `undefined` outside a secure context — so on http://<robot>:3001 there is
+ * no microphone, which reads as a browser bug unless named. Ways out:
  *   1. Chrome, started with
  *      --unsafely-treat-insecure-origin-as-secure=http://<robot>:3001
  *      (and --user-data-dir=/tmp/whip-test so it does not fight your profile)
@@ -21,7 +16,6 @@ import { resolveSessionUrl, waitForIceGathering } from "@/lib/video/signalling";
  *      page can make.
  */
 
-/** Whether getUserMedia is reachable at all. See the module comment. */
 export function microphoneAvailable(): boolean {
   return typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia != null;
 }
@@ -31,12 +25,11 @@ export const INSECURE_CONTEXT_MESSAGE =
   "hides navigator.mediaDevices (see lib/video/whip.ts for the flags that work around it)";
 
 export interface WhipSession {
-  /** The captured microphone, kept so the caller can mute or meter it. */
+  /** The microphone, so the caller can mute or meter it. */
   readonly stream: MediaStream;
-  /** Absolute URL from the response's Location header, for the DELETE. */
+  /** From the Location header, for the DELETE. */
   readonly sessionUrl: string | null;
   readonly pc: RTCPeerConnection;
-  /** Best-effort DELETE, stop the microphone, close the peer connection. */
   close: () => Promise<void>;
 }
 
@@ -51,9 +44,8 @@ export async function startWhipSession(
 ): Promise<WhipSession> {
   if (!microphoneAvailable()) throw new Error(INSECURE_CONTEXT_MESSAGE);
 
-  // Echo cancellation and noise suppression on: the operator is likely
-  // listening to the robot's own microphone through WHEP at the same time, and
-  // without them the loop howls.
+  // The operator is likely hearing the robot through WHEP too; without echo
+  // cancellation the loop howls.
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     video: false,
@@ -67,9 +59,8 @@ export async function startWhipSession(
   const close = async () => {
     if (closed) return;
     closed = true;
-    // The DELETE first, while the page is still alive to make it: the robot's
-    // speaker stays claimed by this session until something releases it, and
-    // closing the peer connection locally tells it nothing.
+    // DELETE first: a local close tells the robot nothing, and its speaker
+    // stays claimed.
     if (sessionUrl) {
       try {
         await fetch(sessionUrl, { method: "DELETE", keepalive: true });
@@ -77,8 +68,7 @@ export async function startWhipSession(
         /* the robot went away, or the tab is unloading — nothing to do */
       }
     }
-    // Stopping the tracks is what turns the browser's recording indicator off.
-    // Skipping it leaves a tab that looks like it is still listening.
+    // Stopping the tracks turns the browser's recording indicator off.
     stream.getTracks().forEach((track) => track.stop());
     pc.close();
   };
@@ -132,7 +122,7 @@ export async function startWhipSession(
 }
 
 export interface WhipStats {
-  /** Outbound audio. audioLevel is 0..1, from the local media-source stats. */
+  /** 0..1 */
   audioLevel: number | null;
   audioKbps: number | null;
   packetsSent: number | null;
@@ -145,11 +135,9 @@ interface ByteSample {
 }
 
 /**
- * Turn two getStats() snapshots into readable numbers for the outbound side.
- *
- * The level comes from `media-source`, not from `outbound-rtp`: the latter
- * reports what was sent, which is silence-suppressed, so a quiet room reads as
- * a dead microphone. media-source is the capture itself.
+ * Outbound stats from two getStats() snapshots. The level is `media-source`'s,
+ * not `outbound-rtp`'s, which is silence-suppressed and makes a quiet room
+ * read as a dead microphone.
  */
 export async function readWhipStats(
   pc: RTCPeerConnection,

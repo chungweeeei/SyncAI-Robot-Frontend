@@ -1,25 +1,10 @@
-// Client for the backend task API
-// (src/syncai_backend/syncai_backend/interfaces/rest/routers/task.py).
+// Tasks: /api/v1/tasks. Creation is dispatch — a 200 means the robot is about
+// to act; there is no separate run call.
 //
-// Two shapes of submission share one endpoint. The single-gesture ones — the
-// operator drags a goal on the point-cloud viewport, or presses a posture
-// button — go through `sendMoveTask` / `sendPostureTask` and are one step by
-// construction. `submitTask` takes a list an operator authored on /tasks. Both
-// end up in `postTask`, because a task *is* its step list and the difference is
-// entirely in who assembled it.
-//
-// Creation is dispatch: the endpoint awaits Temporal's start_workflow before
-// answering, so a 200 means the workflow is queued and the robot is about to
-// act. There is no separate run/execute call.
-//
-// Two collections, split by whether the run is still going. `fetchActiveTasks`
-// is the **running** ones: that is how a caller recovers an id it never had,
-// which is every id after a reload and every id belonging to a run a schedule
-// started while nobody was watching. `fetchTaskHistory` is the **finished**
-// ones. Neither is stored by the backend — both are pages of Temporal's
-// visibility index — so history reaches back only as far as the namespace's
-// retention (a day on a fresh install; the backend README says how to lengthen
-// it) and a run older than that is simply gone.
+// `fetchActiveTasks` lists the **running** runs (how a caller recovers an id
+// it never had: after a reload, or a schedule's); `fetchTaskHistory` the
+// **finished** ones. Both read the orchestrator's index, so history only
+// reaches back as far as its retention (a day on a fresh install).
 
 import { z } from "zod";
 
@@ -29,13 +14,9 @@ import { requestJson } from "@/lib/api/http";
 import type { PlanarPose } from "@/lib/types/robot";
 
 /**
- * Shared by every task-shaped response below.
- *
- * PAUSED is a *reading*: `GET /tasks/{id}` says it once a step is held, on the
- * run and on that step. PAUSING is only ever a *claim*, the pause ack's status
- * the moment the signal lands — this console does not parse that ack (see
- * `pauseTask`), but the member is here so a backend that one day reports it
- * from the read does not fail the schema and blank the readout.
+ * PAUSED is a *reading* (`GET /tasks/{id}`, once a step is held). PAUSING is
+ * only the unparsed pause ack's claim; listed so a backend that ever reports
+ * it from the read does not fail the schema.
  */
 const TaskStatusSchema = z.enum([
   "PENDING",
@@ -67,11 +48,6 @@ export function isTerminalTaskStatus(status: TaskStatus | undefined | null): boo
   return status != null && TERMINAL_TASK_STATUSES.includes(status);
 }
 
-/**
- * A navigation goal in map coordinates. Structurally the same planar pose the
- * viewport produces for any drag (an initial pose is the other one), so it is an
- * alias rather than a second declaration — the name is what carries the meaning.
- */
 export type GoalPose = PlanarPose;
 
 export interface TaskStepState {
@@ -79,17 +55,11 @@ export interface TaskStepState {
   status: TaskStatus;
   error_msg: string;
   /**
-   * What the robot is doing for a running MOVE — its navigator's own sentence
-   * ("Following the path", "Path blocked; replanning", …) — and "" for every
-   * other step and state. Free text for display; nothing branches on it.
-   * Optional because a backend from before the field omits it, and the read
-   * must not fail over a nicety.
+   * A running MOVE's navigator sentence ("Path blocked; replanning"), else "".
+   * Display only. Optional for older backends.
    */
   message?: string;
-  /**
-   * The step's group as dispatched: steps sharing one ran side by side.
-   * Absent from a backend that predates groups, null for a step on its own.
-   */
+  /** Steps sharing a group ran side by side; null on its own (or absent). */
   group?: string | null;
 }
 
@@ -119,36 +89,20 @@ interface TaskAckResponse {
   message: string;
 }
 
-/**
- * The ack's `id` becomes the tracker's query key and poll target, so a renamed
- * field is not a blank readout here: it is a 1 Hz poll of `/tasks/undefined`
- * that no terminal status will ever stop.
- */
+/** Checked: a renamed `id` would be an endless 1 Hz poll of `/tasks/undefined`. */
 const TaskAckResponseSchema: z.ZodType<TaskAckResponse> = z.object({
   id: z.string(),
   status: TaskStatusSchema,
   message: z.string(),
 });
 
-/**
- * The two posture commands the backend exposes as step types. Each is a single
- * gait-controller motion key with nothing to parameterise, so the step carries
- * no params at all — sending one would be rejected at the request boundary.
- */
+/** Posture steps carry no params; sending any is refused. */
 export type Posture = "STANDUP" | "LIEDOWN";
 
-/**
- * The step types the console can author — the backend's full `StepType`
- * vocabulary, since the ARTIFACT removal took the one member the console had no
- * surface for. (It was a discriminated conveyor-command union an operator could
- * not have filled in, which is why this used to be a deliberate subset.)
- *
- * `Posture` is reused rather than restating "STANDUP" | "LIEDOWN", so the two
- * cannot drift.
- */
+/** The backend's full `StepType` vocabulary. */
 export type StepType = "MOVE" | "SPEAK" | "WAIT" | Posture;
 
-/** `MoveParams`, verbatim. `theta` in degrees, folded into (-180, 180] on the way out. */
+/** `theta` in degrees, folded into (-180, 180] on the way out. */
 export interface MoveStepParams {
   x: number;
   y: number;
@@ -156,42 +110,26 @@ export interface MoveStepParams {
 }
 
 /**
- * `SpeakParams`. `voice` and `speed` are optional because the backend defaults
- * them (af_heart, 1.0) and the composer only authors the text — they are typed
- * here so a template that *was* saved with them round-trips instead of being
- * silently stripped.
+ * `voice` and `speed` are backend-defaulted and never authored here, but typed
+ * so a template saved with them round-trips.
  */
 export interface SpeakStepParams {
-  /** English only for now; 1000 chars max — see `SPEAK_TEXT_MAX` in lib/task/step.ts. */
+  /** English only for now; see `SPEAK_TEXT_MAX` in lib/task/step.ts. */
   text: string;
   voice?: string;
   speed?: number;
-  /**
-   * How many times to say it, back to back; 1–10, see `SPEAK_REPEAT_MAX`.
-   * Optional because the backend defaults it to once and the composer sends
-   * it only above that, so a one-time line is the body it always was.
-   */
+  /** Times to say it; see `SPEAK_REPEAT_MAX`. Sent only above the default of once. */
   repeat?: number;
 }
 
-/**
- * `WaitParams`, verbatim: how long the robot stands still before the next
- * step, in seconds. Range in `WAIT_SECONDS_MAX` (lib/task/step.ts).
- */
+/** Seconds; range in `WAIT_SECONDS_MAX` (lib/task/step.ts). */
 export interface WaitStepParams {
   seconds: number;
 }
 
 /**
- * One step as the endpoint takes it.
- *
- * A discriminated union, deliberately: this is the only thing that guarantees a
- * posture step never carries a `params` key. `StepRequest`'s model_validator
- * answers `params` on a STANDUP with a 422 whose `detail` is a validation
- * *array* rather than a sentence, so making it unrepresentable in TypeScript is
- * what keeps that off the operator's screen. (`params: undefined` would also be
- * dropped by JSON.stringify, but it is one careless refactor away from
- * `params: null`, which the MOVE branch rejects in turn.)
+ * One step as the endpoint takes it. Discriminated so a posture step cannot
+ * carry `params`, which 422s with a validation array instead of a sentence.
  */
 export type TaskStepRequest = (
   | { id: string; type: "MOVE"; params: MoveStepParams }
@@ -200,10 +138,8 @@ export type TaskStepRequest = (
   | { id: string; type: Posture }
 ) & {
   /**
-   * Adjacent steps with the same group start together, and the next step
-   * waits for all of them. Never sent for a step that runs on its own, so a
-   * backend from before groups reads the same body it always did; a schedule
-   * read back answers null there.
+   * Adjacent steps in one group start together; the next waits for all.
+   * Never sent for a lone step (a schedule read back answers null).
    */
   group?: string | null;
 };
@@ -226,9 +162,8 @@ export const WaitStepParamsSchema: z.ZodType<WaitStepParams> = z.object({
 });
 
 /**
- * Read back off a schedule, which is the one place a step list arrives from the
- * backend rather than leaving for it. A plain union rather than a discriminated
- * one because the posture branch's discriminator is itself a pair of literals.
+ * For a schedule's step list read back. A plain union: posture's
+ * discriminator is two literals.
  */
 export const TaskStepRequestSchema: z.ZodType<TaskStepRequest> = z.union([
   z.object({
@@ -257,62 +192,37 @@ export const TaskStepRequestSchema: z.ZodType<TaskStepRequest> = z.union([
 ]);
 
 /**
- * Per-page-load submission sequence, appended to every task id.
- *
- * A task id *is* the Temporal workflow id, and a duplicate does not come back as
- * a 409: `client.start_workflow` raises, the gateway wraps it in
- * `InternalServerError`, and the operator is shown a 502 reading "Start workflow
- * failed" — the same sentence Temporal being unreachable produces. Second
- * granularity alone made that reachable, because nothing in the console rate
- * limits a second press: two dispatches inside one wall-clock second collide and
- * the operator is told the orchestrator is broken when it is not.
- *
- * Not a random suffix. This id is what an engineer greps for in the Temporal UI
- * and in the worker log, and `robot01-task-1782786519-3` is legible where a
- * base36 blob is not. Two page loads inside the same second would need the same
- * operator to reload and re-dispatch between two clock ticks.
+ * Per-page-load sequence appended to every task id. A duplicate id is not a
+ * 409 but a 502 that reads as the orchestrator being down, and two presses in
+ * one second would collide on the timestamp alone. Not random, so the id
+ * stays greppable (`robot01-task-1782786519-3`).
  */
 let submitSeq = 0;
 
 /**
- * How a job was started, as this console dispatches it. It shapes the id's
- * second segment and, since the history dashboard, travels on the request too:
- * the backend records it on the run so finished jobs can be counted and
- * filtered by it. "schedule" is the fifth value a *finished* run can carry,
- * stamped by the backend on every run a schedule starts — a direct dispatch
- * may not claim it, which is why it is not in this union.
+ * How this console starts a job: the id's second segment, and recorded on the
+ * run for history. "schedule" is stamped by the backend only, so it is not here.
  */
 export type TaskKind = "goal" | "standup" | "liedown" | "task";
 
 /** The history filter's vocabulary: every kind a finished run can carry. */
 export type TaskHistoryKind = TaskKind | "schedule";
 
-/**
- * `TaskRequest`, verbatim. `kind` and `name` are what the history reads back as
- * a run's provenance; `name` is the template a dispatch came from, which is the
- * one thing about a run the id cannot say.
- */
+/** `name` is the template a dispatch came from, which the id cannot say. */
 interface TaskRequest {
   id: string;
   timestamp: number;
   kind: TaskKind;
   name: string | null;
   /**
-   * The map the dispatcher planned the job's coordinates on. The backend
-   * refuses the job when it is not the map the robot is using, and records the
-   * map it actually ran on itself, so this is a check rather than a claim.
-   * Omitted for a job that does not move.
+   * The map the coordinates were planned on; a check, refused when it is not
+   * the robot's map. Omitted for a job that does not move.
    */
   map_name?: string;
   steps: readonly TaskStepRequest[];
 }
 
-/**
- * A fresh task identity. `kind` only shapes the id — the step's `type` is what
- * the workflow dispatches on. The `timestamp` field is required by `TaskRequest`
- * and read by nothing, so it reuses the value the id was built from and the two
- * can never disagree.
- */
+/** `timestamp` is required and unread, so it reuses the id's value. */
 function newTaskIdentity(
   robotId: string,
   kind: TaskKind,
@@ -341,10 +251,8 @@ async function postTask(
 }
 
 /**
- * Submit a one-step MOVE task for a dragged nav goal. `mapName` is the map the
- * goal was aimed on — the one the dashboard was drawing — so a switch made from
- * another console between the drag and the request is refused rather than
- * driven on the new map.
+ * A one-step MOVE for a dragged goal. `mapName` is the map it was aimed on, so
+ * a switch from another console in between is refused, not driven.
  */
 export function sendMoveTask(
   robotId: string,
@@ -366,14 +274,12 @@ export function sendMoveTask(
   );
 }
 
-// An explicit table rather than `toLowerCase()`: the kind is typed on the wire
-// now, and a lowercased string is not a `TaskKind` the compiler can check.
+// A table, not `toLowerCase()`, so the compiler checks the `TaskKind`.
 const POSTURE_KIND: Record<Posture, TaskKind> = {
   STANDUP: "standup",
   LIEDOWN: "liedown",
 };
 
-/** Submit a one-step posture task (STANDUP / LIEDOWN). */
 export function sendPostureTask(
   robotId: string,
   posture: Posture,
@@ -383,15 +289,9 @@ export function sendPostureTask(
 }
 
 /**
- * Dispatch a task the operator authored step by step, and return its id for the
- * tracker. The steps arrive already in wire shape — see lib/task/step.ts, which
- * owns the draft model and the conversion, so this client never has to know what
- * a half-typed coordinate field looks like.
- *
- * `name` is the template the steps were loaded from, when they were: it is
- * recorded on the run and is what lets the history count one template's jobs
- * apart from everything else dispatched as a "task". `mapName` is the map its
- * MOVE coordinates belong to (the template's `map_name`), null when it has none.
+ * Dispatch an authored step list (already wire shape; see lib/task/step.ts)
+ * and return its id. `name` is the source template, recorded for history;
+ * `mapName` is the template's `map_name`.
  */
 export function submitTask(
   robotId: string,
@@ -412,12 +312,10 @@ export function fetchTaskState(
   );
 }
 
-/** Who started a run. See the backend's `TaskSource` on why not "OPERATOR". */
 export type TaskSource = "DIRECT" | "SCHEDULE";
 
-/** `ActiveTaskResponse`, verbatim. */
 export interface ActiveTask {
-  /** Workflow id — the same id `fetchTaskState` and `cancelTask` take. */
+  /** The id `fetchTaskState` and `cancelTask` take. */
   id: string;
   run_id: string;
   status: TaskStatus;
@@ -427,29 +325,17 @@ export interface ActiveTask {
   /** Set only when `source` is "SCHEDULE". */
   schedule_id: string | null;
   /**
-   * How the run was started (see `TaskHistoryKind`), or null for one
-   * dispatched by a caller that did not say. A string rather than the union
-   * for the same reason `TaskHistoryEntry.kind` is: a kind this build does
-   * not know must be an unfamiliar label in the masthead, not a parse failure
-   * that takes the whole active list — and the map lock with it — off screen.
+   * See `TaskHistoryKind`. A string, not the union: an unknown kind must be an
+   * unfamiliar label, not a parse failure that drops the list and the map lock.
    */
   kind: string | null;
-  /** The template the run was dispatched from, or null when there was none. */
+  /** The source template, if any. */
   name: string | null;
-  /**
-   * The map the job drives on, as the backend stamped it; null for one that
-   * uses no map (Stand, Lie down). This is what locks a map against edits
-   * while the job runs — see lib/map/run-lock.ts.
-   */
+  /** Null for a job that uses no map. Locks the map (lib/map/run-lock.ts). */
   map_name: string | null;
 }
 
-/**
- * Absent and null both read as null: a backend from before the field existed
- * sends neither, and must still parse. What null costs is only what the field
- * bought — the lock for `map_name`, a name in the masthead for `kind` and
- * `name` — and the backend still enforces the lock on its own side.
- */
+/** Absent reads as null, so an older backend still parses (it still enforces the lock). */
 const AbsentOrNullStringSchema = z.string().nullable().default(null);
 
 const ActiveTasksResponseSchema: z.ZodType<ActiveTasksResponse> = z.object({
@@ -472,21 +358,13 @@ const ActiveTasksResponseSchema: z.ZodType<ActiveTasksResponse> = z.object({
 export interface ActiveTasksResponse {
   tasks: ActiveTask[];
   /**
-   * When the backend read the snapshot, ISO 8601 UTC. Elapsed time must be
-   * measured against this rather than the browser clock: the two clocks are
-   * different, and the answer is served from a short server-side cache.
+   * When the backend read it, ISO 8601 UTC. Measure elapsed time against this,
+   * not the browser clock: different clocks, and the answer is cached.
    */
   as_of: string;
 }
 
-/**
- * Everything running on this robot's task queue right now.
- *
- * The one call in this client that does not need to be told which task to look
- * at. It is answered from Temporal's visibility index, so it sees runs this tab
- * never started — another tab's, the MCP server's, and a schedule's, including
- * ones that began before this page was loaded.
- */
+/** Everything running now, including runs this tab never started. */
 export function fetchActiveTasks(
   signal?: AbortSignal,
 ): Promise<ActiveTasksResponse> {
@@ -497,10 +375,8 @@ export function fetchActiveTasks(
 }
 
 /**
- * Ask Temporal to cancel a task. The `{id, status, message}` envelope is
- * dropped: its `status` is a flat "CANCELED" the moment the request lands, which
- * is a claim about the *request* rather than the workflow. Whether the robot
- * actually stopped is what the next poll of `fetchTaskState` answers.
+ * The ack is dropped: its "CANCELED" is a claim about the request; the next
+ * `fetchTaskState` says whether the robot stopped.
  */
 export function cancelTask(id: string): Promise<void> {
   return requestJson<void>(apiUrl(`/api/v1/tasks/${encodeURIComponent(id)}`), {
@@ -510,15 +386,10 @@ export function cancelTask(id: string): Promise<void> {
 }
 
 /**
- * Hold a running task, and release one. Both are workflow signals: the
- * backend answers as soon as the signal lands, with `{id, status, message}`
- * whose `status` is PAUSING / IN_PROGRESS — a claim about the *request*, not a
- * reading of the robot. A pause lands at once on a MOVE (the robot stops) or a
- * WAIT (its countdown freezes) but only after a SPEAK or a posture finishes, so the envelope is dropped the way
- * `cancelTask`'s is: PAUSED is confirmed by the next `fetchTaskState`, never by
- * the ack, and parsing it would invite someone to splice PAUSING into the
- * cache as if it were one. A 409 `task_not_running` once the run has closed is
- * rendered as the sentence it is; nothing branches on the code.
+ * Hold or release a running task. The ack's PAUSING / IN_PROGRESS is a claim
+ * about the request, so it is dropped like `cancelTask`'s: PAUSED is read from
+ * `fetchTaskState`. A pause lands at once on a MOVE or WAIT, but only after a
+ * SPEAK or posture finishes.
  */
 export function pauseTask(id: string): Promise<void> {
   return requestJson<void>(
@@ -534,48 +405,33 @@ export function resumeTask(id: string): Promise<void> {
   );
 }
 
-/** The statuses a *finished* run can have — the history filter's vocabulary. */
 export type TaskHistoryStatus = "COMPLETED" | "FAILED" | "CANCELED";
 
 /**
- * `TaskHistoryEntryResponse`, verbatim: an `ActiveTask` plus the time it
- * closed, with the status narrowed to the three a run can end in. The backend
- * folds Temporal's TimedOut into FAILED and Terminated into CANCELED, so an
- * operator never sees a status this console has no colour for.
+ * An `ActiveTask` plus its close time. The backend folds timed-out into FAILED
+ * and terminated into CANCELED.
  */
 export interface TaskHistoryEntry {
-  /** Workflow id — the same id `fetchTaskState` takes for the per-step detail. */
   id: string;
   run_id: string;
   status: TaskHistoryStatus;
   /** ISO 8601, UTC. */
   started_at: string;
-  /** ISO 8601, UTC. Typed nullable because the backend's model is. */
+  /** ISO 8601, UTC. */
   closed_at: string | null;
   source: TaskSource;
   /** Set only when `source` is "SCHEDULE". */
   schedule_id: string | null;
-  /**
-   * How the run was started (see `TaskHistoryKind`), or null for one dispatched
-   * before the backend recorded it, or by a caller that did not say. A string
-   * rather than the union so a kind this build does not know is a row with an
-   * unfamiliar label, not a parse failure that blanks the page.
-   */
+  /** As for `ActiveTask.kind`: an unknown kind must not blank the page. */
   kind: string | null;
-  /** The template the run was dispatched from, or null when there was none. */
   name: string | null;
-  /** The map the run drove on, or null for one that used none or predates it. */
   map_name: string | null;
 }
 
 export interface TaskHistoryResponse {
   /** Newest close first; the backend offers no other order. */
   tasks: TaskHistoryEntry[];
-  /**
-   * Opaque cursor for the next page, null on the last one. Only valid under
-   * the same filter set it was issued with — status, window, kind and name —
-   * see queryKeys.taskHistoryPage.
-   */
+  /** Null on the last page. Valid only under its filter; see queryKeys.taskHistoryPage. */
   next_page_token: string | null;
 }
 
@@ -597,14 +453,10 @@ const TaskHistoryResponseSchema: z.ZodType<TaskHistoryResponse> = z.object({
   next_page_token: z.string().nullable(),
 });
 
-/**
- * The filter half of a history read, shared by the page and the stats reads so
- * the two can never describe different sets of runs.
- */
+/** Shared by the page and stats reads, so both describe the same runs. */
 export interface TaskHistoryFilterQuery {
-  /** Only runs that finished this way; omitted for all three. */
   status?: TaskHistoryStatus;
-  /** ISO 8601 UTC bounds on the close time; either may be omitted. */
+  /** ISO 8601 UTC bounds on the close time. */
   since?: string;
   until?: string;
   kind?: TaskHistoryKind;
@@ -634,16 +486,8 @@ function historyFilterParams({
 }
 
 /**
- * One page of finished runs on this robot, newest close first.
- *
- * Cursor paging only: the backend is reading one page of Temporal's visibility
- * index per call and has no count to offer, so a caller can step forward with
- * the token it was handed and back with the ones it kept — never jump to
- * "page 3 of 7".
- *
- * `since` / `until` bound the close time. The dashboard's counts
- * (`fetchTaskHistoryStats`) take the same filter through the same helper,
- * which is what keeps the numbers above the list true of the rows in it.
+ * One page of finished runs, newest close first. Cursor paging only — there
+ * is no count, so no "page 3 of 7".
  */
 export function fetchTaskHistory(
   { pageToken, pageSize, ...filter }: TaskHistoryQuery,
@@ -659,13 +503,9 @@ export function fetchTaskHistory(
   );
 }
 
-/**
- * `TaskHistoryStatsResponse`, verbatim: the finished runs matching a filter,
- * counted rather than listed. Counted by Temporal itself, so the numbers are
- * exact however many pages the list would take.
- */
+/** Exact counts of the finished runs matching a filter. */
 export interface TaskHistoryStats {
-  /** When the backend counted, ISO 8601 UTC. */
+  /** ISO 8601 UTC. */
   as_of: string;
   total: number;
   by_status: Record<TaskHistoryStatus, number>;
@@ -684,7 +524,6 @@ const TaskHistoryStatsSchema: z.ZodType<TaskHistoryStats> = z.object({
   success_rate: z.number().nullable(),
 });
 
-/** The counts the history dashboard shows, over the same filter the list reads. */
 export function fetchTaskHistoryStats(
   filter: TaskHistoryFilterQuery,
   signal?: AbortSignal,

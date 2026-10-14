@@ -8,21 +8,14 @@ export interface GridSize {
 }
 
 /**
- * A gridmap in .pgm byte order.
- *
- * Row 0 is the **top** of the map (max y) — the order the P5 file stores and the
- * order `pcd_to_gridmap.py` writes after its `np.flipud`. A ROS OccupancyGrid is
- * the other way up; the flip is already accounted for by worldToGrid/gridToWorld
- * in lib/map/view.ts, so nothing here has to think about y.
+ * A gridmap in .pgm byte order: row 0 is the **top** of the map (max y), the
+ * other way up from a ROS OccupancyGrid. worldToGrid/gridToWorld handle the flip.
  */
 export interface MapGrid extends GridSize {
   /**
-   * Narrowed to `<ArrayBuffer>` rather than left as a bare `Uint8Array`, whose
-   * default `ArrayBufferLike` also admits SharedArrayBuffer and is therefore not
-   * a `BodyInit`: this buffer is handed to `PUT .../grid` as the request body
-   * with no copy. The one construction site (`decodeGrid`) already produces
-   * exactly this type, so the narrowing states what was always true instead of
-   * asserting it at the call site.
+   * `<ArrayBuffer>`, not the default `ArrayBufferLike` (which admits
+   * SharedArrayBuffer and so is not a `BodyInit`): this buffer is the
+   * `PUT .../grid` body, uncopied.
    */
   data: Uint8Array<ArrayBuffer>;
 }
@@ -40,15 +33,10 @@ export interface CellRect {
 }
 
 /**
- * The only three bytes this editor writes.
- *
- * These are not thresholds. syncai_map_server's loader (map_io.cpp, with the
- * `negate: 0` / `occupied_thresh: 0.65` / `free_thresh: 0.196` every gridmap.yaml
- * in this repo carries) classifies a byte `g` as occupied for `g <= 89`, unknown
- * for `90..205`, and free for `g >= 206`. So 255 loads as free too — and two of
- * the real maps contain 255s from a previous round of hand-editing in GIMP. Read
- * by range (`classify`), write 254, and the file stays byte-identical in kind to
- * what the conversion tool produces.
+ * The only three bytes this editor writes. Not thresholds: the map loader (with
+ * every gridmap.yaml's thresholds) reads `g <= 89` as occupied, `90..205` as
+ * unknown and `g >= 206` as free, so real maps also hold 255s. Read by range
+ * (`classify`), write these, matching what the conversion tool produces.
  */
 export const OCCUPIED = 0;
 export const UNKNOWN = 205;
@@ -63,22 +51,12 @@ export function classify(byte: number): GridValue {
   return FREE;
 }
 
-/**
- * Brush diameters, in cells.
- *
- * Odd only. An even diameter has no centre cell, so it is either off-centre by
- * half a cell or ambiguous about which side gets the extra row — not a tolerable
- * question on a tool whose whole job is deciding about individual 5 cm cells.
- */
+/** Brush diameters in cells. Odd only: an even one has no centre cell. */
 export const BRUSH_SIZES = [1, 3, 7, 15, 31] as const;
 
 /**
- * Where a stamp's cells go.
- *
- * The indirection is the seam the whole editor hangs off: the undo accumulator
- * plugs in here to record before/after, and the line and rect previews plug in a
- * collector so they can rasterize the exact cells they are about to commit
- * without touching the buffer.
+ * Where a stamp's cells go: the undo accumulator records through it, and the
+ * previews collect the exact cells they would commit without touching the buffer.
  */
 export type CellSink = (index: number, value: GridValue) => void;
 
@@ -91,12 +69,8 @@ export function inBounds(size: GridSize, col: number, row: number): boolean {
 }
 
 /**
- * A filled disc of the given diameter centred on (col, row).
- *
- * The `r * r + r` radius fudge is deliberate: a plain `dx² + dy² <= r²` renders
- * diameter 3 as a plus sign, which reads as a bug when you paint with it. The
- * fudge gives the 3×3 square a paint program draws for a small round brush, and
- * a recognisable disc from diameter 7 up.
+ * A filled disc of the given diameter centred on (col, row). The `r * r + r`
+ * fudge is deliberate: plain `<= r²` draws diameter 3 as a plus sign.
  */
 export function stampDisc(
   size: GridSize,
@@ -124,13 +98,9 @@ export function stampDisc(
 }
 
 /**
- * A disc swept along the integer line from a to b — the Minkowski sum of the
- * line with the brush, i.e. exactly what a round brush leaves behind.
- *
- * This is also what a freehand drag uses between consecutive pointer samples: a
- * fast flick at high zoom puts 100+ CSS px between samples, and without
- * interpolation the stroke comes out dashed. Sharing one rasterizer between the
- * brush and the line tool is what keeps them from ever disagreeing.
+ * A disc swept along the integer line from a to b. Also fills freehand drags
+ * between pointer samples, which a fast flick spaces 100+ px apart, and keeps
+ * the brush and the line tool from ever disagreeing.
  */
 export function stampLine(
   size: GridSize,
@@ -148,9 +118,7 @@ export function stampLine(
   const stepRow = row < to.row ? 1 : -1;
   let error = dCol - dRow;
 
-  // Bresenham, stamping the brush at every step. Redundant writes where
-  // consecutive discs overlap are absorbed by the sink (a repaint of the same
-  // value is not an edit).
+  // Bresenham, stamping at every step; overlapping writes are absorbed by the sink.
   for (;;) {
     stampDisc(size, col, row, diameter, value, sink);
     if (col === to.col && row === to.row) return;

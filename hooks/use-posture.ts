@@ -9,27 +9,18 @@ import { ignore } from "@/lib/api/mutation-state";
 import { sendPostureTask, type Posture } from "@/lib/api/task";
 
 export interface PostureControl {
-  /** Submit a posture command. */
   send: (posture: Posture) => Promise<void>;
-  /** The command whose task is being tracked, or null. */
+  /** The command whose task is being tracked. */
   sent: Posture | null;
   running: boolean;
-  /** True while the submit request itself is in flight. */
   busy: boolean;
   error: string | null;
 }
 
 /**
- * Stand up / lie down, each submitted as a one-step posture task.
- *
- * One click, no confirmation step: unlike a nav goal there is nothing staged to
- * read back — the command is fully described by the button that was pressed,
- * and the operator standing next to the robot is the one pressing it.
- *
- * There is no cancel either: the backend turns each of these into a single
- * motion key that the gait controller has already acted on by the time the
- * workflow reports, so a cancel button would suggest a reversal the stack
- * cannot do. Sending the opposite posture is the way back.
+ * Stand up / lie down, each a one-step posture task. One click: the button
+ * fully describes the command. No cancel: the motion key has been acted on by
+ * the time the workflow reports, so the way back is the opposite posture.
  */
 export function usePosture(robotId: string): PostureControl {
   const task = useTaskTracker();
@@ -42,10 +33,7 @@ export function usePosture(robotId: string): PostureControl {
       if (stopped) throw new Error(ESTOP_REFUSAL);
       return sendPostureTask(robotId, posture);
     },
-    // Before the request, not after it: `sent` names the new command as soon as
-    // it goes out, and the previous one's step failure under that name would
-    // read as this command's. The buttons are gated on `running`, so there is
-    // never a live poll to fight over the slot.
+    // Before the request, or the previous failure would read as this command's.
     onMutate: () => reset(),
     onSuccess: (id) => track(id),
   });
@@ -54,8 +42,6 @@ export function usePosture(robotId: string): PostureControl {
 
   const send = React.useCallback(
     async (posture: Posture) => {
-      // Swallowed because the button is wired straight to this; the failure is
-      // on `error`.
       await submitAsync(posture).catch(ignore);
     },
     [submitAsync],
@@ -63,9 +49,7 @@ export function usePosture(robotId: string): PostureControl {
 
   return {
     send,
-    // The mutation's own variables, which is what "the command being tracked"
-    // has always meant here: it is set the moment the request goes out, so a
-    // posture that failed to submit is still the one named beside the error.
+    // Set as the request goes out, so a failed submit is still named by its error.
     sent: submit.variables ?? null,
     running: task.running,
     busy: submit.isPending,

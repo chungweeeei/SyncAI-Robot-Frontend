@@ -4,16 +4,10 @@ import { overlayPanel } from "@/components/console/instrument";
 import { cn } from "@/lib/utils";
 
 /**
- * A refused Start or New map, under the strip that was pressed.
- *
- * The strip has no room for a sentence, so the robot's refusal — verbatim —
- * lands here and stays until the next press replaces it. Only refusals: the
- * receipts a start and a reset answer with, and the floor plan line after a
- * save, were dropped from under the strip by request (2026-10). A refused
- * press is the one answer that cannot go, because the button it came from
- * looks the same after it as before, and nothing else on screen would say
- * that the robot did not act. A save's refusal is not here: it stays in the
- * save dialog, beside the name to fix.
+ * A refused Start or New map, verbatim, under the strip — it stays until the
+ * next press. A refusal is the one answer kept there (by request), because the
+ * button looks the same afterwards and nothing else would say the robot did
+ * not act. A save's refusal stays in the save dialog.
  */
 export function RunError({
   message,

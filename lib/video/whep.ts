@@ -3,27 +3,20 @@ import { errorDetail } from "@/lib/api/http";
 import { resolveSessionUrl, waitForIceGathering } from "@/lib/video/signalling";
 
 /**
- * WHEP client for the robot camera — deliberately vanilla ICE, not trickle.
- * The negotiation shape and its reasons live in lib/video/signalling.ts.
- *
- * Receive-only, which is also why this works from a plain-http origin: a LAN
- * console on http://<robot>:3001 is not a secure context, and getUserMedia
- * would be blocked there. RTCPeerConnection is not — which is exactly where
- * the WHIP client parts company with this one.
+ * WHEP client for the robot camera: vanilla ICE, not trickle (see
+ * lib/video/signalling.ts). Receive-only, so it works from plain http.
  */
 
 export interface WhepSession {
-  /** The inbound tracks. Attach to a <video> element's srcObject. */
   readonly stream: MediaStream;
-  /** Absolute URL from the response's Location header, for the DELETE. */
+  /** From the Location header, for the DELETE. */
   readonly sessionUrl: string | null;
   readonly pc: RTCPeerConnection;
-  /** Best-effort DELETE, then close the peer connection. Idempotent. */
+  /** Idempotent. */
   close: () => Promise<void>;
 }
 
 export interface WhepHandlers {
-  /** RTCPeerConnection.connectionState on every change. */
   onConnectionState?: (state: RTCPeerConnectionState) => void;
   onIceState?: (state: RTCIceConnectionState) => void;
 }
@@ -33,18 +26,15 @@ export async function startWhepSession(
   path = "/api/v1/webrtc/whep",
 ): Promise<WhepSession> {
   const pc = new RTCPeerConnection({
-    // No iceServers: the robot and the console share a LAN, so host
-    // candidates are what connect them. The worker's own STUN/TURN config is
-    // a separate, server-side matter.
+    // Host candidates connect a console and robot on one LAN.
     iceServers: [],
   });
 
   const stream = new MediaStream();
   pc.addEventListener("track", (event) => stream.addTrack(event.track));
 
-  // Two recvonly transceivers, in this order, because the worker offers
-  // exactly two sendonly tracks: H264 video then Opus audio. The m-lines have
-  // to be there for it to attach them to anything.
+  // In this order: the worker sends exactly H264 video then Opus audio, and
+  // needs an m-line for each.
   pc.addTransceiver("video", { direction: "recvonly" });
   pc.addTransceiver("audio", { direction: "recvonly" });
 
@@ -65,9 +55,8 @@ export async function startWhepSession(
   const close = async () => {
     if (closed) return;
     closed = true;
-    // The DELETE first, while the page is still alive to make it: closing the
-    // peer connection locally tells the robot nothing, and the camera stays
-    // open on its side until something reclaims it.
+    // DELETE first: a local close tells the robot nothing, and its camera
+    // stays claimed.
     if (sessionUrl) {
       try {
         await fetch(sessionUrl, { method: "DELETE", keepalive: true });
@@ -87,8 +76,7 @@ export async function startWhepSession(
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/sdp" },
-      // localDescription, not `offer`: it is the one that carries the
-      // candidates gathered above.
+      // localDescription, not `offer`: it carries the gathered candidates.
       body: pc.localDescription?.sdp ?? offer.sdp ?? "",
     });
 
@@ -113,14 +101,14 @@ export async function startWhepSession(
 }
 
 export interface WhepStats {
-  /** Inbound video, or null before the first frame arrives. */
+  /** Null before the first frame. */
   width: number | null;
   height: number | null;
   fps: number | null;
   videoKbps: number | null;
   framesDecoded: number | null;
   videoPacketsLost: number | null;
-  /** Inbound audio. audioLevel is 0..1 and is not reported by every browser. */
+  /** 0..1; not reported by every browser. */
   audioLevel: number | null;
   audioKbps: number | null;
   audioPacketsReceived: number | null;
@@ -136,13 +124,8 @@ interface ByteSample {
 }
 
 /**
- * Turn two getStats() snapshots into readable numbers.
- *
- * Bitrate has to be differenced across calls because RTCStats reports
- * cumulative bytes, so the caller keeps the previous sample and hands it back.
- * That is also why this is a plain function rather than a hook: the test page
- * polls it on an interval and re-renders from the result, but a dashboard
- * panel would want the same arithmetic without the React.
+ * Readable numbers from getStats(). RTCStats bytes are cumulative, so the
+ * caller hands back the previous sample for the bitrate.
  */
 export async function readWhepStats(
   pc: RTCPeerConnection,
@@ -197,9 +180,8 @@ export async function readWhepStats(
     }
   });
 
-  // Candidate types come from the local/remote candidate entries the winning
-  // pair points at, which is a second lookup — worth it because "host -> host"
-  // versus anything else is the whole answer to "why is this stream slow".
+  // A second pass for the pair's candidate types: "host → host" or not is most
+  // of the answer to "why is this stream slow".
   report.forEach((entry) => {
     if (entry.type === "candidate-pair" && entry.state === "succeeded" && entry.nominated) {
       const local = report.get(entry.localCandidateId);

@@ -5,23 +5,16 @@ import {
 import type { PointCloudFrame } from "@/lib/types/pointcloud";
 import type { StreamStatus } from "@/lib/types/stream";
 
-/** Bytes of the little-endian uint32 point count that leads every frame. */
 const HEADER_BYTES = 4;
-/** Bytes per point: three float32s. */
 const POINT_BYTES = 12;
 
 /**
- * Decode a binary point-cloud frame: little-endian uint32 count + count*3
- * float32 xyz. The 4-byte header keeps the float payload 4-byte aligned so it
- * can be viewed without copying.
+ * Decode a point-cloud frame (lib/types/pointcloud.ts). The 4-byte header keeps
+ * the floats aligned, so they are viewed without copying.
  *
- * Null for a buffer too short to hold its header, or shorter than the count
- * says. Both used to throw a RangeError from the typed-array constructor. On
- * the live stream that surfaced as an uncaught error inside the socket's
- * onmessage, breaking the socket module's promise to skip a malformed frame.
- * Returned rather than thrown so each caller decides what a short frame
- * means: the live stream drops it and waits for the next one, and a stored
- * map's download reports it. Trailing bytes past the last point are ignored.
+ * Null for a frame shorter than its header or its count says, rather than a
+ * RangeError: the live stream drops it, a stored map's download reports it.
+ * Trailing bytes are ignored.
  */
 export function decodePointCloud(buffer: ArrayBuffer): PointCloudFrame | null {
   if (buffer.byteLength < HEADER_BYTES) return null;
@@ -37,10 +30,8 @@ export interface PointCloudStreamHandlers {
 }
 
 /**
- * Connect to the live body_cloud WebSocket and invoke ``onFrame`` for each
- * decoded frame. Reconnect and status handling come from
- * createReconnectingSocket — see it for why this stream and the telemetry one
- * are separate connections rather than one multiplexed socket.
+ * The live scan stream. Separate from telemetry on purpose; see
+ * createReconnectingSocket.
  */
 export function createPointCloudStream(
   handlers: PointCloudStreamHandlers,
@@ -50,9 +41,7 @@ export function createPointCloudStream(
     binaryType: "arraybuffer",
     onStatus: handlers.onStatus,
     onMessage: (data) => {
-      // Anything that is not a binary frame is not one of ours, and a binary
-      // one that is cut short cannot be drawn; skip both rather than throwing
-      // inside the socket's onmessage. The next frame is ~100 ms away.
+      // Skip a non-binary or short frame; the next one is ~100 ms away.
       if (!(data instanceof ArrayBuffer)) return;
       const frame = decodePointCloud(data);
       if (frame) handlers.onFrame(frame);

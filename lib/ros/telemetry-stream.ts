@@ -6,22 +6,17 @@ import type { PlannedPath, RobotPose } from "@/lib/types/robot";
 import type { StreamStatus } from "@/lib/types/stream";
 
 /**
- * Client for the internal telemetry WebSocket
- * (/api/v1/robot/telemetry/stream): the high-rate channel the 3D viewer uses
- * for pose and joint angles, deliberately separate from the frozen
- * GET /api/v1/robot/state third-party contract (whole-second timestamps,
- * polled — unusable for motion) and from the point-cloud stream (a big frame
- * there would head-of-line block pose here; see lib/ros/socket.ts).
+ * The high-rate telemetry socket the 3D viewer reads pose and joints from.
+ * Separate from GET /robot/state (a frozen third-party contract, polled, with
+ * whole-second stamps) and from the scan stream (see lib/ros/socket.ts).
  *
- * Wire format: JSON text frames multiplexed by ``type``:
+ * JSON text frames multiplexed by ``type``:
  *
  *   {"type": "pose",   "x", "y", "z", "yaw_deg", "stamp"}
  *   {"type": "joints", "joints": {"FL_HipX_joint": rad, ...}, "stamp"}
  *   {"type": "path",   "points": [[x, y], ...], "stamp"}
  *
- * `path` shares this socket rather than getting its own: it is ~8 kB once per
- * replan (~0.333 Hz), nowhere near the size that made the point cloud a separate
- * connection.
+ * `path` can share it: ~8 kB per replan (~0.333 Hz) is too small to block.
  */
 
 interface PoseMessage {
@@ -57,11 +52,6 @@ export interface TelemetryStreamHandlers {
   onStatus?: (status: StreamStatus) => void;
 }
 
-/**
- * Connect to the telemetry WebSocket and dispatch each message to its typed
- * handler. Reconnect and status handling come from createReconnectingSocket;
- * only the JSON demultiplexing below is specific to this stream.
- */
 export function createTelemetryStream(
   handlers: TelemetryStreamHandlers,
   path = "/api/v1/robot/telemetry/stream",
@@ -77,16 +67,12 @@ export function createTelemetryStream(
         return; // malformed frame; skip rather than kill the stream
       }
       if (msg.type === "pose") {
-        // The wire's yaw_deg is already degrees — the same unit (and name
-        // apart) as RobotPose.theta, so this is a pure relabel.
         handlers.onPose?.({ x: msg.x, y: msg.y, z: msg.z, theta: msg.yaw_deg });
       } else if (msg.type === "joints") {
         handlers.onJoints?.(msg.joints);
       } else if (msg.type === "path") {
-        // Flattened here rather than in the consumer, for the same reason
-        // yaw_deg is relabelled above: this is the wire-to-app translation
-        // layer, and the pairs the JSON has to use are not the layout the
-        // geometry builder walks.
+        // Flattened here, the wire-to-app layer, into the layout the geometry
+        // builder walks.
         const points = new Float32Array(msg.points.length * 2);
         for (let i = 0; i < msg.points.length; i++) {
           points[i * 2] = msg.points[i][0];

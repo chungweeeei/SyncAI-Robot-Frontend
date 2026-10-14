@@ -2,9 +2,8 @@ import type { WifiConnection } from "@/lib/api/network";
 import type { RobotNetworkStatus } from "@/lib/types/robot";
 
 /**
- * What a card shows in place of a value it has no reading for. Each blank is
- * in the shape of the value it stands in for, so a card off the network reads
- * as "no address" at a glance rather than as a readout that failed to render.
+ * Blanks in the shape of the value they stand in for, so a card off the
+ * network reads as "no address" rather than as a readout that failed.
  */
 export const RSSI_BLANK = "-- dBm";
 export const IP_BLANK = "--.--.--.--";
@@ -19,11 +18,9 @@ export interface LinkReadout {
 }
 
 /**
- * The state poll's signal and addresses for the card whose SSID the poll
- * reports, and nothing for every other card. Matched on the poll alone, never
- * on the list's `active`: a card the list still flags after the robot roamed
- * must not show the new network's address as its own. An address the poll
- * reports empty (still waiting on DHCP) is nothing too.
+ * The state poll's link readings for the card whose SSID it reports, nothing
+ * for the rest. Matched on the poll, never the list's `active`, which goes
+ * stale when the robot roams. An empty address (DHCP pending) is nothing too.
  */
 export function linkReadout(
   ssid: string,
@@ -38,13 +35,11 @@ export function linkReadout(
 }
 
 /**
- * The order the Wi-Fi page lays its saved networks out in: the one the robot
- * is on first, then the most recently joined, and the never-joined last (in
- * name order, so the grid does not reshuffle between two reads).
+ * Saved networks in page order: the live one, then most recently joined, then
+ * never-joined by name (so the grid does not reshuffle between reads).
  *
- * `currentSsid` is the state poll's reading and wins over the list's own
- * `active`: the poll is 1 Hz and the list is only read again after a write, so
- * after the robot roams by itself the list's flag is the stale one of the two.
+ * `currentSsid` (the 1 Hz state poll) wins over the list's `active`, which is
+ * only re-read after a write.
  */
 export function orderConnections(
   connections: readonly WifiConnection[],
@@ -64,10 +59,8 @@ export function orderConnections(
 }
 
 /**
- * When the robot last joined a saved network, as the line a card shows: a
- * relative phrase for the last week, a date after that, and its own sentence
- * for a network saved but never brought up. `now` is the list's read time,
- * not the clock, so a render never reads Date.now().
+ * A card's "Last joined …" line: relative within a week, a date after. `now`
+ * is the list's read time, so a render never reads Date.now().
  */
 export function lastUsedLabel(lastUsedAt: string | null, now: number): string {
   if (lastUsedAt === null) return "Never joined";

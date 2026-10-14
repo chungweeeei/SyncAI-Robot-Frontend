@@ -7,18 +7,14 @@ import { useTheme } from "next-themes";
 const subscribeNoop = () => () => {};
 
 /**
- * Day / night, one click. The rail is 56 px wide, which is no place for a
- * three-item dropdown; the full light / dark / system choice lives in Settings →
- * Preferences, and this flips between the two an operator actually switches
- * between when they walk outside.
+ * Day / night in one click: the 56 px rail has no room for a three-way
+ * dropdown, so light / dark / system lives in Settings → Preferences.
  */
 export function ModeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
 
-  // The resolved theme is unknowable during SSR, so *everything* derived from it
-  // — the icon and the label that says which way the switch goes — has to wait
-  // for mount. Gating only the icon still mismatched on the aria-label, because
-  // the server assumed light and the client resolved dark.
+  // The resolved theme is unknown during SSR, so the icon *and* the aria-label
+  // wait for mount — gating only the icon still mismatched on the label.
   const mounted = React.useSyncExternalStore(
     subscribeNoop,
     () => true,
@@ -31,8 +27,7 @@ export function ModeToggle() {
     <button
       type="button"
       onClick={() => setTheme(dark ? "light" : "dark")}
-      // 40 px in the phone bar, the rail's 36 px on desktop — the same rule as
-      // the tabs beside it.
+      // 40 px in the phone bar, 36 px in the rail, like the tabs beside it.
       className="flex size-10 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated/60 hover:text-foreground lg:size-9"
       aria-label={
         mounted

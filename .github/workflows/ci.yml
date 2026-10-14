@@ -1,11 +1,6 @@
-# The gate this repo did not have. Everything here is a command CLAUDE.md
-# already documents; CI's only job is to stop it depending on somebody
-# remembering to run them.
-#
-# Two jobs rather than one, because they answer different questions and the
-# slow one should not hide the fast one: `check` fails in about a minute on a
-# type error or a lint break, while `e2e` has to produce a production build and
-# drive a browser through it. They run in parallel.
+# Runs the commands CLAUDE.md documents. Two parallel jobs so the slow one
+# does not hide the fast one: `check` fails in about a minute on a lint or
+# type error, `e2e` needs a production build and a browser.
 
 name: CI
 
@@ -38,9 +33,7 @@ jobs:
       - run: npm ci
 
       - name: Lint
-        # Also enforces the app -> components -> hooks -> lib import boundaries
-        # (no-restricted-imports in eslint.config.mjs), which is the one part of
-        # the architecture that cannot be reviewed back in by hand.
+        # Also enforces the app -> components -> hooks -> lib import boundaries.
         run: npm run lint
 
       - name: Type check
@@ -67,16 +60,14 @@ jobs:
 
       - run: npm ci
 
-      # Chromium only — both projects in playwright.config.ts run on it (the
-      # phone one is a Chromium with a phone viewport, not WebKit, for this
-      # reason), and the browser download is the slowest step in this job.
+      # Chromium only: both Playwright projects run on it, and the browser
+      # download is the slowest step in this job.
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
       - name: End-to-end tests
-        # The suite builds and starts the app itself (see webServer in
-        # playwright.config.ts). There is no robot: every test installs its own
-        # fake backend, so nothing here needs a service container.
+        # Builds and starts the app itself; every test fakes its own backend,
+        # so no service container is needed.
         run: npm run test:e2e
 
       - uses: actions/upload-artifact@v4

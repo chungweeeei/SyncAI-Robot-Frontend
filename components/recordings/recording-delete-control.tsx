@@ -21,23 +21,14 @@ const LIVE_REASON =
   "This recording is still running. Stop it first — deleting it now would lose the recording without stopping it.";
 
 /**
- * Delete one bag, behind a confirmation.
+ * Delete one recording, behind a confirmation — the map library's glyph and
+ * dialog, since it is the same unrecoverable act. The dialog's warning is the
+ * size, the reason anyone deletes one.
  *
- * An X at the end of the row, the same glyph and the same alert dialog the map
- * library's delete uses, because it is the same act: an `rmtree` with nothing
- * behind it. What differs is what the dialog has to warn about — a map takes
- * hand-placed vertices with it, a bag takes only itself, so the sentence that
- * earns its place here is the size, which is the reason anyone deletes one.
- *
- * The live recording cannot be deleted, and that is the backend's rule as well:
- * removing the directory out from under a running sqlite writer does not stop
- * the recorder, it just leaves it writing into a file nothing can open again.
- * The control is a greyed look-alike in that row with the reason in its
- * tooltip, and the endpoint answers 409 `recording_active` regardless.
- *
- * A refusal keeps the dialog open with the backend's sentence in it. On success
- * this row unmounts with the refetch, which is why there is no success state to
- * render.
+ * The live recording can't be deleted (the backend answers 409
+ * `recording_active`): removing the directory under a running writer leaves
+ * it writing a file nothing can open. A refusal keeps the dialog open; on
+ * success the row unmounts with the refetch.
  */
 export function RecordingDeleteControl({
   recording,
@@ -64,9 +55,8 @@ export function RecordingDeleteControl({
 
   return (
     <>
-      {/* A look-alike span rather than a disabled button while it is live:
-        * `disabled` swallows the pointer events the tooltip needs, and the
-        * reason is the point of showing the control at all. */}
+      {/* A look-alike span while live: `disabled` swallows the pointer events
+        * the tooltip needs. */}
       {live ? (
         <span
           aria-disabled="true"
@@ -101,8 +91,7 @@ export function RecordingDeleteControl({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            {/* wrap-anywhere: a name is up to 64 characters with no space to break
-              * on, and the popup is the width of a phone. */}
+            {/* wrap-anywhere: names have no spaces and the popup is phone-wide. */}
             <AlertDialogTitle className="wrap-anywhere">
               Delete {recording.name}?
             </AlertDialogTitle>

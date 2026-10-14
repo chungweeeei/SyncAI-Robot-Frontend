@@ -10,28 +10,23 @@ import {
   type ClipOutcome,
 } from "@/lib/video/clip";
 
-/**
- * Probed once per document and cached, because useSyncExternalStore needs a
- * snapshot that is the same value every time it is read — and because asking
- * the browser twice cannot produce a different answer.
- */
+/** Probed once: useSyncExternalStore needs the same snapshot on every read. */
 let probed: ClipFormat | null | undefined;
 function clipFormat(): ClipFormat | null {
   if (probed === undefined) probed = pickClipFormat();
   return probed;
 }
 
-/** Nothing ever changes it, so the subscription is a formality. */
 const neverChanges = () => () => {};
 
 export interface CameraClip {
-  /** False while this browser can write no video file at all. */
+  /** False when this browser can write no video file at all. */
   supported: boolean;
   capturing: boolean;
   /** Advances only when bytes arrive, so a stalled encoder shows as a stalled clock. */
   elapsedSeconds: number;
   bytes: number;
-  /** The capture that just ended, for the receipt. Cleared by `dismiss`. */
+  /** The capture that just ended, for the receipt. */
   last: ClipOutcome | null;
   start: () => void;
   stop: () => void;
@@ -39,26 +34,16 @@ export interface CameraClip {
 }
 
 /**
- * The camera window's clip capture.
+ * The camera window's clip capture — React glue over `lib/video/clip.ts`.
  *
- * React glue only: every rule about what a clip is lives in `lib/video/clip.ts`,
- * and this hook holds the handle, mirrors its progress into state for the
- * readout, and makes sure a capture is never silently lost.
- *
- * **The capture is born in an event handler, never in an effect.** That is what
- * makes it survive the component: closing the disclosure unmounts the window
- * and `useCameraStream`'s cleanup closes the session, but the handle is still
- * held by its own recorder's listeners and the file still lands. It is also
- * what makes Strict Mode's double-mount a non-event — no effect here starts
- * anything.
+ * **The capture is born in an event handler, never in an effect**, so it
+ * outlives the component: closing the window ends the session, but the
+ * recorder's listeners still hold the handle and the file still lands. Strict
+ * Mode's double-mount starts nothing.
  */
 export function useCameraClip(stream: MediaStream | null): CameraClip {
-  /**
-   * Read through useSyncExternalStore rather than probed in an effect: the
-   * server has no MediaRecorder, so the server snapshot is null and the client
-   * gets the real answer after hydration, with no setState cascade and no
-   * render that disagrees with the HTML it is reconciling against.
-   */
+  // Not probed in an effect: the server snapshot is null (no MediaRecorder) and
+  // the client gets the answer after hydration without a mismatch.
   const format = React.useSyncExternalStore(neverChanges, clipFormat, () => null);
   const [capturing, setCapturing] = React.useState(false);
   const [elapsedSeconds, setElapsedSeconds] = React.useState(0);
@@ -87,8 +72,7 @@ export function useCameraClip(stream: MediaStream | null): CameraClip {
     });
 
     if (!capture) {
-      // A live phase can precede the track by a frame; there is nothing to
-      // record yet and an empty recorder would write an empty file.
+      // A live phase can precede the track by a frame; nothing to record yet.
       setLast({
         end: "error",
         elapsedMs: 0,
@@ -106,25 +90,20 @@ export function useCameraClip(stream: MediaStream | null): CameraClip {
   const stop = React.useCallback(() => captureRef.current?.stop("operator"), []);
   const dismiss = React.useCallback(() => setLast(null), []);
 
-  // A capture is bound to the track it started on — MediaRecorder cannot be
-  // re-pointed — so a retry that swaps in a new stream ends it. The track's
-  // own `ended` covers the same ground, but can lag; whichever arrives first
-  // wins and the finish path runs once.
+  // MediaRecorder cannot be re-pointed, so a new stream ends the capture. The
+  // track's `ended` can lag; whichever comes first wins, and finish runs once.
   React.useEffect(() => {
     if (streamRef.current === stream) return;
     streamRef.current = stream;
     captureRef.current?.stop("source");
   }, [stream]);
 
-  // Empty deps, reading a ref, on purpose: this must fire when the window
-  // unmounts and never when it re-renders. A dep on `stream` or `capturing`
-  // here would kill a live capture on the next frame.
+  // Empty deps and a ref on purpose: a dep on `stream` or `capturing` would
+  // kill a live capture on the next render.
   React.useEffect(() => () => captureRef.current?.stop("closed"), []);
 
-  // The only thing that cannot be saved is a document that is going away: a
-  // flush on `pagehide` would hand its blob to a page that no longer exists.
-  // So ask instead, and only while there is something to lose — a clip is the
-  // one unsaved artifact this console has ever held.
+  // A flush on `pagehide` would hand its blob to a page that is gone, so ask
+  // before unload while a capture is live.
   React.useEffect(() => {
     if (!capturing) return;
     const guard = (event: BeforeUnloadEvent) => event.preventDefault();

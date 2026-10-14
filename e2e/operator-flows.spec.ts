@@ -15,10 +15,9 @@ import {
 } from "./backend";
 
 /**
- * The flows where pressing a button does something to a real machine. Each one
- * asserts two halves that can drift apart: what the screen says, and what the
- * console actually sent. A test that only checks the screen passes a build that
- * posts to the wrong endpoint.
+ * The flows where a button does something to a real machine. Each asserts
+ * what the screen says *and* what the console sent: a screen-only test passes
+ * a build that posts to the wrong endpoint.
  */
 
 test.describe("the recorder", () => {
@@ -119,9 +118,8 @@ test.describe("the recorder", () => {
 
 test.describe("the map library", () => {
   test("marks the map the stack is running and locks it", async ({ page }) => {
-    // The running map is the one map that cannot be renamed or deleted — the
-    // backend refuses both, and the card says so rather than letting the
-    // operator find out from a 409. Its floor plan stays editable while the
+    // The running map cannot be renamed or deleted, and the card says so
+    // rather than leaving it to a 409. Its floor plan stays editable while the
     // robot is idle: the backend saves onto the live map and reloads it.
     await mockBackend(page, { maps: [mapSummary({ active: true })] });
     await page.goto("/maps");
@@ -238,9 +236,8 @@ test.describe("the map library", () => {
     });
     await page.goto("/maps");
 
-    // The file is named by the console, not read off the response: the
-    // backend's Content-Disposition is not CORS-exposed, so a test that only
-    // watched the request would pass a build that saved "download" or "blob".
+    // The console names the file (Content-Disposition is not CORS-exposed),
+    // so watching only the request would pass a build that saved "blob".
     const requested = page.waitForRequest(
       /\/api\/v1\/maps\/old-site\/export\?format=zip$/,
     );
@@ -465,9 +462,8 @@ test.describe("the dashboard's map scan layer", () => {
   test("keeps the scan it has through a floor plan rebuild", async ({
     page,
   }) => {
-    // A rebuild rewrites the floor plan, which moves the catalogue's
-    // modified_at, and leaves map.pcd alone. The scan is hundreds of thousands
-    // of points, so a new directory time must not cost a second download.
+    // A rebuild moves the catalogue's modified_at but leaves the scan alone,
+    // so a new directory time must not cost a second (large) download.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const entry = mapSummary();
@@ -837,11 +833,9 @@ test.describe("tapping a stop on the dashboard", () => {
   const stopPath = `/api/v1/maps/${MAP_NAME}/vertices/${stop.id}`;
 
   /**
-   * Open the stop's dialog by tapping its marker. Top down first, because
-   * from overhead the floor is a plain scale: the fake map is 20 x 15 m
-   * about (-2.3, -0.3) and overheadDistance frames its height with an 8 %
-   * margin at a 60° fov, so the stop at (2.5, 1.25) lands a known number of
-   * pixels from the region's centre.
+   * Open the waypoint's dialog by tapping its marker. Top down first, because
+   * from overhead the floor is a plain scale (20 x 15 m map, 8 % margin, 60°
+   * fov), so the waypoint lands a known number of pixels from the centre.
    */
   const tapStop = async (page: Page) => {
     const region = page.getByRole("region", { name: "Map viewport" });
@@ -936,9 +930,8 @@ test.describe("tapping a stop on the dashboard", () => {
 });
 
 test.describe("words and names on the operator's screens", () => {
-  // What reaches an operator names what they see, never the stack underneath
-  // it, and every control has a name a screen reader can say. Both are easy to
-  // lose in a string nobody reads twice.
+  // On-screen text names what the operator sees, never the stack, and every
+  // control has a name a screen reader can say.
   let errors: string[];
 
   test.beforeEach(({ page }) => {
@@ -1125,9 +1118,8 @@ test.describe("the task console", () => {
   });
 
   test("does not ask about a saved job opened and left as it was", async ({ page }) => {
-    // A loaded job is only unsaved once it differs from its row: asking about
-    // nothing teaches the operator to press OK through the prompt that
-    // guards real work.
+    // A loaded job is only unsaved once it differs from its row: a needless
+    // prompt teaches the operator to press OK through the one that matters.
     await mockBackend(page);
     await page.goto("/tasks");
     await page
@@ -1182,8 +1174,8 @@ test.describe("the task console", () => {
   test("counts a job's paused schedules, and points at them in the list", async ({
     page,
   }) => {
-    // Three schedules, two paused: the chip used to read a green
-    // "3 schedules" and leave the pauses to a hover title a finger never sees.
+    // Three schedules, two paused: the chip must show the pauses, not leave
+    // them to a hover title a finger never sees.
     const template = "22222222-2222-2222-2222-222222222222";
     const linked = (id: string, paused: boolean) => ({
       id,
@@ -1268,11 +1260,9 @@ test.describe("the task console", () => {
   test("keeps an unsaved job while waypoints are placed on the map", async ({
     page,
   }) => {
-    // The complaint: halfway through a job the operator notices the map is
-    // missing a stop, and the only way to add one was to leave — which threw
-    // the job away. The link opens that map's editor in Waypoints mode, the
-    // editor's back button returns here, and the draft (steps, the loaded
-    // template) is as it was, across a reload too.
+    // Adding a missing waypoint mid-job must not throw the job away: the link
+    // opens that map's editor in Waypoints mode, back returns here, and the
+    // draft is as it was, across a reload too.
     await mockBackend(page);
     await page.goto("/tasks");
     await page
@@ -1328,11 +1318,9 @@ test.describe("the task console", () => {
   test("saves over the loaded job, and leaves for Tasks after a new one", async ({
     page,
   }) => {
-    // One Save now does both writes Update and Save as new used to split. The
-    // rule it has to keep: a loaded template is updated in place, never
-    // copied, and stays open; a job saved for the first time sends the
-    // operator back to /tasks with the draft emptied, so Create task does not
-    // ask about a job that is already a row.
+    // One Save: a loaded template is updated in place, never copied, and
+    // stays open; a job saved for the first time returns to /tasks with the
+    // draft emptied, so Create task does not ask about a job already a row.
     const loaded = "22222222-2222-2222-2222-222222222222";
     const created = "44444444-4444-4444-4444-444444444444";
     await mockBackend(page);
@@ -1382,7 +1370,7 @@ test.describe("the task console", () => {
     expect(writes).toHaveLength(1);
     await field.fill("greeting");
     await expect(page.getByText("Name this task to save it.")).toHaveCount(0);
-    // Nothing in the editor runs the robot any more.
+    // Nothing in the editor runs the robot.
     await expect(page.getByRole("button", { name: "Dispatch" })).toHaveCount(0);
     await expect(
       page.getByRole("radiogroup", { name: "When to run" }),
@@ -1413,8 +1401,8 @@ test.describe("the task console", () => {
   test("names a new job in the heading and saves it in one press", async ({
     page,
   }) => {
-    // The name used to need its own confirm before Save would take it. Now
-    // it is typed straight into the heading and Save sends it with the steps.
+    // The name is typed straight into the heading, and Save sends it with
+    // the steps.
     await mockBackend(page);
     const posted: { name: string; steps: unknown[] }[] = [];
     await page.route("**/api/v1/task_templates", (route) => {
@@ -1731,10 +1719,9 @@ test.describe("the task console", () => {
   });
 
   test("authors a job for a map the robot is not on", async ({ page }) => {
-    // The map picker is what lets a job be built for the second floor while
-    // the robot is on the first. Both halves matter: the picker must list that
-    // map's waypoints and no other's, and the saved body must name that map —
-    // while the run button stays held, because the robot is not there.
+    // A job built for another map: the picker lists only that map's
+    // waypoints, the saved body names that map, and the run button stays
+    // held because the robot is not there.
     const bay = vertex({
       id: "66666666-6666-6666-6666-666666666666",
       name: "bay-1",
@@ -1865,10 +1852,8 @@ test.describe("the task console", () => {
   test("registers a timed schedule as a cron the operator never typed", async ({
     page,
   }) => {
-    // The backend's timed trigger is a cron expression, and this console is the
-    // one that writes it. The operator picks a clock time and some weekdays;
-    // the string those become is asserted here because it is the part a
-    // screen-only test cannot see, and the part the scheduler acts on.
+    // The console writes the trigger's cron from a clock time and weekdays;
+    // the string is what the scheduler acts on and a screen cannot show.
     const writes = await mockBackend(page);
     await page.goto("/tasks");
 
@@ -1915,9 +1900,8 @@ test.describe("the task console", () => {
   test("posts an interval in seconds from the minutes the operator typed", async ({
     page,
   }) => {
-    // The unit conversion is the one place a screen-only test would pass a
-    // build that registers "every 30 seconds" for a robot meant to go every
-    // 30 minutes.
+    // A screen-only test would pass a build that registers "every 30 seconds"
+    // for "every 30 minutes".
     const writes = await mockBackend(page);
     await page.goto("/tasks");
 
@@ -1948,9 +1932,8 @@ test.describe("the task console", () => {
     test("edits a schedule's time in place, and keeps its name", async ({
       page,
     }) => {
-      // Changing a time used to be a delete and a re-create, which lost the
-      // name and a pause. The edit is a PATCH of the trigger alone, asserted
-      // here because a build that did the old dance would pass on screen.
+      // The edit is a PATCH of the trigger alone: a delete and re-create
+      // would lose the name and a pause, and still pass on screen.
       const writes = await mockBackend(page, {
         schedules: [
           {
@@ -2000,10 +1983,9 @@ test.describe("the task console", () => {
     });
 
     /**
-     * The robot's schedule list trails a write by a second or two. These
-     * answer the first two reads after the write with the list as it was,
-     * which is the race the single re-read used to lose: a new schedule was
-     * missing until someone pressed Refresh.
+     * The robot's schedule list trails a write by a second or two, so the
+     * first two reads after it answer the old list; the new row must still
+     * appear without a Refresh.
      */
     test("shows a new schedule without a Refresh while the list catches up", async ({
       page,
@@ -2139,8 +2121,8 @@ test.describe("the task console", () => {
       ).toBeVisible();
       await expect(page.getByText("0 21 * * *")).toHaveCount(0);
 
-      // 13:00Z is 21:00 on the operator's clock, and that is the number shown:
-      // the UTC readout was the one that made a correct schedule look wrong.
+      // 13:00Z is 21:00 on the operator's clock, and that is the number shown;
+      // UTC would make a correct schedule look wrong.
       await expect(
         page.getByText("2026-09-24 21:00", { exact: true }),
       ).toBeVisible();
@@ -2150,11 +2132,9 @@ test.describe("the task console", () => {
     test("re-reads the list once the soonest run has passed, and only then", async ({
       page,
     }) => {
-      // The list is not polled, so a schedule that fired while the page was
-      // open used to keep showing the time it fired at until Refresh. The
-      // soonest run time now sets one timer. This fake answers the first read
-      // with a run a moment away and the second with the recomputed time
-      // Temporal would give, so the row moving is proof the read happened.
+      // The list is not polled; the soonest run time sets one read. The first
+      // answer has a run a moment away and the second the recomputed time, so
+      // the row moving proves the read happened.
       await mockBackend(page);
       let reads = 0;
       await page.route("**/api/v1/schedules", (route) => {
@@ -2211,9 +2191,8 @@ test.describe("the manual drive panel", () => {
   test("stands the robot up from any screen, without arming", async ({
     page,
   }) => {
-    // The panel's button is the only Stand there is, and /settings shows it
-    // from a screen with no viewport. The arm switch is the sticks' and stays
-    // off.
+    // The panel's Stand works from a screen with no viewport; the arm switch
+    // is the sticks' and stays off.
     const writes = await mockBackend(page);
     const postures = () =>
       writes
@@ -2232,11 +2211,9 @@ test.describe("the manual drive panel", () => {
   test("limits translation to the Max speed it shows, and never rotation", async ({
     page,
   }) => {
-    // Both halves: the slider says one number, and the teleop frames the robot
-    // receives carry the same one (the panel shows no per-axis readout, so the
-    // wire is the only place the scaled value can be read). Keyboard
-    // deflection is always full, so without the limit there is no slow drive
-    // from the keys.
+    // The slider's number must be the one the teleop frames carry; the wire
+    // is the only place the scaled value shows. Keys always deflect fully, so
+    // the limit is the only slow drive from the keys.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page);
@@ -2251,8 +2228,7 @@ test.describe("the manual drive panel", () => {
     await page.goto("/settings");
     await page.getByRole("button", { name: "Manual drive panel" }).click();
     const speed = page.getByRole("slider", { name: "Max speed" });
-    // Full on every page load, before anything is armed: the panel drives as
-    // it did before the limit existed.
+    // Full on every page load, before anything is armed.
     await expect(speed).toHaveAttribute(
       "aria-valuetext",
       "100 percent of full speed",
@@ -2283,9 +2259,8 @@ test.describe("the manual drive panel", () => {
     await page.keyboard.up("d");
     await expect.poll(last).toEqual({ vx: 0, vy: 0, wz: 0 });
 
-    // A key pressed while the slider still has focus drives too. The slider's
-    // thumb is an <input>, and a guard that took every input for a text field
-    // left the keys dead until the operator clicked somewhere else.
+    // A key pressed while the slider has focus drives too: its thumb is an
+    // <input>, which must not be taken for a text field.
     await expect(speed).toBeFocused();
     await page.keyboard.down("w");
     await expect.poll(last).toEqual({ vx: 0.5, vy: 0, wz: 0 });
@@ -2403,10 +2378,9 @@ test.describe("the floor plan editor's draw bar", () => {
   test("draws a forbidden zone from three corners, and closes it on the first", async ({
     page,
   }) => {
-    // The canvas exposes nothing, so the count of finished zones is read off
-    // the editor's data-zones attribute — the shape has to *close*, not
-    // merely take clicks. Every corner is at least 22 px from the first, so a
-    // click on it is unambiguously a new corner and not a close.
+    // The finished-zone count is read off data-zones (the shape has to
+    // *close*). Every corner is at least 22 px from the first, so a click on
+    // it is a new corner, not a close.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
@@ -2455,10 +2429,9 @@ test.describe("the floor plan editor's draw bar", () => {
     await expect(zones).toHaveAttribute("data-zones", "1");
     await expect(done).toBeDisabled();
 
-    // The next shapes are drawn 30 px to either side: a finished zone's
-    // corner is where a shape *anchored to it* starts (see the growing test
-    // below), so a second shape on the same corners would join the first
-    // rather than stand beside it. All three still overlap at `inside`.
+    // The next shapes are 30 px to either side: a shape started on a
+    // finished zone's corner anchors to it (see the growing test below). All
+    // three still overlap at `inside`.
     const shifted = (dx: number) =>
       corners.map((corner) => ({ x: corner.x + dx, y: corner.y }));
 
@@ -2519,10 +2492,9 @@ test.describe("the floor plan editor's draw bar", () => {
     page,
   }) => {
     // Three overlapping zones, each with a spot only it covers. Shift-click
-    // adds to the selection and toggles out again; a Shift-click on bare map
-    // keeps the selection instead of starting a shape; Remove takes every
-    // selected zone at once. The count is read off data-zones, and which
-    // zones went is read back through which spots still select.
+    // toggles selection; on bare map it keeps the selection instead of
+    // starting a shape; Remove takes every selected zone. Which went is read
+    // back through which spots still select.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
@@ -2585,12 +2557,10 @@ test.describe("the floor plan editor's draw bar", () => {
   test("moves a corner of the shape in flight by dragging it, without panning", async ({
     page,
   }) => {
-    // The canvas exposes no corner positions, so the move is proved through
-    // the one rule that depends on where a corner is: the first corner is
-    // where a click closes the shape. Drag it 80 px left, and a click at the
-    // old spot is a fourth corner while a click at the new one closes. A pan
-    // would put the first corner in the same place, so the Cell readout under
-    // a fixed screen point is checked before and after: the map did not move.
+    // The canvas exposes no corners, so the move is proved by the close
+    // rule: drag the first corner 80 px left, then a click at the old spot is
+    // a new corner and one at the new spot closes. The Cell readout under a
+    // fixed point rules out a pan.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
@@ -2648,12 +2618,9 @@ test.describe("the floor plan editor's draw bar", () => {
     await expect(zones).toHaveAttribute("data-zones", "1");
     await expect(done).toBeDisabled();
 
-    // A finished zone is reshaped the same way once selected. The zone is
-    // now the quadrilateral moved, B, C, A(old); a point just inside its top
-    // edge selects it. Drag corner B 200 px down so that point falls outside
-    // — inside now reads as a first corner (Remove goes off, and Escape
-    // drops it) rather than a selection, which is how the move is proved
-    // without the canvas exposing a coordinate.
+    // A selected finished zone reshapes the same way. Drag corner B 200 px
+    // down so a point just inside the top edge falls outside: a click there
+    // then starts a corner (Remove off, Escape drops it) instead of selecting.
     const remove = page.getByRole("button", { name: "Remove" });
     const inside = { x: corners[1].x - 20, y: corners[1].y + 6 };
     await page.mouse.click(inside.x, inside.y);
@@ -2678,10 +2645,8 @@ test.describe("the floor plan editor's draw bar", () => {
   test("grows a finished zone from one of its corners to another", async ({
     page,
   }) => {
-    // A square, then a bump drawn off its right edge: start on corner B, two
-    // corners out to the right, end on corner C. The zone count stays at one
-    // and a point in the bump, which was bare map before (a click there was
-    // a corner), is inside the zone after (a click there selects it).
+    // A square, then a bump off its right edge (B, two corners out, C): still
+    // one zone, and a point in the bump goes from bare map to inside.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
@@ -2761,9 +2726,8 @@ test.describe("the floor plan editor's draw bar", () => {
   test("holds Save while a job drives on the map, and saves the strokes once it ends", async ({
     page,
   }) => {
-    // The editor is a typed URL away from any map, the card's grey or not,
-    // and a job can start after it opened — so it asks for itself. What it
-    // must not do is throw the strokes away: they are saved once the job ends.
+    // A job can start after the editor opened, so it checks for itself — and
+    // keeps the strokes, saving them once the job ends.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const running = [activeTask()];
@@ -2820,9 +2784,8 @@ test.describe("the floor plan editor's draw bar", () => {
   });
 
   test("paints Wall as obstacle cells, and saves them", async ({ page }) => {
-    // Both halves: the stroke is made with Wall chosen, and what reaches the
-    // robot is the obstacle byte under it. A swapped Wall / Floor mapping
-    // would pass a screen-only test and paint walls where they were erased.
+    // A Wall stroke must reach the robot as the obstacle byte: a swapped
+    // Wall / Floor mapping would pass a screen-only test.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
@@ -2966,10 +2929,8 @@ test.describe("the floor plan editor's forbidden zones on the robot", () => {
   };
 
   /**
-   * The saved zone sits in the floor plan's bottom-left corner, which the
-   * editor's cell readout covers once the open rail narrows the canvas; the
-   * folded rail gives back the width this geometry was written for. Folded
-   * before anything is drawn, so the editor is still fitted when it is read.
+   * With the rail open, the cell readout covers the saved zone's corner;
+   * folding gives back the width. Done before drawing, while still fitted.
    */
   const foldRail = async (page: Page) => {
     await page.getByRole("button", { name: "Collapse the sidebar" }).click();
@@ -3197,9 +3158,8 @@ test.describe("the floor plan editor", () => {
   test("aims a new waypoint by the direction it was dragged", async ({
     page,
   }) => {
-    // The heading rule is shared with the dashboard now, so this holds the
-    // editor's half of it end to end: a drag straight up the screen is +y on
-    // the map, which is 90°, and that is what has to reach the robot.
+    // The editor's half of the shared heading rule: a drag straight up the
+    // screen is +y on the map, 90°, and that must reach the robot.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page);
@@ -3258,8 +3218,7 @@ test.describe("the floor plan editor's staged waypoints", () => {
 
   /** Open the list and make `name` the form's subject. */
   const open = async (page: Page, name: string) => {
-    // Apply keeps the form on its stop, as Save used to; Close is the way
-    // back to the list.
+    // Apply keeps the form on its waypoint; Close goes back to the list.
     const close = page.getByRole("button", { name: "Close", exact: true });
     if (await close.isVisible()) await close.click();
     const toggle = page.getByRole("button", { name: /^Waypoints/ });
@@ -3298,9 +3257,8 @@ test.describe("the floor plan editor's staged waypoints", () => {
   });
 
   test("keeps the first save's waypoints apart from the next save's", async ({ page }) => {
-    // Two saves, each with a create. Every stop is matched by its id, so a
-    // second create that came back under an id already on screen would fold
-    // two stops into one and leave Save lit with nothing it could fix.
+    // Two saves, each with a create. Waypoints are matched by id, so a reused
+    // id would fold two into one and leave Save lit with nothing to fix.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
@@ -3449,13 +3407,11 @@ test.describe("the step editor", () => {
   test("reorders by menu, drag and keyboard, and saves in the order shown", async ({
     page,
   }) => {
-    // Three ways to move a row, one list. The saved body is the half a
-    // screen-only test cannot see: the step ids are positional, so a reorder
-    // that only moved the DOM would still post the old order.
+    // Three ways to move a row. Step ids are positional, so a reorder that
+    // only moved the DOM would still post the old order.
     await mockBackend(page);
-    // The create answers with its echo, which is schema-checked, so this route
-    // replaces the generic "ok" — and, being the handler that fulfils it, is
-    // where the posted body is read.
+    // The create's echo is schema-checked, so this route replaces the
+    // generic "ok", and reads the posted body.
     const saved: unknown[] = [];
     await page.route("**/api/v1/task_templates", (route) => {
       if (route.request().method() !== "POST") return route.fallback();
@@ -3508,20 +3464,12 @@ test.describe("the step editor", () => {
     await page.mouse.up();
     await expect.poll(order).toEqual(["Lie", "Speak", "Stand"]);
 
-    // Keyboard: pick the last row up, one slot up, drop.
-    // Each key waits for the one before it to land: the sensor measures the
-    // rows after pick-up, and a move sent before that is dropped.
-    //
-    //
-    // Two things have to be true before the ArrowUp, and neither is visible on
-    // a fast machine, which is why this test failed only under load:
-    //
-    // - The rows have finished sliding into place after the mouse drop above.
-    //   An ArrowUp only targets a row whose measured top is above the lifted
-    //   one's, and rows measured mid-transition are not where they will be.
-    // - The rows have been measured at all. `aria-pressed` flips on pick-up,
-    //   before that. The first "is over" announcement comes after, because
-    //   dnd-kit can only say which slot the row is over once it has them all.
+    // Keyboard: pick the last row up, one slot up, drop. Before the ArrowUp
+    // (this failed only under load):
+    // - the rows have finished sliding after the mouse drop, since rows
+    //   measured mid-transition are not where they will be;
+    // - the rows have been measured at all: `aria-pressed` flips before that,
+    //   the first "is over" announcement after.
     await expect
       .poll(() =>
         rows.evaluateAll((items) =>
@@ -3534,15 +3482,10 @@ test.describe("the step editor", () => {
     await page.keyboard.press("Space");
     await expect(grip).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByText("is over position 3 of 3")).toBeAttached();
-    // Even then, about one ArrowUp in thirty under load is dropped outright:
-    // the row stays over position 3 for as long as anyone waits, with no late
-    // move to follow. The cause was not found. So the key is pressed again, as
-    // an operator would, rather than the test failing. The 1.5 s window rests
-    // on what was observed, not on anything the code enforces: every key that
-    // landed did so in milliseconds, and every dropped one never landed at all.
-    // A key that landed later than 1.5 s would be pressed twice, move the row
-    // two slots, and fail the order assertion below. That is a failed run,
-    // never a wrong pass.
+    // Even then, about one ArrowUp in thirty under load is dropped outright
+    // (cause not found), so it is pressed again, as an operator would. The
+    // 1.5 s window is observed, not enforced: a key landing later would move
+    // two slots and fail the order assertion — a failed run, never a wrong pass.
     await expect(async () => {
       await page.keyboard.press("ArrowUp");
       await expect(page.getByText("is over position 2 of 3")).toBeAttached({
@@ -3570,11 +3513,9 @@ test.describe("the step editor", () => {
   test("loads a template folded and folds an unfinished row to its problem", async ({
     page,
   }) => {
-    // Folded rows are what keep a twenty-step patrol on one screen. The two
-    // rules worth pinning: a loaded template arrives as one-line summaries,
-    // and every row folds — an unfinished one included — with the problem
-    // standing in for its summary, so it is still findable when the operator
-    // goes looking for why Save is greyed out.
+    // A loaded template arrives as one-line summaries, and every row folds —
+    // an unfinished one too, with its problem as its summary, so it is
+    // findable when Save is greyed out.
     await mockBackend(page);
     await page.goto("/tasks");
 
@@ -3657,10 +3598,9 @@ test.describe("the step editor", () => {
   test("waits out a conversion before drawing the floor plan it produced", async ({
     page,
   }) => {
-    // A raster read mid-conversion is the old plan or half of the new one, and
-    // this cache never goes stale on its own, so it must not be read at all
-    // until the catalogue says the conversion is over. A conversion another
-    // console started looks exactly like this one.
+    // A raster read mid-conversion is stale or half-written, and this cache
+    // never goes stale on its own, so it is not read until the catalogue says
+    // the conversion is over — including one another console started.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const entry = mapSummary({
@@ -3697,10 +3637,8 @@ test.describe("the step editor", () => {
   test("lights the waypoints the job's Move steps go to on the floor plan", async ({
     page,
   }) => {
-    // A name in the picker is not a place. The floor plan opens under a
-    // Move row, from a button beside its waypoint picker, and what it adds is
-    // the route: every stop the job goes to is lit and named with its step
-    // numbers, in the words a screen reader hears too.
+    // The floor plan under a Move row shows the route: every waypoint the job
+    // goes to is lit and named with its step numbers, for a screen reader too.
     const room = vertex({
       id: "44444444-4444-4444-4444-444444444444",
       name: "room-a",
@@ -3761,12 +3699,9 @@ test.describe("the step editor", () => {
   });
 
   test("zooms the floor plan and comes back to fit", async ({ page }) => {
-    // The fixed preview showed two stops a body length apart as one smear at
-    // fit scale. The wheel, the two buttons and Fit are the desktop's way in
-    // and out; nothing on screen prints the scale, so it is read off the
-    // panel's data-zoom, the same way the editor's is.
-    // A real grid, matching the catalogue's 400 x 300, so the raster has an
-    // extent to zoom into.
+    // At fit scale two waypoints a body length apart are one smear, so the
+    // wheel, the buttons and Fit zoom; the scale is read off data-zoom.
+    // A real 400 x 300 grid, so the raster has an extent to zoom into.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
     await page.goto("/tasks/editor");
     await page.getByTitle("Drive to a pose in the map frame.").click();
@@ -3793,9 +3728,8 @@ test.describe("the step editor", () => {
     await page.getByRole("button", { name: "Zoom in" }).click();
     await expect.poll(readZoom).toBeGreaterThan(fitted);
 
-    // Zooming out never goes past where the map opened: that view already
-    // has the whole floor plan on it, and smaller would only shrink it into
-    // a corner.
+    // Zooming out stops at the opening view, which already shows the whole
+    // floor plan.
     for (let i = 0; i < 6; i += 1) {
       await page.getByRole("button", { name: "Zoom out" }).click();
     }
@@ -3887,7 +3821,7 @@ test.describe("the job history", () => {
     expect(params.get("until")).toBeNull();
 
     // A job with no template name is called by its kind; a scheduled one by
-    // the template it ran. The id is not the title any more.
+    // the template it ran. Never by its id.
     await expect(
       page.getByRole("button", { name: /^COMPLETED Task Started directly/ }),
     ).toBeVisible();
