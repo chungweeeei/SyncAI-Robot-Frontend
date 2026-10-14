@@ -96,6 +96,12 @@ export const queryKeys = {
     version === undefined
       ? (["map-octomap", name] as const)
       : (["map-octomap", name, version] as const),
+  /**
+   * GET /api/v1/maps/<name>/octomap/edits — the ground patches saved for the
+   * 3D map. Like `mapKeepout`: the editor seeds from it once and a save
+   * writes its answer here, since a save is the whole list.
+   */
+  mapOctomapEdits: (name: string) => ["map-octomap-edits", name] as const,
   /** GET /api/v1/task_templates — the operator's template library. */
   taskTemplates: ["task-templates"] as const,
   /** GET /api/v1/schedules */

@@ -224,6 +224,70 @@ export async function fetchMapOctomap(
   return decodeOctomapBt(await res.arrayBuffer());
 }
 
+/** `OctomapEditsResponse`, verbatim: the ground patches saved for a map. */
+export interface MapOctomapEdits {
+  name: string;
+  /** Cell edge the keys index, null with none saved. */
+  res: number | null;
+  /** Absolute OcTree keys `[kx, ky, kz]`, one per column; `[]` with none saved. */
+  fill_key: number[][];
+  created_at: string | null;
+}
+
+const MapOctomapEditsSchema: z.ZodType<MapOctomapEdits> = z.object({
+  name: z.string(),
+  res: z.number().nullable(),
+  fill_key: z.array(z.array(z.number())),
+  created_at: z.string().nullable(),
+});
+
+function octomapEditsPath(name: string): string {
+  return apiUrl(`/api/v1/maps/${encodeURIComponent(name)}/octomap/edits`);
+}
+
+export function fetchMapOctomapEdits(
+  name: string,
+  signal?: AbortSignal,
+): Promise<MapOctomapEdits> {
+  return requestJson<MapOctomapEdits>(octomapEditsPath(name), {
+    signal,
+    schema: MapOctomapEditsSchema,
+  });
+}
+
+/** `SaveOctomapEditsResponse`, verbatim. */
+export interface SaveOctomapEditsResult {
+  name: string;
+  count: number;
+  /** Operator-facing; render verbatim. Says the patches wait to be applied. */
+  message: string;
+}
+
+const SaveOctomapEditsResultSchema: z.ZodType<SaveOctomapEditsResult> = z.object({
+  name: z.string(),
+  count: z.number(),
+  message: z.string(),
+});
+
+/**
+ * Replace the map's ground patches, whole (an empty list clears them). A
+ * record on the robot, not a change to its 3D map: the robot's own tool
+ * applies it, which the backend's sentence says. 409 `task_running` while a
+ * job drives on the map, `octomap_converting` while the tree is being built.
+ *
+ * No `AbortSignal`, for `saveKeepout`'s reason.
+ */
+export function saveMapOctomapEdits(
+  name: string,
+  fillKey: readonly (readonly number[])[],
+): Promise<SaveOctomapEditsResult> {
+  return requestJson<SaveOctomapEditsResult>(octomapEditsPath(name), {
+    method: "PUT",
+    body: JSON.stringify({ fill_key: fillKey.map((key) => [key[0], key[1], key[2]]) }),
+    schema: SaveOctomapEditsResultSchema,
+  });
+}
+
 export interface SaveGridResult {
   name: string;
   /** The tag /image will now answer with. */

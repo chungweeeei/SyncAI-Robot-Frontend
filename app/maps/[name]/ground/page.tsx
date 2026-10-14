@@ -1,0 +1,52 @@
+"use client";
+
+import * as React from "react";
+import { useParams, useRouter } from "next/navigation";
+import { ArrowLeftIcon } from "lucide-react";
+
+import { GroundEditor } from "@/components/maps/ground-editor";
+import { MapTitleRename } from "@/components/maps/map-title-rename";
+
+/**
+ * The ground editor's page: chrome only, like the floor plan editor's.
+ * GroundEditor owns the editing; this column gives its canvas a definite
+ * height and the back button its unsaved-changes question.
+ */
+export default function MapGroundPage() {
+  const params = useParams<{ name: string }>();
+  const router = useRouter();
+  const name = params.name;
+  const [dirty, setDirty] = React.useState(false);
+
+  const goBack = () => {
+    if (
+      dirty &&
+      !window.confirm("Leave the editor? Your unsaved ground patches will be lost.")
+    ) {
+      return;
+    }
+    router.push("/maps");
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex shrink-0 items-center gap-3 border-b border-hairline px-4 py-2.5">
+        <button
+          type="button"
+          onClick={goBack}
+          aria-label="Back to maps"
+          title="Back to maps"
+          className="flex size-7 shrink-0 items-center justify-center rounded-sm border border-hairline text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:size-10"
+        >
+          <ArrowLeftIcon className="size-3.5" aria-hidden />
+        </button>
+        <MapTitleRename name={name} dirty={dirty} />
+        <span className="instrument-label text-muted-foreground">Ground</span>
+      </header>
+
+      <div className="min-h-0 flex-1">
+        <GroundEditor name={name} onDirtyChange={setDirty} />
+      </div>
+    </div>
+  );
+}

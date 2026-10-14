@@ -9,6 +9,7 @@ import { MapActivateControl } from "@/components/maps/map-activate-control";
 import { MapDeleteControl } from "@/components/maps/map-delete-control";
 import { MapEditLink } from "@/components/maps/map-edit-link";
 import { MapExportControl } from "@/components/maps/map-export-control";
+import { MapGroundLink } from "@/components/maps/map-ground-link";
 import { MapRenameControl } from "@/components/maps/map-rename-control";
 import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
@@ -225,6 +226,7 @@ export function MapCard({
       )}
       <MapDeleteControl map={map} onDeleted={onDeleted} />
       <MapEditLink map={map} />
+      <MapGroundLink map={map} />
       <MapThumbnail map={map} />
 
       <div className="px-3 py-3">
