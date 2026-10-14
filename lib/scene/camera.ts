@@ -152,19 +152,51 @@ export function frontViewAround(camera: THREE.PerspectiveCamera, controls: Orbit
 }
 
 /**
- * The ground editor's 3D view: a look-around with nothing to pick, so the
- * primary button orbits (the dashboard gives it to pan, since its left
- * button also aims goals). Right-drag pans, the wheel and a pinch zoom to
- * the cursor, one finger orbits and two pan and pinch.
+ * The ground editor's controls. With no brush armed the primary button
+ * orbits (nothing here aims a goal, unlike the dashboard), right-drag pans,
+ * one finger orbits and two pan and pinch. With a brush armed the primary
+ * button and one finger are the brush's, so OrbitControls is told to ignore
+ * them; right-drag still orbits, the middle button pans, and two fingers
+ * still pan and pinch. The wheel zooms to the cursor either way.
  */
-export function applyFreeOrbit(controls: OrbitControls) {
+export function applyGroundControls(controls: OrbitControls, painting: boolean) {
   controls.enablePan = true;
   controls.zoomToCursor = true;
   controls.screenSpacePanning = true;
-  controls.mouseButtons = {
-    LEFT: THREE.MOUSE.ROTATE,
-    MIDDLE: THREE.MOUSE.DOLLY,
-    RIGHT: THREE.MOUSE.PAN,
+  controls.mouseButtons = painting
+    ? { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE }
+    : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+  controls.touches = {
+    ONE: painting ? null : THREE.TOUCH.ROTATE,
+    TWO: THREE.TOUCH.DOLLY_PAN,
   };
-  controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+}
+
+/**
+ * The ground editor's opening view: `frameMap`'s three-quarter view, with
+ * the target on the floor the brush aims at rather than at z=0. The middle
+ * of the screen is then the middle of the map on that floor, which is where
+ * a press there paints.
+ */
+export function frameGround(
+  camera: THREE.PerspectiveCamera,
+  controls: OrbitControls,
+  frame: MapFrame,
+  floorZ: number,
+) {
+  const span = Math.max(frame.widthM, frame.heightM);
+  const place = () => {
+    camera.position.set(frame.cx, frame.cy - span * 0.6, floorZ + span * 0.8);
+    controls.target.set(frame.cx, frame.cy, floorZ);
+  };
+  // A drag that just ended leaves damping's leftover turn in the controls,
+  // which would carry the camera off the framing over the next second. One
+  // undamped update spends it, then the framing is set again on top.
+  const damping = controls.enableDamping;
+  controls.enableDamping = false;
+  place();
+  controls.update();
+  place();
+  controls.update();
+  controls.enableDamping = damping;
 }

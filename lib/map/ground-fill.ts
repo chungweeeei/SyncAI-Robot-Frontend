@@ -10,7 +10,6 @@
 
 import { type GridSize, stampDisc } from "@/lib/map/grid";
 import { OCTREE_KEY_ORIGIN, type OccupiedVoxels } from "@/lib/types/octree";
-import type { MapMetadata } from "@/lib/types/robot";
 
 /**
  * How many existing floor cells the median needs before a column may be
@@ -100,6 +99,48 @@ export function cellsFor(metres: number, res: number): number {
 /** The clearance band in cells, rounded up so a 0.1 m tree gets six. */
 export function clearanceCells(res: number): number {
   return Math.max(1, Math.ceil(CLEARANCE_M / res - 1e-9));
+}
+
+/**
+ * The floor the shown heights mostly stand on: the median of every column's
+ * floor, relative kz, or null with no floor in the band. What the 3D brush
+ * aims at — a hole has no cell of its own to hit, so a press is cast onto
+ * this height instead, and the fill rule then sets each patch at the floor
+ * around it as before.
+ */
+export function medianFloor(floors: ColumnFloors): number | null {
+  const counts = new Map<number, number>();
+  let total = 0;
+  for (let i = 0; i < floors.floor.length; i += 1) {
+    const f = floors.floor[i];
+    if (f === NO_FLOOR) continue;
+    counts.set(f, (counts.get(f) ?? 0) + 1);
+    total += 1;
+  }
+  if (total === 0) return null;
+  // A histogram, not a sort: a map is a few hundred levels and ~10^5 columns.
+  const levels = [...counts.keys()].sort((x, y) => x - y);
+  let seen = 0;
+  for (const level of levels) {
+    seen += counts.get(level)!;
+    if (seen * 2 > total) return level;
+  }
+  return levels[levels.length - 1];
+}
+
+/**
+ * The column under a map-frame point, as the dabs address it (`x` right,
+ * `y` up, the tree's own key order), or null off the tree's box.
+ */
+export function columnAt(
+  voxels: OccupiedVoxels,
+  wx: number,
+  wy: number,
+): { x: number; y: number } | null {
+  const x = Math.floor(wx / voxels.res) + OCTREE_KEY_ORIGIN - voxels.keyMin[0];
+  const y = Math.floor(wy / voxels.res) + OCTREE_KEY_ORIGIN - voxels.keyMin[1];
+  if (x < 0 || y < 0 || x >= voxels.size[0] || y >= voxels.size[1]) return null;
+  return { x, y };
 }
 
 /** The operator's patches: column index -> relative kz of the filled cell. */
@@ -296,44 +337,12 @@ export function sameEdits(a: GroundEdits, b: GroundEdits): boolean {
 }
 
 /**
- * The raster the editor draws and hit-tests as a floor plan: one cell per
- * column, origin at the tree's box, so lib/map/view.ts's transforms and the
- * cell readout apply unchanged. Raster row 0 is the top (the highest ky),
- * as worldToGrid expects.
- */
-export function groundMeta(voxels: OccupiedVoxels): MapMetadata {
-  const [width, height] = voxels.size;
-  return {
-    resolution: voxels.res,
-    origin: [
-      (voxels.keyMin[0] - OCTREE_KEY_ORIGIN) * voxels.res,
-      (voxels.keyMin[1] - OCTREE_KEY_ORIGIN) * voxels.res,
-      0,
-    ],
-    width,
-    height,
-  };
-}
-
-/** A raster cell (col right, row down) to its column index (ky up). */
-export function columnOf(size: GridSize, col: number, row: number): number {
-  return col + (size.height - 1 - row) * size.width;
-}
-
-/** The column's raster cell, the inverse of `columnOf`. */
-export function cellOf(size: GridSize, index: number): { col: number; row: number } {
-  const col = index % size.width;
-  return { col, row: size.height - 1 - Math.floor(index / size.width) };
-}
-
-/**
  * The editor's mutable state, held by reference like the floor plan's
  * GridSession and never put in React state: a stroke writes `edits` at
  * pointer rate. `floors` follows `band`; `setGroundBand` rebuilds it.
  */
 export interface GroundSession {
   voxels: OccupiedVoxels;
-  meta: MapMetadata;
   size: GridSize;
   band: Band;
   floors: ColumnFloors;
@@ -348,7 +357,6 @@ export function createGroundSession(
   const [width, height] = voxels.size;
   return {
     voxels,
-    meta: groundMeta(voxels),
     size: { width, height },
     band,
     floors: columnFloors(voxels, band),

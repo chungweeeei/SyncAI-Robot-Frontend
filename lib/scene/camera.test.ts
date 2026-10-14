@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   MIN_DOLLY_M,
+  applyGroundControls,
+  frameGround,
   dollyStep,
   frameMap,
   frontView,
@@ -129,5 +131,27 @@ describe("frontViewAround", () => {
     expect(camera.position.x).toBeCloseTo(1);
     expect(camera.position.z).toBeCloseTo(0.5);
     expect(camera.position.y).toBeCloseTo(2 - before);
+  });
+});
+
+describe("the ground editor's controls", () => {
+  it("gives the primary button and one finger to the brush only while one is armed", () => {
+    const { controls } = rig();
+    applyGroundControls(controls, false);
+    expect(controls.mouseButtons.LEFT).toBe(THREE.MOUSE.ROTATE);
+    expect(controls.touches.ONE).toBe(THREE.TOUCH.ROTATE);
+    applyGroundControls(controls, true);
+    expect(controls.mouseButtons.LEFT).toBeNull();
+    expect(controls.touches.ONE).toBeNull();
+    // Still a way to look around mid-edit, and a pinch still zooms.
+    expect(controls.mouseButtons.RIGHT).toBe(THREE.MOUSE.ROTATE);
+    expect(controls.touches.TWO).toBe(THREE.TOUCH.DOLLY_PAN);
+  });
+
+  it("opens on the floor the brush aims at, so the middle of the screen is the map's", () => {
+    const { camera, controls } = rig();
+    frameGround(camera, controls, { cx: 3, cy: 4, widthM: 10, heightM: 6 }, -0.45);
+    expect(controls.target.distanceTo(new THREE.Vector3(3, 4, -0.45))).toBeCloseTo(0);
+    expect(camera.position.x).toBeCloseTo(3);
   });
 });

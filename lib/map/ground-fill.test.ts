@@ -4,17 +4,16 @@ import {
   GroundStroke,
   NO_FLOOR,
   applyGroundPatch,
-  cellOf,
   clearanceCells,
   columnFloors,
-  columnOf,
   createGroundSession,
   eraseDab,
   fillDab,
   fromFillKeys,
   bandForHeights,
+  columnAt,
+  medianFloor,
   fullBand,
-  groundMeta,
   isHole,
   kzToMetres,
   localFloor,
@@ -251,24 +250,30 @@ describe("the record", () => {
   });
 });
 
-describe("the raster", () => {
-  it("is a floor plan whose row 0 is the highest ky", () => {
-    const meta = groundMeta(site());
-    expect(meta.width).toBe(7);
-    expect(meta.height).toBe(7);
-    expect(meta.origin[0]).toBeCloseTo(1.0);
-    expect(meta.origin[1]).toBeCloseTo(-0.3);
-    const size = { width: 7, height: 7 };
-    expect(columnOf(size, 0, 6)).toBe(index(0, 0));
-    expect(columnOf(size, 3, 0)).toBe(index(3, 6));
-    expect(cellOf(size, index(3, 6))).toEqual({ col: 3, row: 0 });
-  });
-
+describe("the session", () => {
   it("rebuilds the floors when the band moves", () => {
     const session = createGroundSession(site(), new Map());
     expect(session.floors.floor[index(6, 6)]).toBe(0);
     setGroundBand(session, { lo: 20, hi: 30 });
     expect(session.floors.floor[index(6, 6)]).toBe(30);
     expect(session.band).toEqual({ lo: 20, hi: 30 });
+  });
+});
+
+describe("the 3D brush's aim", () => {
+  it("aims at the floor most columns stand on, not a wall or the storey above", () => {
+    const voxels = site();
+    expect(medianFloor(columnFloors(voxels, fullBand(voxels)))).toBe(0);
+    // Only the storey above in the band: its floor.
+    expect(medianFloor(columnFloors(voxels, { lo: 30, hi: 30 }))).toBe(30);
+    expect(medianFloor(columnFloors(voxels, { lo: 10, hi: 20 }))).toBeNull();
+  });
+
+  it("finds the column under a map-frame point, in the dabs' key order", () => {
+    const voxels = site(); // keyMin x O+10, y O-3; 0.1 m cells
+    expect(columnAt(voxels, 1.05, -0.25)).toEqual({ x: 0, y: 0 });
+    expect(columnAt(voxels, 1.25, 0.05)).toEqual({ x: 2, y: 3 });
+    expect(columnAt(voxels, 0.95, 0)).toBeNull();
+    expect(columnAt(voxels, 1.75, 0)).toBeNull();
   });
 });
