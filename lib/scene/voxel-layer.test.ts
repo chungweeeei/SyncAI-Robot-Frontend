@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { THEMES } from "@/lib/scene/theme";
 import {
   createVoxelLayer,
+  sortByHeight,
   thinGroundUnderVoxels,
   voxelFrame,
   voxelPositions,
@@ -90,5 +91,60 @@ describe("thinGroundUnderVoxels", () => {
 
   it("is a no-op for a map with no floor plan", () => {
     expect(() => thinGroundUnderVoxels(null, THEMES.dark)()).not.toThrow();
+  });
+});
+
+describe("the layer's height band", () => {
+  /** Two storeys, out of height order the way a tree's walk hands them over. */
+  function storeys(): OccupiedVoxels {
+    return {
+      res: 0.1,
+      keyMin: [O, O, O - 5],
+      size: [2, 1, 61],
+      // z = -0.45 (k 0), 5.55 (k 60), -0.45, 2.55 (k 30)
+      keys: Uint16Array.from([0, 0, 0, 0, 0, 60, 1, 0, 0, 1, 0, 30]),
+      count: 4,
+      leaves: { occupied: 4, free: 0 },
+    };
+  }
+
+  it("holds the cells in height order, keeping the tree's order within a level", () => {
+    expect(Array.from(sortByHeight(storeys()).order)).toEqual([0, 2, 3, 1]);
+  });
+
+  it("draws only the cells whose centre is in the band", () => {
+    const layer = createVoxelLayer(storeys());
+    const range = () => layer.points.geometry.drawRange;
+
+    layer.setBand(-Infinity, 4.5);
+    expect([range().start, range().count]).toEqual([0, 3]);
+    layer.setBand(4.5, Infinity);
+    expect([range().start, range().count]).toEqual([3, 1]);
+    layer.setBand(-Infinity, Infinity);
+    expect([range().start, range().count]).toEqual([0, 4]);
+    // Edges: a centre on `lo` is in, one on `hi` is out.
+    layer.setBand(2.55, 5.55);
+    expect([range().start, range().count]).toEqual([2, 1]);
+    layer.dispose();
+  });
+
+  it("recolours a band over its own heights", () => {
+    const layer = createVoxelLayer(storeys());
+    const colors = () => layer.points.geometry.getAttribute("color").array as Float32Array;
+    const last = HEIGHT_RAMP[HEIGHT_RAMP.length - 1][1];
+
+    layer.setBand(-Infinity, 4.5);
+    // 2.55 m is the band's top, so the ramp's end, though the map goes higher.
+    expect(Array.from(colors().subarray(6, 9)).map((c) => Math.round(c * 255))).toEqual([...last]);
+    layer.dispose();
+  });
+
+  it("reports the z the band's cells span, edge to edge, and null for an empty band", () => {
+    const layer = createVoxelLayer(storeys());
+    const lower = layer.zExtent(-Infinity, 4.5)!;
+    expect(lower.lo).toBeCloseTo(-0.5);
+    expect(lower.hi).toBeCloseTo(2.6);
+    expect(layer.zExtent(3, 4)).toBeNull();
+    layer.dispose();
   });
 });
