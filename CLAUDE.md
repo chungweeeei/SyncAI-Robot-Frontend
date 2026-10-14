@@ -183,7 +183,9 @@ components/
                 from above, one cell a column coloured by floor height, and a
                 brush that patches the holes the lidar never saw; its rules
                 are lib/map/ground-fill.ts, its save a record the robot's own
-                tool applies), and its folded floor list (floor-list-editor:
+                tool applies; a 3D view beside it, ground-3d-view, to look
+                around the same tree and patches — the brush stays in 2D,
+                where a press lands on one column), and its folded floor list (floor-list-editor:
                 rename, add or drop the floors the robot's walk found)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
@@ -238,7 +240,9 @@ lib/
                 layer (one cell-sized point per occupied cell, coloured by
                 height, held in height order so a floor is one draw range;
                 it thins the floor plan while up and lends its box to
-                Recenter when there is no floor plan), camera policy, picking,
+                Recenter when there is no floor plan), camera policy (the
+                opening, overhead and front framings, and the ground
+                editor's free orbit), the ground patches' 3D marks, picking,
                 robot mesh
   theme/        the signal hues both canvases draw with, and the height ramp
                 the 3D map is coloured by (height-ramp.ts: data colouring,
