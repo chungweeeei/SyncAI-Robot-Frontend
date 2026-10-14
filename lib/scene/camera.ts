@@ -150,3 +150,21 @@ export function frontViewAround(camera: THREE.PerspectiveCamera, controls: Orbit
   camera.position.set(controls.target.x, controls.target.y - distance, controls.target.z);
   controls.update();
 }
+
+/**
+ * The ground editor's 3D view: a look-around with nothing to pick, so the
+ * primary button orbits (the dashboard gives it to pan, since its left
+ * button also aims goals). Right-drag pans, the wheel and a pinch zoom to
+ * the cursor, one finger orbits and two pan and pinch.
+ */
+export function applyFreeOrbit(controls: OrbitControls) {
+  controls.enablePan = true;
+  controls.zoomToCursor = true;
+  controls.screenSpacePanning = true;
+  controls.mouseButtons = {
+    LEFT: THREE.MOUSE.ROTATE,
+    MIDDLE: THREE.MOUSE.DOLLY,
+    RIGHT: THREE.MOUSE.PAN,
+  };
+  controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+}
