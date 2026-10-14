@@ -230,6 +230,54 @@ test.describe("the ground editor", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
+  test("looks around in 3D, keeps the brush in 2D, and loses nothing on the way", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, { maps: [mapSummary(withOctomap())] });
+    await page.goto(`/maps/${MAP_NAME}/ground`);
+    await armFill(page);
+    const hole = await cellCentre(page, 1, 1);
+    await page.mouse.click(hole.x, hole.y);
+    await expect(patched(page)).toHaveText(/^4 cells/);
+
+    await page.getByRole("button", { name: "3D", exact: true }).click();
+    const view = page.getByTestId("ground-3d-view");
+    await expect(view).toBeVisible();
+    await expect(page.getByTestId("ground-canvas")).toHaveCount(0);
+    // The brush paints from above only.
+    for (const name of ["Pan", "Fill", "Erase"]) {
+      await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
+    }
+    // A drag orbits and paints nothing; the patches and the history survive.
+    const box = (await view.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2 - 40, { steps: 8 });
+    await page.mouse.up();
+    await expect(patched(page)).toHaveText(/^4 cells/);
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect(patched(page)).toHaveText(/^0 cells/);
+    await page.getByRole("button", { name: "Redo" }).click();
+    await expect(patched(page)).toHaveText(/^4 cells/);
+
+    // A tool key is a request to paint: it goes back to 2D with the tool.
+    await page.keyboard.press("e");
+    await expect(page.getByTestId("ground-canvas")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Erase", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect
+      .poll(() => writes.filter((write) => write.method === "PUT" && write.path === editsPath))
+      .toHaveLength(1);
+    const put = writes.find((write) => write.method === "PUT" && write.path === editsPath);
+    expect(byKey((put!.body as { fill_key: number[][] }).fill_key)).toEqual(byKey(HOLE));
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
   test("asks before leaving with unsaved patches", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
