@@ -2,19 +2,24 @@
 
 import * as React from "react";
 
+import { FloorPicker } from "@/components/console/floor-picker";
 import { Readout, overlayPanel } from "@/components/console/instrument";
+import { FloorListEditor } from "@/components/maps/floor-list-editor";
 import { GroundCanvas, type GroundHover, type GroundTool } from "@/components/maps/ground-canvas";
 import { GroundToolBar } from "@/components/maps/ground-toolbar";
+import { useMapFloors } from "@/hooks/use-map-floors";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
 import { useMapOctomapEdits } from "@/hooks/use-map-octomap-edits";
 import { useSaveMapOctomapEdits } from "@/hooks/use-map-actions";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useMapEntry } from "@/hooks/use-maps";
+import { floorBands } from "@/lib/map/floors";
 import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
 import {
   DEFAULT_BRUSH_RADIUS_M,
   LOCAL_FLOOR_RING_M,
   applyGroundPatch,
+  bandForHeights,
   cellsFor,
   clearanceCells,
   createGroundSession,
@@ -160,6 +165,18 @@ function GroundSurface({
 
   const runLock = useMapRunLock(name);
   const { mutate: save } = useSaveMapOctomapEdits();
+  const { floors } = useMapFloors(name);
+  // Each floor's band in the tree's levels; a floor the tree does not reach
+  // is not offered. Which one is picked is read back off the band, so a
+  // slider moved by hand simply leaves every floor unpressed.
+  const floorOptions = React.useMemo(
+    () =>
+      floorBands(floors).flatMap((floor) => {
+        const levels = bandForHeights(voxels, floor.lo, floor.hi);
+        return levels ? [{ ...floor, levels }] : [];
+      }),
+    [floors, voxels],
+  );
 
   const res = voxels.res;
   const radius = cellsFor(radiusM, res);
@@ -215,6 +232,14 @@ function GroundSurface({
       setRasterNonce((n) => n + 1);
     },
     [session],
+  );
+
+  const pickFloor = React.useCallback(
+    (floorName: string | null) => {
+      const picked = floorOptions.find((floor) => floor.name === floorName);
+      changeBand(picked ? picked.levels : fullBand(voxels));
+    },
+    [floorOptions, changeBand, voxels],
   );
 
   const onSave = React.useCallback(() => {
@@ -297,6 +322,9 @@ function GroundSurface({
   const bandLoM = kzToMetres(band.lo, voxels);
   const bandHiM = kzToMetres(band.hi, voxels);
   const full = fullBand(voxels);
+  const pickedFloor =
+    floorOptions.find((floor) => floor.levels.lo === band.lo && floor.levels.hi === band.hi)
+      ?.name ?? (band.lo === full.lo && band.hi === full.hi ? null : undefined);
   const minM = kzToMetres(full.lo, voxels);
   const maxM = kzToMetres(full.hi, voxels);
 
@@ -375,6 +403,13 @@ function GroundSurface({
 
           <div className={cn(overlayPanel, "pointer-events-auto space-y-2 p-2.5")}>
             <p className="instrument-label text-muted-foreground">Heights shown</p>
+            {floorOptions.length > 1 && (
+              <FloorPicker
+                floors={floorOptions}
+                value={pickedFloor}
+                onChange={pickFloor}
+              />
+            )}
             <label className="block text-[11px] leading-snug">
               <span className="flex justify-between text-muted-foreground">
                 <span>Lowest</span>
@@ -412,10 +447,12 @@ function GroundSurface({
               />
             </label>
             <p className="text-[11px] leading-snug text-muted-foreground">
-              On a map with more than one storey, narrow this to the floor you are patching: the
-              brush reads the lowest cell shown in each column as its floor.
+              On a map with more than one storey, pick the floor you are patching: the brush
+              reads the lowest cell shown in each column as its floor.
             </p>
           </div>
+
+          <FloorListEditor name={name} />
 
           {skipped > 0 && (
             <p

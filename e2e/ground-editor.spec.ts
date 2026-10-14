@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { encodeOctomapBt } from "@/lib/map/octree";
 import { OCTREE_KEY_ORIGIN } from "@/lib/types/octree";
 
 import {
@@ -9,6 +10,7 @@ import {
   mapSummary,
   mockBackend,
   taskState,
+  TWO_FLOORS,
   withOctomap,
 } from "./backend";
 
@@ -246,5 +248,103 @@ test.describe("the ground editor", () => {
     await page.getByRole("button", { name: "Back to maps" }).click();
     await expect(page.getByRole("heading", { name: "Maps", level: 1 })).toBeVisible();
     expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test.describe("on a map that spans storeys", () => {
+    /** The doormat's floor, and the same again a storey up (5.05 m). */
+    function twoStoreys(): Buffer {
+      const occupied: Array<[number, number, number]> = [];
+      for (let y = 0; y < 4; y += 1) {
+        for (let x = 0; x < 4; x += 1) {
+          occupied.push([O + x, O + y, O - 5], [O + x, O + y, O + 50]);
+        }
+      }
+      return Buffer.from(encodeOctomapBt({ res: 0.1, occupied }));
+    }
+
+    const lowest = (page: Page) => page.getByRole("slider", { name: "Lowest height shown" });
+    const highest = (page: Page) => page.getByRole("slider", { name: "Highest height shown" });
+
+    test("narrows the heights to the floor picked, and a hand-set band to none", async ({
+      page,
+    }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      await mockBackend(page, {
+        maps: [mapSummary(withOctomap())],
+        octomap: twoStoreys(),
+        floors: { [MAP_NAME]: { detected: TWO_FLOORS } },
+      });
+      await page.goto(`/maps/${MAP_NAME}/ground`);
+      await expect(page.getByTestId("ground-canvas")).toBeVisible();
+      const floors = page.getByRole("group", { name: "Floor" });
+      await expect(floors.getByRole("button", { name: "All" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+
+      // 2F starts a metre under its level (5.5 m): the slab's top is in it.
+      await floors.getByRole("button", { name: "2F" }).click();
+      await expect(lowest(page)).toHaveValue("4.55");
+      await expect(highest(page)).toHaveValue("5.05");
+      await floors.getByRole("button", { name: "1F" }).click();
+      await expect(lowest(page)).toHaveValue("-0.45");
+      await expect(highest(page)).toHaveValue("4.45");
+
+      // A slider moved by hand is no floor's band.
+      await highest(page).fill("3.05");
+      for (const name of ["All", "1F", "2F"]) {
+        await expect(floors.getByRole("button", { name })).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        );
+      }
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("saves floors named by hand, and goes back to the detected ones", async ({
+      page,
+    }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const writes = await mockBackend(page, {
+        maps: [mapSummary(withOctomap())],
+        octomap: twoStoreys(),
+        floors: { [MAP_NAME]: { detected: TWO_FLOORS } },
+      });
+      const floorsPath = `/api/v1/maps/${MAP_NAME}/floors`;
+      await page.goto(`/maps/${MAP_NAME}/ground`);
+      await page.getByText(/^Floors · /).click();
+
+      const save = page.getByRole("button", { name: "Save floors" });
+      await expect(save).toBeDisabled();
+      await page.getByRole("textbox", { name: "Floor name" }).nth(1).fill("Roof");
+      await page.getByRole("button", { name: "Add floor" }).click();
+      // A storey above the top one, under the next free name.
+      await expect(page.getByRole("textbox", { name: "Height of 3F" })).toHaveValue("8.5");
+      await page.getByRole("textbox", { name: "Height of 3F" }).fill("5.9");
+      // Refused here, in the backend's words, before it is sent.
+      await expect(save).toBeDisabled();
+      await expect(page.getByText("Floors 'Roof' and '3F' are less than 1 m apart.")).toBeVisible();
+      await page.getByRole("button", { name: "Remove 3F" }).click();
+      await save.click();
+      await expect(page.getByRole("status").filter({ hasText: "Saved 2 floors" })).toBeVisible();
+
+      const puts = writes.filter((write) => write.method === "PUT" && write.path === floorsPath);
+      expect(puts.map((write) => write.body)).toEqual([
+        { floors: [{ name: "1F", level: -0.2 }, { name: "Roof", level: 5.5 }] },
+      ]);
+      // The picker took the new name at once, from the save's answer.
+      await expect(
+        page.getByRole("group", { name: "Floor" }).getByRole("button", { name: "Roof" }),
+      ).toBeVisible();
+
+      await page.getByRole("button", { name: "Use detected" }).click();
+      await save.click();
+      await expect
+        .poll(() => writes.filter((write) => write.method === "PUT" && write.path === floorsPath))
+        .toHaveLength(2);
+      expect(errors, "the page logged errors").toEqual([]);
+    });
   });
 });
