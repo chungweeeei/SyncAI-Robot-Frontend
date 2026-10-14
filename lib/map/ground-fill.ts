@@ -69,6 +69,20 @@ export function fullBand(voxels: OccupiedVoxels): Band {
   return { lo: 0, hi: Math.max(voxels.size[2] - 1, 0) };
 }
 
+/**
+ * The band a floor's heights cover, `[loM, hiM)` metres by cell centre (the
+ * rule the dashboard's layer draws a floor by), clamped to the tree; an
+ * infinite end is the tree's own. Null when no level of the tree is in it.
+ */
+export function bandForHeights(voxels: OccupiedVoxels, loM: number, hiM: number): Band | null {
+  const full = fullBand(voxels);
+  const level = (metres: number) =>
+    Math.ceil(metres / voxels.res - 0.5 + OCTREE_KEY_ORIGIN - voxels.keyMin[2]);
+  const lo = Number.isFinite(loM) ? Math.max(full.lo, level(loM)) : full.lo;
+  const hi = Number.isFinite(hiM) ? Math.min(full.hi, level(hiM) - 1) : full.hi;
+  return lo <= hi ? { lo, hi } : null;
+}
+
 /** Metres to a relative kz and back, for the band controls. */
 export function metresToKz(metres: number, voxels: OccupiedVoxels): number {
   return Math.floor(metres / voxels.res) + OCTREE_KEY_ORIGIN - voxels.keyMin[2];

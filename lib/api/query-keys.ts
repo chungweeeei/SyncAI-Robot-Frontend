@@ -102,6 +102,14 @@ export const queryKeys = {
    * writes its answer here, since a save is the whole list.
    */
   mapOctomapEdits: (name: string) => ["map-octomap-edits", name] as const,
+  /**
+   * GET /api/v1/maps/<name>/floors — the storeys a map spans, which the
+   * dashboard's 3D map and the ground editor both pick a band from, so a
+   * rename on one is the other's list too. A save writes its answer here; a
+   * mapping save into the name drops it, since the detection reads the new
+   * walk.
+   */
+  mapFloors: (name: string) => ["map-floors", name] as const,
   /** GET /api/v1/task_templates — the operator's template library. */
   taskTemplates: ["task-templates"] as const,
   /** GET /api/v1/schedules */

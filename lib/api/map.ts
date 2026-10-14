@@ -14,7 +14,7 @@ import type { MapGrid } from "@/lib/map/grid";
 import { decodeOctomapBt } from "@/lib/map/octree";
 import { decodePointCloud } from "@/lib/ros/pointcloud-stream";
 import { GridStatusSchema } from "@/lib/types/map";
-import type { GridRecipe, GridStatus, MapSummary } from "@/lib/types/map";
+import type { GridRecipe, GridStatus, MapFloor, MapSummary } from "@/lib/types/map";
 import type { OccupiedVoxels } from "@/lib/types/octree";
 import type { PointCloudFrame } from "@/lib/types/pointcloud";
 
@@ -285,6 +285,70 @@ export function saveMapOctomapEdits(
     method: "PUT",
     body: JSON.stringify({ fill_key: fillKey.map((key) => [key[0], key[1], key[2]]) }),
     schema: SaveOctomapEditsResultSchema,
+  });
+}
+
+/** `MapFloorsResponse`, verbatim: the storeys a map spans. */
+export interface MapFloors {
+  name: string;
+  /** The floors to show, lowest first: the saved list, else the detected one. `[]` is one storey. */
+  floors: MapFloor[];
+  /** What the robot's walk while mapping says, whatever is saved. */
+  detected: MapFloor[];
+  /** Whether `floors` is a saved list. */
+  saved: boolean;
+}
+
+const MapFloorSchema: z.ZodType<MapFloor> = z.object({
+  name: z.string(),
+  level: z.number(),
+});
+
+const MapFloorsSchema: z.ZodType<MapFloors> = z.object({
+  name: z.string(),
+  floors: z.array(MapFloorSchema),
+  detected: z.array(MapFloorSchema),
+  saved: z.boolean(),
+});
+
+function floorsPath(name: string): string {
+  return apiUrl(`/api/v1/maps/${encodeURIComponent(name)}/floors`);
+}
+
+export function fetchMapFloors(name: string, signal?: AbortSignal): Promise<MapFloors> {
+  return requestJson<MapFloors>(floorsPath(name), { signal, schema: MapFloorsSchema });
+}
+
+/** `SaveMapFloorsResponse`, verbatim. */
+export interface SaveMapFloorsResult {
+  name: string;
+  /** What was saved, lowest first and trimmed: the list the next read answers. */
+  floors: MapFloor[];
+  /** Operator-facing; render verbatim. */
+  message: string;
+}
+
+const SaveMapFloorsResultSchema: z.ZodType<SaveMapFloorsResult> = z.object({
+  name: z.string(),
+  floors: z.array(MapFloorSchema),
+  message: z.string(),
+});
+
+/**
+ * Replace the map's floors, whole (`[]` saves one storey). Display-only on
+ * the robot's side too, so no job holds it. No `AbortSignal`, for
+ * `saveKeepout`'s reason.
+ */
+export function saveMapFloors(
+  name: string,
+  floors: readonly MapFloor[],
+): Promise<SaveMapFloorsResult> {
+  return requestJson<SaveMapFloorsResult>(floorsPath(name), {
+    method: "PUT",
+    body: JSON.stringify({
+      floors: floors.map((floor) => ({ name: floor.name, level: floor.level })),
+    }),
+    schema: SaveMapFloorsResultSchema,
   });
 }
 

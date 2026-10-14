@@ -11,6 +11,7 @@ import {
   exportMap,
   importMap,
   renameMap,
+  saveMapFloors,
   saveMapGrid,
   saveMapOctomapEdits,
 } from "@/lib/api/map";
@@ -19,7 +20,7 @@ import { queryKeys } from "@/lib/api/query-keys";
 import { downloadBlob } from "@/lib/download";
 import { exportFilename } from "@/lib/map/archive";
 import type { MapGrid } from "@/lib/map/grid";
-import type { GridRecipe, ZonePolygon } from "@/lib/types/map";
+import type { GridRecipe, MapFloor, ZonePolygon } from "@/lib/types/map";
 
 /*
  * The writes against one map. Each hook owns the request and every cache key
@@ -44,6 +45,7 @@ export function useRenameMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(from) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapFloors(from) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       // `templates_moved`: every template bound to the old name now carries
       // the new one, and the task console scopes its library on `map_name`.
@@ -63,6 +65,7 @@ export function useDeleteMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(name) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapFloors(name) });
       // Templates need nothing: the backend refuses the delete while any
       // template is still bound (409 `template_bound`).
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
@@ -200,6 +203,30 @@ export function useSaveMapOctomapEdits() {
 }
 
 /**
+ * PUT /api/v1/maps/{name}/floors. The answer is the list as saved (sorted,
+ * trimmed), written straight into the key the dashboard reads too, so a
+ * renamed floor is renamed on both without a round trip.
+ */
+export function useSaveMapFloors() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, floors }: { name: string; floors: readonly MapFloor[] }) =>
+      saveMapFloors(name, floors),
+    onSuccess: (result) => {
+      queryClient.setQueryData(
+        queryKeys.mapFloors(result.name),
+        (previous: { detected: MapFloor[] } | undefined) => ({
+          name: result.name,
+          floors: result.floors,
+          detected: previous?.detected ?? [],
+          saved: true,
+        }),
+      );
+    },
+  });
+}
+
+/**
  * GET /api/v1/maps/{name}/export, then download the archive.
  *
  * A mutation, not a query: the archive is built per click and never cached,
@@ -253,6 +280,7 @@ export function useImportMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(result.name) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapFloors(result.name) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       // Not `taskTemplates`: the backend refuses to replace a map any template
       // still targets (409 `template_bound`).

@@ -145,3 +145,13 @@ export const ZonePolygonSchema: z.ZodType<ZonePolygon> = z.object({
   id: z.string(),
   points: z.array(z.object({ x: z.number(), y: z.number() })),
 });
+
+/**
+ * One storey of a map that spans several: what it is called and the body
+ * height the robot stands at on it, metres in the map frame (the trajectory's
+ * z, about half a metre above the ground it walks on).
+ */
+export interface MapFloor {
+  name: string;
+  level: number;
+}

@@ -12,6 +12,7 @@ import {
   eraseDab,
   fillDab,
   fromFillKeys,
+  bandForHeights,
   fullBand,
   groundMeta,
   isHole,
@@ -77,6 +78,17 @@ describe("band conversions", () => {
     expect(kzToMetres(0, voxels)).toBeCloseTo(-0.45);
     expect(metresToKz(-0.45, voxels)).toBe(0);
     expect(metresToKz(kzToMetres(30, voxels), voxels)).toBe(30);
+  });
+
+  it("turns a floor's heights into the levels whose centres lie in them", () => {
+    const voxels = site();
+    const full = fullBand(voxels);
+    expect(bandForHeights(voxels, -Infinity, Infinity)).toEqual(full);
+    // Centres at -0.45 + 0.1k: [-0.45, 2.55) is levels 0..29, the top one out.
+    expect(bandForHeights(voxels, -0.45, 2.55)).toEqual({ lo: 0, hi: 29 });
+    expect(bandForHeights(voxels, 2.5, Infinity)).toEqual({ lo: 30, hi: full.hi });
+    // A band the tree does not reach.
+    expect(bandForHeights(voxels, 100, 101)).toBeNull();
   });
 
   it("rounds the clearance up to whole cells", () => {
