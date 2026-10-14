@@ -1455,8 +1455,8 @@ test.describe("the task console", () => {
     const times = page.getByRole("textbox", { name: "Times" });
     await expect(times).toHaveValue("1");
 
-    await times.fill("11");
-    await expect(page.getByText("Say it 1 to 10 times.")).toBeVisible();
+    await times.fill("51");
+    await expect(page.getByText("Say it 1 to 50 times.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
 
     await times.fill("3");
