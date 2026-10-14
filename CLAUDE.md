@@ -175,7 +175,12 @@ components/
                 map — its face is lib/map/run-face.ts), the save dialog, the
                 refusal panel under the strip and the save receipt's two
                 lines: the floor plan conversion and the 3D map build
-  maps/         map library cards and the gridmap editor (grid-canvas)
+  maps/         map library cards, the gridmap editor (grid-canvas) and the
+                ground editor (/maps/[name]/ground, ground-canvas: the 3D map
+                from above, one cell a column coloured by floor height, and a
+                brush that patches the holes the lidar never saw; its rules
+                are lib/map/ground-fill.ts, its save a record the robot's own
+                tool applies)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
                 and the /tasks/editor page (step composer, name, save, delete)
@@ -213,7 +218,12 @@ lib/
                 and the robot's 3D map (octree.ts: the `.bt` decoder — the
                 occupancy tree's own compact form, read into its occupied
                 cells with the tree's 16-bit keys — and the encoder the tests
-                and the e2e fake build trees with)
+                and the e2e fake build trees with), with the ground editor's
+                rules (ground-fill.ts: each column's floor inside a height
+                band, the median a patch is set at and the samples it needs,
+                the hole test — nothing occupied through the clearance band —
+                the dabs and their undo patches, and the record's absolute
+                keys) and its raster (ground-draw.ts)
   scene/        three.js scene building for the 3D viewport: theme, markers,
                 vertex layer, zone layer, path ribbon, the 3D map's voxel
                 layer (one cell-sized point per occupied cell, coloured by
@@ -453,7 +463,10 @@ touch one, prefer moving it toward the rule.
   editor draws (`mapImage`); a mapping save and a map rename or delete also
   change the scan the dashboard's "Map scan" layer draws (`mapPointCloud`),
   which a grid save or convert leaves alone, and the same writes drop the
-  decoded 3D map (`mapOctomap`, by its name-only prefix); a map rename, delete or
+  decoded 3D map (`mapOctomap`, by its name-only prefix) and its ground
+  patches (`mapOctomapEdits`); a ground patch save writes its own list back
+  as the next read and leaves `mapOctomap` alone, since the tree only
+  changes on the robot, by its tool, which the catalogue's version reports; a map rename, delete or
   activate also changes the forbidden zones' read (`mapKeepout`, whose
   `active` moves with a switch); a mapping start, save or reset changes the
   run state (`mappingStatus` — invalidated, never written, because the
@@ -595,7 +608,9 @@ it is run in, so it does not belong to any one of them.
   error string because it would help you debug. The house words are: **floor
   plan** (not gridmap / 2D grid / occupancy grid), **scan** (not point cloud /
   "the cloud"), **3D map** (not octomap / octree / voxels — the occupancy
-  tree the robot builds beside the scan), **waypoint** (not vertex / stop), **forbidden zone** (not
+  tree the robot builds beside the scan), **ground patch** for a floor cell
+  an operator paints into it (**Fill ground** is the way in; never "edit",
+  which the floor plan owns), **waypoint** (not vertex / stop), **forbidden zone** (not
   polygon / no-go area), **channel** (not topic),
   **recording** (not bag), **clip** for a video saved out of the camera window,
   **Mapping / Navigation** for the robot's MANUAL / AUTO modes, **job** for
