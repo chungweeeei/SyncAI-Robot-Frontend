@@ -124,7 +124,7 @@ describe("stepDraftError", () => {
 
 /**
  * A Speak said more than once. The count is the backend's `repeat`, bounded
- * 1–10 there; a line said once must stay the body it always was, so every
+ * 1–50 there; a line said once must stay the body it always was, so every
  * template and schedule from before the field reads the same.
  */
 describe("a Speak's count", () => {
@@ -141,11 +141,11 @@ describe("a Speak's count", () => {
     expect(step).toMatchObject({ params: { text: "Arrived", repeat: 3 } });
   });
 
-  it("refuses anything but a whole 1 to 10, before the backend's 422", () => {
-    for (const bad of ["", "0", "11", "2.5", "-1", "x"]) {
-      expect(stepDraftError(times(bad))).toMatch(/1 to 10 times/);
+  it("refuses anything but a whole 1 to 50, before the backend's 422", () => {
+    for (const bad of ["", "0", "51", "2.5", "-1", "x"]) {
+      expect(stepDraftError(times(bad))).toMatch(/1 to 50 times/);
     }
-    expect(stepDraftError(times(" 10 "))).toBeNull();
+    expect(stepDraftError(times(" 50 "))).toBeNull();
   });
 
   it("round-trips through a saved template, and reads a missing one as once", () => {

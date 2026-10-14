@@ -36,7 +36,7 @@ export const STEP_TYPES: readonly StepTypeSpec[] = [
 export const SPEAK_TEXT_MAX = 1000;
 
 /** Mirrors `SpeakParams.repeat`'s `le`: a typo must not keep the robot talking for an hour. */
-export const SPEAK_REPEAT_MAX = 10;
+export const SPEAK_REPEAT_MAX = 50;
 
 /** Mirrors `WaitParams.seconds`' `le`: a typo must not park the robot for days. */
 export const WAIT_SECONDS_MAX = 3600;
@@ -436,7 +436,7 @@ function moveParams(draft: StepDraft): MoveStepParams | null {
   return { x, y, theta: normalizeTheta(theta) };
 }
 
-/** A SPEAK row's count, or null when what is typed is not a whole 1–10. */
+/** A SPEAK row's count, or null when what is typed is not a whole 1–50. */
 function speakRepeat(draft: StepDraft): number | null {
   const text = draft.repeat.trim();
   if (!/^\d+$/.test(text)) return null;
