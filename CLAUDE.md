@@ -180,12 +180,12 @@ components/
                 lines: the floor plan conversion and the 3D map build
   maps/         map library cards, the gridmap editor (grid-canvas) and the
                 ground editor (/maps/[name]/ground, ground-canvas: the 3D map
-                from above, one cell a column coloured by floor height, and a
-                brush that patches the holes the lidar never saw; its rules
-                are lib/map/ground-fill.ts, its save a record the robot's own
-                tool applies; a 3D view beside it, ground-3d-view, to look
-                around the same tree and patches — the brush stays in 2D,
-                where a press lands on one column), and its folded floor list (floor-list-editor:
+                in 3D, orbited freely, and a brush that patches the holes the
+                lidar never saw — a press is cast onto the height the shown
+                floor mostly stands on, since a hole has no cell to hit and a
+                wall in front of one must not take the stroke; its rules are
+                lib/map/ground-fill.ts, its save a record the robot's own
+                tool applies), and its folded floor list (floor-list-editor:
                 rename, add or drop the floors the robot's walk found)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
@@ -229,7 +229,8 @@ lib/
                 band, the median a patch is set at and the samples it needs,
                 the hole test — nothing occupied through the clearance band —
                 the dabs and their undo patches, and the record's absolute
-                keys) and its raster (ground-draw.ts), and the floors of a
+                keys, the floor the brush aims at and the column under a
+                point), and the floors of a
                 map that spans storeys (floors.ts: the band each floor owns —
                 from a metre under its level to a metre under the next, so
                 a slab's top is in the floor above — and the rules a saved
@@ -242,7 +243,9 @@ lib/
                 it thins the floor plan while up and lends its box to
                 Recenter when there is no floor plan), camera policy (the
                 opening, overhead and front framings, and the ground
-                editor's free orbit), the ground patches' 3D marks, picking,
+                editor's: the primary button orbits until a brush is armed,
+                then paints while the right button orbits), the ground
+                patches' 3D marks, picking,
                 robot mesh
   theme/        the signal hues both canvases draw with, and the height ramp
                 the 3D map is coloured by (height-ramp.ts: data colouring,
