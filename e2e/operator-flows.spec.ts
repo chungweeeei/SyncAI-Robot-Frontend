@@ -1667,8 +1667,8 @@ test.describe("the task console", () => {
   test("deletes the loaded job only once confirmed, and leaves", async ({
     page,
   }) => {
-    // Delete sits beside Save, so a dismissed confirm must send nothing; and
-    // the confirm names the schedules that will outlive the job, since each
+    // Delete sits beside Save, so a kept dialog must send nothing; and the
+    // dialog names the schedules that will outlive the job, since each
     // keeps its own copy of the steps.
     const template = "22222222-2222-2222-2222-222222222222";
     const writes = await mockBackend(page, {
@@ -1696,19 +1696,17 @@ test.describe("the task console", () => {
     await expect(page).toHaveURL(/\/tasks\/editor$/);
     const remove = page.getByRole("button", { name: "Delete", exact: true });
 
-    let asked = "";
-    page.once("dialog", (dialog) => {
-      asked = dialog.message();
-      void dialog.dismiss();
-    });
     await remove.click();
-    expect(asked).toContain('"Morning round"');
-    expect(asked).toContain("Its schedule keeps running");
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText("Delete Morning round?");
+    await expect(dialog).toContainText("Its schedule keeps running");
+    await dialog.getByRole("button", { name: "Keep" }).click();
+    await expect(dialog).toHaveCount(0);
     await expect(page).toHaveURL(/\/tasks\/editor$/);
     expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
 
-    page.once("dialog", (dialog) => void dialog.accept());
     await remove.click();
+    await dialog.getByRole("button", { name: "Delete", exact: true }).click();
     await expect(page).toHaveURL(/\/tasks$/);
     expect(
       writes.filter((w) => w.method === "DELETE").map((w) => w.path),

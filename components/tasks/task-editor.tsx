@@ -10,6 +10,14 @@ import { ActiveRunBanner } from "@/components/tasks/active-run-banner";
 import { MapPicker } from "@/components/tasks/map-picker";
 import { StepList } from "@/components/tasks/step-list";
 import { TaskTitle } from "@/components/tasks/task-title";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { useMapVertexList } from "@/hooks/use-map-vertex-list";
 import { useMaps } from "@/hooks/use-maps";
@@ -213,26 +221,24 @@ export function TaskEditor() {
 
   /**
    * Delete, then leave, or Save would quietly re-create the job under a new id.
-   * The confirm names its schedules because they survive: each holds its own
-   * copy of the steps.
+   * Confirmed in an AlertDialog (no backdrop dismiss) because the button sits
+   * beside Save and nothing brings the job back. The dialog names its
+   * schedules because they survive: each holds its own copy of the steps.
    */
+  const [confirmingDelete, setConfirmingDelete] = React.useState(false);
+  const linkedSchedules = editing
+    ? schedules.schedules.filter((entry) => entry.task_template_id === editing.id).length
+    : 0;
+  const closeDelete = () => {
+    setConfirmingDelete(false);
+    library.clearError();
+  };
   const remove = () => {
-    if (!editing) return;
-    const linked = schedules.schedules.filter(
-      (entry) => entry.task_template_id === editing.id,
-    ).length;
-    const survivors = linked
-      ? ` ${linked === 1 ? "Its schedule keeps" : `Its ${linked} schedules keep`} running until deleted from Tasks.`
-      : "";
-    if (
-      !window.confirm(
-        `Delete task template "${editing.name}"? This cannot be undone.${survivors}`,
-      )
-    ) {
-      return;
-    }
+    if (!editing || library.busy) return;
     void library.remove(editing.id).then((gone) => {
+      // A refusal keeps the dialog open, with the backend's sentence in it.
       if (!gone) return;
+      setConfirmingDelete(false);
       clearDraft();
       router.push("/tasks");
     });
@@ -297,7 +303,10 @@ export function TaskEditor() {
           {editing && (
             <Button
               variant="destructive"
-              onClick={remove}
+              onClick={() => {
+                library.clearError();
+                setConfirmingDelete(true);
+              }}
               disabled={library.busy}
               aria-label="Delete"
               className={HEADER_BUTTON}
@@ -308,6 +317,41 @@ export function TaskEditor() {
           )}
         </div>
       </header>
+
+      <AlertDialog
+        open={confirmingDelete && editing !== null}
+        onOpenChange={(open) => {
+          if (!open && !library.busy) closeDelete();
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {editing?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This cannot be undone.
+              {linkedSchedules > 0 &&
+                ` ${linkedSchedules === 1 ? "Its schedule keeps" : `Its ${linkedSchedules} schedules keep`} running until deleted from Tasks.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {library.error && (
+            <p role="alert" className="text-[11px] leading-tight text-signal-warn">
+              {library.error}
+            </p>
+          )}
+
+          <AlertDialogFooter>
+            <Button variant="ghost" size="sm" disabled={library.busy} onClick={closeDelete}>
+              <ArrowLeftIcon data-icon="inline-start" />
+              Keep
+            </Button>
+            <Button variant="destructive" size="sm" disabled={library.busy} onClick={remove}>
+              <Trash2Icon data-icon="inline-start" />
+              {library.busy ? "Deleting…" : "Delete"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* A run this tab is not following, whichever page started it. */}
       <ActiveRunBanner trackedTaskId={null} />
