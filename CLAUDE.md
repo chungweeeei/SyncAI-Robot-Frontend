@@ -157,9 +157,12 @@ components/
                 overheating motor interrupts, on every screen), the drive
                 panel and camera window every screen can open
   dashboard/    3D viewport (pointcloud-canvas) with the pose laid over its
-                corner, the instrument rail (the registered schedules first —
-                a glance with pause and delete, the list itself stays on
-                /tasks — then locomotion and motors) and the
+                corner — its layers are the saved scan, the robot's 3D map
+                (the occupancy tree, off by default like the scan, drawn
+                whether or not the map has a floor plan), waypoints, zones
+                and the path — the instrument rail (the registered schedules
+                first — a glance with pause and delete, the list itself stays
+                on /tasks — then locomotion and motors) and the
                 driving controls
   drive/        the full-screen drive view (/drive, unlisted in the nav rail):
                 a blank screen with the sticks in its bottom corners, the
@@ -170,7 +173,8 @@ components/
   mapping/      the mode switch (the rail), the run strip over the viewport
                 (Start, then a recording-style indicator beside Save and New
                 map — its face is lib/map/run-face.ts), the save dialog, the
-                refusal panel under the strip and the floor plan conversion line
+                refusal panel under the strip and the save receipt's two
+                lines: the floor plan conversion and the 3D map build
   maps/         map library cards and the gridmap editor (grid-canvas)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
@@ -204,12 +208,21 @@ lib/
                 the task editor's floor plan preview (preview.ts: fit, markers,
                 hit test), the gesture rules both map surfaces share
                 (gesture.ts: press intent, drag deadzone, heading, band), the
-                job lock (run-lock.ts) and the mapping run strip's face rule
+                job lock (run-lock.ts), the mapping run strip's face rule
                 (run-face.ts: what the robot's run state lets the strip offer)
+                and the robot's 3D map (octree.ts: the `.bt` decoder — the
+                occupancy tree's own compact form, read into its occupied
+                cells with the tree's 16-bit keys — and the encoder the tests
+                and the e2e fake build trees with)
   scene/        three.js scene building for the 3D viewport: theme, markers,
-                vertex layer, zone layer, path ribbon, camera policy, picking,
+                vertex layer, zone layer, path ribbon, the 3D map's voxel
+                layer (one cell-sized point per occupied cell, coloured by
+                height; it thins the floor plan while up and lends its box to
+                Recenter when there is no floor plan), camera policy, picking,
                 robot mesh
-  theme/        the signal hues both canvases draw with
+  theme/        the signal hues both canvases draw with, and the height ramp
+                the 3D map is coloured by (height-ramp.ts: data colouring,
+                deliberately not a signal hue)
   task/         step, schedule and history domain helpers, template name limit,
                 the group rule (step.ts: one Move, Stand or Lie per group,
                 refused as it is built by stepLinkProblem / stepMoveProblem,
@@ -240,8 +253,9 @@ lib/
                 the screen-to-body-frame turn the drive panel commands through
   video/        WHIP/WHEP signalling, and the camera window's clip capture
                 (container pick, filename rule, the recorder wrapper)
-  types/        shared wire types (map, robot, pointcloud, stream), and the
-                readout tone a lib/ rule answers in
+  types/        shared wire types (map, robot, pointcloud, stream), the
+                decoded 3D map (octree.ts: the occupied cells and the key
+                origin), and the readout tone a lib/ rule answers in
   angle.ts      normalizeTheta — the degree fold every heading goes through
   download.ts   downloadBlob — hands a file to the operator's own machine
   keyboard.ts   isTypingTarget — whether a focused element is really taking
@@ -401,7 +415,9 @@ touch one, prefer moving it toward the rule.
   key once. Never inline a key.
 - **Polling policy**: poll only while the server is changing something on its
   own, and let the status that triggered the poll switch it off (`useMaps`
-  while `grid_status === "converting"`, `useRecordings` while a bag is live).
+  while `grid_status === "converting"`, at 5 s instead of 2 s while only an
+  `octomap_status` is — the robot's map cleaning takes minutes, and a listing
+  walks every map directory — and `useRecordings` while a bag is live).
   Two console-wide polls are mounted once in `app/layout.tsx`:
   `RobotStateProvider` (1 Hz) and `ActiveTaskProvider` (2 s). Pages read those
   providers; they do not start their own `robotState` poll. `/mapping` adds
@@ -436,7 +452,8 @@ touch one, prefer moving it toward the rule.
   save, and a map rename or delete change the floor plan raster the task
   editor draws (`mapImage`); a mapping save and a map rename or delete also
   change the scan the dashboard's "Map scan" layer draws (`mapPointCloud`),
-  which a grid save or convert leaves alone; a map rename, delete or
+  which a grid save or convert leaves alone, and the same writes drop the
+  decoded 3D map (`mapOctomap`, by its name-only prefix); a map rename, delete or
   activate also changes the forbidden zones' read (`mapKeepout`, whose
   `active` moves with a switch); a mapping start, save or reset changes the
   run state (`mappingStatus` — invalidated, never written, because the
@@ -453,7 +470,10 @@ touch one, prefer moving it toward the rule.
   `mapPointCloud` is the exception and is keyed by name alone:
   `modified_at` covers the whole map directory, so a floor plan rebuild
   would re-download a scan that did not change. `queryKeys.mapPointCloud`
-  records the one case that leaves open.
+  records the one case that leaves open. `mapOctomap` closes it for the 3D
+  map by asking the backend for a version of that one file:
+  `octomap_version` (its size and mtime, the download's ETag unquoted),
+  which a re-clean or the robot's edit tool moves and nothing else does.
 - **A map a job drives on is read-only for the job's length.** Every job
   that moves carries its map on the wire: the dispatch sends the map it
   planned on (`map_name`, which the backend checks against the loaded one
@@ -574,7 +594,8 @@ it is run in, so it does not belong to any one of them.
   rather than demoted — do not reintroduce them, and do not put one in an
   error string because it would help you debug. The house words are: **floor
   plan** (not gridmap / 2D grid / occupancy grid), **scan** (not point cloud /
-  "the cloud"), **waypoint** (not vertex / stop), **forbidden zone** (not
+  "the cloud"), **3D map** (not octomap / octree / voxels — the occupancy
+  tree the robot builds beside the scan), **waypoint** (not vertex / stop), **forbidden zone** (not
   polygon / no-go area), **channel** (not topic),
   **recording** (not bag), **clip** for a video saved out of the camera window,
   **Mapping / Navigation** for the robot's MANUAL / AUTO modes, **job** for
