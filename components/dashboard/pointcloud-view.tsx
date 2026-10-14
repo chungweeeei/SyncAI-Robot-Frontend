@@ -25,6 +25,7 @@ import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useGoalTask } from "@/hooks/use-goal-task";
 import { useInitialPose } from "@/hooks/use-initial-pose";
 import { useMapKeepout } from "@/hooks/use-map-keepout";
+import { useMapOctomap } from "@/hooks/use-map-octomap";
 import { useMapPointCloud } from "@/hooks/use-map-point-cloud";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useActiveMap } from "@/hooks/use-maps";
@@ -86,6 +87,17 @@ export function PointCloudView({
   const hasScan = activeMap?.has_pointcloud === true;
   const scan = useMapPointCloud(
     showMapCloud && hasScan && activeMap ? activeMap.name : null,
+  );
+  // The robot's 3D map, off by default for the scan's reason: a million
+  // cells, decoded and drawn when someone wants to look. Offered only once
+  // the robot reports it built — building, failed or never made has nothing
+  // to give but a refusal, and the Maps screen is where those states are
+  // said. Not gated on the floor plan: a map with none still has its 3D map,
+  // and the viewport frames on it instead.
+  const [showVoxels, setShowVoxels] = React.useState(false);
+  const hasVoxels = activeMap?.octomap_status === "ok";
+  const octomap = useMapOctomap(
+    showVoxels && hasVoxels && activeMap ? activeMap.name : null,
   );
   const [cameraMode, setCameraMode] = React.useState<"move" | "focus">("move");
   // Counters, not booleans: the button must work again after orbiting away.
@@ -245,6 +257,15 @@ export function PointCloudView({
       onToggle: () => setShowMapCloud((v) => !v),
     });
   }
+  if (hasVoxels) {
+    layers.push({
+      kind: "voxels",
+      label: "3D map",
+      on: showVoxels,
+      busy: octomap.status === "loading",
+      onToggle: () => setShowVoxels((v) => !v),
+    });
+  }
   if (vertices.length > 0) {
     layers.push({
       kind: "waypoints",
@@ -277,6 +298,7 @@ export function PointCloudView({
         mapImageUrl={mapImageUrl}
         telemetry={feed}
         mapCloud={scan.cloud}
+        voxels={octomap.voxels}
         path={path}
         showPath={showPath}
         vertices={vertices}
@@ -397,6 +419,18 @@ export function PointCloudView({
               )}
             >
               {scan.error}
+            </p>
+          )}
+          {/* The same for the 3D map: its toggle is the retry. */}
+          {octomap.error && (
+            <p
+              role="alert"
+              className={cn(
+                overlayPanel,
+                "pointer-events-auto px-2 py-1.5 text-[11px] leading-snug break-words text-signal-warn",
+              )}
+            >
+              {octomap.error}
             </p>
           )}
         </div>

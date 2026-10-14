@@ -35,6 +35,15 @@ export interface Theme {
   path: number;
   /** Forbidden zones: `signal-warn`, the same mark as on the floor plan editor. */
   zone: number;
+  /**
+   * The floor plan's opacity while the 3D map is shown. The robot's floor
+   * lies about half a metre under the plane the floor plan is drawn on (the
+   * map frame's zero is the body, not the ground), so at full opacity the
+   * plane hides the whole map from every angle above it. Thinned rather than
+   * lifted out of the way: the floor plan is still the reference the stops
+   * and zones sit on. The map itself is coloured by lib/theme/height-ramp.ts.
+   */
+  groundOpacityUnderVoxels: number;
 }
 
 // Tracks the console surfaces so the viewport reads as a recessed well.
@@ -52,6 +61,7 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     vertexHover: SIGNAL.light.cmd,
     path: 0x2b86a8,
     zone: SIGNAL.light.warn,
+    groundOpacityUnderVoxels: 0.35,
   },
   dark: {
     background: SIGNAL.dark.background,
@@ -66,5 +76,6 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     vertexHover: SIGNAL.dark.cmd,
     path: 0x3aa8cc,
     zone: SIGNAL.dark.warn,
+    groundOpacityUnderVoxels: 0.3,
   },
 };

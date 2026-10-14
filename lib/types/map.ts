@@ -72,6 +72,24 @@ export interface MapSummary {
   /** ISO 8601, newest file in the directory. */
   modified_at: string;
   vertex_count: number;
+  /**
+   * How the map's 3D map stands — the occupancy tree the robot's map cleaning
+   * writes beside the scan when asked to, which the dashboard draws and the
+   * ground editor patches. The same five words as `grid_status`, read off a
+   * different file: `none` also covers a save that never asked for one.
+   */
+  octomap_status: GridStatus;
+  /** Null unless `octomap_status` is `"failed"`. Operator-facing; render verbatim. */
+  octomap_error: string | null;
+  /**
+   * An opaque tag for the 3D map's current bytes, null unless `"ok"`. The
+   * backend changes it whenever the file is replaced (a re-clean, the robot's
+   * edit tool), which is how the console's cache of the decoded tree is
+   * retired — `modified_at` covers the whole directory and cannot say.
+   */
+  octomap_version: string | null;
+  /** Cell edge of the 3D map in metres, null unless `"ok"`. */
+  octomap_resolution: number | null;
 }
 
 /**

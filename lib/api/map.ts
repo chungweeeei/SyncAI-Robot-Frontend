@@ -11,9 +11,11 @@ import { z } from "zod";
 
 import { requestJson, requestRaw } from "@/lib/api/http";
 import type { MapGrid } from "@/lib/map/grid";
+import { decodeOctomapBt } from "@/lib/map/octree";
 import { decodePointCloud } from "@/lib/ros/pointcloud-stream";
 import { GridStatusSchema } from "@/lib/types/map";
 import type { GridRecipe, GridStatus, MapSummary } from "@/lib/types/map";
+import type { OccupiedVoxels } from "@/lib/types/octree";
 import type { PointCloudFrame } from "@/lib/types/pointcloud";
 
 interface WireGrid {
@@ -23,7 +25,12 @@ interface WireGrid {
   height: number;
 }
 
-/** `thumbnail` is a path, not an absolute URL. */
+/**
+ * `thumbnail` is a path, not an absolute URL. The `octomap_*` fields are
+ * optional on the wire only: a backend from before the 3D map existed sends
+ * none, and the robots run whichever branch of each repo is checked out, so
+ * the console reads "no 3D map" rather than refusing the whole catalogue.
+ */
 interface WireSummary {
   name: string;
   active: boolean;
@@ -36,6 +43,10 @@ interface WireSummary {
   size_bytes: number;
   modified_at: string;
   vertex_count: number;
+  octomap_status?: GridStatus;
+  octomap_error?: string | null;
+  octomap_version?: string | null;
+  octomap_resolution?: number | null;
 }
 
 /** Checked before `toSummary`, so a failure names the field the backend sent. */
@@ -58,6 +69,10 @@ const WireSummarySchema: z.ZodType<WireSummary> = z.object({
   size_bytes: z.number(),
   modified_at: z.string(),
   vertex_count: z.number(),
+  octomap_status: GridStatusSchema.optional(),
+  octomap_error: z.string().nullable().optional(),
+  octomap_version: z.string().nullable().optional(),
+  octomap_resolution: z.number().nullable().optional(),
 });
 
 function toSummary(wire: WireSummary): MapSummary {
@@ -73,6 +88,10 @@ function toSummary(wire: WireSummary): MapSummary {
       : null,
     // Absolute: <img src> would resolve against :3001, not the backend's :3000.
     thumbnail: wire.thumbnail ? apiUrl(wire.thumbnail) : null,
+    octomap_status: wire.octomap_status ?? "none",
+    octomap_error: wire.octomap_error ?? null,
+    octomap_version: wire.octomap_version ?? null,
+    octomap_resolution: wire.octomap_resolution ?? null,
   };
 }
 
@@ -186,6 +205,23 @@ export async function fetchMapPointCloud(
     throw new Error("The map scan arrived incomplete. Turn Map scan off and on to try again.");
   }
   return frame;
+}
+
+/**
+ * A stored map's 3D map, the robot's occupancy tree served byte for byte and
+ * decoded here (lib/map/octree.ts). A refusal is the backend's sentence; a
+ * body that is not a tree, or was cut short, is the decoder's — written for
+ * the operator, since a truncated 2xx has no sentence of its own.
+ */
+export async function fetchMapOctomap(
+  name: string,
+  signal?: AbortSignal,
+): Promise<OccupiedVoxels> {
+  const encoded = encodeURIComponent(name);
+  const res = await requestRaw(apiUrl(`/api/v1/maps/${encoded}/octomap`), {
+    signal,
+  });
+  return decodeOctomapBt(await res.arrayBuffer());
 }
 
 export interface SaveGridResult {

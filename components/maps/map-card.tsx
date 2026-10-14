@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BoxIcon, CheckIcon, LayersIcon, PencilIcon } from "lucide-react";
+import { BoxIcon, CheckIcon, CuboidIcon, LayersIcon, PencilIcon } from "lucide-react";
 
 import { Chip } from "@/components/console/instrument";
 import { GridRebuildControl } from "@/components/maps/grid-rebuild-control";
@@ -65,6 +65,37 @@ function GridStatusChip({ map }: { map: MapSummary }) {
       return <Chip tone="caution">Build stopped</Chip>;
     case "none":
       return <Chip tone="caution">No floor plan</Chip>;
+    default:
+      return null;
+  }
+}
+
+/**
+ * The chip for a map's 3D map, the floor plan chip's twin with one
+ * difference: a good one *is* shown, as a plain chip beside "Point cloud",
+ * because most maps have none and the dashboard's 3D map layer only appears
+ * for the ones that do. `none` says nothing: the robot builds a 3D map only
+ * when asked to, and a map without one is not short of anything.
+ */
+function OctomapStatusChip({ map }: { map: MapSummary }) {
+  switch (map.octomap_status) {
+    case "ok":
+      return (
+        <Chip tone="neutral">
+          <CuboidIcon className="mr-1 size-3" aria-hidden />
+          3D map
+        </Chip>
+      );
+    case "converting":
+      return <Chip tone="active">Building 3D map…</Chip>;
+    case "failed":
+      return (
+        <Chip tone="warn" title={map.octomap_error ?? undefined}>
+          3D map failed
+        </Chip>
+      );
+    case "interrupted":
+      return <Chip tone="caution">3D map stopped</Chip>;
     default:
       return null;
   }
@@ -209,6 +240,7 @@ export function MapCard({
             </Chip>
           )}
           <GridStatusChip map={map} />
+          <OctomapStatusChip map={map} />
 
           {/* Export at the right: the one verb that takes a copy without
            * touching the map. Its refusal line is a `basis-full` child of this
