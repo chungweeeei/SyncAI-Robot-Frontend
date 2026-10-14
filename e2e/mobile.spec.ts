@@ -5,9 +5,12 @@ import {
   activeTask,
   failOnConsoleErrors,
   floorPlanPng,
+  mapSummary,
   mockBackend,
+  octomapBt,
   robotState,
   taskState,
+  withOctomap,
 } from "./backend";
 
 /**
@@ -423,6 +426,66 @@ test.describe("the console on a phone", () => {
     expect(body.steps[0].type).toBe("MOVE");
     // And it says what it is, which is what the history counts it as.
     expect(body.kind).toBe("goal");
+  });
+
+  test("zooms the ground editor with two fingers, and paints with one", async ({
+    page,
+  }) => {
+    // A 40×40 floor with a 2×2 hole in the middle (see octomapBt): the 4×4
+    // default already fills a phone past the editor's largest zoom, so a
+    // pinch on it could only zoom out. On a phone the readout panel hangs
+    // down the left, so the map's right half is where a finger lands on the
+    // map itself.
+    const size = 40;
+    await mockBackend(page, {
+      maps: [mapSummary(withOctomap())],
+      octomap: octomapBt(size),
+    });
+    await page.goto(`/maps/${MAP_NAME}/ground`);
+    const canvas = page.getByTestId("ground-canvas");
+    await expect(canvas).toBeVisible();
+    const box = (await canvas.boundingBox())!;
+    const scale = Math.min(box.width / size, box.height / size);
+    const ox = (box.width - size * scale) / 2;
+    const oy = (box.height - size * scale) / 2;
+    // Raster cell centres. The hole is cols 19–20 of rows 19–20; the fingers
+    // land a few cells to its right, clear of the panel (176 px wide) and on
+    // the hole's row, below the toolbar.
+    const at = (col: number, row: number) => ({
+      x: box.x + ox + (col + 0.5) * scale,
+      y: box.y + oy + (row + 0.5) * scale,
+    });
+    const a = at(24, 20);
+    const b = at(30, 20);
+    const cdp = await page.context().newCDPSession(page);
+    const finger = (x: number, y: number, id: number) => ({ x, y, id });
+    const touch = (
+      type: "touchStart" | "touchMove" | "touchEnd",
+      touchPoints: { x: number; y: number; id: number }[],
+    ) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
+
+    // Pan is the opening tool; a pinch zooms and paints nothing.
+    const zoom = page.locator("[data-zoom]");
+    const atFit = Number(await zoom.getAttribute("data-zoom"));
+    await touch("touchStart", [finger(a.x, a.y, 1)]);
+    await touch("touchStart", [finger(a.x, a.y, 1), finger(b.x, b.y, 2)]);
+    await touch("touchMove", [finger(a.x - 30, a.y, 1), finger(b.x + 30, b.y, 2)]);
+    await touch("touchEnd", [finger(a.x - 30, a.y, 1)]);
+    await touch("touchEnd", []);
+    await expect.poll(async () => Number(await zoom.getAttribute("data-zoom"))).toBeGreaterThan(atFit);
+    await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+
+    // Positive control: one finger with Fill armed, and a brush wide enough
+    // to reach the hole from four cells away, fills it. Fit first, so the
+    // cell is where it was measured.
+    await page.getByRole("button", { name: "Fit to view" }).click();
+    await page.getByRole("button", { name: "Fill" }).click();
+    await page.getByRole("combobox", { name: "Brush radius" }).click();
+    await page.getByRole("option", { name: "1.0 m", exact: true }).click();
+    await touch("touchStart", [finger(a.x, a.y, 1)]);
+    await touch("touchEnd", []);
+    await expect(page.getByText(/^4 cells · /)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
   });
 
   test("lays the floor plan editor's panels out without one covering the other", async ({

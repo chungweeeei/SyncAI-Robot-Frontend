@@ -17,18 +17,23 @@ import { OCTREE_KEY_ORIGIN } from "@/lib/types/octree";
 export const MAP_NAME = "dp2f";
 
 /**
- * A 3D map the size of a doormat: a 4×4 floor one cell thick, half a metre
- * under the origin like the robot's own floor, with one 2×2 hole in the
- * middle. Enough for the dashboard to draw and for the ground editor to have
- * a hole to patch. Built by the console's own encoder, which the decoder's
- * unit tests pin, so the fake and the client agree on the bit order.
+ * A 3D map the size of a doormat: a `size`×`size` floor one cell thick,
+ * half a metre under the origin like the robot's own floor, with one 2×2
+ * hole in the middle (cells `size/2 - 1` and `size/2` on both axes). Enough
+ * for the dashboard to draw and for the ground editor to have a hole to
+ * patch. Built by the console's own encoder, which the decoder's unit tests
+ * pin, so the fake and the client agree on the bit order. The 4×4 default
+ * puts a hole cell under a click wherever the editor is; a phone test that
+ * pinches hands in a larger one, since the editor's zoom tops out at 32 px
+ * a cell and four cells already fill a phone past that.
  */
-export function octomapBt(): Buffer {
+export function octomapBt(size = 4): Buffer {
   const O = OCTREE_KEY_ORIGIN;
+  const lo = size / 2 - 1;
   const occupied: Array<[number, number, number]> = [];
-  for (let y = 0; y < 4; y += 1) {
-    for (let x = 0; x < 4; x += 1) {
-      const hole = x >= 1 && x <= 2 && y >= 1 && y <= 2;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const hole = x >= lo && x <= lo + 1 && y >= lo && y <= lo + 1;
       if (!hole) occupied.push([O + x, O + y, O - 5]);
     }
   }
