@@ -12,6 +12,7 @@ import {
   taskHistoryEntry,
   taskTemplate,
   vertex,
+  withOctomap,
 } from "./backend";
 
 /**
@@ -527,6 +528,153 @@ test.describe("the dashboard's map scan layer", () => {
     await expect(alert).toHaveText(`Map '${MAP_NAME}' has no saved scan`);
 
     // Turning the layer off is what dismisses it.
+    await toggle(page).click();
+    await expect(alert).toHaveCount(0);
+  });
+});
+
+test.describe("the dashboard's 3D map layer", () => {
+  const treePath = `/api/v1/maps/${MAP_NAME}/octomap`;
+  const toggle = (page: Page) => page.getByRole("button", { name: /^3D map/ });
+
+  test("downloads the running map's tree once, and only when asked", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, { maps: [mapSummary(withOctomap())] });
+    const treeReads: string[] = [];
+    page.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (pathname.endsWith("/octomap")) treeReads.push(pathname);
+    });
+    await page.goto("/");
+    await expect(
+      page.getByRole("region", { name: "Map viewport" }),
+    ).toBeVisible();
+
+    // A million cells to decode and draw: only when someone asks to see them.
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "false");
+    expect(treeReads).toEqual([]);
+
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => treeReads).toEqual([treePath]);
+
+    // Off and on is the same version, so it comes from the cache.
+    await toggle(page).click();
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
+    expect(treeReads).toEqual([treePath]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("is not offered for a map the robot built no 3D map for", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page);
+    await page.goto("/");
+    await expect(
+      page.getByRole("region", { name: "Map viewport" }),
+    ).toBeVisible();
+
+    await expect(page.getByRole("button", { name: "Top down" })).toBeVisible();
+    await expect(toggle(page)).toHaveCount(0);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("draws a map that has a 3D map but no floor plan", async ({ page }) => {
+    // A scan-only save: no floor plan, so no ground plane and nothing to
+    // frame — the tree is what the viewport has, and Top down frames on it.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, {
+      maps: [
+        mapSummary({
+          grid: null,
+          thumbnail: null,
+          grid_status: "none",
+          ...withOctomap(),
+        }),
+      ],
+    });
+    const treeReads: string[] = [];
+    page.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (pathname.endsWith("/octomap")) treeReads.push(pathname);
+    });
+    await page.goto("/");
+    await expect(
+      page.getByRole("region", { name: "Map viewport" }),
+    ).toBeVisible();
+
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => treeReads).toEqual([treePath]);
+    await page.getByRole("button", { name: "Top down" }).click();
+    await page.getByRole("button", { name: "Recenter" }).click();
+    // Settled: the decode and the draw have had a frame to throw.
+    await page.waitForTimeout(500);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("downloads the tree again once the catalogue reports a new version", async ({
+    page,
+  }) => {
+    // The robot's edit tool replaces the file in place; modified_at cannot say
+    // which file moved, so the version is what retires the cached decode.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const entry = mapSummary(withOctomap("1-1"));
+    await mockBackend(page, { maps: [entry] });
+    const treeReads: string[] = [];
+    page.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (pathname.endsWith("/octomap")) treeReads.push(pathname);
+    });
+    await page.goto("/");
+    await expect(
+      page.getByRole("region", { name: "Map viewport" }),
+    ).toBeVisible();
+    await toggle(page).click();
+    await expect.poll(() => treeReads).toEqual([treePath]);
+
+    entry.octomap_version = "2-2";
+    await page.getByRole("link", { name: "Maps" }).click();
+    await expect(page.getByRole("heading", { name: "Maps", level: 1 })).toBeVisible();
+    await page.getByRole("link", { name: "Dashboard" }).click();
+    await expect(
+      page.getByRole("region", { name: "Map viewport" }),
+    ).toBeVisible();
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => treeReads).toEqual([treePath, treePath]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  // No console-error guard: the browser logs the 409 itself.
+  test("says why the tree did not arrive, in the backend's words", async ({
+    page,
+  }) => {
+    await mockBackend(page, { maps: [mapSummary(withOctomap())] });
+    await page.route(/\/api\/v1\/maps\/[^/]+\/octomap$/, (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: `The 3D map of '${MAP_NAME}' is still being built`,
+          code: "octomap_converting",
+        }),
+      }),
+    );
+    await page.goto("/");
+
+    await toggle(page).click();
+    const alert = page.getByRole("alert").filter({ hasText: "still being built" });
+    await expect(alert).toHaveText(`The 3D map of '${MAP_NAME}' is still being built`);
+
     await toggle(page).click();
     await expect(alert).toHaveCount(0);
   });

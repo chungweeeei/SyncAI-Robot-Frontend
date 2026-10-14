@@ -42,6 +42,7 @@ export function useRenameMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(from) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(from) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       // `templates_moved`: every template bound to the old name now carries
       // the new one, and the task console scopes its library on `map_name`.
@@ -60,6 +61,7 @@ export function useDeleteMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(name) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(name) });
       // Templates need nothing: the backend refuses the delete while any
       // template is still bound (409 `template_bound`).
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
@@ -222,6 +224,7 @@ export function useImportMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapImage(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(result.name) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(result.name) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       // Not `taskTemplates`: the backend refuses to replace a map any template
       // still targets (409 `template_bound`).

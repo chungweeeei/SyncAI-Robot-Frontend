@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   BanIcon,
   CrosshairIcon,
+  CuboidIcon,
   FocusIcon,
   Grid2x2Icon,
   HandIcon,
@@ -237,7 +238,7 @@ export function MapToolbar({
 }
 
 export interface LayerOption {
-  kind: "scan" | "waypoints" | "path" | "zones";
+  kind: "scan" | "voxels" | "waypoints" | "path" | "zones";
   label: string;
   on: boolean;
   /** On, but still downloading; the viewport shows nothing yet. */
@@ -247,6 +248,9 @@ export interface LayerOption {
 
 const LAYER_ICONS = {
   scan: ScanLineIcon,
+  // A solid, where the scan is a sweep: the 3D map is the scan made into
+  // cells, and the two sit side by side in the strip.
+  voxels: CuboidIcon,
   waypoints: MapPinIcon,
   path: RouteIcon,
   // The floor plan editor's forbidden zone icon.

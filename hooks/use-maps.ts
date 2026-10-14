@@ -15,16 +15,24 @@ export type MapsStatus = "loading" | "ok" | "error";
 const CONVERTING_POLL_MS = 2000;
 
 /**
+ * The same while only a 3D map is being built: the robot's map cleaning
+ * takes minutes, not seconds, and a listing walks every map directory.
+ */
+const BUILDING_3D_POLL_MS = 5000;
+
+/**
  * The poll policy for every observer of the maps query; it switches itself off
  * with the last running conversion. Shared so the poll cannot depend on which
- * of the two hooks below happens to be mounted.
+ * of the two hooks below happens to be mounted. A floor plan conversion sets
+ * the faster rate whichever else is running.
  */
 function pollWhileConverting(
   maps: MapSummary[] | undefined,
 ): number | false {
-  return maps?.some((map) => map.grid_status === "converting")
-    ? CONVERTING_POLL_MS
-    : false;
+  if (!maps) return false;
+  if (maps.some((map) => map.grid_status === "converting")) return CONVERTING_POLL_MS;
+  if (maps.some((map) => map.octomap_status === "converting")) return BUILDING_3D_POLL_MS;
+  return false;
 }
 
 export interface UseMaps {

@@ -38,6 +38,7 @@ import {
   warnedUnknownJoints,
 } from "@/lib/scene/robot-model";
 import { THEMES } from "@/lib/scene/theme";
+import { createVoxelLayer, thinGroundUnderVoxels } from "@/lib/scene/voxel-layer";
 import { createZoneLayer } from "@/lib/scene/zone-layer";
 import {
   createVertexLayer,
@@ -45,6 +46,7 @@ import {
 } from "@/lib/scene/vertex-layer";
 import { headingDegrees, isDrag } from "@/lib/map/gesture";
 import type { MapVertex, ZonePolygon } from "@/lib/types/map";
+import type { OccupiedVoxels } from "@/lib/types/octree";
 import type {
   MapMetadata,
   PlanarPose,
@@ -90,6 +92,12 @@ interface PointCloudCanvasProps {
    * useMapPointCloud so its refusal reaches a screen.
    */
   mapCloud?: PointCloudFrame | null;
+  /**
+   * A stored map's 3D map, decoded; null draws none. Fetched by useMapOctomap
+   * for `mapCloud`'s reason. With no floor plan it is also what Recenter and
+   * Top down frame.
+   */
+  voxels?: OccupiedVoxels | null;
   /**
    * The planner's remaining route, drawn as a band on the floor so an operator
    * can catch a route that hugs a wall before the robot is against it. An empty
@@ -191,6 +199,7 @@ export function PointCloudCanvas({
   mapImageUrl,
   telemetry,
   mapCloud = null,
+  voxels = null,
   path,
   dock = null,
   dockPath,
@@ -247,11 +256,23 @@ export function PointCloudCanvas({
      * re-frame the camera on every map load.
      */
     mapFrame: MapFrame | null;
+    /**
+     * The floor plan's plane, or null with no 2D map. Held so the 3D map's
+     * layer can thin it while it is shown (see thinGroundUnderVoxels).
+     */
+    ground: THREE.Mesh | null;
     goalMarker: THREE.Group;
     initialPoseMarker: THREE.Group;
     draftMarker: THREE.Group;
     dispose: () => void;
   } | null>(null);
+
+  /**
+   * The 3D map's xy box while its layer is up and there is no floor plan:
+   * what Recenter and Top down frame instead of the 20 m fallback. A ref,
+   * since those effects are nonce-only on purpose.
+   */
+  const voxelFrameRef = React.useRef<MapFrame | null>(null);
 
   // Keep the latest onStatus without forcing the setup effect to re-run.
   const onStatusRef = React.useRef(onStatus);
@@ -457,16 +478,18 @@ export function PointCloudCanvas({
 
     // Ground plane textured with the floor plan, when there is one.
     let groundTexture: THREE.Texture | null = null;
-    if (meta) {
-      const ground = new THREE.Mesh(
-        new THREE.PlaneGeometry(widthM, heightM),
-        new THREE.MeshBasicMaterial({
-          color: theme.ground,
-          transparent: true,
-          opacity: theme.groundOpacity,
-          side: THREE.DoubleSide,
-        }),
-      );
+    const ground = meta
+      ? new THREE.Mesh(
+          new THREE.PlaneGeometry(widthM, heightM),
+          new THREE.MeshBasicMaterial({
+            color: theme.ground,
+            transparent: true,
+            opacity: theme.groundOpacity,
+            side: THREE.DoubleSide,
+          }),
+        )
+      : null;
+    if (ground) {
       ground.position.set(centerX, centerY, 0);
       scene.add(ground);
 
@@ -688,6 +711,7 @@ export function PointCloudCanvas({
       mapPoints: null,
       streamedMapPoints: null,
       mapFrame: meta ? { cx: centerX, cy: centerY, widthM, heightM } : null,
+      ground,
       goalMarker,
       initialPoseMarker,
       draftMarker,
@@ -809,7 +833,9 @@ export function PointCloudCanvas({
 
     // In focus the target is the robot, so keep it and the operator's zoom.
     // Otherwise frame the whole map: going overhead is for seeing the site.
-    const framing = cameraModeRef.current !== "focus" ? mapFrame : null;
+    // With no floor plan the 3D map's box stands in, when its layer is up.
+    const framing =
+      cameraModeRef.current !== "focus" ? (mapFrame ?? voxelFrameRef.current) : null;
     if (framing) controls.target.set(framing.cx, framing.cy, 0);
 
     const height = framing
@@ -836,8 +862,15 @@ export function PointCloudCanvas({
     frameMap(
       ctx.camera,
       ctx.controls,
-      // No map: the setup effect's fallback box around the origin.
-      ctx.mapFrame ?? { cx: 0, cy: 0, widthM: DEFAULT_SPAN_M, heightM: DEFAULT_SPAN_M },
+      // No floor plan: the 3D map's box if its layer is up, else the setup
+      // effect's fallback box around the origin.
+      ctx.mapFrame ??
+        voxelFrameRef.current ?? {
+          cx: 0,
+          cy: 0,
+          widthM: DEFAULT_SPAN_M,
+          heightM: DEFAULT_SPAN_M,
+        },
     );
   }, [recenterNonce]);
 
@@ -1034,6 +1067,30 @@ export function PointCloudCanvas({
       if (ctx.mapPoints === points) ctx.mapPoints = null;
     };
   }, [mapCloud, meta, mapImageUrl, resolvedTheme]);
+
+  // ---- Optional 3D map (toggle) -----------------------------------------
+  // Same shape as the map scan above, and the same rebuild deps for the same
+  // reason. Beyond adding its marks it thins the floor plan while it is up
+  // (see thinGroundUnderVoxels) and lends its box to Recenter and Top down
+  // when there is no floor plan to frame; the cleanup undoes both, so turning
+  // the layer off restores the viewport without a rebuild.
+  React.useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx || !voxels) return;
+
+    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
+    const layer = createVoxelLayer(voxels);
+    ctx.scene.add(layer.points);
+    const restoreGround = thinGroundUnderVoxels(ctx.ground, theme);
+    if (!ctx.mapFrame) voxelFrameRef.current = layer.frame;
+
+    return () => {
+      ctx.scene.remove(layer.points);
+      layer.dispose();
+      restoreGround();
+      if (voxelFrameRef.current === layer.frame) voxelFrameRef.current = null;
+    };
+  }, [voxels, meta, mapImageUrl, resolvedTheme]);
 
   // ---- Pose picking -----------------------------------------------------
   // The anchor keeps the raw pointer position beside the ground point so the

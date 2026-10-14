@@ -81,6 +81,21 @@ export const queryKeys = {
    * would close it.
    */
   mapPointCloud: (name: string) => ["map-point-cloud", name] as const,
+  /**
+   * GET /api/v1/maps/<name>/octomap, decoded — the dashboard's "3D map" and
+   * the ground editor's floor, one entry shared by both.
+   *
+   * Keyed like `mapImage`, by a version the catalogue reports
+   * (`octomap_version`, see useMapOctomap): unlike the scan, the tree is
+   * replaced in place — by a re-clean, or by the robot's edit tool applying
+   * the ground patches — and `modified_at` cannot say which file moved.
+   * Without the version it is the prefix the write hooks drop a map's
+   * entries by.
+   */
+  mapOctomap: (name: string, version?: string) =>
+    version === undefined
+      ? (["map-octomap", name] as const)
+      : (["map-octomap", name, version] as const),
   /** GET /api/v1/task_templates — the operator's template library. */
   taskTemplates: ["task-templates"] as const,
   /** GET /api/v1/schedules */
