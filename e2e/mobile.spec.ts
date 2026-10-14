@@ -431,11 +431,9 @@ test.describe("the console on a phone", () => {
   test("zooms the ground editor with two fingers, and paints with one", async ({
     page,
   }) => {
-    // A 40×40 floor with a 2×2 hole in the middle (see octomapBt): the 4×4
-    // default already fills a phone past the editor's largest zoom, so a
-    // pinch on it could only zoom out. On a phone the readout panel hangs
-    // down the left, so the map's right half is where a finger lands on the
-    // map itself.
+    // A 40×40 floor (4 m) with a 2×2 hole in the middle (see octomapBt). On
+    // a phone the readout panel hangs down the left over the canvas's
+    // middle, so the fingers land on the map's right half.
     const size = 40;
     await mockBackend(page, {
       maps: [mapSummary(withOctomap())],
@@ -443,46 +441,43 @@ test.describe("the console on a phone", () => {
     });
     await page.goto(`/maps/${MAP_NAME}/ground`);
     const canvas = page.getByTestId("ground-canvas");
-    await expect(canvas).toBeVisible();
+    await expect(canvas).toHaveAttribute("data-distance", /\d+/);
     const box = (await canvas.boundingBox())!;
-    const scale = Math.min(box.width / size, box.height / size);
-    const ox = (box.width - size * scale) / 2;
-    const oy = (box.height - size * scale) / 2;
-    // Raster cell centres. The hole is cols 19–20 of rows 19–20; the fingers
-    // land a few cells to its right, clear of the panel (176 px wide) and on
-    // the hole's row, below the toolbar.
-    const at = (col: number, row: number) => ({
-      x: box.x + ox + (col + 0.5) * scale,
-      y: box.y + oy + (row + 0.5) * scale,
-    });
-    const a = at(24, 20);
-    const b = at(30, 20);
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
     const cdp = await page.context().newCDPSession(page);
     const finger = (x: number, y: number, id: number) => ({ x, y, id });
     const touch = (
       type: "touchStart" | "touchMove" | "touchEnd",
       touchPoints: { x: number; y: number; id: number }[],
     ) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
+    const distance = async () => Number(await canvas.getAttribute("data-distance"));
 
-    // Pan is the opening tool; a pinch zooms and paints nothing.
-    const zoom = page.locator("[data-zoom]");
-    const atFit = Number(await zoom.getAttribute("data-zoom"));
+    // Orbit is the opening tool; fingers spreading zoom in and paint nothing.
+    const opening = await distance();
+    const a = { x: box.x + box.width * 0.62, y: cy };
+    const b = { x: box.x + box.width * 0.82, y: cy };
     await touch("touchStart", [finger(a.x, a.y, 1)]);
     await touch("touchStart", [finger(a.x, a.y, 1), finger(b.x, b.y, 2)]);
-    await touch("touchMove", [finger(a.x - 30, a.y, 1), finger(b.x + 30, b.y, 2)]);
-    await touch("touchEnd", [finger(a.x - 30, a.y, 1)]);
+    for (let step = 1; step <= 6; step += 1) {
+      await touch("touchMove", [finger(a.x - 8 * step, a.y, 1), finger(b.x + 8 * step, b.y, 2)]);
+    }
+    await touch("touchEnd", [finger(a.x - 48, a.y, 1)]);
     await touch("touchEnd", []);
-    await expect.poll(async () => Number(await zoom.getAttribute("data-zoom"))).toBeGreaterThan(atFit);
+    await expect.poll(distance).toBeLessThan(opening);
     await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
 
-    // Positive control: one finger with Fill armed, and a brush wide enough
-    // to reach the hole from four cells away, fills it. Fit first, so the
-    // cell is where it was measured.
+    // Positive control: one finger with Fill armed, half a metre east of the
+    // hole with a 1 m brush, fills it. Fit first, so the camera is where the
+    // metres are measured from: the screen row through the middle is the
+    // map's middle row, half a metre there is (h / 2) / (d tan 30°) px each.
     await page.getByRole("button", { name: "Fit to view" }).click();
+    await expect.poll(distance).toBe(opening);
     await page.getByRole("button", { name: "Fill" }).click();
     await page.getByRole("combobox", { name: "Brush radius" }).click();
     await page.getByRole("option", { name: "1.0 m", exact: true }).click();
-    await touch("touchStart", [finger(a.x, a.y, 1)]);
+    const pxPerM = box.height / 2 / ((opening / 100) * Math.tan(Math.PI / 6));
+    await touch("touchStart", [finger(cx + 0.5 * pxPerM, cy, 1)]);
     await touch("touchEnd", []);
     await expect(page.getByText(/^4 cells · /)).toBeVisible();
     await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();

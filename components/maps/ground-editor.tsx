@@ -6,8 +6,7 @@ import { FloorPicker } from "@/components/console/floor-picker";
 import { Readout, overlayPanel } from "@/components/console/instrument";
 import { FloorListEditor } from "@/components/maps/floor-list-editor";
 import { GroundCanvas, type GroundHover, type GroundTool } from "@/components/maps/ground-canvas";
-import { Ground3dView } from "@/components/maps/ground-3d-view";
-import { GroundToolBar, type GroundView } from "@/components/maps/ground-toolbar";
+import { GroundToolBar } from "@/components/maps/ground-toolbar";
 import { useMapFloors } from "@/hooks/use-map-floors";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
 import { useMapOctomapEdits } from "@/hooks/use-map-octomap-edits";
@@ -36,10 +35,9 @@ import {
   type GroundPatch,
 } from "@/lib/map/ground-fill";
 import { createUndoStack, popRedo, popUndo, pushPatch } from "@/lib/map/patch";
-import { gridToWorld } from "@/lib/map/view";
 import { isTypingTarget } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
-import type { OccupiedVoxels } from "@/lib/types/octree";
+import { OCTREE_KEY_ORIGIN, type OccupiedVoxels } from "@/lib/types/octree";
 
 /**
  * The ground editor: the 3D map from above, and a brush that paints floor
@@ -122,7 +120,7 @@ type SaveNote =
 
 /**
  * The editor shell: tool state, the undo stack, shortcuts and the save flow.
- * The canvas owns the raster and the view; they meet at the session
+ * The canvas owns the scene and the camera; they meet at the session
  * (lib/map/ground-fill.ts), which is mutable and never in React state.
  */
 function GroundSurface({
@@ -146,18 +144,14 @@ function GroundSurface({
     [initialFillKey, voxels],
   );
 
-  const [tool, setTool] = React.useState<GroundTool>("pan");
-  const [view, setView] = React.useState<GroundView>("2d");
-  /** Moves on every change to the patches, which the 3D view redraws on. */
+  const [tool, setTool] = React.useState<GroundTool>("orbit");
+  /** Moves on every change to the patches outside a stroke, which the canvas redraws on. */
   const [editsVersion, setEditsVersion] = React.useState(0);
   const [radiusM, setRadiusM] = React.useState<number>(DEFAULT_BRUSH_RADIUS_M);
   const [band, setBand] = React.useState(() => fullBand(voxels));
-  const [spacePan, setSpacePan] = React.useState(false);
   const [fitNonce, setFitNonce] = React.useState(0);
-  const [rasterNonce, setRasterNonce] = React.useState(0);
   const [zoomStep, setZoomStep] = React.useState<{ factor: number } | null>(null);
   const [hover, setHover] = React.useState<GroundHover | null>(null);
-  const [scale, setScale] = React.useState(1);
   const [canUndo, setCanUndo] = React.useState(false);
   const [canRedo, setCanRedo] = React.useState(false);
   const [count, setCount] = React.useState(session.edits.size);
@@ -216,7 +210,6 @@ function GroundSurface({
       setCanUndo(stack.undo.length > 0);
       setCanRedo(stack.redo.length > 0);
       applyGroundPatch(session.edits, patch, direction === "undo" ? "before" : "after");
-      setRasterNonce((n) => n + 1);
       refresh();
     },
     [session, refresh],
@@ -224,26 +217,16 @@ function GroundSurface({
   const undo = React.useCallback(() => step("undo"), [step]);
   const redo = React.useCallback(() => step("redo"), [step]);
   const fit = React.useCallback(() => setFitNonce((n) => n + 1), []);
-  /**
-   * Switch views. The surface that mounts would replay the last zoom step,
-   * and the hover readouts belong to the 2D surface's pointer.
-   */
-  const changeView = React.useCallback((next: GroundView) => {
-    setZoomStep(null);
-    setHover(null);
-    setView(next);
-  }, []);
   const zoomIn = React.useCallback(() => setZoomStep({ factor: ZOOM_STEP_FACTOR }), []);
   const zoomOut = React.useCallback(() => setZoomStep({ factor: 1 / ZOOM_STEP_FACTOR }), []);
 
-  /** Move the height band; the floors are rebuilt and every column repainted. */
+  /** Move the height band; the floors are rebuilt, and the canvas re-aims at them. */
   const changeBand = React.useCallback(
     (next: { lo: number; hi: number }) => {
       const lo = Math.min(next.lo, next.hi);
       const hi = Math.max(next.lo, next.hi);
       setBand({ lo, hi });
       setGroundBand(session, { lo, hi });
-      setRasterNonce((n) => n + 1);
     },
     [session],
   );
@@ -277,7 +260,7 @@ function GroundSurface({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        setTool("pan");
+        setTool("orbit");
         return;
       }
       if (isTypingTarget(event.target)) return;
@@ -293,40 +276,21 @@ function GroundSurface({
         redo();
         return;
       }
-      if (event.code === "Space" && !event.repeat) {
-        event.preventDefault();
-        setSpacePan(true);
-        return;
-      }
       if (mod) return;
       if (event.key === "0") {
         event.preventDefault();
         fit();
       } else if (event.key.toLowerCase() === "b") {
-        // A tool key is a request to paint, which happens from above.
-        changeView("2d");
         setTool("fill");
       } else if (event.key.toLowerCase() === "e") {
-        changeView("2d");
         setTool("erase");
-      } else if (event.key.toLowerCase() === "p") {
-        changeView("2d");
-        setTool("pan");
+      } else if (event.key.toLowerCase() === "o") {
+        setTool("orbit");
       }
     };
-    const onKeyUp = (event: KeyboardEvent) => {
-      if (event.code === "Space") setSpacePan(false);
-    };
-    const onBlur = () => setSpacePan(false);
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("blur", onBlur);
-    };
-  }, [undo, redo, fit, changeView]);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [undo, redo, fit]);
 
   React.useEffect(() => {
     if (!dirty) return;
@@ -335,13 +299,18 @@ function GroundSurface({
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty]);
 
-  const world = hover ? gridToWorld(hover.col + 0.5, hover.row + 0.5, session.meta) : null;
+  const world = hover
+    ? {
+        wx: (hover.x + voxels.keyMin[0] - OCTREE_KEY_ORIGIN + 0.5) * res,
+        wy: (hover.y + voxels.keyMin[1] - OCTREE_KEY_ORIGIN + 0.5) * res,
+      }
+    : null;
   const floorM = hover?.floor != null ? kzToMetres(hover.floor, voxels) : null;
   const bandLoM = kzToMetres(band.lo, voxels);
   const bandHiM = kzToMetres(band.hi, voxels);
   const full = fullBand(voxels);
-  // The band's levels as metres the 3D layer filters cell centres by.
-  const band3d = React.useMemo(
+  // The band's levels as the metres the 3D layer filters cell centres by.
+  const bandM = React.useMemo(
     () => ({ lo: bandLoM - res / 2, hi: bandHiM + res / 2 }),
     [bandLoM, bandHiM, res],
   );
@@ -353,31 +322,19 @@ function GroundSurface({
 
   return (
     <div className="relative h-full w-full">
-      {view === "3d" ? (
-        <Ground3dView
-          voxels={voxels}
-          edits={session.edits}
-          editsVersion={editsVersion}
-          band={band3d}
-          fitNonce={fitNonce}
-          zoomStep={zoomStep}
-        />
-      ) : (
-        <GroundCanvas
-          session={session}
-          tool={tool}
-          radius={radius}
-          ring={ring}
-          clearance={clearance}
-          spacePan={spacePan}
-          fitNonce={fitNonce}
-          zoomStep={zoomStep}
-          rasterNonce={rasterNonce}
-          onStrokeCommit={commit}
-          onHover={setHover}
-          onScaleChange={setScale}
-        />
-      )}
+      <GroundCanvas
+        session={session}
+        tool={tool}
+        radius={radius}
+        ring={ring}
+        clearance={clearance}
+        band={bandM}
+        editsVersion={editsVersion}
+        fitNonce={fitNonce}
+        zoomStep={zoomStep}
+        onStrokeCommit={commit}
+        onHover={setHover}
+      />
 
       <div className="pointer-events-none absolute inset-x-3 top-3 flex max-h-[calc(100%-1.5rem)] flex-col gap-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -398,8 +355,6 @@ function GroundSurface({
             onToolChange={setTool}
             radius={radiusM}
             onRadiusChange={setRadiusM}
-            view={view}
-            onViewChange={changeView}
           />
         </div>
 
@@ -407,43 +362,22 @@ function GroundSurface({
           * the long hint is desktop-only, since a finger has no room for prose. */}
         <div className="pointer-events-none flex min-h-0 w-44 flex-col gap-2 overflow-y-auto sm:w-60">
           <div className={cn(overlayPanel, "pointer-events-auto space-y-1.5 p-2.5")}>
-            {/* The pointer's readouts are the 2D surface's; 3D has no cell under it. */}
-            {view === "2d" && (
-              <>
-                <Readout label="Cell" value={hover ? `${hover.col}, ${hover.row}` : "—"} />
-                <Readout
-                  label="Map"
-                  value={world ? `${world.wx.toFixed(2)}, ${world.wy.toFixed(2)}` : "—"}
-                  unit={world ? "m" : undefined}
-                />
-                <Readout
-                  label="Ground here"
-                  value={
-                    !hover
-                      ? "—"
-                      : floorM === null
-                        ? "No ground nearby"
-                        : floorM.toFixed(2)
-                  }
-                  unit={floorM !== null && hover ? "m" : undefined}
-                  tone={hover && floorM === null ? "caution" : "neutral"}
-                />
-              </>
-            )}
+            <Readout label="Cell" value={hover ? `${hover.x}, ${hover.y}` : "—"} />
+            <Readout
+              label="Map"
+              value={world ? `${world.wx.toFixed(2)}, ${world.wy.toFixed(2)}` : "—"}
+              unit={world ? "m" : undefined}
+            />
+            <Readout
+              label="Ground here"
+              value={!hover ? "—" : floorM === null ? "No ground nearby" : floorM.toFixed(2)}
+              unit={floorM !== null && hover ? "m" : undefined}
+              tone={hover && floorM === null ? "caution" : "neutral"}
+            />
             <Readout
               label="Patched"
               value={`${count} cell${count === 1 ? "" : "s"} · ${(count * res * res).toFixed(2)} m²`}
             />
-            {view === "2d" && (
-              <>
-                {/* data-zoom: what the phone test reads a pinch off. */}
-                <Readout
-                  label="Zoom"
-                  value={<span data-zoom={Math.round(scale * 100)}>{Math.round(scale * 100)}</span>}
-                  unit="%"
-                />
-              </>
-            )}
           </div>
 
           <div className={cn(overlayPanel, "pointer-events-auto space-y-2 p-2.5")}>

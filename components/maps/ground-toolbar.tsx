@@ -1,10 +1,8 @@
 "use client";
 
 import {
-  BoxIcon,
   EraserIcon,
-  MapIcon,
-  HandIcon,
+  Rotate3dIcon,
   MaximizeIcon,
   PaintbrushIcon,
   Redo2Icon,
@@ -25,12 +23,10 @@ import {
 import type { GroundTool } from "@/components/maps/ground-canvas";
 import { BRUSH_RADII_M } from "@/lib/map/ground-fill";
 
-export type GroundView = "2d" | "3d";
-
 /*
  * The ground editor's one strip, built like the floor plan editor's: fit,
- * history, Save, then the tools — Pan, Fill, Erase — and the brush radius.
- * Pan first for the floor plan editor's reason: the strip opens on it.
+ * history, Save, then the tools — Orbit, Fill, Erase — and the brush radius.
+ * Orbit first for the floor plan editor's reason: the strip opens on it.
  */
 
 const RADIUS_ITEMS = BRUSH_RADII_M.map((radius) => ({
@@ -54,8 +50,6 @@ export function GroundToolBar({
   onToolChange,
   radius,
   onRadiusChange,
-  view,
-  onViewChange,
   className,
 }: {
   onFit: () => void;
@@ -75,22 +69,10 @@ export function GroundToolBar({
   /** Brush radius, metres; one of BRUSH_RADII_M. */
   radius: number;
   onRadiusChange: (radius: number) => void;
-  /** From above, to paint on, or in 3D, to look around. */
-  view: GroundView;
-  onViewChange: (view: GroundView) => void;
   className?: string;
 }) {
-  // The brush paints on the view from above; in 3D the tools wait for it.
-  const paintLock = view === "3d" ? "switch to 2D to paint" : null;
   return (
     <ToolStrip label="Ground" compact className={className}>
-      <ToolGroup label="View">
-        <ToolButton label="2D" hint="from above — where the brush paints" icon={MapIcon} pressed={view === "2d"} onClick={() => onViewChange("2d")} />
-        <ToolButton label="3D" hint="look around: drag orbits, right-drag pans" icon={BoxIcon} pressed={view === "3d"} onClick={() => onViewChange("3d")} />
-      </ToolGroup>
-
-      <ToolDivider />
-
       <ToolButton label="Fit to view" hint="the whole map, centred" icon={MaximizeIcon} onClick={onFit} />
       <ToolGroup label="Zoom">
         <ToolButton label="Zoom in" hint="closer" icon={ZoomInIcon} onClick={onZoomIn} />
@@ -134,30 +116,31 @@ export function GroundToolBar({
       <ToolDivider />
 
       <ToolGroup label="Tool">
-        <ToolButton label="Pan" hint={paintLock ?? "drag the map"} icon={HandIcon} pressed={view === "2d" && tool === "pan"} disabled={paintLock !== null} onClick={() => onToolChange("pan")} />
+        <ToolButton
+          label="Orbit"
+          hint="drag turns the map, right-drag pans, the wheel zooms"
+          icon={Rotate3dIcon}
+          pressed={tool === "orbit"}
+          onClick={() => onToolChange("orbit")}
+        />
         <ToolButton
           label="Fill"
-          hint={
-            paintLock ??
-            "paint floor into the holes under the brush, at the height of the floor around them; hold Shift to erase"
-          }
+          hint="paint floor into the holes under the brush, at the height of the floor around them; hold Shift to erase, right-drag to turn"
           icon={PaintbrushIcon}
-          pressed={view === "2d" && tool === "fill"}
-          disabled={paintLock !== null}
+          pressed={tool === "fill"}
           onClick={() => onToolChange("fill")}
         />
         <ToolButton
           label="Erase"
-          hint={paintLock ?? "take your patches back out from under the brush"}
+          hint="take your patches back out from under the brush"
           icon={EraserIcon}
           tone="caution"
-          pressed={view === "2d" && tool === "erase"}
-          disabled={paintLock !== null}
+          pressed={tool === "erase"}
           onClick={() => onToolChange("erase")}
         />
       </ToolGroup>
 
-      {view === "2d" && tool !== "pan" && (
+      {tool !== "orbit" && (
         <>
           <ToolDivider />
           <Select value={`${radius}`} onValueChange={(value) => onRadiusChange(Number(value))}>

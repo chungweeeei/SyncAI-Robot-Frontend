@@ -37,16 +37,14 @@ const byKey = (keys: number[][]) =>
   [...keys].sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
 
 /**
- * Where a raster cell's centre lands on screen: the editor fits the 4×4
- * raster to its container, letterboxed and centred (lib/map/view.ts
- * fitView). Row 0 is the top, the highest ky.
+ * Where the hole is on screen: the middle of the canvas. The editor opens
+ * looking at the middle of the map on the floor the brush aims at
+ * (frameGround), so the ray through the canvas's centre meets that floor at
+ * the map's centre, which on the fake is the middle of its hole.
  */
-async function cellCentre(page: Page, col: number, row: number) {
+async function holeOnScreen(page: Page) {
   const box = (await page.getByTestId("ground-canvas").boundingBox())!;
-  const scale = Math.min(box.width / 4, box.height / 4);
-  const ox = (box.width - 4 * scale) / 2;
-  const oy = (box.height - 4 * scale) / 2;
-  return { x: box.x + ox + (col + 0.5) * scale, y: box.y + oy + (row + 0.5) * scale };
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
 async function armFill(page: Page, radius = "0.1 m") {
@@ -86,8 +84,8 @@ test.describe("the ground editor", () => {
     await expect(page.getByTestId("ground-canvas")).toBeVisible();
     await expect(patched(page)).toHaveText(/^0 cells/);
 
-    // Pan is the opening tool: a press drags, it never paints.
-    const hole = await cellCentre(page, 1, 1);
+    // Orbit is the opening tool: a press turns the map, it never paints.
+    const hole = await holeOnScreen(page);
     await page.mouse.click(hole.x, hole.y);
     await expect(patched(page)).toHaveText(/^0 cells/);
 
@@ -128,7 +126,7 @@ test.describe("the ground editor", () => {
     await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
 
     await page.getByRole("button", { name: "Erase" }).click();
-    const hole = await cellCentre(page, 1, 1);
+    const hole = await holeOnScreen(page);
     await page.mouse.click(hole.x, hole.y);
     await expect(patched(page)).toHaveText(/^0 cells/);
     await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
@@ -167,7 +165,7 @@ test.describe("the ground editor", () => {
     await expect(page.getByRole("status").filter({ hasText: "Read-only." })).toBeVisible();
 
     await armFill(page);
-    const hole = await cellCentre(page, 1, 1);
+    const hole = await holeOnScreen(page);
     await page.mouse.click(hole.x, hole.y);
     await expect(patched(page)).toHaveText(/^4 cells/);
     const save = page.getByRole("button", { name: "Save" });
@@ -206,7 +204,7 @@ test.describe("the ground editor", () => {
     );
     await page.goto(`/maps/${MAP_NAME}/ground`);
     await armFill(page);
-    const hole = await cellCentre(page, 1, 1);
+    const hole = await holeOnScreen(page);
     await page.mouse.click(hole.x, hole.y);
     await page.getByRole("button", { name: "Save" }).click();
     const alert = page.getByRole("alert").filter({ hasText: "running a job" });
@@ -230,51 +228,37 @@ test.describe("the ground editor", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("looks around in 3D, keeps the brush in 2D, and loses nothing on the way", async ({
+  test("turns the map with the right button mid-edit, and paints only with the left", async ({
     page,
   }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    const writes = await mockBackend(page, { maps: [mapSummary(withOctomap())] });
+    await mockBackend(page, { maps: [mapSummary(withOctomap())] });
     await page.goto(`/maps/${MAP_NAME}/ground`);
+    const canvas = page.getByTestId("ground-canvas");
+    await expect(canvas).toHaveAttribute("data-distance", /\d+/);
+    const opening = await canvas.getAttribute("data-distance");
     await armFill(page);
-    const hole = await cellCentre(page, 1, 1);
+
+    // A right-drag across the hole orbits; it paints nothing.
+    const hole = await holeOnScreen(page);
+    await page.mouse.move(hole.x, hole.y);
+    await page.mouse.down({ button: "right" });
+    await page.mouse.move(hole.x + 120, hole.y - 60, { steps: 8 });
+    await page.mouse.up({ button: "right" });
+    await expect(patched(page)).toHaveText(/^0 cells/);
+
+    // Fit puts the camera back where it opened, and the hole under the middle.
+    await page.getByRole("button", { name: "Fit to view" }).click();
+    await expect(canvas).toHaveAttribute("data-distance", opening!);
     await page.mouse.click(hole.x, hole.y);
     await expect(patched(page)).toHaveText(/^4 cells/);
-
-    await page.getByRole("button", { name: "3D", exact: true }).click();
-    const view = page.getByTestId("ground-3d-view");
-    await expect(view).toBeVisible();
-    await expect(page.getByTestId("ground-canvas")).toHaveCount(0);
-    // The brush paints from above only.
-    for (const name of ["Pan", "Fill", "Erase"]) {
-      await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
-    }
-    // A drag orbits and paints nothing; the patches and the history survive.
-    const box = (await view.boundingBox())!;
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2 - 40, { steps: 8 });
-    await page.mouse.up();
-    await expect(patched(page)).toHaveText(/^4 cells/);
-    await page.getByRole("button", { name: "Undo" }).click();
-    await expect(patched(page)).toHaveText(/^0 cells/);
-    await page.getByRole("button", { name: "Redo" }).click();
-    await expect(patched(page)).toHaveText(/^4 cells/);
-
-    // A tool key is a request to paint: it goes back to 2D with the tool.
-    await page.keyboard.press("e");
-    await expect(page.getByTestId("ground-canvas")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Erase", exact: true })).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    // The wheel zooms, with the brush still armed.
+    await page.mouse.wheel(0, -400);
+    await expect.poll(async () => Number(await canvas.getAttribute("data-distance"))).toBeLessThan(
+      Number(opening),
     );
-    await page.getByRole("button", { name: "Save" }).click();
-    await expect
-      .poll(() => writes.filter((write) => write.method === "PUT" && write.path === editsPath))
-      .toHaveLength(1);
-    const put = writes.find((write) => write.method === "PUT" && write.path === editsPath);
-    expect(byKey((put!.body as { fill_key: number[][] }).fill_key)).toEqual(byKey(HOLE));
+    await expect(patched(page)).toHaveText(/^4 cells/);
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -284,7 +268,7 @@ test.describe("the ground editor", () => {
     await mockBackend(page, { maps: [mapSummary(withOctomap())] });
     await page.goto(`/maps/${MAP_NAME}/ground`);
     await armFill(page);
-    const hole = await cellCentre(page, 1, 1);
+    const hole = await holeOnScreen(page);
     await page.mouse.click(hole.x, hole.y);
     await expect(patched(page)).toHaveText(/^4 cells/);
 
