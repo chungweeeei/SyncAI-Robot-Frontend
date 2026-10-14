@@ -155,12 +155,15 @@ components/
                 cancel pair, then one always-present bar: job id, step and
                 state) and its disclosures: the sensor alerts (where an
                 overheating motor interrupts, on every screen), the drive
-                panel and camera window every screen can open
+                panel and camera window every screen can open, and the
+                floor picker both 3D map surfaces share (floor-picker.tsx)
   dashboard/    3D viewport (pointcloud-canvas) with the pose laid over its
                 corner — its layers are the saved scan, the robot's 3D map
                 (the occupancy tree, off by default like the scan, drawn
-                whether or not the map has a floor plan), waypoints, zones
-                and the path — the instrument rail (the registered schedules
+                whether or not the map has a floor plan, one floor at a time
+                on a map that spans storeys), waypoints, zones and the path,
+                with Top down and Front view (level, from the south, where
+                storeys stack) — the instrument rail (the registered schedules
                 first — a glance with pause and delete, the list itself stays
                 on /tasks — then locomotion and motors) and the
                 driving controls
@@ -180,7 +183,8 @@ components/
                 from above, one cell a column coloured by floor height, and a
                 brush that patches the holes the lidar never saw; its rules
                 are lib/map/ground-fill.ts, its save a record the robot's own
-                tool applies)
+                tool applies), and its folded floor list (floor-list-editor:
+                rename, add or drop the floors the robot's walk found)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
                 and the /tasks/editor page (step composer, name, save, delete)
@@ -223,12 +227,17 @@ lib/
                 band, the median a patch is set at and the samples it needs,
                 the hole test — nothing occupied through the clearance band —
                 the dabs and their undo patches, and the record's absolute
-                keys) and its raster (ground-draw.ts)
+                keys) and its raster (ground-draw.ts), and the floors of a
+                map that spans storeys (floors.ts: the band each floor owns —
+                from a metre under its level to a metre under the next, so
+                a slab's top is in the floor above — and the rules a saved
+                list keeps, mirrored from the backend)
   scene/        three.js scene building for the 3D viewport: theme, markers,
                 vertex layer, zone layer, path ribbon, the running dock's
                 staging point and leg (dock-layer.ts), the 3D map's voxel
                 layer (one cell-sized point per occupied cell, coloured by
-                height; it thins the floor plan while up and lends its box to
+                height, held in height order so a floor is one draw range;
+                it thins the floor plan while up and lends its box to
                 Recenter when there is no floor plan), camera policy, picking,
                 robot mesh
   theme/        the signal hues both canvases draw with, and the height ramp
@@ -465,7 +474,9 @@ touch one, prefer moving it toward the rule.
   change the scan the dashboard's "Map scan" layer draws (`mapPointCloud`),
   which a grid save or convert leaves alone, and the same writes drop the
   decoded 3D map (`mapOctomap`, by its name-only prefix) and its ground
-  patches (`mapOctomapEdits`); a ground patch save writes its own list back
+  patches (`mapOctomapEdits`) and its floors (`mapFloors`, detected from
+  the walk a mapping save replaces); a floor save writes its answer into
+  `mapFloors`, which the dashboard and the ground editor share; a ground patch save writes its own list back
   as the next read and leaves `mapOctomap` alone, since the tree only
   changes on the robot, by its tool, which the catalogue's version reports; a map rename, delete or
   activate also changes the forbidden zones' read (`mapKeepout`, whose
@@ -617,7 +628,8 @@ it is run in, so it does not belong to any one of them.
   "the cloud"), **3D map** (not octomap / octree / voxels — the occupancy
   tree the robot builds beside the scan), **ground patch** for a floor cell
   an operator paints into it (**Fill ground** is the way in; never "edit",
-  which the floor plan owns), **waypoint** (not vertex / stop), **forbidden zone** (not
+  which the floor plan owns), **floor** for one storey of a 3D map
+  (`1F`, `2F`; never "level" or "layer", which the toolbar already uses), **waypoint** (not vertex / stop), **forbidden zone** (not
   polygon / no-go area), **channel** (not topic),
   **recording** (not bag), **clip** for a video saved out of the camera window,
   **Mapping / Navigation** for the robot's MANUAL / AUTO modes, **job** for
