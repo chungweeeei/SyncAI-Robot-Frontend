@@ -4,7 +4,6 @@ import * as React from "react";
 
 import { FloorPicker } from "@/components/console/floor-picker";
 import { Readout, overlayPanel } from "@/components/console/instrument";
-import { FloorListEditor } from "@/components/maps/floor-list-editor";
 import { GroundCanvas, type GroundHover, type GroundTool } from "@/components/maps/ground-canvas";
 import { GroundToolBar } from "@/components/maps/ground-toolbar";
 import { useMapFloors } from "@/hooks/use-map-floors";
@@ -425,13 +424,7 @@ function GroundSurface({
                 }
               />
             </label>
-            <p className="text-[11px] leading-snug text-muted-foreground">
-              On a map with more than one storey, pick the floor you are patching: the brush
-              reads the lowest cell shown in each column as its floor.
-            </p>
           </div>
-
-          <FloorListEditor name={name} />
 
           {skipped > 0 && (
             <p
@@ -480,20 +473,6 @@ function GroundSurface({
               Not saved. {note.message}
             </p>
           )}
-
-          <p
-            className={cn(
-              overlayPanel,
-              "pointer-events-auto hidden px-2 py-1.5 text-[11px] leading-snug text-muted-foreground sm:block",
-            )}
-          >
-            Fill paints floor into the holes under the brush, at the height of the floor within
-            1 m of it; a column with anything in the 0.6 m above that height is left alone.
-            <span className="mt-1 block text-signal-caution">
-              Patch only where you know there is floor the robot never saw. A stairwell, a
-              floor opening or a platform edge patched over will be walked into.
-            </span>
-          </p>
         </div>
       </div>
     </div>

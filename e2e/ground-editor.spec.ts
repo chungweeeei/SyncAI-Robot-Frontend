@@ -333,50 +333,5 @@ test.describe("the ground editor", () => {
       }
       expect(errors, "the page logged errors").toEqual([]);
     });
-
-    test("saves floors named by hand, and goes back to the detected ones", async ({
-      page,
-    }) => {
-      const errors: string[] = [];
-      failOnConsoleErrors(page, errors);
-      const writes = await mockBackend(page, {
-        maps: [mapSummary(withOctomap())],
-        octomap: twoStoreys(),
-        floors: { [MAP_NAME]: { detected: TWO_FLOORS } },
-      });
-      const floorsPath = `/api/v1/maps/${MAP_NAME}/floors`;
-      await page.goto(`/maps/${MAP_NAME}/ground`);
-      await page.getByText(/^Floors · /).click();
-
-      const save = page.getByRole("button", { name: "Save floors" });
-      await expect(save).toBeDisabled();
-      await page.getByRole("textbox", { name: "Floor name" }).nth(1).fill("Roof");
-      await page.getByRole("button", { name: "Add floor" }).click();
-      // A storey above the top one, under the next free name.
-      await expect(page.getByRole("textbox", { name: "Height of 3F" })).toHaveValue("8.5");
-      await page.getByRole("textbox", { name: "Height of 3F" }).fill("5.9");
-      // Refused here, in the backend's words, before it is sent.
-      await expect(save).toBeDisabled();
-      await expect(page.getByText("Floors 'Roof' and '3F' are less than 1 m apart.")).toBeVisible();
-      await page.getByRole("button", { name: "Remove 3F" }).click();
-      await save.click();
-      await expect(page.getByRole("status").filter({ hasText: "Saved 2 floors" })).toBeVisible();
-
-      const puts = writes.filter((write) => write.method === "PUT" && write.path === floorsPath);
-      expect(puts.map((write) => write.body)).toEqual([
-        { floors: [{ name: "1F", level: -0.2 }, { name: "Roof", level: 5.5 }] },
-      ]);
-      // The picker took the new name at once, from the save's answer.
-      await expect(
-        page.getByRole("group", { name: "Floor" }).getByRole("button", { name: "Roof" }),
-      ).toBeVisible();
-
-      await page.getByRole("button", { name: "Use detected" }).click();
-      await save.click();
-      await expect
-        .poll(() => writes.filter((write) => write.method === "PUT" && write.path === floorsPath))
-        .toHaveLength(2);
-      expect(errors, "the page logged errors").toEqual([]);
-    });
   });
 });
