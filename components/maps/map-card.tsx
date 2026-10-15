@@ -107,7 +107,7 @@ function OctomapStatusChip({ map }: { map: MapSummary }) {
  * chip, beside the control that acts. Always shown, because a failed
  * conversion's reason is otherwise only in the robot's log.
  *
- * Silent for `ok` and `converting`, where the chip says it all. No branch may
+ * Silent for `ok`, `converting` and `none`, where the chip says it all. No branch may
  * name Build grid unless it is on the card: GridRebuildControl renders only
  * for a map with a scan.
  */
@@ -148,14 +148,9 @@ function GridStatusNote({ map }: { map: MapSummary }) {
     );
   }
 
-  // "none" is last because it doubles as the fallback: an unknown status means
-  // a newer backend, and "build one" is the safe thing to say.
-  return (
-    <p className="mt-2 text-[11px] leading-tight text-muted-foreground">
-      This map was saved but its floor plan was never built, so the robot cannot
-      navigate with it yet. Build the floor plan to start using it.
-    </p>
-  );
+  // "none" (and an unknown status from a newer backend) says nothing, by
+  // request: the chip and the Build control beside it already carry it.
+  return null;
 }
 
 /**
