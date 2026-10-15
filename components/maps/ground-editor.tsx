@@ -3,8 +3,8 @@
 import * as React from "react";
 
 import { FloorPicker } from "@/components/console/floor-picker";
-import { Readout, overlayPanel } from "@/components/console/instrument";
-import { GroundCanvas, type GroundHover, type GroundTool } from "@/components/maps/ground-canvas";
+import { overlayPanel } from "@/components/console/instrument";
+import { GroundCanvas, type GroundTool } from "@/components/maps/ground-canvas";
 import { GroundToolBar } from "@/components/maps/ground-toolbar";
 import { useMapFloors } from "@/hooks/use-map-floors";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
@@ -36,7 +36,7 @@ import {
 import { createUndoStack, popRedo, popUndo, pushPatch } from "@/lib/map/patch";
 import { isTypingTarget } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
-import { OCTREE_KEY_ORIGIN, type OccupiedVoxels } from "@/lib/types/octree";
+import type { OccupiedVoxels } from "@/lib/types/octree";
 
 /**
  * The ground editor: the 3D map from above, and a brush that paints floor
@@ -150,7 +150,6 @@ function GroundSurface({
   const [band, setBand] = React.useState(() => fullBand(voxels));
   const [fitNonce, setFitNonce] = React.useState(0);
   const [zoomStep, setZoomStep] = React.useState<{ factor: number } | null>(null);
-  const [hover, setHover] = React.useState<GroundHover | null>(null);
   const [canUndo, setCanUndo] = React.useState(false);
   const [canRedo, setCanRedo] = React.useState(false);
   const [count, setCount] = React.useState(session.edits.size);
@@ -298,13 +297,6 @@ function GroundSurface({
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty]);
 
-  const world = hover
-    ? {
-        wx: (hover.x + voxels.keyMin[0] - OCTREE_KEY_ORIGIN + 0.5) * res,
-        wy: (hover.y + voxels.keyMin[1] - OCTREE_KEY_ORIGIN + 0.5) * res,
-      }
-    : null;
-  const floorM = hover?.floor != null ? kzToMetres(hover.floor, voxels) : null;
   const bandLoM = kzToMetres(band.lo, voxels);
   const bandHiM = kzToMetres(band.hi, voxels);
   const full = fullBand(voxels);
@@ -320,7 +312,10 @@ function GroundSurface({
   const maxM = kzToMetres(full.hi, voxels);
 
   return (
-    <div className="relative h-full w-full">
+    // For the e2e suite only, as an attribute so it can't become an on-screen
+    // diagnostic: data-patched (columns patched) proves a stroke filled or
+    // erased, now that the Patched readout is off the screen by request.
+    <div className="relative h-full w-full" data-patched={count}>
       <GroundCanvas
         session={session}
         tool={tool}
@@ -332,7 +327,6 @@ function GroundSurface({
         fitNonce={fitNonce}
         zoomStep={zoomStep}
         onStrokeCommit={commit}
-        onHover={setHover}
       />
 
       <div className="pointer-events-none absolute inset-x-3 top-3 flex max-h-[calc(100%-1.5rem)] flex-col gap-2">
@@ -360,25 +354,6 @@ function GroundSurface({
         {/* Narrower on a phone so the map's middle stays reachable beside it;
           * the long hint is desktop-only, since a finger has no room for prose. */}
         <div className="pointer-events-none flex min-h-0 w-44 flex-col gap-2 overflow-y-auto sm:w-60">
-          <div className={cn(overlayPanel, "pointer-events-auto space-y-1.5 p-2.5")}>
-            <Readout label="Cell" value={hover ? `${hover.x}, ${hover.y}` : "—"} />
-            <Readout
-              label="Map"
-              value={world ? `${world.wx.toFixed(2)}, ${world.wy.toFixed(2)}` : "—"}
-              unit={world ? "m" : undefined}
-            />
-            <Readout
-              label="Ground here"
-              value={!hover ? "—" : floorM === null ? "No ground nearby" : floorM.toFixed(2)}
-              unit={floorM !== null && hover ? "m" : undefined}
-              tone={hover && floorM === null ? "caution" : "neutral"}
-            />
-            <Readout
-              label="Patched"
-              value={`${count} cell${count === 1 ? "" : "s"} · ${(count * res * res).toFixed(2)} m²`}
-            />
-          </div>
-
           <div className={cn(overlayPanel, "pointer-events-auto space-y-2 p-2.5")}>
             <p className="instrument-label text-muted-foreground">Heights shown</p>
             {floorOptions.length > 1 && (

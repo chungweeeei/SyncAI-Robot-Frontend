@@ -479,7 +479,7 @@ test.describe("the console on a phone", () => {
     const pxPerM = box.height / 2 / ((opening / 100) * Math.tan(Math.PI / 6));
     await touch("touchStart", [finger(cx + 0.5 * pxPerM, cy, 1)]);
     await touch("touchEnd", []);
-    await expect(page.getByText(/^4 cells · /)).toBeVisible();
+    await expect(page.locator("[data-patched]")).toHaveAttribute("data-patched", "4");
     await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
   });
 

@@ -11,7 +11,6 @@ import {
   eraseDab,
   fillDab,
   kzToMetres,
-  localFloor,
   medianFloor,
   type GroundPatch,
   type GroundSession,
@@ -25,15 +24,6 @@ import { SIGNAL } from "@/lib/theme/signal";
 import { cn } from "@/lib/utils";
 
 export type GroundTool = "orbit" | "fill" | "erase";
-
-/** The column under the pointer and the floor a fill there would get. */
-export interface GroundHover {
-  /** The column, in the tree's key order: `x` right, `y` up. */
-  x: number;
-  y: number;
-  /** Relative kz the brush would fill at, or null with no floor nearby to read. */
-  floor: number | null;
-}
 
 interface Column {
   x: number;
@@ -60,7 +50,6 @@ export interface GroundCanvasProps {
   fitNonce: number;
   zoomStep: { factor: number } | null;
   onStrokeCommit: (patch: GroundPatch) => void;
-  onHover: (hover: GroundHover | null) => void;
   className?: string;
 }
 
@@ -308,10 +297,10 @@ export function GroundCanvas(props: GroundCanvasProps) {
     }
   };
 
-  /** Move the brush ring and report the column under the pointer. */
+  /** Move the brush ring onto the column under the pointer. */
   const hover = (hit: THREE.Vector3 | null, erase: boolean) => {
     const ctx = sceneRef.current;
-    const { tool, radius, ring, onHover } = propsRef.current;
+    const { tool, radius } = propsRef.current;
     const column = columnOfHit(hit);
     if (ctx) {
       ctx.brush.visible = tool !== "orbit" && column !== null;
@@ -322,14 +311,6 @@ export function GroundCanvas(props: GroundCanvasProps) {
         ctx.brush.material.color.set(erase ? SIGNAL[theme].warn : SIGNAL[theme].cmd);
       }
     }
-    onHover(
-      column
-        ? {
-            ...column,
-            floor: localFloor(session.floors, session.edits, column.x, column.y, radius + ring),
-          }
-        : null,
-    );
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -383,7 +364,6 @@ export function GroundCanvas(props: GroundCanvasProps) {
     if (gestureRef.current) return;
     const ctx = sceneRef.current;
     if (ctx) ctx.brush.visible = false;
-    propsRef.current.onHover(null);
   };
 
   return (

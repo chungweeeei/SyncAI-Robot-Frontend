@@ -53,7 +53,7 @@ async function armFill(page: Page, radius = "0.1 m") {
   await page.getByRole("option", { name: radius, exact: true }).click();
 }
 
-const patched = (page: Page) => page.getByText(/^\d+ cells? · /);
+const patched = (page: Page) => page.locator("[data-patched]");
 
 test.describe("the ground editor", () => {
   test("is reached from the card only for a map with a 3D map", async ({ page }) => {
@@ -82,21 +82,20 @@ test.describe("the ground editor", () => {
     const writes = await mockBackend(page, { maps: [mapSummary(withOctomap())] });
     await page.goto(`/maps/${MAP_NAME}/ground`);
     await expect(page.getByTestId("ground-canvas")).toBeVisible();
-    await expect(patched(page)).toHaveText(/^0 cells/);
+    await expect(patched(page)).toHaveAttribute("data-patched", "0");
 
     // Orbit is the opening tool: a press turns the map, it never paints.
     const hole = await holeOnScreen(page);
     await page.mouse.click(hole.x, hole.y);
-    await expect(patched(page)).toHaveText(/^0 cells/);
+    await expect(patched(page)).toHaveAttribute("data-patched", "0");
 
     await armFill(page);
     // A one-cell brush is a 3×3 block: it covers the hole and the floor round
     // it, and only the hole is filled.
     await page.mouse.click(hole.x, hole.y);
-    await expect(patched(page)).toHaveText(/^4 cells · 0\.04 m²/);
-    // The floor round the hole is 0.45 m below the origin: what the fill reads.
-    await page.mouse.move(hole.x, hole.y);
-    await expect(page.getByText("-0.45")).toBeVisible();
+    await expect(patched(page)).toHaveAttribute("data-patched", "4");
+    // The floor round the hole is 0.45 m below the origin: what the fill reads,
+    // proved by the saved keys' height below (HOLE's kz).
 
     const save = page.getByRole("button", { name: "Save" });
     await expect(save).toBeEnabled();
@@ -122,20 +121,20 @@ test.describe("the ground editor", () => {
     await page.goto(`/maps/${MAP_NAME}/ground`);
     await expect(page.getByTestId("ground-canvas")).toBeVisible();
     // The saved record is what it opens on, and is not unsaved.
-    await expect(patched(page)).toHaveText(/^4 cells/);
+    await expect(patched(page)).toHaveAttribute("data-patched", "4");
     await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
 
     await page.getByRole("button", { name: "Erase" }).click();
     const hole = await holeOnScreen(page);
     await page.mouse.click(hole.x, hole.y);
-    await expect(patched(page)).toHaveText(/^0 cells/);
+    await expect(patched(page)).toHaveAttribute("data-patched", "0");
     await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
 
     await page.getByRole("button", { name: "Undo" }).click();
-    await expect(patched(page)).toHaveText(/^4 cells/);
+    await expect(patched(page)).toHaveAttribute("data-patched", "4");
     await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
     await page.getByRole("button", { name: "Redo" }).click();
-    await expect(patched(page)).toHaveText(/^0 cells/);
+    await expect(patched(page)).toHaveAttribute("data-patched", "0");
 
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Cleared" })).toBeVisible();
@@ -167,7 +166,7 @@ test.describe("the ground editor", () => {
     await armFill(page);
     const hole = await holeOnScreen(page);
     await page.mouse.click(hole.x, hole.y);
-    await expect(patched(page)).toHaveText(/^4 cells/);
+    await expect(patched(page)).toHaveAttribute("data-patched", "4");
     const save = page.getByRole("button", { name: "Save" });
     await expect(save).toBeDisabled();
 
@@ -221,7 +220,7 @@ test.describe("the ground editor", () => {
       octomapEdits: { [MAP_NAME]: [[O + 1, O + 1, O - 5], [O + 400, O + 400, O - 5]] },
     });
     await page.goto(`/maps/${MAP_NAME}/ground`);
-    await expect(patched(page)).toHaveText(/^1 cell /);
+    await expect(patched(page)).toHaveAttribute("data-patched", "1");
     await expect(
       page.getByRole("status").filter({ hasText: "1 saved patch lies outside" }),
     ).toBeVisible();
@@ -246,19 +245,19 @@ test.describe("the ground editor", () => {
     await page.mouse.down({ button: "right" });
     await page.mouse.move(hole.x + 120, hole.y - 60, { steps: 8 });
     await page.mouse.up({ button: "right" });
-    await expect(patched(page)).toHaveText(/^0 cells/);
+    await expect(patched(page)).toHaveAttribute("data-patched", "0");
 
     // Fit puts the camera back where it opened, and the hole under the middle.
     await page.getByRole("button", { name: "Fit to view" }).click();
     await expect(canvas).toHaveAttribute("data-distance", opening!);
     await page.mouse.click(hole.x, hole.y);
-    await expect(patched(page)).toHaveText(/^4 cells/);
+    await expect(patched(page)).toHaveAttribute("data-patched", "4");
     // The wheel zooms, with the brush still armed.
     await page.mouse.wheel(0, -400);
     await expect.poll(async () => Number(await canvas.getAttribute("data-distance"))).toBeLessThan(
       Number(opening),
     );
-    await expect(patched(page)).toHaveText(/^4 cells/);
+    await expect(patched(page)).toHaveAttribute("data-patched", "4");
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -270,7 +269,7 @@ test.describe("the ground editor", () => {
     await armFill(page);
     const hole = await holeOnScreen(page);
     await page.mouse.click(hole.x, hole.y);
-    await expect(patched(page)).toHaveText(/^4 cells/);
+    await expect(patched(page)).toHaveAttribute("data-patched", "4");
 
     page.once("dialog", (dialog) => dialog.dismiss());
     await page.getByRole("button", { name: "Back to maps" }).click();
