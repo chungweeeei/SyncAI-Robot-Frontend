@@ -46,6 +46,8 @@ export interface StepListProps {
   mapGrid: MapMetadata | null;
   /** Vertex id → the job's step numbers that go there; see stepWaypointOrdinals. */
   stepMarks: ReadonlyMap<string, readonly number[]>;
+  /** The waypoints a dock row is picked on; see stepDockVertices. */
+  dockMarks: ReadonlySet<string>;
   /** True while a dispatched task is running — see the note below. */
   disabled: boolean;
   /** Per-step state of the tracked task, keyed by the derived step id. */
@@ -74,6 +76,7 @@ export function StepList({
   mapName,
   mapGrid,
   stepMarks,
+  dockMarks,
   disabled,
   stepStates,
   onAdd,
@@ -236,6 +239,7 @@ export function StepList({
                     mapName={mapName}
                     mapGrid={mapGrid}
                     stepMarks={stepMarks}
+                    dockMarks={dockMarks}
                     disabled={disabled}
                     groupPlace={groupPlaces[index] ?? null}
                     groupWarn={warnSpans.has(span)}

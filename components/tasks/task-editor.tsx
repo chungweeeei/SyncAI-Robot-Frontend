@@ -31,6 +31,7 @@ import type { TaskStepState } from "@/lib/api/task";
 import { draftIsUnsaved, type TaskDraft } from "@/lib/task/draft-store";
 import {
   isNavStep,
+  stepDockVertices,
   stepDraftsSubmittable,
   stepIdFor,
   stepWaypointOrdinals,
@@ -112,6 +113,7 @@ export function TaskEditor() {
 
   /** The whole route, so each row's floor plan reads the same. */
   const stepMarks = React.useMemo(() => stepWaypointOrdinals(drafts.steps), [drafts.steps]);
+  const dockMarks = React.useMemo(() => stepDockVertices(drafts.steps), [drafts.steps]);
 
   /**
    * Set when Save is pressed without a usable name, so Save points at the
@@ -444,6 +446,7 @@ export function TaskEditor() {
             mapName={mapName}
             mapGrid={mapGrid}
             stepMarks={stepMarks}
+            dockMarks={dockMarks}
             disabled={false}
             stepStates={NO_STEP_STATES}
             onAdd={drafts.add}

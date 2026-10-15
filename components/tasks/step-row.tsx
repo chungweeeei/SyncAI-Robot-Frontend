@@ -64,6 +64,7 @@ export interface StepRowProps {
   mapGrid: MapMetadata | null;
   /** Vertex id → the job's step numbers that go there, lit on the floor plan. */
   stepMarks: ReadonlyMap<string, readonly number[]>;
+  dockMarks: ReadonlySet<string>;
   disabled: boolean;
   /** Where the row sits in the group it starts together with; see stepGroupPlaces. */
   groupPlace: GroupPlace;
@@ -100,6 +101,7 @@ export function StepRow({
   mapName,
   mapGrid,
   stepMarks,
+  dockMarks,
   disabled,
   groupPlace,
   groupWarn,
@@ -423,6 +425,7 @@ export function StepRow({
                         meta={mapGrid}
                         vertices={vertices}
                         steps={stepMarks}
+                        docks={dockMarks}
                       />
                     </div>
                   )}
