@@ -1352,6 +1352,11 @@ test.describe("the task console", () => {
     await expect
       .poll(() => writes)
       .toEqual([{ method: "PUT", path: `/api/v1/task_templates/${loaded}` }]);
+    // The page does not move on an update, so a card says it landed.
+    const notice = page.getByRole("status").filter({ hasText: "Saved Morning round" });
+    await expect(notice).toBeVisible();
+    await notice.getByRole("button", { name: "Dismiss" }).click();
+    await expect(notice).toBeHidden();
 
     // A fresh job: created once, then updated. The loaded one is still in
     // the draft, so Create task asks first.

@@ -8,6 +8,7 @@ import { ArrowLeftIcon, MapPinPlusIcon, SaveIcon, Trash2Icon } from "lucide-reac
 import { Chip, InstrumentGroup } from "@/components/console/instrument";
 import { ActiveRunBanner } from "@/components/tasks/active-run-banner";
 import { MapPicker } from "@/components/tasks/map-picker";
+import { SavedNotice, type SavedNoticeValue } from "@/components/tasks/saved-notice";
 import { StepList } from "@/components/tasks/step-list";
 import { TaskTitle } from "@/components/tasks/task-title";
 import {
@@ -184,6 +185,9 @@ export function TaskEditor() {
     refusedKey !== undefined && library.error ? { key: refusedKey, message: library.error } : null;
 
   const canSave = stepsOk && saveReason === null && !library.busy;
+  /** Only an update answers with a card: a create's answer is its row on /tasks. */
+  const [savedNotice, setSavedNotice] = React.useState<SavedNoticeValue | null>(null);
+  const dismissSaved = React.useCallback(() => setSavedNotice(null), []);
   /**
    * An update when a template is loaded, a create otherwise. A create empties
    * the draft (it now duplicates a saved row) and leaves for /tasks, where the
@@ -191,6 +195,7 @@ export function TaskEditor() {
    */
   const save = () => {
     if (!canSave) return;
+    setSavedNotice(null);
     if (!taskTemplateNameOk(draftName)) {
       setNameMissing(true);
       nameRef.current?.focus();
@@ -215,6 +220,7 @@ export function TaskEditor() {
           editing: { id: saved.id, name: saved.name },
           name: saved.name,
         }));
+        setSavedNotice({ name: saved.name, at: Date.now() });
       },
     );
   };
@@ -352,6 +358,8 @@ export function TaskEditor() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <SavedNotice notice={savedNotice} onDismiss={dismissSaved} />
 
       {/* A run this tab is not following, whichever page started it. */}
       <ActiveRunBanner trackedTaskId={null} />
