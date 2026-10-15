@@ -20,6 +20,12 @@ const GROUND_HIT = new THREE.Vector3();
 /**
  * Aim a raycaster through a pointer position, given the canvas rect it was
  * measured against. The caller owns the raycaster so a pointermove reuses one.
+ *
+ * The camera's world matrix is brought up to date first: the ray is cast
+ * from it, and only a render refreshes it. A framing (Fit, Top down, Front
+ * view) moves the camera between frames, so a press that lands before the
+ * next one was aimed from where the camera had been — on the ground editor,
+ * a brush armed over a hole painted somewhere else, or nowhere.
  */
 export function aimRaycaster(
   raycaster: THREE.Raycaster,
@@ -28,6 +34,7 @@ export function aimRaycaster(
   clientX: number,
   clientY: number,
 ) {
+  camera.updateMatrixWorld();
   raycaster.setFromCamera(
     POINTER_NDC.set(
       ((clientX - rect.left) / rect.width) * 2 - 1,
