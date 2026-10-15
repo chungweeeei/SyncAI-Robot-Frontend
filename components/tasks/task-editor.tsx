@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeftIcon, MapPinPlusIcon, SaveIcon, Trash2Icon } from "lucide-react";
+import { ArrowLeftIcon, CheckIcon, MapPinPlusIcon, SaveIcon, Trash2Icon } from "lucide-react";
 
 import { Chip, InstrumentGroup } from "@/components/console/instrument";
 import { ActiveRunBanner } from "@/components/tasks/active-run-banner";
@@ -45,6 +45,8 @@ const NO_STEP_STATES: ReadonlyMap<string, TaskStepState> = new Map();
  * button's inline-start padding is more specific than a width variant.
  */
 const HEADER_BUTTON = "sm:pointer-coarse:min-h-10 max-sm:size-8 max-sm:px-0!";
+/** Both dialogs end the editor's job, so the page behind them is put away. */
+const LEAVING_OVERLAY = "bg-black/80";
 
 /**
  * The task editor (/tasks/editor): the steps and the job's name, which is the
@@ -185,9 +187,21 @@ export function TaskEditor() {
     refusedKey !== undefined && library.error ? { key: refusedKey, message: library.error } : null;
 
   const canSave = stepsOk && saveReason === null && !library.busy;
-  /** Only an update answers with a card: a create's answer is its row on /tasks. */
+  /** An update answers with a card, since it stays on the page. */
   const [savedNotice, setSavedNotice] = React.useState<SavedNoticeValue | null>(null);
   const dismissSaved = React.useCallback(() => setSavedNotice(null), []);
+  /**
+   * A create answers with a dialog instead, because it leaves: a page that
+   * changed under the operator without a word read as a Save that lost the
+   * job. The draft is only emptied on the way out, or the editor behind the
+   * dialog would blank while it is still being read.
+   */
+  const [createdName, setCreatedName] = React.useState<string | null>(null);
+  const leaveCreated = () => {
+    setCreatedName(null);
+    clearDraft();
+    router.push("/tasks");
+  };
   /**
    * An update when a template is loaded, a create otherwise. A create empties
    * the draft (it now duplicates a saved row) and leaves for /tasks, where the
@@ -211,8 +225,7 @@ export function TaskEditor() {
       (saved) => {
         if (!saved) return;
         if (!editing) {
-          clearDraft();
-          router.push("/tasks");
+          setCreatedName(saved.name);
           return;
         }
         updateDraft((current) => ({
@@ -330,7 +343,7 @@ export function TaskEditor() {
           if (!open && !library.busy) closeDelete();
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent overlayClassName={LEAVING_OVERLAY}>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {editing?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -354,6 +367,32 @@ export function TaskEditor() {
             <Button variant="destructive" size="sm" disabled={library.busy} onClick={remove}>
               <Trash2Icon data-icon="inline-start" />
               {library.busy ? "Deleting…" : "Delete"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Any way out of it leaves: the job is saved either way, and staying
+        * on an editor that no longer holds it would invite a second copy. */}
+      <AlertDialog
+        open={createdName !== null}
+        onOpenChange={(open) => {
+          if (!open) leaveCreated();
+        }}
+      >
+        <AlertDialogContent overlayClassName={LEAVING_OVERLAY}>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <CheckIcon className="size-4 shrink-0 text-signal-live" aria-hidden />
+              <span className="min-w-0 break-words">Saved {createdName}</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              It is in the task list on Tasks, ready to run or schedule.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button size="sm" autoFocus onClick={leaveCreated}>
+              Go to Tasks
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

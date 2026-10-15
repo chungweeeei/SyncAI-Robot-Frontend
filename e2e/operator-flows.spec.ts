@@ -1387,6 +1387,11 @@ test.describe("the task console", () => {
     await expect
       .poll(() => writes.slice(1))
       .toEqual([{ method: "POST", path: "/api/v1/task_templates" }]);
+    // A create says so before it leaves, and only the button leaves.
+    const saved = page.getByRole("alertdialog");
+    await expect(saved).toContainText("Saved");
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
+    await saved.getByRole("button", { name: "Go to Tasks" }).click();
     await expect(page).toHaveURL(/\/tasks$/);
 
     // The draft went with the save: Create task opens a blank editor without
@@ -1432,6 +1437,8 @@ test.describe("the task console", () => {
     await expect.poll(() => posted).toHaveLength(1);
     expect(posted[0]!.name).toBe("greeting");
     expect(posted[0]!.steps).toHaveLength(1);
+    await expect(page.getByRole("alertdialog")).toContainText("Saved greeting");
+    await page.getByRole("button", { name: "Go to Tasks" }).click();
     await expect(page).toHaveURL(/\/tasks$/);
   });
 
