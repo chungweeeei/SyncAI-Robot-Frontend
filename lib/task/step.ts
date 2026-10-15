@@ -25,17 +25,17 @@ export interface StepTypeSpec {
 /** Order is the add row's order; the fillable steps first, the bare postures last. */
 export const STEP_TYPES: readonly StepTypeSpec[] = [
   { value: "MOVE", label: "Move", glyph: "M", hint: "Drive to a pose in the map frame." },
-  // Named for the whole errand, not the last metre: the robot drives to the
-  // approach point in front of the waypoint first, which "Dock" alone hides.
+  // Named for what the operator asks of the robot. The drive to the approach
+  // point in front of the waypoint is part of it, and the hint says so.
   {
     value: "DOCK",
-    label: "Return to charger",
+    label: "Dock",
     glyph: "D",
     hint: "Go to a waypoint, then walk straight onto the charger there and lie down.",
   },
   {
     value: "UNDOCK",
-    label: "Leave charger",
+    label: "Undock",
     glyph: "U",
     hint: "Stand up and back straight off the charger to 1 m in front of it.",
   },
@@ -235,9 +235,9 @@ export function stepDockVertices(drafts: readonly StepDraft[]): ReadonlySet<stri
 }
 
 /**
- * What a new Leave charger row starts with: the waypoint of the last Return to
- * charger above it, since a robot leaves the charger it docked on. Null when
- * there is none to copy, and the row starts blank like any other.
+ * What a new Undock row starts with: the waypoint of the last Dock above it,
+ * since a robot leaves the charger it docked on. Null when there is none to
+ * copy, and the row starts blank like any other.
  */
 export function undockDefaults(
   drafts: readonly StepDraft[],
@@ -366,7 +366,7 @@ const BODY_STEP_TYPES: ReadonlySet<StepType> = new Set([
   "LIEDOWN",
 ]);
 
-const ONE_BODY_STEP = "The robot does one Move, charger step, Stand or Lie at a time";
+const ONE_BODY_STEP = "The robot does one Move, Dock, Undock, Stand or Lie at a time";
 
 function spanMoves(drafts: readonly StepDraft[], span: StepSpan | undefined): boolean {
   if (!span) return false;

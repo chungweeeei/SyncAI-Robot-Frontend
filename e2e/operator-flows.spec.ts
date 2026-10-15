@@ -1548,7 +1548,7 @@ test.describe("the task console", () => {
     await expect(
       page.getByRole("menuitem", { name: "Start together with step 1" }),
     ).toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByText(/one Move, charger step, Stand or Lie at a time/)).toBeVisible();
+    await expect(page.getByText(/one Move, Dock, Undock, Stand or Lie at a time/)).toBeVisible();
     expect(writes).toEqual([]);
   });
 
@@ -3708,9 +3708,9 @@ test.describe("the step editor", () => {
     await expect(second).toContainText("dock");
   });
 
-  test("saves Return to charger and Leave charger on the waypoint picked", async ({ page }) => {
-    // Both halves of a dock ride the Move wire with their own type, and Leave
-    // charger starts on the charger the job docked on. Both halves asserted:
+  test("saves Dock and Undock on the waypoint picked", async ({ page }) => {
+    // Both halves of a dock ride the Move wire with their own type, and Undock
+    // starts on the charger the job docked on. Both halves asserted:
     // the row on screen, and the type, waypoint and map in the body.
     await mockBackend(page);
     const posted: { map_name?: string; steps: Record<string, unknown>[] }[] = [];

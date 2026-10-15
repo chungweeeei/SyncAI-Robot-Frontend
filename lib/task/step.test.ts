@@ -488,7 +488,7 @@ describe("step groups", () => {
     const drafts = [move(), linked(speak("hi")), linked(newStepDraft("STANDUP"))];
     expect(stepGroupError(drafts, 0)).toBeNull();
     expect(stepGroupError(drafts, 1)).toBeNull();
-    expect(stepGroupError(drafts, 2)).toMatch(/one Move, charger step, Stand or Lie at a time/);
+    expect(stepGroupError(drafts, 2)).toMatch(/one Move, Dock, Undock, Stand or Lie at a time/);
     expect(stepDraftsSubmittable(drafts)).toBe(false);
   });
 
@@ -600,7 +600,7 @@ describe("step groups", () => {
       // Move with Stand, Move with Lie, Move with Move: the robot has one body.
       for (const type of ["MOVE", "DOCK", "UNDOCK", "STANDUP", "LIEDOWN"] as const) {
         expect(stepLinkProblem([move(), newStepDraft(type)], 1)).toMatch(
-          /one Move, charger step, Stand or Lie at a time/,
+          /one Move, Dock, Undock, Stand or Lie at a time/,
         );
       }
     });
@@ -687,7 +687,7 @@ describe("dock steps", () => {
     expect([...stepDockVertices(drafts)]).toEqual(["v-dock"]);
   });
 
-  it("starts a Leave charger on the waypoint of the last Return to charger", () => {
+  it("starts an Undock on the waypoint of the last Dock", () => {
     expect(undockDefaults([move({ vertexId: "v-hall" })])).toBeNull();
     expect(undockDefaults([dock({ vertexId: "v-a" }), move(), dock({ vertexId: "v-b" })])).toEqual({
       x: "2.5",
