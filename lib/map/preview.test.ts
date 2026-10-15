@@ -27,7 +27,7 @@ function stop(over: Partial<MapVertex>): MapVertex {
   return {
     id: "v",
     name: "v",
-    type: "GENERAL",
+    type: "MOVE",
     map_name: "dp2f",
     x: 0,
     y: 0,

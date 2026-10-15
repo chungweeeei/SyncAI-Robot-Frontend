@@ -9,24 +9,20 @@ export interface VertexTypeSpec {
   label: string;
   /**
    * One character beside the marker. Not a colour per type: signal hues mean
-   * measured / commanded / fault, and a WAITING stop must not render in
-   * MAINTENANCE red.
+   * measured / commanded / fault, and a type is a role, not a state.
    */
   glyph: string;
   /** One line in the panel, so the roles are not guessed from the name. */
   hint: string;
 }
 
-/** Order is the panel's order; GENERAL first because it is the default. */
+/** Order is the panel's order; MOVE first because it is the default. */
 export const VERTEX_TYPES: readonly VertexTypeSpec[] = [
-  { value: "GENERAL", label: "Gen", glyph: "G", hint: "A plain navigation stop." },
-  { value: "ARTIFACT", label: "Art", glyph: "A", hint: "An IoT / conveyor station." },
-  { value: "CHARGER", label: "Chg", glyph: "C", hint: "A charging dock." },
-  { value: "HOME", label: "Home", glyph: "H", hint: "The idle / park base." },
-  { value: "WAITING", label: "Wait", glyph: "W", hint: "A hold spot for queueing." },
+  { value: "MOVE", label: "Move", glyph: "M", hint: "A plain navigation stop." },
+  { value: "CHARGE", label: "Charger", glyph: "C", hint: "A charging dock." },
 ];
 
-export const DEFAULT_VERTEX_TYPE: VertexType = "GENERAL";
+export const DEFAULT_VERTEX_TYPE: VertexType = "MOVE";
 
 const GLYPHS: Record<VertexType, string> = VERTEX_TYPES.reduce(
   (all, spec) => ({ ...all, [spec.value]: spec.glyph }),

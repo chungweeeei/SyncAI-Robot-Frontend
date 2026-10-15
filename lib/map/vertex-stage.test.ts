@@ -20,7 +20,7 @@ import type { MapVertex } from "@/lib/types/map";
 const row = (id: string, over: Partial<MapVertex> = {}): MapVertex => ({
   id,
   name: id,
-  type: "GENERAL",
+  type: "MOVE",
   map_name: "dp2f",
   x: 1,
   y: 2,
@@ -54,8 +54,8 @@ describe("planVertexSave", () => {
   });
 
   it("puts only the fields that moved in an update", () => {
-    const plan = planVertexSave([row("a")], [row("a", { type: "CHARGER" })]);
-    expect(plan.updates).toEqual([{ id: "a", changes: { type: "CHARGER" } }]);
+    const plan = planVertexSave([row("a")], [row("a", { type: "CHARGE" })]);
+    expect(plan.updates).toEqual([{ id: "a", changes: { type: "CHARGE" } }]);
   });
 
   it("reads -180 and 180 as one heading, since the backend stores one", () => {
@@ -67,7 +67,7 @@ describe("planVertexSave", () => {
     const local = row(localVertexId(1), { theta: 270 });
     const plan = planVertexSave([], [local]);
     expect(plan.creates).toEqual([
-      { localId: local.id, draft: { name: local.name, type: "GENERAL", x: 1, y: 2, theta: -90 } },
+      { localId: local.id, draft: { name: local.name, type: "MOVE", x: 1, y: 2, theta: -90 } },
     ]);
   });
 
