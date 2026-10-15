@@ -19,7 +19,7 @@ export interface WaypointPreviewProps {
   vertices: MapVertex[];
   /** Vertex id → the job's step numbers that go there; see stepWaypointOrdinals. */
   steps: ReadonlyMap<string, readonly number[]>;
-  /** The waypoints a dock row is picked on; see stepDockVertices. */
+  /** The waypoints a Dock row is picked on; see stepDockVertices. */
   docks: ReadonlySet<string>;
 }
 

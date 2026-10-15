@@ -46,7 +46,7 @@ export interface StepListProps {
   mapGrid: MapMetadata | null;
   /** Vertex id → the job's step numbers that go there; see stepWaypointOrdinals. */
   stepMarks: ReadonlyMap<string, readonly number[]>;
-  /** The waypoints a dock row is picked on; see stepDockVertices. */
+  /** The waypoints a Dock row is picked on; see stepDockVertices. */
   dockMarks: ReadonlySet<string>;
   /** True while a dispatched task is running — see the note below. */
   disabled: boolean;

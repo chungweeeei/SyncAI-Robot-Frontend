@@ -23,7 +23,7 @@ export interface PreviewMarks {
    */
   steps: ReadonlyMap<string, readonly number[]>;
   /**
-   * Vertex ids a dock row is picked on (stepDockVertices). Each gets its
+   * Vertex ids a Dock row is picked on (stepDockVertices). Each gets its
    * approach point drawn and joined to it: the robot goes there first, and no
    * row says so.
    */

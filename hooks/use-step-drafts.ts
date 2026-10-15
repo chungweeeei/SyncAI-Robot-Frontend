@@ -5,7 +5,6 @@ import * as React from "react";
 import {
   moveStepDraft,
   newStepDraft,
-  undockDefaults,
   unlinkStep,
   type StepDraft,
 } from "@/lib/task/step";
@@ -51,11 +50,7 @@ export function useStepDrafts(
     (type: StepType) => {
       // Outside the updater, which may run twice in development and mint two keys.
       const draft = newStepDraft(type);
-      setSteps((current) => {
-        // A robot leaves the charger it docked on; see undockDefaults.
-        const copied = type === "UNDOCK" ? undockDefaults(current) : null;
-        return [...current, copied ? { ...draft, ...copied } : draft];
-      });
+      setSteps((current) => [...current, draft]);
       return draft.key;
     },
     [setSteps],

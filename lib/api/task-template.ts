@@ -19,9 +19,9 @@ import {
   WaitStepParamsSchema,
 } from "@/lib/api/task";
 import type {
+  BareStepType,
   MoveStepParams,
   NavStepType,
-  Posture,
   SpeakStepParams,
   TaskStepRequest,
   WaitStepParams,
@@ -29,7 +29,7 @@ import type {
 
 /** One step as it is *stored*: a task step plus where a MOVE's numbers came from. */
 export type TemplateStepRequest = TaskStepRequest & {
-  /** MOVE / DOCK / UNDOCK only — the backend 422s any other step carrying one. */
+  /** MOVE / DOCK only — the backend 422s any other step carrying one. */
   vertex_id?: string | null;
 };
 
@@ -73,7 +73,7 @@ export type TemplateStep =
       resolved_params: WaitStepParams | null;
     })
   | (TemplateStepBase & {
-      type: Posture;
+      type: BareStepType;
       params: null;
       resolved_params: null;
     });
@@ -83,7 +83,7 @@ export interface TaskTemplate {
   id: string;
   name: string;
   description: string;
-  /** Null when the template has no MOVE / DOCK / UNDOCK step and so runs anywhere. */
+  /** Null when the template has no MOVE / DOCK step and so runs anywhere. */
   map_name: string | null;
   steps: TemplateStep[];
   /** False only when it names a map other than the robot's. */
@@ -96,7 +96,7 @@ export interface TaskTemplate {
 export interface TaskTemplateDraft {
   name: string;
   description?: string;
-  /** Required when any step is a MOVE, DOCK or UNDOCK; must be omitted otherwise. */
+  /** Required when any step is a MOVE or DOCK; must be omitted otherwise. */
   map_name?: string | null;
   steps: readonly TemplateStepRequest[];
 }
@@ -104,7 +104,7 @@ export interface TaskTemplateDraft {
 /** Omitted fields are left alone (`exclude_unset`). */
 export type TaskTemplateChanges = Partial<TaskTemplateDraft>;
 
-/** A plain union, as for TaskStepRequestSchema: posture's discriminator is two literals. */
+/** A plain union, as for TaskStepRequestSchema: a bare step's discriminator is three literals. */
 const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
   z.object({
     id: z.string(),
@@ -112,7 +112,7 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     vertex_name: z.string().nullable(),
     vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
     group: z.string().nullish().transform((group) => group ?? null),
-    type: z.enum(["MOVE", "DOCK", "UNDOCK"]),
+    type: z.enum(["MOVE", "DOCK"]),
     params: MoveStepParamsSchema.nullable(),
     resolved_params: MoveStepParamsSchema.nullable(),
   }),
@@ -142,7 +142,7 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     vertex_name: z.string().nullable(),
     vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
     group: z.string().nullish().transform((group) => group ?? null),
-    type: z.enum(["STANDUP", "LIEDOWN"]),
+    type: z.enum(["STANDUP", "LIEDOWN", "UNDOCK"]),
     params: z.null(),
     resolved_params: z.null(),
   }),

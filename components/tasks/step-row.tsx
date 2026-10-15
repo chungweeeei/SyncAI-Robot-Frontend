@@ -372,7 +372,7 @@ export function StepRow({
               {/* Every type's fields stay in the draft across a type change, so
                * switching away and back loses nothing; the wire shape derives
                * from the type. */}
-              {/* A Move or dock row is set by its waypoint only, no X / Y / heading
+              {/* A Move or Dock row is set by its waypoint only, no X / Y / heading
                * fields; the draft still carries the numbers that are sent. The
                * floor plan sits with the row, behind a button so a long patrol
                * is not a wall of maps. It shows the whole job and is not a

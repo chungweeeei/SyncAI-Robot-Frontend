@@ -22,7 +22,11 @@ export interface StepTypeSpec {
   hint: string;
 }
 
-/** Order is the add row's order; the fillable steps first, the bare postures last. */
+/**
+ * Order is the add row's order; the fillable steps first, the bare ones last.
+ * Undock is the exception: it has nothing to set, but it sits beside Dock
+ * because an operator looks for the two halves of a charge together.
+ */
 export const STEP_TYPES: readonly StepTypeSpec[] = [
   { value: "MOVE", label: "Move", glyph: "M", hint: "Drive to a pose in the map frame." },
   // Named for what the operator asks of the robot. The drive to the approach
@@ -37,7 +41,7 @@ export const STEP_TYPES: readonly StepTypeSpec[] = [
     value: "UNDOCK",
     label: "Undock",
     glyph: "U",
-    hint: "Stand up and back straight off the charger to 1 m in front of it.",
+    hint: "Stand up and back straight off the charger, 1 m. Nothing to set.",
   },
   // "T" (for TTS) because STANDUP already owns "S".
   { value: "SPEAK", label: "Speak", glyph: "T", hint: "Say a line on the robot speaker (TTS)." },
@@ -65,12 +69,13 @@ export function stepGlyph(type: StepType): string {
   return GLYPHS[type] ?? "?";
 }
 
-const NAV_STEP_TYPES: ReadonlySet<StepType> = new Set<NavStepType>(["MOVE", "DOCK", "UNDOCK"]);
+const NAV_STEP_TYPES: ReadonlySet<StepType> = new Set<NavStepType>(["MOVE", "DOCK"]);
 
 /**
- * Whether a step is set by a waypoint: a Move, or either half of a dock. All
- * three carry a pose in the map's frame, follow a vertex once saved and tie
- * the job to its map; the backend's `NAV_STEP_TYPES`.
+ * Whether a step is set by a waypoint: a Move or a Dock. Both carry a pose in
+ * the map's frame, follow a vertex once saved and tie the job to its map. An
+ * Undock is not one: the robot backs out from wherever it stands, so a job
+ * whose only drive is an Undock runs on any map.
  */
 export function isNavStep<T extends { type: StepType }>(
   step: T,
@@ -82,7 +87,7 @@ export interface StepDraft {
   /** Client-only identity: the React key, and what add / remove / move address. */
   key: number;
   type: StepType;
-  /** MOVE / DOCK / UNDOCK only. Raw text — see parseCoordinate. */
+  /** MOVE / DOCK only. Raw text — see parseCoordinate. */
   x: string;
   y: string;
   theta: string;
@@ -97,7 +102,7 @@ export interface StepDraft {
   seconds: string;
   /**
    * The vertex the numbers were prefilled from, or null once hand edited.
-   * **Saving** sends it, so a stored MOVE or dock can follow its vertex; **dispatching**
+   * **Saving** sends it, so a stored MOVE or DOCK can follow its vertex; **dispatching**
    * never does — `POST /api/v1/tasks` has no notion of provenance.
    */
   vertexId: string | null;
@@ -180,8 +185,7 @@ export function stepSummary(
 ): string | null {
   switch (draft.type) {
     case "MOVE":
-    case "DOCK":
-    case "UNDOCK": {
+    case "DOCK": {
       const [x, y, theta] = [draft.x, draft.y, draft.theta].map((v) => v.trim());
       if (!x || !y || !theta) return null;
       const pose = `(${x}, ${y}) · ${theta}°`;
@@ -220,31 +224,16 @@ export function stepWaypointOrdinals(
 }
 
 /**
- * The waypoints a dock row (either half) is picked on, for the floor plan to
- * draw the approach point in front of: the robot drives there before it walks
- * on or after it backs off, and that leg is not a row of its own.
+ * The waypoints a Dock row is picked on, for the floor plan to draw the
+ * approach point in front of: the robot drives there before it walks on, and
+ * that leg is not a row of its own.
  */
 export function stepDockVertices(drafts: readonly StepDraft[]): ReadonlySet<string> {
   const docks = new Set<string>();
   for (const draft of drafts) {
-    if ((draft.type === "DOCK" || draft.type === "UNDOCK") && draft.vertexId !== null) {
-      docks.add(draft.vertexId);
-    }
+    if (draft.type === "DOCK" && draft.vertexId !== null) docks.add(draft.vertexId);
   }
   return docks;
-}
-
-/**
- * What a new Undock row starts with: the waypoint of the last Dock above it,
- * since a robot leaves the charger it docked on. Null when there is none to
- * copy, and the row starts blank like any other.
- */
-export function undockDefaults(
-  drafts: readonly StepDraft[],
-): Pick<StepDraft, "x" | "y" | "theta" | "vertexId"> | null {
-  const dock = drafts.findLast((draft) => draft.type === "DOCK" && draft.vertexId !== null);
-  if (!dock) return null;
-  return { x: dock.x, y: dock.y, theta: dock.theta, vertexId: dock.vertexId };
 }
 
 /**
@@ -576,7 +565,9 @@ function toStepRequest(draft: StepDraft, index: number): TaskStepRequest {
     if (!params) throw new Error(`Step ${id} has no usable duration.`);
     return { id, type: "WAIT", params };
   }
-  if (draft.type === "STANDUP" || draft.type === "LIEDOWN") return { id, type: draft.type };
+  if (draft.type === "STANDUP" || draft.type === "LIEDOWN" || draft.type === "UNDOCK") {
+    return { id, type: draft.type };
+  }
 
   const params = moveParams(draft);
   // Throwing beats sending a MOVE to (0, 0).
@@ -650,7 +641,7 @@ export function fromTemplateSteps(steps: readonly TemplateStep[]): StepDraft[] {
 
 /**
  * Project a template's steps into the dispatch wire shape: `resolved_params`
- * minus the provenance. A posture step gets no `params` key at all.
+ * minus the provenance. A bare step (posture, Undock) gets no `params` key at all.
  */
 export function toDispatchSteps(steps: readonly TemplateStep[]): TaskStepRequest[] {
   return steps.map((step): TaskStepRequest => {
@@ -664,7 +655,6 @@ function dispatchStep(step: TemplateStep): TaskStepRequest {
   switch (step.type) {
     case "MOVE":
     case "DOCK":
-    case "UNDOCK":
       return {
         id: step.id,
         type: step.type,

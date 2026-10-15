@@ -134,7 +134,7 @@ export function TaskEditor() {
         "Some steps are incomplete — the marked rows say what is missing."
       : null;
 
-  /** Any waypoint step (Move or dock) means the template has to name the map it is in. */
+  /** Any waypoint step (Move or Dock) means the template has to name the map it is in. */
   const hasMoveStep = drafts.steps.some(isNavStep);
   const draftMapName = hasMoveStep ? mapName : null;
   const saveReason =

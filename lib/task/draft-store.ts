@@ -100,8 +100,7 @@ function stepContent(step: StepDraft): string {
   switch (step.type) {
     case "MOVE":
     case "DOCK":
-    case "UNDOCK":
-      // The type leads, so a Move switched to a dock on the same waypoint is an edit.
+      // The type leads, so a Move switched to a Dock on the same waypoint is an edit.
       return step.vertexId !== null
         ? `${step.type}@${step.vertexId}`
         : `${step.type} ${step.x} ${step.y} ${step.theta}`;

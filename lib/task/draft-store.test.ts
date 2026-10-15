@@ -70,7 +70,7 @@ describe("decodeTaskDraft", () => {
   });
 
   it("restores a dock row with its waypoint", () => {
-    const stored = { ...draft(), steps: [{ ...newStepDraft("UNDOCK"), x: "1", y: "2", vertexId: "v1" }] };
+    const stored = { ...draft(), steps: [{ ...newStepDraft("DOCK"), x: "1", y: "2", vertexId: "v1" }] };
     const restored = decodeTaskDraft(JSON.stringify(stored));
     expect(restored.steps.map(withoutKey)).toEqual(stored.steps.map(withoutKey));
   });
