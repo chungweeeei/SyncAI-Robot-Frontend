@@ -16,7 +16,9 @@ export interface UseMapOctomapEdits {
 }
 
 /**
- * One map's saved ground patches, for the ground editor. Not polled: nothing
+ * One map's saved ground patches: the ground editor's starting record, and
+ * what the dashboard draws into the 3D map until the robot has applied them
+ * (`withGroundPatches`). Not polled: nothing
  * changes them on its own. `null` (not read yet) and `[]` (none) are
  * different facts, as for the zones: a save is the whole list, so taking
  * one for the other would erase the map's patches on the first Save.

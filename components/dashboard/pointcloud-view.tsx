@@ -29,6 +29,7 @@ import { useInitialPose } from "@/hooks/use-initial-pose";
 import { useMapFloors } from "@/hooks/use-map-floors";
 import { useMapKeepout } from "@/hooks/use-map-keepout";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
+import { useMapOctomapEdits } from "@/hooks/use-map-octomap-edits";
 import { useMapPointCloud } from "@/hooks/use-map-point-cloud";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useActiveMap } from "@/hooks/use-maps";
@@ -36,7 +37,7 @@ import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import { apiUrl } from "@/lib/api/config";
 import { type FloorBand, floorBands, floorGround } from "@/lib/map/floors";
-import { floorHeightIn } from "@/lib/map/ground-fill";
+import { floorHeightIn, withGroundPatches } from "@/lib/map/ground-fill";
 import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
 import { dispatchMapLock } from "@/lib/map/run-lock";
 import { liveDock } from "@/lib/task/run";
@@ -111,8 +112,23 @@ export function PointCloudView({
   // and the viewport frames on it instead.
   const [showVoxels, setShowVoxels] = React.useState(false);
   const hasVoxels = activeMap?.octomap_status === "ok";
-  const octomap = useMapOctomap(
-    showVoxels && hasVoxels && activeMap ? activeMap.name : null,
+  const voxelMap = showVoxels && hasVoxels && activeMap ? activeMap.name : null;
+  const octomap = useMapOctomap(voxelMap);
+  // The ground patches saved for it, drawn in: the operator saved them for
+  // the robot to drive on, and a save is only a record until the robot's
+  // tool writes it into the tree — the dashboard showing the tree as built
+  // read as if the save had been lost. Held back until the record has
+  // answered, so a million-cell layer is built once and not twice. A record
+  // that cannot be read costs the patches, never the map: this is a view.
+  const patches = useMapOctomapEdits(voxelMap);
+  const voxels = React.useMemo(
+    () =>
+      !octomap.voxels || patches.status === "loading"
+        ? null
+        : patches.fillKey
+          ? withGroundPatches(octomap.voxels, patches.fillKey)
+          : octomap.voxels,
+    [octomap.voxels, patches.status, patches.fillKey],
   );
   // One floor of the 3D map at a time, for a map that spans storeys. A map
   // of one storey (or a failed read) has no floors and shows whole. Read
@@ -124,14 +140,14 @@ export function PointCloudView({
   const { floors } = useMapFloors(hasVoxels && activeMap ? activeMap.name : null);
   const [floorName, setFloorName] = React.useState<string | null>(null);
   const bands = React.useMemo(() => floorBands(floors), [floors]);
-  const floorBand = octomap.voxels
+  const floorBand = voxels
     ? (bands.find((band) => band.name === floorName) ?? null)
     : null;
   /** A floor's ground: where the 3D map shows it, else a body height under its level. */
   const groundOf = React.useCallback(
     (band: FloorBand | null) =>
-      floorGround(band, band && octomap.voxels ? floorHeightIn(octomap.voxels, band.lo, band.hi) : null),
-    [octomap.voxels],
+      floorGround(band, band && voxels ? floorHeightIn(voxels, band.lo, band.hi) : null),
+    [voxels],
   );
   // What a pick lands on: the floor shown. Memoised because the measure walks
   // every cell of the tree.
@@ -318,7 +334,7 @@ export function PointCloudView({
       kind: "voxels",
       label: "3D map",
       on: showVoxels,
-      busy: octomap.status === "loading",
+      busy: octomap.status === "loading" || (octomap.voxels !== null && patches.status === "loading"),
       onToggle: () => setShowVoxels((v) => !v),
     });
   }
@@ -355,7 +371,7 @@ export function PointCloudView({
         mapImageUrl={mapImageUrl}
         telemetry={feed}
         mapCloud={scan.cloud}
-        voxels={octomap.voxels}
+        voxels={voxels}
         voxelBand={voxelBand}
         pickZ={pickZ}
         path={path}
@@ -437,7 +453,7 @@ export function PointCloudView({
             cameraMode={cameraMode}
             onCameraMode={setCameraMode}
             onTopDown={() => setTopDownNonce((n) => n + 1)}
-            onFront={octomap.voxels ? () => setFrontNonce((n) => n + 1) : undefined}
+            onFront={voxels ? () => setFrontNonce((n) => n + 1) : undefined}
             onZoomIn={() => setZoomStep({ factor: ZOOM_STEP_FACTOR })}
             onZoomOut={() => setZoomStep({ factor: 1 / ZOOM_STEP_FACTOR })}
             layers={layers}
@@ -450,7 +466,7 @@ export function PointCloudView({
           * hint never swallows the press it asks for. */}
         <div className="pointer-events-none flex min-h-0 w-56 flex-col gap-2 overflow-y-auto empty:hidden">
           {/* Over the panels: it is part of what is drawn, not a job. */}
-          {octomap.voxels && bands.length > 1 && (
+          {voxels && bands.length > 1 && (
             <div className={cn(overlayPanel, "pointer-events-auto px-2 py-1.5")}>
               <p className="instrument-label mb-1 text-muted-foreground">3D map floor</p>
               <FloorPicker floors={bands} value={floorBand?.name ?? null} onChange={setFloorName} />

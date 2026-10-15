@@ -526,9 +526,11 @@ test.describe("the dashboard's 3D map layer", () => {
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { maps: [mapSummary(withOctomap())] });
     const treeReads: string[] = [];
+    const patchReads: string[] = [];
     page.on("request", (request) => {
       const { pathname } = new URL(request.url());
       if (pathname.endsWith("/octomap")) treeReads.push(pathname);
+      if (pathname.endsWith("/octomap/edits")) patchReads.push(pathname);
     });
     await page.goto("/");
     await expect(
@@ -538,10 +540,13 @@ test.describe("the dashboard's 3D map layer", () => {
     // A million cells to decode and draw: only when someone asks to see them.
     await expect(toggle(page)).toHaveAttribute("aria-pressed", "false");
     expect(treeReads).toEqual([]);
+    expect(patchReads).toEqual([]);
 
     await toggle(page).click();
     await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
     await expect.poll(() => treeReads).toEqual([treePath]);
+    // With the ground patches saved for it: the map as the robot drives it.
+    await expect.poll(() => patchReads).toEqual([`${treePath}/edits`]);
 
     // Off and on is the same version, so it comes from the cache.
     await toggle(page).click();

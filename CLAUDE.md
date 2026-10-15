@@ -161,7 +161,8 @@ components/
                 corner — its layers are the saved scan, the robot's 3D map
                 (the occupancy tree, off by default like the scan, drawn
                 whether or not the map has a floor plan, one floor at a time
-                on a map that spans storeys), waypoints (each at its own
+                on a map that spans storeys, with its saved ground patches
+                drawn in before the robot has applied them), waypoints (each at its own
                 floor's ground height; with a floor picked, only that floor's
                 are shown or tappable, and a goal or a new waypoint lands on
                 it), zones and the path,
@@ -232,7 +233,9 @@ lib/
                 band, the median a patch is set at and the samples it needs,
                 the hole test — nothing occupied through the clearance band —
                 the dabs and their undo patches, and the record's absolute
-                keys, the floor the brush aims at and the column under a
+                keys and the tree with them drawn in (withGroundPatches, a union,
+                since an applied patch is in both), the floor the brush
+                aims at and the column under a
                 point), and the floors of a
                 map that spans storeys (floors.ts: the band each floor owns —
                 from a metre under its level, so a slab's top is in the
@@ -490,7 +493,9 @@ touch one, prefer moving it toward the rule.
   the walk a mapping save replaces); a floor save writes its answer into
   `mapFloors`, which the dashboard and the ground editor share; a ground patch save writes its own list back
   as the next read and leaves `mapOctomap` alone, since the tree only
-  changes on the robot, by its tool, which the catalogue's version reports; a map rename, delete or
+  changes on the robot, by its tool, which the catalogue's version reports
+  (the dashboard reads the same list and draws it into the tree, so a save
+  shows there at once); a map rename, delete or
   activate also changes the forbidden zones' read (`mapKeepout`, whose
   `active` moves with a switch); a mapping start, save or reset changes the
   run state (`mappingStatus` — invalidated, never written, because the

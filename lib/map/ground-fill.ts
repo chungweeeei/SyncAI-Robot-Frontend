@@ -340,6 +340,41 @@ export function fromFillKeys(
   return { edits, skipped };
 }
 
+/**
+ * The tree as the robot will have it once its tool applies the record: the
+ * occupied cells plus each saved patch, for the dashboard, which shows the
+ * map the robot drives on rather than the one it was built as. A union, not
+ * an append — the tool rebuilds from the raw tree, so after it has run the
+ * patches are in the tree as well as in the record, and a cell drawn twice
+ * would be twice in every height-ordered draw range. A key outside the box
+ * is another tree's, dropped as `fromFillKeys` drops it. Hands back the same
+ * object when nothing is added, so a map with no patches is not redrawn.
+ */
+export function withGroundPatches(
+  voxels: OccupiedVoxels,
+  keys: readonly (readonly number[])[],
+): OccupiedVoxels {
+  const { edits } = fromFillKeys(keys, voxels);
+  if (edits.size === 0) return voxels;
+  const [width] = voxels.size;
+  // Only the patched columns can collide, so only their cells are looked at.
+  for (let i = 0; i < voxels.count * 3; i += 3) {
+    const column = voxels.keys[i] + voxels.keys[i + 1] * width;
+    if (edits.get(column) === voxels.keys[i + 2]) edits.delete(column);
+  }
+  if (edits.size === 0) return voxels;
+  const keysOut = new Uint16Array((voxels.count + edits.size) * 3);
+  keysOut.set(voxels.keys.subarray(0, voxels.count * 3));
+  let at = voxels.count * 3;
+  for (const [column, kz] of edits) {
+    keysOut[at] = column % width;
+    keysOut[at + 1] = Math.floor(column / width);
+    keysOut[at + 2] = kz;
+    at += 3;
+  }
+  return { ...voxels, keys: keysOut, count: voxels.count + edits.size };
+}
+
 /** Whether two edit sets hold the same patches, for the dirty flag. */
 export function sameEdits(a: GroundEdits, b: GroundEdits): boolean {
   if (a.size !== b.size) return false;

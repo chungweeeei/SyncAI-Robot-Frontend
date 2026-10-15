@@ -22,6 +22,7 @@ import {
   sameEdits,
   setGroundBand,
   toFillKeys,
+  withGroundPatches,
   type GroundEdits,
 } from "@/lib/map/ground-fill";
 import { OCTREE_KEY_ORIGIN, type OccupiedVoxels } from "@/lib/types/octree";
@@ -253,6 +254,29 @@ describe("the record", () => {
     );
     expect(back.edits.size).toBe(1);
     expect(back.skipped).toBe(2);
+  });
+
+  it("draws the saved patches into the tree, once each", () => {
+    const voxels = site();
+    const merged = withGroundPatches(
+      voxels,
+      [
+        [O + 13, O, O - 5], // (3, 3) at kz 0: a hole, added
+        [O + 10, O - 3, O - 5], // (0, 0) at kz 0: applied already, not added twice
+        [O + 100, O, O - 5], // another tree's
+      ],
+    );
+    expect(merged.count).toBe(voxels.count + 1);
+    expect([...merged.keys.subarray(voxels.count * 3)]).toEqual([3, 3, 0]);
+    expect(merged.keyMin).toEqual(voxels.keyMin);
+    // The tree's own keys are left as they were.
+    expect(voxels.count).toBe(site().count);
+  });
+
+  it("hands back the tree itself when no patch adds a cell", () => {
+    const voxels = site();
+    expect(withGroundPatches(voxels, [])).toBe(voxels);
+    expect(withGroundPatches(voxels, [[O + 10, O - 3, O - 5]])).toBe(voxels);
   });
 
   it("compares edit sets by their patches", () => {
