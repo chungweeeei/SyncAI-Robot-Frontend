@@ -32,7 +32,11 @@ import {
   setMarkerColor,
 } from "@/lib/scene/markers";
 import { createDockLayer } from "@/lib/scene/dock-layer";
-import { createDashedRibbon, createPathRibbon } from "@/lib/scene/path-ribbon";
+import {
+  createDashedRibbon,
+  createPathRibbon,
+  type PathRibbon,
+} from "@/lib/scene/path-ribbon";
 import { aimRaycaster, intersectGround } from "@/lib/scene/picking";
 import { columnAt } from "@/lib/map/ground-fill";
 import { POSE_EASE_TAU_S, type SmoothPose } from "@/lib/scene/pose";
@@ -120,9 +124,10 @@ interface PointCloudCanvasProps {
    */
   pickZ?: number;
   /**
-   * The planner's remaining route, drawn as a band on the floor so an operator
-   * can catch a route that hugs a wall before the robot is against it. An empty
-   * `points` means the route is over.
+   * The planner's remaining route, drawn as a band on the ground it crosses so
+   * an operator can catch a route that hugs a wall before the robot is against
+   * it. A route up a stair is on two storeys; with a floor picked, only that
+   * floor's stretch is drawn. An empty `points` means the route is over.
    */
   path?: PlannedPath;
   /**
@@ -309,6 +314,8 @@ export function PointCloudCanvas({
   const voxelLayerRef = React.useRef<VoxelLayer | null>(null);
   /** The band as last asked for, which a rebuilt layer starts from. */
   const voxelBandRef = React.useRef(voxelBand);
+  /** The route's band while it is drawn, so a floor switch can cut it without a rebuild. */
+  const pathRibbonRef = React.useRef<PathRibbon | null>(null);
 
   // Keep the latest onStatus without forcing the setup effect to re-run.
   const onStatusRef = React.useRef(onStatus);
@@ -1051,14 +1058,18 @@ export function PointCloudCanvas({
   // erases it by failing the guard; nothing here decides when a route is over.
   React.useEffect(() => {
     const ctx = sceneRef.current;
-    if (!ctx || !showPath || !path || path.points.length < 4) return;
+    if (!ctx || !showPath || !path || path.points.length < 6) return;
 
     const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const ribbon = createPathRibbon(path.points, theme);
     if (!ribbon) return;
+    const band = voxelBandRef.current;
+    if (band) ribbon.setBand(band.lo, band.hi);
     ctx.scene.add(ribbon.mesh);
+    pathRibbonRef.current = ribbon;
 
     return () => {
+      if (pathRibbonRef.current === ribbon) pathRibbonRef.current = null;
       ctx.scene.remove(ribbon.mesh);
       ribbon.dispose();
     };
@@ -1069,10 +1080,10 @@ export function PointCloudCanvas({
   // Dashed, so the last metre onto the dock never reads as more of the route.
   React.useEffect(() => {
     const ctx = sceneRef.current;
-    if (!ctx || !showPath || !dockPath || dockPath.points.length < 4) return;
+    if (!ctx || !showPath || !dockPath || dockPath.points.length < 6) return;
 
     const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
-    const ribbon = createDashedRibbon(dockPath.points, theme.dock);
+    const ribbon = createDashedRibbon(dockPath.points, theme.dock, { stride: 3 });
     if (!ribbon) return;
     ctx.scene.add(ribbon.mesh);
 
@@ -1170,8 +1181,9 @@ export function PointCloudCanvas({
   React.useEffect(() => {
     voxelBandRef.current = voxelBand;
     voxelLayerRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
-    // The waypoints follow the floor shown, by their own ground height.
+    // The waypoints and the route follow the floor shown, by their own ground height.
     vertexLayerRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
+    pathRibbonRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
   }, [voxelBand]);
 
   // ---- Pose picking -----------------------------------------------------

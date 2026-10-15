@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { decodeTelemetryFrame } from "@/lib/ros/telemetry-stream";
+import type { PlannedPath } from "@/lib/types/robot";
 
 describe("decodeTelemetryFrame", () => {
   it("hands a dock's approach to its own handler, not the route's", () => {
@@ -16,7 +17,8 @@ describe("decodeTelemetryFrame", () => {
     expect(onPath).not.toHaveBeenCalled();
     expect(onDockPath).toHaveBeenCalledOnce();
     const [{ points, stamp }] = onDockPath.mock.calls[0]!;
-    expect(Array.from(points)).toEqual([1, 2, 1.5, 2.25]);
+    // On the ground floor, as the route's triples: a dock is on the floor plan.
+    expect(Array.from(points)).toEqual([1, 2, 0, 1.5, 2.25, 0]);
     expect(stamp).toBe(20);
   });
 
@@ -36,5 +38,31 @@ describe("decodeTelemetryFrame", () => {
     expect(() => decodeTelemetryFrame("{", { onPath })).not.toThrow();
     decodeTelemetryFrame(JSON.stringify({ type: "battery", level: 0.5 }), { onPath });
     expect(onPath).not.toHaveBeenCalled();
+  });
+});
+
+describe("a route frame", () => {
+  /** The route the stream hands up for one `path` frame. */
+  function received(points: unknown): PlannedPath | undefined {
+    let path: PlannedPath | undefined;
+    decodeTelemetryFrame(JSON.stringify({ type: "path", points, stamp: 7 }), {
+      onPath: (p) => (path = p),
+    });
+    return path;
+  }
+
+  it("hands a route up as flat [x, y, z] triples", () => {
+    const path = received([[0, 0, 0], [1, 2, 3]]);
+    expect(Array.from(path!.points)).toEqual([0, 0, 0, 1, 2, 3]);
+    expect(path!.stamp).toBe(7);
+  });
+
+  it("puts a route from a backend before z on the ground floor", () => {
+    const path = received([[0, 0], [1, 2]]);
+    expect(Array.from(path!.points)).toEqual([0, 0, 0, 1, 2, 0]);
+  });
+
+  it("hands an empty route up as the clear it is", () => {
+    expect(received([])!.points.length).toBe(0);
   });
 });

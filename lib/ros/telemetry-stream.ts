@@ -14,7 +14,7 @@ import type { StreamStatus } from "@/lib/types/stream";
  *
  *   {"type": "pose",   "x", "y", "z", "yaw_deg", "stamp"}
  *   {"type": "joints", "joints": {"FL_HipX_joint": rad, ...}, "stamp"}
- *   {"type": "path",   "points": [[x, y], ...], "stamp"}
+ *   {"type": "path",   "points": [[x, y, z], ...], "stamp"}
  *   {"type": "dock_path", "points": [[x, y], ...], "stamp"}
  *
  * `path` can share it: ~8 kB per replan (~0.333 Hz) is too small to block.
@@ -40,15 +40,23 @@ interface JointsMessage {
 
 interface PathMessage {
   type: "path";
-  /** Map-frame [x, y] pairs, metres. Empty means "no route". */
-  points: [number, number][];
+  /**
+   * Map-frame [x, y, z] triples, metres, z the ground under each. A backend
+   * from before z sends [x, y], a route on the ground floor. Empty means
+   * "no route".
+   */
+  points: [number, number, number?][];
   stamp: number;
 }
 
 interface DockPathMessage {
   type: "dock_path";
-  /** Map-frame [x, y] pairs, metres. Empty means "the approach is over". */
-  points: [number, number][];
+  /**
+   * Map-frame [x, y] pairs, metres, flattened with the route's z of 0: a dock
+   * is on the floor plan, which is the ground floor. Empty means "the
+   * approach is over".
+   */
+  points: [number, number, number?][];
   stamp: number;
 }
 
@@ -103,10 +111,11 @@ export function decodeTelemetryFrame(
  * walks.
  */
 function plannedPath(msg: PathMessage | DockPathMessage): PlannedPath {
-  const points = new Float32Array(msg.points.length * 2);
+  const points = new Float32Array(msg.points.length * 3);
   for (let i = 0; i < msg.points.length; i++) {
-    points[i * 2] = msg.points[i][0];
-    points[i * 2 + 1] = msg.points[i][1];
+    points[i * 3] = msg.points[i][0];
+    points[i * 3 + 1] = msg.points[i][1];
+    points[i * 3 + 2] = msg.points[i][2] ?? 0;
   }
   return { points, stamp: msg.stamp };
 }

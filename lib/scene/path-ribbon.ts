@@ -1,4 +1,4 @@
-// The planner's remaining route, as a band on the floor.
+// The planner's remaining route, as a band on the ground it crosses.
 
 import * as THREE from "three";
 
@@ -14,42 +14,53 @@ const PATH_WIDTH_M = 0.12;
 /* Route < stop (VERTEX_Z_M) < goal (MARKER_Z_M), so each draws over the one beneath. */
 const PATH_Z_M = 0.012;
 
+export interface PathRibbon {
+  mesh: THREE.Mesh;
+  /**
+   * Draw only the stretches on one floor: a segment whose two ends both
+   * stand in [lo, hi). ±Infinity is every floor, the whole route.
+   */
+  setBand: (lo: number, hi: number) => void;
+  dispose: () => void;
+}
+
 /**
- * One flat band following `points` (map-frame xy pairs), plus its disposer.
- * Rebuilt per update: a route arrives every ~3 s, and ~500 quads are cheaper
- * than a preallocated buffer across varying lengths. Null when there is no band
- * to make.
+ * One band following `points` (map-frame [x, y, z] triples, z the ground under
+ * each), plus its floor filter and disposer. Rebuilt per update: a route
+ * arrives every ~3 s, and ~500 quads are cheaper than a preallocated buffer
+ * across varying lengths. Null when there is no band to make.
  */
-export function createPathRibbon(
-  points: Float32Array,
-  theme: Theme,
-): { mesh: THREE.Mesh; dispose: () => void } | null {
-  const n = points.length >> 1;
+export function createPathRibbon(points: Float32Array, theme: Theme): PathRibbon | null {
+  const n = Math.floor(points.length / 3);
   if (n < 2) return null;
 
   const half = PATH_WIDTH_M / 2;
   const positions = new Float32Array(n * 6); // two vertices per point, xyz each
-  const indices: number[] = [];
 
   for (let i = 0; i < n; i++) {
-    const x = points[i * 2];
-    const y = points[i * 2 + 1];
+    const x = points[i * 3];
+    const y = points[i * 3 + 1];
+    // Never under 0, where the floor plan is drawn: the ground floor is 0 to
+    // this console (as a waypoint on it is), and a planner's ground a few
+    // centimetres lower would put the whole route out of sight beneath it.
+    const z = Math.max(points[i * 3 + 2], 0) + PATH_Z_M;
 
-    // Tangent from the neighbours (one-sided at the ends): both segments share
-    // the offset vertices, so a corner joins with no overlap to double-blend.
-    // The normal stays unit-length (no miter), so a corner pinches to
-    // cos(turn / 2) instead of spiking — 71% at the planner's worst 90° step.
-    const px = points[Math.max(0, i - 1) * 2];
-    const py = points[Math.max(0, i - 1) * 2 + 1];
-    const nx = points[Math.min(n - 1, i + 1) * 2];
-    const ny = points[Math.min(n - 1, i + 1) * 2 + 1];
+    // Tangent from the neighbours (one-sided at the ends), in the ground
+    // plane: both segments share the offset vertices, so a corner joins with
+    // no overlap to double-blend. The normal stays unit-length (no miter), so
+    // a corner pinches to cos(turn / 2) instead of spiking — 71% at the
+    // planner's worst 90° step.
+    const px = points[Math.max(0, i - 1) * 3];
+    const py = points[Math.max(0, i - 1) * 3 + 1];
+    const nx = points[Math.min(n - 1, i + 1) * 3];
+    const ny = points[Math.min(n - 1, i + 1) * 3 + 1];
 
     let tx = nx - px;
     let ty = ny - py;
     const len = Math.hypot(tx, ty);
     if (len < 1e-6) {
-      // Coincident neighbours (normally filtered upstream): a NaN in the
-      // position buffer would blank the entire mesh.
+      // Coincident neighbours, or a step straight up: a NaN in the position
+      // buffer would blank the entire mesh.
       tx = 1;
       ty = 0;
     } else {
@@ -64,22 +75,34 @@ export function createPathRibbon(
     const v = i * 6;
     positions[v] = x + ox;
     positions[v + 1] = y + oy;
-    positions[v + 2] = PATH_Z_M;
+    positions[v + 2] = z;
     positions[v + 3] = x - ox;
     positions[v + 4] = y - oy;
-    positions[v + 5] = PATH_Z_M;
-
-    if (i > 0) {
-      const a = (i - 1) * 2; // left vertex of the previous point
-      indices.push(a, a + 1, a + 3, a, a + 3, a + 2);
-    }
+    positions[v + 5] = z;
   }
 
-  if (!indices.length) return null;
+  /** The quads of the segments whose two ends stand on [lo, hi). */
+  const indicesIn = (lo: number, hi: number) => {
+    const indices: number[] = [];
+    let previousOn = false;
+    for (let i = 0; i < n; i++) {
+      const ground = points[i * 3 + 2];
+      const on = ground >= lo && ground < hi;
+      if (i > 0 && on && previousOn) {
+        const a = (i - 1) * 2; // left vertex of the previous point
+        indices.push(a, a + 1, a + 3, a, a + 3, a + 2);
+      }
+      previousOn = on;
+    }
+    return indices;
+  };
+
+  const all = indicesIn(-Infinity, Infinity);
+  if (!all.length) return null;
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
+  geometry.setIndex(all);
 
   // Double-sided: a grazing camera can catch the back face.
   const material = new THREE.MeshBasicMaterial({
@@ -90,8 +113,19 @@ export function createPathRibbon(
   });
 
   const mesh = new THREE.Mesh(geometry, material);
+
+  let bandLo = -Infinity;
+  let bandHi = Infinity;
+  const setBand = (lo: number, hi: number) => {
+    if (lo === bandLo && hi === bandHi) return;
+    bandLo = lo;
+    bandHi = hi;
+    geometry.setIndex(indicesIn(lo, hi));
+  };
+
   return {
     mesh,
+    setBand,
     dispose: () => {
       geometry.dispose();
       material.dispose();
@@ -104,8 +138,8 @@ const DASH_ON_M = 0.12;
 const DASH_OFF_M = 0.08;
 
 /**
- * The pieces of a polyline (map-frame xy pairs) that carry a dash, as
- * [ax, ay, bx, by] each. The dash phase runs on across vertices rather than
+ * The pieces of a polyline (map-frame points, `stride` numbers each with x and
+ * y first) that carry a dash, as [ax, ay, bx, by] each. The dash phase runs on across vertices rather than
  * restarting per segment, so a bend does not bunch the dashes up; a dash
  * that spans a vertex is split there, and the last one is clipped at the end
  * rather than overrunning it.
@@ -114,17 +148,18 @@ export function dashPieces(
   points: Float32Array | readonly number[],
   on: number = DASH_ON_M,
   off: number = DASH_OFF_M,
+  stride = 2,
 ): [number, number, number, number][] {
   const pieces: [number, number, number, number][] = [];
   if (!(on > 0)) return pieces;
   const period = on + Math.max(off, 0);
-  const n = points.length >> 1;
+  const n = Math.floor(points.length / stride);
   let travelled = 0;
   for (let i = 1; i < n; i++) {
-    const ax = points[(i - 1) * 2];
-    const ay = points[(i - 1) * 2 + 1];
-    const dx = points[i * 2] - ax;
-    const dy = points[i * 2 + 1] - ay;
+    const ax = points[(i - 1) * stride];
+    const ay = points[(i - 1) * stride + 1];
+    const dx = points[i * stride] - ax;
+    const dy = points[i * stride + 1] - ay;
     const length = Math.hypot(dx, dy);
     if (!(length > 1e-6)) continue;
     const tx = dx / length;
@@ -149,17 +184,18 @@ export function dashPieces(
 /**
  * A dashed band following `points`, one quad per dash piece, plus its
  * disposer. Null when there is no dash to draw. `width` and `z` default to the
- * route's, so a dashed approach lies where the route would.
+ * route's, so a dashed approach lies where the route would. `stride` is 3 for
+ * a `PlannedPath`'s triples; the band stays flat at `z` either way.
  */
 export function createDashedRibbon(
   points: Float32Array | readonly number[],
   color: number,
-  { width = PATH_WIDTH_M, z = PATH_Z_M, opacity = 0.85 } = {},
+  { width = PATH_WIDTH_M, z = PATH_Z_M, opacity = 0.85, stride = 2 } = {},
 ): { mesh: THREE.Mesh; dispose: () => void } | null {
   const half = width / 2;
   const positions: number[] = [];
   const indices: number[] = [];
-  for (const [ax, ay, bx, by] of dashPieces(points)) {
+  for (const [ax, ay, bx, by] of dashPieces(points, DASH_ON_M, DASH_OFF_M, stride)) {
     const length = Math.hypot(bx - ax, by - ay);
     if (!(length > 0)) continue;
     // Left normal, as in createPathRibbon.

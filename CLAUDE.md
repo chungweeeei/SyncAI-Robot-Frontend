@@ -166,7 +166,9 @@ components/
                 drawn in before the robot has applied them), waypoints (each at its own
                 floor's ground height; with a floor picked, only that floor's
                 are shown or tappable, and a goal or a new waypoint lands on
-                it), zones and the path,
+                it), zones and the path (on the ground it crosses, so a
+                route up a stair is on both storeys; with a floor picked,
+                only that floor's stretch),
                 with Top down and Front view (level, from the south, where
                 storeys stack) — the instrument rail (the registered schedules
                 first — a glance with pause and delete, the list itself stays

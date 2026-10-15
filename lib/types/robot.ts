@@ -57,8 +57,9 @@ export interface TeleopVector {
 }
 
 /**
- * The planner's remaining route, flat map-frame metres [x0, y0, x1, y1, …],
- * the layout the geometry builder walks.
+ * The planner's remaining route, flat map-frame metres [x0, y0, z0, x1, …],
+ * the layout the geometry builder walks. z is the ground under each point, as
+ * a waypoint's is, so a route up a stair is on both storeys it joins.
  *
  * An empty `points` is an explicit "no route", synthesised by the backend
  * when plans stop: otherwise arrival, cancel and abort are all silence.

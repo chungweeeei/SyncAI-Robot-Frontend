@@ -1,6 +1,74 @@
 import { describe, expect, it } from "vitest";
 
-import { createDashedRibbon, dashPieces } from "@/lib/scene/path-ribbon";
+import { createDashedRibbon, createPathRibbon, dashPieces } from "@/lib/scene/path-ribbon";
+import { THEMES } from "@/lib/scene/theme";
+
+/** A route as the telemetry stream hands it over: flat [x, y, z] triples. */
+const route = (...points: [number, number, number][]) => Float32Array.from(points.flat());
+
+/** Ground floor, a stair, the floor three metres up. */
+const upTheStair = route([0, 0, 0], [1, 0, 0], [2, 0, 1.5], [3, 0, 3], [4, 0, 3]);
+
+const heightsOf = (ribbon: NonNullable<ReturnType<typeof createPathRibbon>>) => {
+  const position = ribbon.mesh.geometry.getAttribute("position");
+  return Array.from({ length: position.count }, (_, i) => +position.getZ(i).toFixed(3));
+};
+
+/** How many segments are drawn: two triangles, six indices, each. */
+const segmentsOf = (ribbon: NonNullable<ReturnType<typeof createPathRibbon>>) =>
+  ribbon.mesh.geometry.getIndex()!.count / 6;
+
+describe("createPathRibbon", () => {
+  it("lays each stretch on its own ground, just over it", () => {
+    const ribbon = createPathRibbon(upTheStair, THEMES.light)!;
+    // Two vertices per point, both at the point's ground plus the lift.
+    expect(heightsOf(ribbon)).toEqual([0.012, 0.012, 0.012, 0.012, 1.512, 1.512, 3.012, 3.012, 3.012, 3.012]);
+    expect(segmentsOf(ribbon)).toBe(4);
+  });
+
+  it("never goes under the floor plan", () => {
+    // A planner's ground a few centimetres under 0 is still the ground floor,
+    // which the floor plan is drawn at; under it, the route would be hidden.
+    const ribbon = createPathRibbon(route([0, 0, -0.05], [1, 0, -0.05]), THEMES.light)!;
+    expect(heightsOf(ribbon).every((z) => z === 0.012)).toBe(true);
+  });
+
+  it("draws only the floor shown, and the whole route again with none", () => {
+    const ribbon = createPathRibbon(upTheStair, THEMES.light)!;
+
+    ribbon.setBand(-Infinity, 1.0); // the ground floor: its one segment
+    expect(segmentsOf(ribbon)).toBe(1);
+
+    ribbon.setBand(2.0, 4.5); // upstairs: its one segment
+    expect(segmentsOf(ribbon)).toBe(1);
+
+    ribbon.setBand(5.0, 8.0); // a floor the route never reaches
+    expect(segmentsOf(ribbon)).toBe(0);
+
+    ribbon.setBand(-Infinity, Infinity);
+    expect(segmentsOf(ribbon)).toBe(4);
+  });
+
+  it("drops a segment with one end off the floor shown", () => {
+    // The stair's middle point is on neither floor's band here, so neither
+    // segment touching it is drawn — not half a stair hanging off a floor.
+    const ribbon = createPathRibbon(upTheStair, THEMES.light)!;
+    ribbon.setBand(-Infinity, 1.0);
+    const index = Array.from(ribbon.mesh.geometry.getIndex()!.array);
+    expect(Math.max(...index)).toBe(3); // the vertices of points 0 and 1 only
+  });
+
+  it("puts no NaN in the buffer for a step straight up", () => {
+    // A NaN anywhere in a position buffer blanks the whole mesh.
+    const ribbon = createPathRibbon(route([1, 1, 0], [1, 1, 0.17]), THEMES.light)!;
+    const position = ribbon.mesh.geometry.getAttribute("position").array as Float32Array;
+    expect(Array.from(position).some(Number.isNaN)).toBe(false);
+  });
+
+  it("makes nothing of a single point", () => {
+    expect(createPathRibbon(route([1, 1, 0]), THEMES.light)).toBeNull();
+  });
+});
 
 const length = ([ax, ay, bx, by]: number[]) => Math.hypot(bx - ax, by - ay);
 
@@ -37,5 +105,14 @@ describe("dashPieces", () => {
     expect(dashPieces([1, 1, 1, 1])).toEqual([]);
     expect(dashPieces([1, 1])).toEqual([]);
     expect(createDashedRibbon([1, 1, 1, 1], 0xffffff)).toBeNull();
+  });
+});
+
+describe("dashPieces over a route's triples", () => {
+  it("walks x and y and steps over z", () => {
+    // A dock's approach arrives as a PlannedPath, three numbers a point.
+    const pieces = dashPieces([0, 0, 0, 1, 0, 0], 0.12, 0.08, 3);
+    expect(pieces[0]).toEqual([0, 0, 0.12, 0]);
+    expect(pieces.at(-1)![2]).toBeLessThanOrEqual(1 + 1e-9);
   });
 });
