@@ -24,8 +24,10 @@ export interface StepTypeSpec {
 
 /**
  * Order is the add row's order; the fillable steps first, the bare ones last.
- * Undock is the exception: it has nothing to set, but it sits beside Dock
- * because an operator looks for the two halves of a charge together.
+ * There is no Undock step (removed 2026-10-15): the backend backs the robot
+ * off the dock by itself before a Move that starts on the dock it last
+ * docked at, standing it up first if it lay down, so an operator never
+ * authors one. A template stored with an UNDOCK step no longer loads.
  */
 export const STEP_TYPES: readonly StepTypeSpec[] = [
   { value: "MOVE", label: "Move", glyph: "M", hint: "Drive to a pose in the map frame." },
@@ -36,12 +38,6 @@ export const STEP_TYPES: readonly StepTypeSpec[] = [
     label: "Dock",
     glyph: "D",
     hint: "Go to a waypoint, then walk straight onto the charger there and lie down.",
-  },
-  {
-    value: "UNDOCK",
-    label: "Undock",
-    glyph: "U",
-    hint: "Stand up and back straight off the charger, 1 m. Nothing to set.",
   },
   // "T" (for TTS) because STANDUP already owns "S".
   { value: "SPEAK", label: "Speak", glyph: "T", hint: "Say a line on the robot speaker (TTS)." },
@@ -73,9 +69,7 @@ const NAV_STEP_TYPES: ReadonlySet<StepType> = new Set<NavStepType>(["MOVE", "DOC
 
 /**
  * Whether a step is set by a waypoint: a Move or a Dock. Both carry a pose in
- * the map's frame, follow a vertex once saved and tie the job to its map. An
- * Undock is not one: the robot backs out from wherever it stands, so a job
- * whose only drive is an Undock runs on any map.
+ * the map's frame, follow a vertex once saved and tie the job to its map.
  */
 export function isNavStep<T extends { type: StepType }>(
   step: T,
@@ -350,12 +344,11 @@ export function stepGroupNames(drafts: readonly StepDraft[]): (string | null)[] 
 const BODY_STEP_TYPES: ReadonlySet<StepType> = new Set([
   "MOVE",
   "DOCK",
-  "UNDOCK",
   "STANDUP",
   "LIEDOWN",
 ]);
 
-const ONE_BODY_STEP = "The robot does one Move, Dock, Undock, Stand or Lie at a time";
+const ONE_BODY_STEP = "The robot does one Move, Dock, Stand or Lie at a time";
 
 function spanMoves(drafts: readonly StepDraft[], span: StepSpan | undefined): boolean {
   if (!span) return false;
@@ -565,7 +558,7 @@ function toStepRequest(draft: StepDraft, index: number): TaskStepRequest {
     if (!params) throw new Error(`Step ${id} has no usable duration.`);
     return { id, type: "WAIT", params };
   }
-  if (draft.type === "STANDUP" || draft.type === "LIEDOWN" || draft.type === "UNDOCK") {
+  if (draft.type === "STANDUP" || draft.type === "LIEDOWN") {
     return { id, type: draft.type };
   }
 
@@ -641,7 +634,7 @@ export function fromTemplateSteps(steps: readonly TemplateStep[]): StepDraft[] {
 
 /**
  * Project a template's steps into the dispatch wire shape: `resolved_params`
- * minus the provenance. A bare step (posture, Undock) gets no `params` key at all.
+ * minus the provenance. A bare step (a posture) gets no `params` key at all.
  */
 export function toDispatchSteps(steps: readonly TemplateStep[]): TaskStepRequest[] {
   return steps.map((step): TaskStepRequest => {

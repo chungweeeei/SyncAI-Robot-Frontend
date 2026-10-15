@@ -142,7 +142,7 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     vertex_name: z.string().nullable(),
     vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
     group: z.string().nullish().transform((group) => group ?? null),
-    type: z.enum(["STANDUP", "LIEDOWN", "UNDOCK"]),
+    type: z.enum(["STANDUP", "LIEDOWN"]),
     params: z.null(),
     resolved_params: z.null(),
   }),

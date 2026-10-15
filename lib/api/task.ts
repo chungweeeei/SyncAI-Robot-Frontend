@@ -106,12 +106,8 @@ export type Posture = "STANDUP" | "LIEDOWN";
  */
 export type NavStepType = "MOVE" | "DOCK";
 
-/**
- * The steps that carry no params; sending any is refused. UNDOCK is one beside
- * the postures: the robot backs out 1 m from wherever it stands, so there is
- * no pose to send and no map it depends on.
- */
-export type BareStepType = Posture | "UNDOCK";
+/** The steps that carry no params; sending any is refused. */
+export type BareStepType = Posture;
 
 /** The backend's full `StepType` vocabulary. */
 export type StepType = NavStepType | "SPEAK" | "WAIT" | BareStepType;
@@ -200,7 +196,7 @@ export const TaskStepRequestSchema: z.ZodType<TaskStepRequest> = z.union([
   }),
   z.object({
     id: z.string(),
-    type: z.enum(["STANDUP", "LIEDOWN", "UNDOCK"]),
+    type: z.enum(["STANDUP", "LIEDOWN"]),
     group: z.string().nullish(),
   }),
 ]);
