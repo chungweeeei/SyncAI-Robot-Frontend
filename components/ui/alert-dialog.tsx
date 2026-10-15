@@ -30,27 +30,36 @@ function AlertDialogClose({ ...props }: AlertDialogPrimitive.Close.Props) {
   return <AlertDialogPrimitive.Close data-slot="alert-dialog-close" {...props} />
 }
 
-function AlertDialogOverlay({ ...props }: AlertDialogPrimitive.Backdrop.Props) {
+function AlertDialogOverlay({
+  className,
+  ...props
+}: AlertDialogPrimitive.Backdrop.Props) {
   return (
     <AlertDialogPrimitive.Backdrop
       data-slot="alert-dialog-overlay"
       className={cn(
         "fixed inset-0 z-50 bg-black/25 transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs",
-        props.className
+        className
       )}
       {...props}
     />
   )
 }
 
+/**
+ * `overlayClassName` is for a dialog that ends what the page behind it was
+ * for (a delete, a save that leaves): those dim the page out entirely, while
+ * one that asks about the map keeps it visible behind a light scrim.
+ */
 function AlertDialogContent({
   className,
+  overlayClassName,
   children,
   ...props
-}: AlertDialogPrimitive.Popup.Props) {
+}: AlertDialogPrimitive.Popup.Props & { overlayClassName?: string }) {
   return (
     <AlertDialogPrimitive.Portal data-slot="alert-dialog-portal">
-      <AlertDialogOverlay />
+      <AlertDialogOverlay className={overlayClassName} />
       <AlertDialogPrimitive.Popup
         data-slot="alert-dialog-content"
         className={cn(
