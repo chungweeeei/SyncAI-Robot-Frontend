@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BoxIcon, CheckIcon, CuboidIcon, LayersIcon, PencilIcon } from "lucide-react";
+import { CheckIcon, LayersIcon, PencilIcon } from "lucide-react";
 
 import { Chip } from "@/components/console/instrument";
 import { GridRebuildControl } from "@/components/maps/grid-rebuild-control";
@@ -47,10 +47,27 @@ function MapThumbnail({ map }: { map: MapSummary }) {
 }
 
 /**
- * The chip for a map's floor plan state, or nothing for a good one (a chip on
- * every healthy card would just say "fine"). Only `failed` is a fault (`warn`:
- * the same recipe will fail again); `none` and `interrupted` are not-done
- * (`caution`); `converting` is mid-action (`active`).
+ * `2D` / `3D`: whether the map has that layer, lit when it does and dimmed when
+ * it does not, so every card answers both at a glance in the same two places.
+ * The words are terse on purpose, by request; the hover text and the
+ * screen-reader text carry the full name.
+ */
+function LayerBadge({ label, name, present }: { label: string; name: string; present: boolean }) {
+  const fact = present ? `Has a ${name}` : `No ${name}`;
+  return (
+    <Chip tone={present ? "live" : "neutral"} title={fact} className={cn(!present && "opacity-50")}>
+      <span aria-hidden>{label}</span>
+      <span className="sr-only">{fact}</span>
+    </Chip>
+  );
+}
+
+/**
+ * The chip for a map's floor plan state. `ok` and `none` are the 2D badge, lit
+ * or dimmed; the rest keep words, because they are something happening or
+ * something to fix. Only `failed` is a fault (`warn`: the same recipe will
+ * fail again); `interrupted` is not-done (`caution`); `converting` is
+ * mid-action (`active`). An unknown status from a newer backend reads as none.
  */
 function GridStatusChip({ map }: { map: MapSummary }) {
   switch (map.grid_status) {
@@ -64,29 +81,17 @@ function GridStatusChip({ map }: { map: MapSummary }) {
       );
     case "interrupted":
       return <Chip tone="caution">Build stopped</Chip>;
-    case "none":
-      return <Chip tone="caution">No floor plan</Chip>;
     default:
-      return null;
+      return <LayerBadge label="2D" name="floor plan" present={map.grid_status === "ok"} />;
   }
 }
 
 /**
- * The chip for a map's 3D map, the floor plan chip's twin with one
- * difference: a good one *is* shown, as a plain chip beside "Point cloud",
- * because most maps have none and the dashboard's 3D map layer only appears
- * for the ones that do. `none` says nothing: the robot builds a 3D map only
- * when asked to, and a map without one is not short of anything.
+ * The chip for a map's 3D map, the floor plan chip's twin: `ok` and `none` are
+ * the 3D badge, the rest keep words.
  */
 function OctomapStatusChip({ map }: { map: MapSummary }) {
   switch (map.octomap_status) {
-    case "ok":
-      return (
-        <Chip tone="neutral">
-          <CuboidIcon className="mr-1 size-3" aria-hidden />
-          3D map
-        </Chip>
-      );
     case "converting":
       return <Chip tone="active">Building 3D map…</Chip>;
     case "failed":
@@ -98,7 +103,7 @@ function OctomapStatusChip({ map }: { map: MapSummary }) {
     case "interrupted":
       return <Chip tone="caution">3D map stopped</Chip>;
     default:
-      return null;
+      return <LayerBadge label="3D" name="3D map" present={map.octomap_status === "ok"} />;
   }
 }
 
@@ -230,12 +235,6 @@ export function MapCard({
         </header>
 
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-          {map.has_pointcloud && (
-            <Chip tone="neutral">
-              <BoxIcon className="mr-1 size-3" aria-hidden />
-              Point cloud
-            </Chip>
-          )}
           <GridStatusChip map={map} />
           <OctomapStatusChip map={map} />
 
