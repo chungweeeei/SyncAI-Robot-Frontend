@@ -14,7 +14,7 @@ import type { MapVertex } from "@/lib/types/map";
 const row = (id: string, name = id): MapVertex => ({
   id,
   name,
-  type: "GENERAL",
+  type: "MOVE",
   map_name: "dp2f",
   x: 0,
   y: 0,

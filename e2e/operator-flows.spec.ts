@@ -633,7 +633,7 @@ test.describe("adding a waypoint from the dashboard", () => {
     await expect(create).toBeDisabled();
     await dialog.getByLabel("Name").fill("shelf-b");
     await dialog.getByRole("combobox", { name: "Type" }).click();
-    await page.getByRole("option", { name: /^Wait/ }).click();
+    await page.getByRole("option", { name: /^Charger/ }).click();
     await create.click();
 
     await expect
@@ -650,7 +650,7 @@ test.describe("adding a waypoint from the dashboard", () => {
     }[];
     expect(body).toHaveLength(1);
     expect(body[0].name).toBe("shelf-b");
-    expect(body[0].type).toBe("WAITING");
+    expect(body[0].type).toBe("CHARGE");
     expect(Number.isFinite(body[0].x)).toBe(true);
     expect(Number.isFinite(body[0].y)).toBe(true);
     // A drag to screen-right on the opening view aims along map +x.
@@ -1735,7 +1735,7 @@ test.describe("the task console", () => {
     const bay = vertex({
       id: "66666666-6666-6666-6666-666666666666",
       name: "bay-1",
-      type: "GENERAL",
+      type: "MOVE",
       map_name: "wh1",
       x: 1,
       y: 2,
@@ -2348,7 +2348,7 @@ test.describe("the floor plan editor's draw bar", () => {
     // The form puts the name and the type on one row, the type as a list.
     await expect(page.getByLabel("Name", { exact: true })).toHaveValue("dock");
     await expect(page.getByRole("combobox", { name: "Type" })).toContainText(
-      "Chg",
+      "Charger",
     );
     // Editing one waypoint shows that one only: the list is not under the form.
     await expect(page.getByRole("button", { name: /dock/ })).toHaveCount(0);
@@ -3652,7 +3652,7 @@ test.describe("the step editor", () => {
     const room = vertex({
       id: "44444444-4444-4444-4444-444444444444",
       name: "room-a",
-      type: "GENERAL",
+      type: "MOVE",
       x: -3,
       y: 4,
       theta: 0,

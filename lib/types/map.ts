@@ -18,13 +18,7 @@ export const GridStatusSchema = z.enum([
   "interrupted",
 ]);
 
-export const VertexTypeSchema = z.enum([
-  "GENERAL",
-  "ARTIFACT",
-  "CHARGER",
-  "HOME",
-  "WAITING",
-]);
+export const VertexTypeSchema = z.enum(["MOVE", "CHARGE"]);
 
 /**
  * How a map's floor plan stands. The three unloadable states are kept apart
@@ -85,7 +79,7 @@ export type GridRecipe = "z-band" | "traversability";
  * Closed, because an unknown value 422s with a validation array rather than a
  * sentence an operator can read.
  */
-export type VertexType = "GENERAL" | "ARTIFACT" | "CHARGER" | "HOME" | "WAITING";
+export type VertexType = "MOVE" | "CHARGE";
 
 export interface MapVertex {
   /** Server-assigned uuid, unique across all maps. */

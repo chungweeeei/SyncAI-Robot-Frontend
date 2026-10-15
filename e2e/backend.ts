@@ -121,7 +121,7 @@ export function vertex(over: Record<string, unknown> = {}) {
   return {
     id: "11111111-1111-1111-1111-111111111111",
     name: "dock",
-    type: "CHARGER",
+    type: "CHARGE",
     map_name: MAP_NAME,
     x: 2.5,
     y: 1.25,
