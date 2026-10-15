@@ -104,14 +104,24 @@ export function PointCloudView({
   const scan = useMapPointCloud(
     showMapCloud && hasScan && activeMap ? activeMap.name : null,
   );
-  // The robot's 3D map, off by default for the scan's reason: a million
-  // cells, decoded and drawn when someone wants to look. Offered only once
-  // the robot reports it built — building, failed or never made has nothing
-  // to give but a refusal, and the Maps screen is where those states are
-  // said. Not gated on the floor plan: a map with none still has its 3D map,
-  // and the viewport frames on it instead.
-  const [showVoxels, setShowVoxels] = React.useState(false);
+  // The robot's 3D map. Its default follows what else the map has: off
+  // under a floor plan, for the scan's reason — a million cells, decoded
+  // and drawn when someone wants to look — and on without one, since a map
+  // with no floor plan would otherwise open on an empty viewport while the
+  // floor it has goes unshown (the viewport frames on the tree instead).
+  // The operator's own toggle wins, held per map so another map's choice
+  // does not carry over. Offered only once the robot reports it built —
+  // building, failed or never made has nothing to give but a refusal, and
+  // the Maps screen is where those states are said.
+  const [voxelChoice, setVoxelChoice] = React.useState<{ map: string; on: boolean } | null>(
+    null,
+  );
   const hasVoxels = activeMap?.octomap_status === "ok";
+  const showVoxels =
+    activeMap && voxelChoice?.map === activeMap.name ? voxelChoice.on : !activeMap?.grid;
+  const toggleVoxels = () => {
+    if (activeMap) setVoxelChoice({ map: activeMap.name, on: !showVoxels });
+  };
   const voxelMap = showVoxels && hasVoxels && activeMap ? activeMap.name : null;
   const octomap = useMapOctomap(voxelMap);
   // The ground patches saved for it, drawn in: the operator saved them for
@@ -335,7 +345,7 @@ export function PointCloudView({
       label: "3D map",
       on: showVoxels,
       busy: octomap.status === "loading" || (octomap.voxels !== null && patches.status === "loading"),
-      onToggle: () => setShowVoxels((v) => !v),
+      onToggle: toggleVoxels,
     });
   }
   if (vertices.length > 0) {

@@ -631,9 +631,10 @@ test.describe("the dashboard's 3D map layer", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("draws a map that has a 3D map but no floor plan", async ({ page }) => {
+  test("opens on the 3D map of a map that has no floor plan", async ({ page }) => {
     // A scan-only save: no floor plan, so no ground plane and nothing to
-    // frame — the tree is what the viewport has, and Top down frames on it.
+    // frame — the tree is what the viewport has, so it is up without asking,
+    // and Top down frames on it.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page, {
@@ -656,11 +657,16 @@ test.describe("the dashboard's 3D map layer", () => {
       page.getByRole("region", { name: "Map viewport" }),
     ).toBeVisible();
 
-    await toggle(page).click();
     await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
     await expect.poll(() => treeReads).toEqual([treePath]);
     await page.getByRole("button", { name: "Top down" }).click();
     await page.getByRole("button", { name: "Recenter" }).click();
+
+    // Still the operator's to hide, and the choice holds.
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "false");
+    await page.waitForTimeout(300);
+    await expect(toggle(page)).toHaveAttribute("aria-pressed", "false");
     // Settled: the decode and the draw have had a frame to throw.
     await page.waitForTimeout(500);
     expect(errors, "the page logged errors").toEqual([]);

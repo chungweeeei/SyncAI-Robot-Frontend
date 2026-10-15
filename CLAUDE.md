@@ -159,8 +159,9 @@ components/
                 floor picker both 3D map surfaces share (floor-picker.tsx)
   dashboard/    3D viewport (pointcloud-canvas) with the pose laid over its
                 corner — its layers are the saved scan, the robot's 3D map
-                (the occupancy tree, off by default like the scan, drawn
-                whether or not the map has a floor plan, one floor at a time
+                (the occupancy tree, off by default like the scan under a
+                floor plan and on by default without one, drawn whether or
+                not the map has a floor plan, one floor at a time
                 on a map that spans storeys, with its saved ground patches
                 drawn in before the robot has applied them), waypoints (each at its own
                 floor's ground height; with a floor picked, only that floor's
