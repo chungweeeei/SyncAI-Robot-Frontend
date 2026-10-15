@@ -46,7 +46,7 @@ export function isEmptyTaskDraft(draft: TaskDraft): boolean {
 // are stripped, so a draft written by a newer build still restores.
 const StepDraftSchema: z.ZodType<StepDraft> = z.object({
   key: z.number(),
-  type: z.enum(["MOVE", "DOCK", "UNDOCK", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
+  type: z.enum(["MOVE", "DOCK", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
   x: z.string(),
   y: z.string(),
   theta: z.string(),
