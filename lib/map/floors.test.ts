@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  FLOOR_BAND_ABOVE_M,
   FLOOR_BAND_BELOW_M,
   FLOOR_GROUND_BELOW_LEVEL_M,
   floorBands,
@@ -17,13 +18,22 @@ const TWO = [
 ];
 
 describe("floorBands", () => {
-  it("covers every height exactly once, lowest floor first", () => {
+  it("cuts each floor under its ceiling, lowest floor first", () => {
     const bands = floorBands(TWO);
     expect(bands.map((band) => band.name)).toEqual(["1F", "2F"]);
     expect(bands[0].lo).toBe(-Infinity);
-    expect(bands[1].hi).toBe(Infinity);
-    // No gap and no overlap: one floor's top is the next one's bottom.
-    expect(bands[0].hi).toBe(bands[1].lo);
+    // Two metres over the ground, give or take: the walls, not the ceiling
+    // that would hide the floor from above.
+    expect(bands[0].hi).toBeCloseTo(-0.2 + FLOOR_BAND_ABOVE_M);
+    expect(bands[1].hi).toBeCloseTo(5.5 + FLOOR_BAND_ABOVE_M);
+  });
+
+  it("ends a floor where the next one starts when the storeys are low", () => {
+    const [first, second] = floorBands([
+      { name: "1F", level: 0 },
+      { name: "M", level: 2 },
+    ]);
+    expect(first.hi).toBe(second.lo);
   });
 
   it("starts a floor under its level, so its ground is not the floor below's ceiling", () => {

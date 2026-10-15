@@ -17,6 +17,14 @@ export const FLOOR_MIN_SEPARATION_M = 1.0;
 export const FLOOR_BAND_BELOW_M = 1.0;
 
 /**
+ * How far over a floor's level its band ends, metres: about two metres over
+ * the ground, a plan's cut. Walls and doorways are in it and the ceiling is
+ * not — a floor seen from above was otherwise its own ceiling, with the
+ * ground it is picked to place waypoints on hidden under it.
+ */
+export const FLOOR_BAND_ABOVE_M = 1.5;
+
+/**
  * How far a floor's ground sits under its level, metres: the body height
  * the robot's planner subtracts from its own pose (`lidar_height`) to find
  * the ground it starts on. Where a waypoint is put when the 3D map cannot
@@ -30,24 +38,33 @@ export const NEW_FLOOR_STEP_M = 3.0;
 export interface FloorBand extends MapFloor {
   /** Lowest z drawn for this floor, metres; -Infinity for the lowest floor. */
   lo: number;
-  /** Highest z, exclusive; Infinity for the top floor. */
+  /** Highest z, exclusive: a cut over the level, or where the next floor starts. */
   hi: number;
 }
 
 /**
- * The bands the floors cut the map into, lowest first. Every height belongs
- * to exactly one floor: the lowest takes everything under it (a pit, a
- * stray return under the slab) and the top one everything over it, so no
- * part of the map is shown under no floor at all.
+ * The bands the floors cut the map into, lowest first: from a metre under a
+ * floor's level (the lowest takes everything under it — a pit, a stray
+ * return under the slab) to its cut, `FLOOR_BAND_ABOVE_M` over the level, or
+ * the next floor's start if that comes first. What is over the cut — the
+ * ceiling, the void over it — is on no floor, and only All shows it. A map
+ * of one storey is one band of everything: there is nothing to pick.
  */
 export function floorBands(floors: readonly MapFloor[]): FloorBand[] {
   const ordered = [...floors].sort((a, b) => a.level - b.level);
-  return ordered.map((floor, i) => ({
-    name: floor.name,
-    level: floor.level,
-    lo: i === 0 ? -Infinity : floor.level - FLOOR_BAND_BELOW_M,
-    hi: i === ordered.length - 1 ? Infinity : ordered[i + 1].level - FLOOR_BAND_BELOW_M,
-  }));
+  if (ordered.length === 1) {
+    return [{ ...ordered[0], lo: -Infinity, hi: Infinity }];
+  }
+  return ordered.map((floor, i) => {
+    const cut = floor.level + FLOOR_BAND_ABOVE_M;
+    const next = ordered[i + 1];
+    return {
+      name: floor.name,
+      level: floor.level,
+      lo: i === 0 ? -Infinity : floor.level - FLOOR_BAND_BELOW_M,
+      hi: next ? Math.min(cut, next.level - FLOOR_BAND_BELOW_M) : cut,
+    };
+  });
 }
 
 /**

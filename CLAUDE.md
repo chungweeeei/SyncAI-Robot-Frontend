@@ -235,8 +235,9 @@ lib/
                 keys, the floor the brush aims at and the column under a
                 point), and the floors of a
                 map that spans storeys (floors.ts: the band each floor owns —
-                from a metre under its level to a metre under the next, so
-                a slab's top is in the floor above — the ground a waypoint
+                from a metre under its level, so a slab's top is in the
+                floor above, to a cut 1.5 m over it, under the ceiling that
+                would hide the floor from above — the ground a waypoint
                 on a floor stands at, which floor a height is on, and the
                 rules a saved list keeps, mirrored from the backend)
   scene/        three.js scene building for the 3D viewport: theme, markers,

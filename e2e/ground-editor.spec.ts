@@ -320,7 +320,8 @@ test.describe("the ground editor", () => {
       await expect(highest(page)).toHaveValue("5.05");
       await floors.getByRole("button", { name: "1F" }).click();
       await expect(lowest(page)).toHaveValue("-0.45");
-      await expect(highest(page)).toHaveValue("4.45");
+      // And ends 1.5 m over its level (-0.2 m), under the ceiling.
+      await expect(highest(page)).toHaveValue("1.25");
 
       // A slider moved by hand is no floor's band.
       await highest(page).fill("3.05");
