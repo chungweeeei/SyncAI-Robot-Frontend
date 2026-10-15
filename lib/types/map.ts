@@ -111,6 +111,12 @@ export interface MapVertex {
   y: number;
   /** **Degrees**, CCW from +x — not radians, unlike `MapMetadata.origin[2]`. */
   theta: number;
+  /**
+   * Height of the ground the waypoint stands on, metres in the map frame:
+   * which floor it is on (`floorOfHeight`) and what the robot's planner aims
+   * a goal at. 0 is the ground floor.
+   */
+  z: number;
 }
 
 export const MapVertexSchema: z.ZodType<MapVertex> = z.object({
@@ -121,6 +127,9 @@ export const MapVertexSchema: z.ZodType<MapVertex> = z.object({
   x: z.number(),
   y: z.number(),
   theta: z.number(),
+  // A backend from before floors sends none, and every waypoint it holds is
+  // on the ground floor.
+  z: z.number().default(0),
 });
 
 /**

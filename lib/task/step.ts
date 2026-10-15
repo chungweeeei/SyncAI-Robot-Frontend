@@ -2,8 +2,8 @@
 // conversion to wire shape. One copy, because a dispatch and a schedule
 // registration send the same list; lib/api/task.ts never sees a half-typed field.
 
-import { normalizeTheta } from "@/lib/angle";
 import type { TemplateStep, TemplateStepRequest } from "@/lib/api/task-template";
+import { moveParams as wireMoveParams } from "@/lib/api/task";
 import type {
   MoveStepParams,
   NavStepType,
@@ -101,6 +101,12 @@ export interface StepDraft {
    */
   vertexId: string | null;
   /**
+   * MOVE only: the ground height of the picked waypoint's floor, metres. Not
+   * typed by anyone and not shown — the row names the waypoint — but sent, so
+   * a job to an upstairs waypoint is not driven to the floor under it.
+   */
+  z: number;
+  /**
    * Loaded from a template whose vertex has since been deleted: the coordinates
    * are the save-time snapshot. Display only; it does not block dispatch.
    */
@@ -134,6 +140,7 @@ export function newStepDraft(type: StepType): StepDraft {
     repeat: "1",
     seconds: "",
     vertexId: null,
+    z: 0,
     withPrevious: false,
   };
 }
@@ -479,7 +486,7 @@ function moveParams(draft: StepDraft): MoveStepParams | null {
   const theta = parseCoordinate(draft.theta);
   if (x === null || y === null || theta === null) return null;
   // Folded on the way out: rewriting the field under the cursor breaks typing "180".
-  return { x, y, theta: normalizeTheta(theta) };
+  return wireMoveParams(x, y, theta, draft.z);
 }
 
 /** A SPEAK row's count, or null when what is typed is not a whole 1–50. */
@@ -612,6 +619,7 @@ export function fromTemplateSteps(steps: readonly TemplateStep[]): StepDraft[] {
         x: pose ? formatDraftPosition(pose.x) : draft.x,
         y: pose ? formatDraftPosition(pose.y) : draft.y,
         theta: pose ? formatDraftAngle(pose.theta) : draft.theta,
+        z: pose?.z ?? 0,
         vertexId: step.vertex_id,
         vertexMissing: step.vertex_status === "MISSING",
       };

@@ -48,7 +48,8 @@ export function isTerminalTaskStatus(status: TaskStatus | undefined | null): boo
   return status != null && TERMINAL_TASK_STATUSES.includes(status);
 }
 
-export type GoalPose = PlanarPose;
+/** A pose to drive to, with the ground height of its floor when it is not the ground floor. */
+export type GoalPose = PlanarPose & { z?: number };
 
 export interface TaskStepState {
   id: string;
@@ -124,6 +125,11 @@ export interface MoveStepParams {
   x: number;
   y: number;
   theta: number;
+  /**
+   * Ground height of the goal's floor, metres. The robot's planner aims the
+   * goal at the walkable surface nearest it; absent is the ground floor.
+   */
+  z?: number;
 }
 
 /**
@@ -165,6 +171,7 @@ export const MoveStepParamsSchema: z.ZodType<MoveStepParams> = z.object({
   x: z.number(),
   y: z.number(),
   theta: z.number(),
+  z: z.number().optional(),
 });
 
 export const SpeakStepParamsSchema: z.ZodType<SpeakStepParams> = z.object({
@@ -268,6 +275,15 @@ async function postTask(
 }
 
 /**
+ * A MOVE's params. `z` is sent only off the ground floor, so a ground-floor
+ * goal is the same request a backend from before floors took.
+ */
+export function moveParams(x: number, y: number, theta: number, z = 0): MoveStepParams {
+  const params = { x, y, theta: normalizeTheta(theta) };
+  return z ? { ...params, z } : params;
+}
+
+/**
  * A one-step MOVE for a dragged goal. `mapName` is the map it was aimed on, so
  * a switch from another console in between is refused, not driven.
  */
@@ -283,7 +299,7 @@ export function sendMoveTask(
       {
         id: "goal",
         type: "MOVE",
-        params: { x: goal.x, y: goal.y, theta: normalizeTheta(goal.theta) },
+        params: moveParams(goal.x, goal.y, goal.theta, goal.z),
       },
     ],
     null,

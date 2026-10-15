@@ -20,6 +20,8 @@ export interface VertexDraft {
   y: number;
   /** Degrees. Normalised to (-180, 180] on the way out. */
   theta: number;
+  /** Ground height of its floor; omitted, the backend puts it at 0. */
+  z?: number;
 }
 
 /** Omitted fields are left alone (`exclude_unset`). */
