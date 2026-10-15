@@ -37,7 +37,7 @@ export const STEP_TYPES: readonly StepTypeSpec[] = [
     value: "DOCK",
     label: "Dock",
     glyph: "D",
-    hint: "Go to a waypoint, then walk straight onto the charger there and lie down.",
+    hint: "Go to a waypoint, then walk straight onto the charger there and stay standing on it.",
   },
   // "T" (for TTS) because STANDUP already owns "S".
   { value: "SPEAK", label: "Speak", glyph: "T", hint: "Say a line on the robot speaker (TTS)." },
