@@ -161,7 +161,10 @@ components/
                 corner — its layers are the saved scan, the robot's 3D map
                 (the occupancy tree, off by default like the scan, drawn
                 whether or not the map has a floor plan, one floor at a time
-                on a map that spans storeys), waypoints, zones and the path,
+                on a map that spans storeys), waypoints (each at its own
+                floor's ground height; with a floor picked, only that floor's
+                are shown or tappable, and a goal or a new waypoint lands on
+                it), zones and the path,
                 with Top down and Front view (level, from the south, where
                 storeys stack) — the instrument rail (the registered schedules
                 first — a glance with pause and delete, the list itself stays
@@ -233,8 +236,9 @@ lib/
                 point), and the floors of a
                 map that spans storeys (floors.ts: the band each floor owns —
                 from a metre under its level to a metre under the next, so
-                a slab's top is in the floor above — and the rules a saved
-                list keeps, mirrored from the backend)
+                a slab's top is in the floor above — the ground a waypoint
+                on a floor stands at, which floor a height is on, and the
+                rules a saved list keeps, mirrored from the backend)
   scene/        three.js scene building for the 3D viewport: theme, markers,
                 vertex layer, zone layer, path ribbon, the running dock's
                 staging point and leg (dock-layer.ts), the 3D map's voxel

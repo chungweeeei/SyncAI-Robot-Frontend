@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select";
 import { DEFAULT_VERTEX_TYPE, VERTEX_TYPES } from "@/lib/map/vertex";
 import type { VertexType } from "@/lib/types/map";
-import type { PlanarPose } from "@/lib/types/robot";
+import type { PlacedPose, PlanarPose } from "@/lib/types/robot";
 
 /**
  * One placement awaiting a name. The form remounts per `key`, so a typed name
@@ -30,7 +30,8 @@ import type { PlanarPose } from "@/lib/types/robot";
  */
 export interface Placement {
   key: number;
-  pose: PlanarPose;
+  /** With the ground height of the floor it was placed on. */
+  pose: PlacedPose;
 }
 
 /**

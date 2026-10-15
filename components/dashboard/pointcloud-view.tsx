@@ -35,7 +35,8 @@ import { useActiveMap } from "@/hooks/use-maps";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import { apiUrl } from "@/lib/api/config";
-import { floorBands } from "@/lib/map/floors";
+import { type FloorBand, floorBands, floorGround } from "@/lib/map/floors";
+import { floorHeightIn } from "@/lib/map/ground-fill";
 import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
 import { dispatchMapLock } from "@/lib/map/run-lock";
 import { liveDock } from "@/lib/task/run";
@@ -113,14 +114,28 @@ export function PointCloudView({
   const octomap = useMapOctomap(
     showVoxels && hasVoxels && activeMap ? activeMap.name : null,
   );
-  // One floor of the 3D map at a time, for a map that spans storeys. Read
-  // only while the layer is up; a map of one storey (or a failed read) has
-  // no floors and shows whole. Held by name, so a floor that is renamed or
-  // gone elsewhere falls back to the whole map instead of to a stale band.
-  const { floors } = useMapFloors(showVoxels && hasVoxels && activeMap ? activeMap.name : null);
+  // One floor of the 3D map at a time, for a map that spans storeys. A map
+  // of one storey (or a failed read) has no floors and shows whole. Read
+  // whenever the map has a 3D map, not only while it is drawn: "use the
+  // robot's pose" has to know which floor the robot is on either way. Held
+  // by name, so a floor renamed or gone elsewhere falls back to the whole
+  // map instead of to a stale band. Picked only while the layer is up —
+  // the floor is what that layer is showing.
+  const { floors } = useMapFloors(hasVoxels && activeMap ? activeMap.name : null);
   const [floorName, setFloorName] = React.useState<string | null>(null);
   const bands = React.useMemo(() => floorBands(floors), [floors]);
-  const floorBand = bands.find((band) => band.name === floorName) ?? null;
+  const floorBand = octomap.voxels
+    ? (bands.find((band) => band.name === floorName) ?? null)
+    : null;
+  /** A floor's ground: where the 3D map shows it, else a body height under its level. */
+  const groundOf = React.useCallback(
+    (band: FloorBand | null) =>
+      floorGround(band, band && octomap.voxels ? floorHeightIn(octomap.voxels, band.lo, band.hi) : null),
+    [octomap.voxels],
+  );
+  // What a pick lands on: the floor shown. Memoised because the measure walks
+  // every cell of the tree.
+  const floorZ = React.useMemo(() => groundOf(floorBand), [groundOf, floorBand]);
   // Keyed on the two numbers: `floors` is a fresh list on every refetch, and
   // a fresh band object would repaint the layer for nothing.
   const bandLo = floorBand?.lo;
@@ -197,35 +212,42 @@ export function PointCloudView({
     setPick({ mode: "vertex", vertex });
   }, []);
 
+  // A re-place with no floor picked stays on its own floor: moving a 2F stop
+  // a metre must not drop it to the ground floor because 2F was not up.
+  const pickZ = pick?.mode === "vertex" && !floorBand ? pick.vertex.z : floorZ;
+
   // Single-shot: one drag, one pose, then disarm. Every branch acts on release
   // (a goal moves the robot), so the disarm is what makes a stray second click
   // inert.
   const commitPick = React.useCallback(
     (picked: PlanarPose) => {
+      // The floor it was placed on goes with it. Not on an initial pose: the
+      // robot measures its own height.
+      const placed = { ...picked, z: pickZ };
       if (pick?.mode === "initial-pose") {
         commitPose(picked);
       } else if (pick?.mode === "place") {
-        setPlacement({ key: ++placementSeq.current, pose: picked });
+        setPlacement({ key: ++placementSeq.current, pose: placed });
       } else if (pick?.mode === "vertex") {
         const target = pick.vertex;
         setSavingVertex(target);
         // The echo patches the list in the same render that clears this.
-        void moveVertex(target.id, picked).finally(() => setSavingVertex(null));
+        void moveVertex(target.id, placed).finally(() => setSavingVertex(null));
       } else {
         // Dispatched at once: the aimed arrow is the confirmation. Failures
         // surface in GoalControl through the task state.
-        void sendGoal(picked);
+        void sendGoal(placed);
       }
       setPick(null);
     },
-    [pick, commitPose, sendGoal, moveVertex],
+    [pick, pickZ, commitPose, sendGoal, moveVertex],
   );
 
   // The dialog closes first; GoalControl reports the job and any error.
   const moveToVertex = React.useCallback(
     (vertex: MapVertex) => {
       setAskedVertex(null);
-      void sendGoal({ x: vertex.x, y: vertex.y, theta: vertex.theta });
+      void sendGoal({ x: vertex.x, y: vertex.y, theta: vertex.theta, z: vertex.z });
     },
     [sendGoal],
   );
@@ -244,10 +266,13 @@ export function PointCloudView({
 
   // A snapshot, not a live binding: a pose that crept while the name was typed
   // would be a stop nobody placed. Same key, so the typed name survives.
+  // On the ground of the floor the robot is on, by its body height.
   const useRobotPose = React.useCallback(() => {
     if (!robotPose) return;
-    setPlacement((cur) => (cur ? { ...cur, pose: robotPose } : cur));
-  }, [robotPose]);
+    const band = bands.find((b) => robotPose.z >= b.lo && robotPose.z < b.hi) ?? null;
+    const pose = { x: robotPose.x, y: robotPose.y, theta: robotPose.theta, z: groundOf(band) };
+    setPlacement((cur) => (cur ? { ...cur, pose } : cur));
+  }, [robotPose, bands, groundOf]);
 
   const { clearWriteError } = stops;
 
@@ -332,6 +357,7 @@ export function PointCloudView({
         mapCloud={scan.cloud}
         voxels={octomap.voxels}
         voxelBand={voxelBand}
+        pickZ={pickZ}
         path={path}
         dock={dock}
         dockPath={dockPath}

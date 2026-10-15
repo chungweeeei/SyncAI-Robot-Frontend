@@ -34,6 +34,7 @@ import {
 import { createDockLayer } from "@/lib/scene/dock-layer";
 import { createDashedRibbon, createPathRibbon } from "@/lib/scene/path-ribbon";
 import { aimRaycaster, intersectGround } from "@/lib/scene/picking";
+import { columnAt } from "@/lib/map/ground-fill";
 import { POSE_EASE_TAU_S, type SmoothPose } from "@/lib/scene/pose";
 import {
   ROBOT_BASE_HEIGHT_M,
@@ -111,6 +112,13 @@ interface PointCloudCanvasProps {
    * the layer (see VoxelLayer.setBand).
    */
   voxelBand?: { lo: number; hi: number } | null;
+  /**
+   * The ground height a pick lands at, metres: the floor shown, so a goal or
+   * a waypoint placed with 2F up is on 2F. 0 is the ground floor, bounded by
+   * the floor plan; any other height is bounded by the 3D map's box, since
+   * the floor plan need not reach over an upper storey.
+   */
+  pickZ?: number;
   /**
    * The planner's remaining route, drawn as a band on the floor so an operator
    * can catch a route that hugs a wall before the robot is against it. An empty
@@ -191,8 +199,8 @@ interface PointCloudCanvasProps {
   mapCloudStream?: boolean;
   /** The map-cloud stream's status; it fails independently of `onStatus`. */
   onMapStatus?: (status: StreamStatus) => void;
-  /** Committed goal, drawn on the ground until the caller clears it. */
-  goal?: PlanarPose | null;
+  /** Committed goal, drawn on its floor's ground until the caller clears it. */
+  goal?: (PlanarPose & { z?: number }) | null;
   /**
    * The initial pose last placed, kept as the reference the reported pose is
    * read against while localization converges. useInitialPose expires it.
@@ -200,7 +208,7 @@ interface PointCloudCanvasProps {
   initialPose?: PlanarPose | null;
   /**
    * What a press-drag-release on the ground produces, or null: the press is
-   * projected onto z=0 and the drag gives the heading. Left-button camera
+   * projected onto `pickZ` and the drag gives the heading. Left-button camera
    * motion is suspended while armed. In "initial-pose" the robot model itself
    * follows the pointer until a press plants it. One mode at a time, since the
    * gesture is identical for all of them.
@@ -219,6 +227,7 @@ export function PointCloudCanvas({
   mapCloud = null,
   voxels = null,
   voxelBand = null,
+  pickZ = 0,
   path,
   dock = null,
   dockPath,
@@ -965,8 +974,8 @@ export function PointCloudCanvas({
       ctx.draftMarker,
       pickMode === "initial-pose" ? theme.initialPoseDraft : theme.goalDraft,
     );
-    placePoseMarker(ctx.draftMarker, pickMode ? draft : null);
-  }, [goal, initialPose, draft, pickMode, meta, mapImageUrl, resolvedTheme]);
+    placePoseMarker(ctx.draftMarker, pickMode && draft ? { ...draft, z: pickZ } : null);
+  }, [goal, initialPose, draft, pickMode, pickZ, meta, mapImageUrl, resolvedTheme]);
 
   // ---- Initial-pose pick: the robot itself is the preview ----------------
   // An initial pose asserts where the machine is, so the machine moves: what
@@ -1003,6 +1012,7 @@ export function PointCloudCanvas({
     // patching the list mid-gesture).
     layer.setHovered(hoverIdRef.current);
     layer.setMoving(movingIdRef.current);
+    layer.setBand(voxelBandRef.current?.lo ?? -Infinity, voxelBandRef.current?.hi ?? Infinity);
 
     return () => {
       // `ctx.scene` may already be discarded; the dispose is what matters,
@@ -1160,6 +1170,8 @@ export function PointCloudCanvas({
   React.useEffect(() => {
     voxelBandRef.current = voxelBand;
     voxelLayerRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
+    // The waypoints follow the floor shown, by their own ground height.
+    vertexLayerRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
   }, [voxelBand]);
 
   // ---- Pose picking -----------------------------------------------------
@@ -1196,10 +1208,10 @@ export function PointCloudCanvas({
     return raycaster;
   };
 
-  /** Project a pointer position onto the z=0 map plane. */
+  /** Project a pointer position onto the ground of the floor shown. */
   const pickGround = (event: React.PointerEvent) => {
     const raycaster = castFromPointer(event);
-    return raycaster ? intersectGround(raycaster) : null;
+    return raycaster ? intersectGround(raycaster, pickZ) : null;
   };
 
   /** The stored vertex under a pointer position, or null (also when hidden). */
@@ -1229,6 +1241,7 @@ export function PointCloudCanvas({
    * against, so it is refused. With no floor plan anything goes.
    */
   const insideMap = (wx: number, wy: number) => {
+    if (pickZ !== 0 && voxels) return columnAt(voxels, wx, wy) !== null;
     if (!meta) return true;
     const [x0, y0] = meta.origin;
     return (
