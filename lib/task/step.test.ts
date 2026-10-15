@@ -11,6 +11,7 @@ import {
   moveStepDraft,
   newStepDraft,
   repeatSuffix,
+  stepDockVertices,
   stepDraftError,
   stepDraftsSubmittable,
   stepGroupError,
@@ -26,6 +27,7 @@ import {
   toDispatchSteps,
   toStepRequests,
   toTemplateSteps,
+  undockDefaults,
   unlinkStep,
   wireLinked,
   type StepDraft,
@@ -486,7 +488,7 @@ describe("step groups", () => {
     const drafts = [move(), linked(speak("hi")), linked(newStepDraft("STANDUP"))];
     expect(stepGroupError(drafts, 0)).toBeNull();
     expect(stepGroupError(drafts, 1)).toBeNull();
-    expect(stepGroupError(drafts, 2)).toMatch(/one Move, Stand or Lie at a time/);
+    expect(stepGroupError(drafts, 2)).toMatch(/one Move, charger step, Stand or Lie at a time/);
     expect(stepDraftsSubmittable(drafts)).toBe(false);
   });
 
@@ -596,9 +598,9 @@ describe("step groups", () => {
   describe("stepLinkProblem", () => {
     it("refuses to start a body step together with one", () => {
       // Move with Stand, Move with Lie, Move with Move: the robot has one body.
-      for (const type of ["MOVE", "STANDUP", "LIEDOWN"] as const) {
+      for (const type of ["MOVE", "DOCK", "UNDOCK", "STANDUP", "LIEDOWN"] as const) {
         expect(stepLinkProblem([move(), newStepDraft(type)], 1)).toMatch(
-          /one Move, Stand or Lie at a time/,
+          /one Move, charger step, Stand or Lie at a time/,
         );
       }
     });
@@ -633,5 +635,65 @@ describe("step groups", () => {
         { type: "STANDUP" },
       ]),
     ).toBe("M [M T] S");
+  });
+});
+
+describe("dock steps", () => {
+  // A dock is a Move to the approach point plus the last metre, on the same
+  // pose and waypoint wire as a Move; only the type tells the robot which.
+  function dock(over: Partial<StepDraft> = {}): StepDraft {
+    return { ...newStepDraft("DOCK"), x: "2.5", y: "1.25", theta: "90", vertexId: "v-dock", ...over };
+  }
+
+  it("needs a waypoint, in the same words as a Move", () => {
+    expect(stepDraftError(newStepDraft("DOCK"))).toBe("Pick a waypoint.");
+    expect(stepDraftError(newStepDraft("UNDOCK"))).toBe("Pick a waypoint.");
+    expect(stepDraftError(dock())).toBeNull();
+  });
+
+  it("keeps its type on the wire, and its waypoint in a saved template", () => {
+    const drafts = [dock(), { ...dock(), type: "UNDOCK" as const }];
+    expect(toStepRequests(drafts)).toEqual([
+      { id: "1-dock", type: "DOCK", params: { x: 2.5, y: 1.25, theta: 90 } },
+      { id: "2-undock", type: "UNDOCK", params: { x: 2.5, y: 1.25, theta: 90 } },
+    ]);
+    expect(toTemplateSteps(drafts).map((step) => ("vertex_id" in step ? step.vertex_id : undefined)))
+      .toEqual(["v-dock", "v-dock"]);
+  });
+
+  it("loads back from a template and dispatches the resolved pose under its own type", () => {
+    const stored: TemplateStep[] = [
+      {
+        id: "1-dock",
+        type: "DOCK",
+        vertex_id: "v-dock",
+        vertex_name: "dock",
+        vertex_status: "CURRENT",
+        group: null,
+        params: { x: 0, y: 0, theta: 0 },
+        resolved_params: { x: 2.5, y: 1.25, theta: 90 },
+      },
+    ];
+    const [loaded] = fromTemplateSteps(stored);
+    expect(loaded).toMatchObject({ type: "DOCK", x: "2.5", y: "1.25", theta: "90", vertexId: "v-dock" });
+    expect(toDispatchSteps(stored)).toEqual([
+      { id: "1-dock", type: "DOCK", params: { x: 2.5, y: 1.25, theta: 90 } },
+    ]);
+  });
+
+  it("lights its waypoint like a Move's, and marks it for an approach point", () => {
+    const drafts = [move({ vertexId: "v-hall" }), dock(), move({ vertexId: null })];
+    expect(stepWaypointOrdinals(drafts).get("v-dock")).toEqual([2]);
+    expect([...stepDockVertices(drafts)]).toEqual(["v-dock"]);
+  });
+
+  it("starts a Leave charger on the waypoint of the last Return to charger", () => {
+    expect(undockDefaults([move({ vertexId: "v-hall" })])).toBeNull();
+    expect(undockDefaults([dock({ vertexId: "v-a" }), move(), dock({ vertexId: "v-b" })])).toEqual({
+      x: "2.5",
+      y: "1.25",
+      theta: "90",
+      vertexId: "v-b",
+    });
   });
 });

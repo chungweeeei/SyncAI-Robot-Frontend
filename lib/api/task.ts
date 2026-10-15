@@ -99,8 +99,15 @@ const TaskAckResponseSchema: z.ZodType<TaskAckResponse> = z.object({
 /** Posture steps carry no params; sending any is refused. */
 export type Posture = "STANDUP" | "LIEDOWN";
 
+/**
+ * The steps that send the robot a navigation goal, all three on a pose in the
+ * map frame. DOCK and UNDOCK carry the *dock* pose, the same one for both: the
+ * robot works out the approach point in front of it (lib/map/dock.ts).
+ */
+export type NavStepType = "MOVE" | "DOCK" | "UNDOCK";
+
 /** The backend's full `StepType` vocabulary. */
-export type StepType = "MOVE" | "SPEAK" | "WAIT" | Posture;
+export type StepType = NavStepType | "SPEAK" | "WAIT" | Posture;
 
 /** `theta` in degrees, folded into (-180, 180] on the way out. */
 export interface MoveStepParams {
@@ -132,7 +139,7 @@ export interface WaitStepParams {
  * carry `params`, which 422s with a validation array instead of a sentence.
  */
 export type TaskStepRequest = (
-  | { id: string; type: "MOVE"; params: MoveStepParams }
+  | { id: string; type: NavStepType; params: MoveStepParams }
   | { id: string; type: "SPEAK"; params: SpeakStepParams }
   | { id: string; type: "WAIT"; params: WaitStepParams }
   | { id: string; type: Posture }
@@ -168,7 +175,7 @@ export const WaitStepParamsSchema: z.ZodType<WaitStepParams> = z.object({
 export const TaskStepRequestSchema: z.ZodType<TaskStepRequest> = z.union([
   z.object({
     id: z.string(),
-    type: z.literal("MOVE"),
+    type: z.enum(["MOVE", "DOCK", "UNDOCK"]),
     params: MoveStepParamsSchema,
     group: z.string().nullish(),
   }),

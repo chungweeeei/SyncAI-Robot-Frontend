@@ -69,6 +69,12 @@ describe("decodeTaskDraft", () => {
     expect(restored.steps.map(withoutKey)).toEqual(stored.steps.map(withoutKey));
   });
 
+  it("restores a dock row with its waypoint", () => {
+    const stored = { ...draft(), steps: [{ ...newStepDraft("UNDOCK"), x: "1", y: "2", vertexId: "v1" }] };
+    const restored = decodeTaskDraft(JSON.stringify(stored));
+    expect(restored.steps.map(withoutKey)).toEqual(stored.steps.map(withoutKey));
+  });
+
   it("still restores a draft written by an older editor", () => {
     // An unknown key from another build is stripped rather than costing the steps.
     const restored = decodeTaskDraft(
@@ -300,6 +306,10 @@ describe("draftIsUnsaved", () => {
     ).toBe(true);
     expect(
       draftIsUnsaved({ ...base, steps: [{ ...move, vertexId: "v2" }, speak] }, library),
+    ).toBe(true);
+    // The same waypoint docked onto instead of driven to is a different job.
+    expect(
+      draftIsUnsaved({ ...base, steps: [{ ...move, type: "DOCK" as const }, speak] }, library),
     ).toBe(true);
   });
 

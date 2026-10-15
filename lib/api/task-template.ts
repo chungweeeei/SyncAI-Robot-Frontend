@@ -20,6 +20,7 @@ import {
 } from "@/lib/api/task";
 import type {
   MoveStepParams,
+  NavStepType,
   Posture,
   SpeakStepParams,
   TaskStepRequest,
@@ -28,7 +29,7 @@ import type {
 
 /** One step as it is *stored*: a task step plus where a MOVE's numbers came from. */
 export type TemplateStepRequest = TaskStepRequest & {
-  /** MOVE only — the backend 422s a posture step carrying one. */
+  /** MOVE / DOCK / UNDOCK only — the backend 422s any other step carrying one. */
   vertex_id?: string | null;
 };
 
@@ -57,7 +58,7 @@ interface TemplateStepBase {
  */
 export type TemplateStep =
   | (TemplateStepBase & {
-      type: "MOVE";
+      type: NavStepType;
       params: MoveStepParams | null;
       resolved_params: MoveStepParams | null;
     })
@@ -82,7 +83,7 @@ export interface TaskTemplate {
   id: string;
   name: string;
   description: string;
-  /** Null when the template has no MOVE step and so runs anywhere. */
+  /** Null when the template has no MOVE / DOCK / UNDOCK step and so runs anywhere. */
   map_name: string | null;
   steps: TemplateStep[];
   /** False only when it names a map other than the robot's. */
@@ -95,7 +96,7 @@ export interface TaskTemplate {
 export interface TaskTemplateDraft {
   name: string;
   description?: string;
-  /** Required when any step is a MOVE; must be omitted otherwise. */
+  /** Required when any step is a MOVE, DOCK or UNDOCK; must be omitted otherwise. */
   map_name?: string | null;
   steps: readonly TemplateStepRequest[];
 }
@@ -111,7 +112,7 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     vertex_name: z.string().nullable(),
     vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
     group: z.string().nullish().transform((group) => group ?? null),
-    type: z.literal("MOVE"),
+    type: z.enum(["MOVE", "DOCK", "UNDOCK"]),
     params: MoveStepParamsSchema.nullable(),
     resolved_params: MoveStepParamsSchema.nullable(),
   }),

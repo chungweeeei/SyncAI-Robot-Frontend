@@ -8,7 +8,7 @@ import type { TaskTemplate } from "@/lib/api/task-template";
 import { GroupRail } from "@/components/tasks/group-rail";
 import type { TaskStepRequest } from "@/lib/api/task";
 import { scheduleDrift } from "@/lib/task/schedule";
-import { repeatSuffix, stepGlyph, wireGroupPlaces } from "@/lib/task/step";
+import { isNavStep, repeatSuffix, stepGlyph, wireGroupPlaces } from "@/lib/task/step";
 import { cn } from "@/lib/utils";
 
 export interface ScheduleStepsProps {
@@ -70,7 +70,7 @@ export function ScheduleSteps({ scheduleId, source }: ScheduleStepsProps) {
             <span className="instrument-label w-3 shrink-0 text-muted-foreground">
               {stepGlyph(step.type)}
             </span>
-            {step.type === "MOVE" && (
+            {isNavStep(step) && (
               <span className="readout min-w-0 truncate">
                 {step.params.x.toFixed(3)}, {step.params.y.toFixed(3)} ·{" "}
                 {step.params.theta.toFixed(1)}°

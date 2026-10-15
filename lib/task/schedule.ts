@@ -11,7 +11,7 @@
 import type { ScheduleState, ScheduleTrigger } from "@/lib/api/schedule";
 import type { TaskStepRequest } from "@/lib/api/task";
 import type { TemplateStep } from "@/lib/api/task-template";
-import { toDispatchSteps, wireLinked } from "@/lib/task/step";
+import { isNavStep, toDispatchSteps, wireLinked } from "@/lib/task/step";
 
 /**
  * The seven days in the order an operator expects them, each with its cron
@@ -432,7 +432,7 @@ export function scheduleDrift(
     if (step.type === "WAIT" && now.type === "WAIT") {
       return step.params.seconds === now.params.seconds ? count : count + 1;
     }
-    if (step.type !== "MOVE" || now.type !== "MOVE") return count;
+    if (!isNavStep(step) || !isNavStep(now)) return count;
     const same =
       step.params.x.toFixed(3) === now.params.x.toFixed(3) &&
       step.params.y.toFixed(3) === now.params.y.toFixed(3) &&

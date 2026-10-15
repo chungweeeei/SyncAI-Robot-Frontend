@@ -1548,7 +1548,7 @@ test.describe("the task console", () => {
     await expect(
       page.getByRole("menuitem", { name: "Start together with step 1" }),
     ).toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByText(/one Move, Stand or Lie at a time/)).toBeVisible();
+    await expect(page.getByText(/one Move, charger step, Stand or Lie at a time/)).toBeVisible();
     expect(writes).toEqual([]);
   });
 
@@ -3706,6 +3706,50 @@ test.describe("the step editor", () => {
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     await expect(waypoint).toContainText("room-a");
     await expect(second).toContainText("dock");
+  });
+
+  test("saves Return to charger and Leave charger on the waypoint picked", async ({ page }) => {
+    // Both halves of a dock ride the Move wire with their own type, and Leave
+    // charger starts on the charger the job docked on. Both halves asserted:
+    // the row on screen, and the type, waypoint and map in the body.
+    await mockBackend(page);
+    const posted: { map_name?: string; steps: Record<string, unknown>[] }[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as (typeof posted)[number] & { name: string };
+      posted.push(body);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({ id: "77777777-7777-7777-7777-777777777777", name: body.name }),
+        ),
+      });
+    });
+    await page.goto("/tasks/editor");
+    await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
+    await page.getByRole("textbox", { name: "Task name" }).fill("charge");
+
+    await page.getByTitle(/^Go to a waypoint, then walk straight onto the charger/).click();
+    const dockAt = page.getByRole("combobox", { name: "Charger waypoint for step 1" });
+    await dockAt.click();
+    await page.getByRole("option", { name: "dock" }).click();
+    await expect(dockAt).toContainText("dock");
+
+    await page.getByTitle(/^Stand up and back straight off the charger/).click();
+    await expect(
+      page.getByRole("combobox", { name: "Charger waypoint for step 2" }),
+    ).toContainText("dock");
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => posted).toHaveLength(1);
+    expect(posted[0]!.map_name).toBe(MAP_NAME);
+    const pose = { x: 2.5, y: 1.25, theta: 90 };
+    const id = vertex().id;
+    expect(posted[0]!.steps).toEqual([
+      { id: "1-dock", type: "DOCK", params: pose, vertex_id: id },
+      { id: "2-undock", type: "UNDOCK", params: pose, vertex_id: id },
+    ]);
   });
 
   test("zooms the floor plan and comes back to fit", async ({ page }) => {

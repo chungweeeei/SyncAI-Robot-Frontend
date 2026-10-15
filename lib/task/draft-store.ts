@@ -46,7 +46,7 @@ export function isEmptyTaskDraft(draft: TaskDraft): boolean {
 // are stripped, so a draft written by a newer build still restores.
 const StepDraftSchema: z.ZodType<StepDraft> = z.object({
   key: z.number(),
-  type: z.enum(["MOVE", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
+  type: z.enum(["MOVE", "DOCK", "UNDOCK", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
   x: z.string(),
   y: z.string(),
   theta: z.string(),
@@ -99,9 +99,12 @@ function stepFingerprint(step: StepDraft, index: number): string {
 function stepContent(step: StepDraft): string {
   switch (step.type) {
     case "MOVE":
+    case "DOCK":
+    case "UNDOCK":
+      // The type leads, so a Move switched to a dock on the same waypoint is an edit.
       return step.vertexId !== null
-        ? `MOVE@${step.vertexId}`
-        : `MOVE ${step.x} ${step.y} ${step.theta}`;
+        ? `${step.type}@${step.vertexId}`
+        : `${step.type} ${step.x} ${step.y} ${step.theta}`;
     case "SPEAK":
       // Trimmed because Save trims: trailing spaces are not a change to the job.
       return `SPEAK ${step.repeat.trim()} ${step.text.trim()}`;

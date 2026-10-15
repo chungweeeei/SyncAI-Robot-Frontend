@@ -40,6 +40,7 @@ import {
   WAIT_SECONDS_MAX,
   formatDraftAngle,
   formatDraftPosition,
+  isNavStep,
   stepDraftError,
   stepSummary,
   type GroupPlace,
@@ -369,12 +370,12 @@ export function StepRow({
               {/* Every type's fields stay in the draft across a type change, so
                * switching away and back loses nothing; the wire shape derives
                * from the type. */}
-              {/* A MOVE row is set by its waypoint only, no X / Y / heading
+              {/* A Move or dock row is set by its waypoint only, no X / Y / heading
                * fields; the draft still carries the numbers that are sent. The
                * floor plan sits with the row, behind a button so a long patrol
                * is not a wall of maps. It shows the whole job and is not a
                * picker: the dropdown sets the step. */}
-              {step.type === "MOVE" && (
+              {isNavStep(step) && (
                 <div className="space-y-2">
                   <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
@@ -385,7 +386,7 @@ export function StepRow({
                         value={step.vertexId}
                         disabled={disabled}
                         onPick={pickWaypoint}
-                        label={`Waypoint for step ${ordinal}`}
+                        label={`${step.type === "MOVE" ? "Waypoint" : "Charger waypoint"} for step ${ordinal}`}
                       />
                     </div>
                     {/* Disabled rather than absent without a floor plan, so the row
