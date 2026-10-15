@@ -1139,7 +1139,7 @@ test.describe("waypoints on an upper floor", () => {
   const landing = vertex({
     id: "22222222-2222-2222-2222-222222222222",
     name: "landing",
-    type: "GENERAL",
+    type: "MOVE",
     x: -4,
     y: 2,
     theta: 0,
