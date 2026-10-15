@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   FLOOR_BAND_BELOW_M,
+  FLOOR_GROUND_BELOW_LEVEL_M,
   floorBands,
+  floorGround,
+  floorOfHeight,
   floorsProblem,
   nextFloor,
   sameFloors,
@@ -84,5 +87,33 @@ describe("sameFloors", () => {
     expect(sameFloors(TWO, [...TWO].reverse())).toBe(true);
     expect(sameFloors(TWO, [TWO[0], { name: "G", level: -0.2 }])).toBe(false);
     expect(sameFloors(TWO, [TWO[0], { name: "1F", level: 0 }])).toBe(false);
+  });
+});
+
+describe("floorGround", () => {
+  const [first, second] = floorBands(TWO);
+
+  it("keeps the lowest floor at 0, where every waypoint stood before floors", () => {
+    // Even with a measured ground: a ground-floor goal must stay the request a
+    // backend without floors took, which sends no height at all.
+    expect(floorGround(first, -0.45)).toBe(0);
+    expect(floorGround(null)).toBe(0);
+  });
+
+  it("puts an upper floor where the 3D map shows its ground, else a body height under its level", () => {
+    expect(floorGround(second, 5.05)).toBe(5.05);
+    expect(floorGround(second)).toBeCloseTo(5.5 - FLOOR_GROUND_BELOW_LEVEL_M);
+  });
+});
+
+describe("floorOfHeight", () => {
+  it("finds the floor a waypoint placed on it is on, by the bands the 3D map is drawn in", () => {
+    for (const band of floorBands(TWO)) {
+      expect(floorOfHeight(floorGround(band), TWO)).toBe(band.name);
+    }
+  });
+
+  it("names no floor on a map of one storey", () => {
+    expect(floorOfHeight(0, [])).toBeNull();
   });
 });

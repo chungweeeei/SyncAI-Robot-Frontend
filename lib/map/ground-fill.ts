@@ -129,6 +129,17 @@ export function medianFloor(floors: ColumnFloors): number | null {
 }
 
 /**
+ * Where the 3D map shows a floor's ground, metres: the median column floor
+ * of the heights `[loM, hiM)`, at the cell's centre. Null when the tree has
+ * no cell in them. The height an upstairs waypoint is placed at.
+ */
+export function floorHeightIn(voxels: OccupiedVoxels, loM: number, hiM: number): number | null {
+  const band = bandForHeights(voxels, loM, hiM);
+  const median = band && medianFloor(columnFloors(voxels, band));
+  return median === null ? null : kzToMetres(median, voxels);
+}
+
+/**
  * The column under a map-frame point, as the dabs address it (`x` right,
  * `y` up, the tree's own key order), or null off the tree's box.
  */

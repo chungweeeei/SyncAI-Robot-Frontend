@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  floorHeightIn,
   GroundStroke,
   NO_FLOOR,
   applyGroundPatch,
@@ -68,6 +69,17 @@ describe("columnFloors", () => {
     const upper = columnFloors(site(), { lo: 20, hi: 30 });
     expect(upper.floor[index(6, 6)]).toBe(30);
     expect(upper.floor[index(0, 0)]).toBe(NO_FLOOR);
+  });
+});
+
+describe("floorHeightIn", () => {
+  it("finds each storey's ground, in metres, from the heights it owns", () => {
+    expect(floorHeightIn(site(), -Infinity, 2)).toBeCloseTo(-0.45);
+    expect(floorHeightIn(site(), 2, Infinity)).toBeCloseTo(2.55);
+  });
+
+  it("has no answer for heights the tree has no cell in", () => {
+    expect(floorHeightIn(site(), 1, 2)).toBeNull();
   });
 });
 

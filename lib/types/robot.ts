@@ -39,6 +39,14 @@ export interface PlanarPose {
 }
 
 /**
+ * A planar pose on one floor of a map that spans several: `z` is the ground
+ * height of that floor, metres, 0 on the ground floor (see `floorGround`).
+ */
+export interface PlacedPose extends PlanarPose {
+  z: number;
+}
+
+/**
  * Normalized teleop command, REP-103 body frame: +vx forward, +vy left, +wz
  * CCW, each in [-1, 1]. Velocity limits live with the robot, not the UI.
  */

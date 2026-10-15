@@ -16,6 +16,14 @@ export const FLOOR_MIN_SEPARATION_M = 1.0;
  */
 export const FLOOR_BAND_BELOW_M = 1.0;
 
+/**
+ * How far a floor's ground sits under its level, metres: the body height
+ * the robot's planner subtracts from its own pose (`lidar_height`) to find
+ * the ground it starts on. Where a waypoint is put when the 3D map cannot
+ * say where that floor's ground is.
+ */
+export const FLOOR_GROUND_BELOW_LEVEL_M = 0.48;
+
 /** A height a new floor is offered at above the top one: a storey, give or take. */
 export const NEW_FLOOR_STEP_M = 3.0;
 
@@ -40,6 +48,27 @@ export function floorBands(floors: readonly MapFloor[]): FloorBand[] {
     lo: i === 0 ? -Infinity : floor.level - FLOOR_BAND_BELOW_M,
     hi: i === ordered.length - 1 ? Infinity : ordered[i + 1].level - FLOOR_BAND_BELOW_M,
   }));
+}
+
+/**
+ * The ground height a waypoint placed on `band` stands at, metres. The
+ * lowest floor is 0, as every waypoint was before floors and as the floor
+ * plan is drawn. Any other floor is where the 3D map shows its ground
+ * (`measured`), else a body height under its level.
+ */
+export function floorGround(band: FloorBand | null, measured: number | null = null): number {
+  if (!band || band.lo === -Infinity) return 0;
+  return measured ?? band.level - FLOOR_GROUND_BELOW_LEVEL_M;
+}
+
+/**
+ * The floor a ground height is on, by the same bands the 3D map is drawn
+ * in, or null for a map of one storey. Never stored with the waypoint: a
+ * floor renamed or a list re-detected would leave a stored name pointing at
+ * nothing, where a height still finds its floor.
+ */
+export function floorOfHeight(z: number, floors: readonly MapFloor[]): string | null {
+  return floorBands(floors).find((band) => z >= band.lo && z < band.hi)?.name ?? null;
 }
 
 /**

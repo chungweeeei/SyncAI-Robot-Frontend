@@ -64,11 +64,17 @@ export function createPoseMarker(color: number, opacity: number): THREE.Group {
   return group;
 }
 
-/** Move a marker to a pose (theta in degrees), or hide it when there is none. */
-export function placePoseMarker(marker: THREE.Group, pose: PlanarPose | null) {
+/**
+ * Move a marker to a pose (theta in degrees), or hide it when there is none.
+ * `z` is the ground of the pose's floor, 0 when it has none.
+ */
+export function placePoseMarker(
+  marker: THREE.Group,
+  pose: (PlanarPose & { z?: number }) | null,
+) {
   marker.visible = pose !== null;
   if (!pose) return;
-  marker.position.set(pose.x, pose.y, MARKER_Z_M);
+  marker.position.set(pose.x, pose.y, (pose.z ?? 0) + MARKER_Z_M);
   marker.rotation.z = (pose.theta * Math.PI) / 180;
 }
 
