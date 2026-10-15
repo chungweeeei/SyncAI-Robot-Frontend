@@ -165,9 +165,12 @@ components/
                 on a map that spans storeys, with its saved ground patches
                 drawn in before the robot has applied them), waypoints (each at its own
                 floor's ground height; with a floor picked, only that floor's
-                are shown or tappable, and a goal or a new waypoint lands on
-                it), zones and the path (on the ground it crosses, so a
-                route up a stair is on both storeys; with a floor picked,
+                are shown or tappable, and a goal, a new waypoint or an
+                initial pose lands on it — the initial pose sends that
+                floor's ground, and without a floor picked sends no height,
+                so the localizer keeps its storey), zones and the path (on
+                the ground it crosses, so a route up a stair is on both
+                storeys; with a floor picked,
                 only that floor's stretch),
                 with Top down and Front view (level, from the south, where
                 storeys stack) — the instrument rail (the registered schedules

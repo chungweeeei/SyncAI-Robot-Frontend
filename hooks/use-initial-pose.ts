@@ -4,9 +4,8 @@ import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 
 import { ignore } from "@/lib/api/mutation-state";
-import { setInitialPose } from "@/lib/api/robot";
+import { setInitialPose, type InitialPose } from "@/lib/api/robot";
 import { normalizeTheta } from "@/lib/angle";
-import type { PlanarPose } from "@/lib/types/robot";
 
 /**
  * How long a published estimate stays on screen. Short on purpose: 5 s had
@@ -17,9 +16,9 @@ const CLEAR_AFTER_PUBLISH_MS = 1500;
 
 export interface InitialPoseEstimate {
   /** The last drag's pose, sent on release and cleared shortly after it lands. */
-  pose: PlanarPose | null;
-  /** Stages *and* sends a pose from a finished drag. */
-  commitPose: (pose: PlanarPose) => void;
+  pose: InitialPose | null;
+  /** Stages *and* sends a pose from a finished drag, with its floor's ground if one was picked. */
+  commitPose: (pose: InitialPose) => void;
   published: boolean;
   busy: boolean;
   error: string | null;
@@ -39,10 +38,10 @@ export interface InitialPoseEstimate {
  * (going pending) cancels the pending expiry for free.
  */
 export function useInitialPose(): InitialPoseEstimate {
-  const [pose, setPose] = React.useState<PlanarPose | null>(null);
+  const [pose, setPose] = React.useState<InitialPose | null>(null);
 
   const publishPose = useMutation({
-    mutationFn: (next: PlanarPose) => setInitialPose(next),
+    mutationFn: (next: InitialPose) => setInitialPose(next),
   });
 
   const {
@@ -53,7 +52,7 @@ export function useInitialPose(): InitialPoseEstimate {
   } = publishPose;
 
   const commitPose = React.useCallback(
-    (next: PlanarPose) => {
+    (next: InitialPose) => {
       const placed = { ...next, theta: normalizeTheta(next.theta) };
       setPose(placed);
       // `placed`, not `pose`: state set above is not visible in this tick.

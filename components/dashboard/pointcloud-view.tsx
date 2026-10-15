@@ -241,17 +241,20 @@ export function PointCloudView({
   // A re-place with no floor picked stays on its own floor: moving a 2F stop
   // a metre must not drop it to the ground floor because 2F was not up.
   const pickZ = pick?.mode === "vertex" && !floorBand ? pick.vertex.z : floorZ;
+  // An initial pose says which floor only when one is picked; without one the
+  // localizer keeps the storey it is on, the guess a seed upstairs (or back
+  // down) has to overrule.
+  const initialPoseGround = floorBand ? floorZ : null;
 
   // Single-shot: one drag, one pose, then disarm. Every branch acts on release
   // (a goal moves the robot), so the disarm is what makes a stray second click
   // inert.
   const commitPick = React.useCallback(
     (picked: PlanarPose) => {
-      // The floor it was placed on goes with it. Not on an initial pose: the
-      // robot measures its own height.
+      // The floor it was placed on goes with it.
       const placed = { ...picked, z: pickZ };
       if (pick?.mode === "initial-pose") {
-        commitPose(picked);
+        commitPose(initialPoseGround === null ? picked : { ...picked, z: initialPoseGround });
       } else if (pick?.mode === "place") {
         setPlacement({ key: ++placementSeq.current, pose: placed });
       } else if (pick?.mode === "vertex") {
@@ -266,7 +269,7 @@ export function PointCloudView({
       }
       setPick(null);
     },
-    [pick, pickZ, commitPose, sendGoal, moveVertex],
+    [pick, pickZ, initialPoseGround, commitPose, sendGoal, moveVertex],
   );
 
   // The dialog closes first; GoalControl reports the job and any error.
@@ -399,6 +402,7 @@ export function PointCloudView({
         cameraMode={cameraMode}
         goal={task.goal}
         initialPose={estimate.pose}
+        initialPoseGround={initialPoseGround}
         topDownNonce={topDownNonce}
         frontNonce={frontNonce}
         recenterNonce={recenterNonce}

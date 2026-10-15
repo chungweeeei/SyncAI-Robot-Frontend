@@ -208,9 +208,17 @@ interface PointCloudCanvasProps {
   goal?: (PlanarPose & { z?: number }) | null;
   /**
    * The initial pose last placed, kept as the reference the reported pose is
-   * read against while localization converges. useInitialPose expires it.
+   * read against while localization converges, on its floor's ground when it
+   * was placed on one. useInitialPose expires it.
    */
-  initialPose?: PlanarPose | null;
+  initialPose?: (PlanarPose & { z?: number }) | null;
+  /**
+   * The ground the initial pose being placed stands on, metres, when it says
+   * which floor; the robot is carried at that floor's height mid-drag. Null
+   * carries it at the height it is drawn at, as the localizer will keep the
+   * storey it is on.
+   */
+  initialPoseGround?: number | null;
   /**
    * What a press-drag-release on the ground produces, or null: the press is
    * projected onto `pickZ` and the drag gives the heading. Left-button camera
@@ -252,6 +260,7 @@ export function PointCloudCanvas({
   onMapStatus,
   goal = null,
   initialPose = null,
+  initialPoseGround = null,
   pickMode = null,
   onPickCommit,
   onStatus,
@@ -591,6 +600,9 @@ export function PointCloudCanvas({
     scene.add(initialPoseMarker);
     scene.add(draftMarker);
 
+    // Placed at the reported pose, which is base_link's own height, so the
+    // model (base_link at its origin) goes in unlifted: lifting it too would
+    // float the robot its own leg length over the floor it stands on.
     const robotGroup = new THREE.Group();
     // Hidden until the first pose arrives.
     robotGroup.visible = false;
@@ -601,7 +613,6 @@ export function PointCloudCanvas({
     loadRobotModel()
       .then((model) => {
         if (cancelled) return;
-        model.position.z = ROBOT_BASE_HEIGHT_M;
         robotGroup.add(model);
         if (!jointNodesRef.current) {
           const nodes = new Map<
@@ -997,11 +1008,16 @@ export function PointCloudCanvas({
     posePreviewRef.current = {
       x: draft.x,
       y: draft.y,
-      // The height it is already drawn at, plus the lift while in hand.
-      z: (renderedPoseRef.current?.z ?? 0) + (carrying ? CARRY_LIFT_M : 0),
+      // Standing on the floor it is placed on, else at the height it is
+      // already drawn at; plus the lift while in hand.
+      z:
+        (initialPoseGround !== null
+          ? initialPoseGround + ROBOT_BASE_HEIGHT_M
+          : (renderedPoseRef.current?.z ?? pickZ + ROBOT_BASE_HEIGHT_M)) +
+        (carrying ? CARRY_LIFT_M : 0),
       yaw: (draft.theta * Math.PI) / 180,
     };
-  }, [draft, carrying, pickMode]);
+  }, [draft, carrying, pickMode, initialPoseGround, pickZ]);
 
   // ---- Stored map vertices (toggle) ------------------------------------
   // Held in a ref because hover recolours it per pointer move. Lists the
