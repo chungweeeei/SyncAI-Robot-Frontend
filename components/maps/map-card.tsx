@@ -4,7 +4,6 @@ import Link from "next/link";
 import { CheckIcon, LayersIcon, PencilIcon } from "lucide-react";
 
 import { Chip } from "@/components/console/instrument";
-import { GridRebuildControl } from "@/components/maps/grid-rebuild-control";
 import { MapActivateControl } from "@/components/maps/map-activate-control";
 import { MapDeleteControl } from "@/components/maps/map-delete-control";
 import { MapEditLink } from "@/components/maps/map-edit-link";
@@ -108,13 +107,12 @@ function OctomapStatusChip({ map }: { map: MapSummary }) {
 }
 
 /**
- * What to do about a missing or stale floor plan — the actionable half of the
- * chip, beside the control that acts. Always shown, because a failed
- * conversion's reason is otherwise only in the robot's log.
+ * Why a floor plan is missing or stale — the half the chip cannot say.
+ * Always shown, because a failed conversion's reason is otherwise only in the
+ * robot's log.
  *
- * Silent for `ok`, `converting` and `none`, where the chip says it all. No branch may
- * name Build grid unless it is on the card: GridRebuildControl renders only
- * for a map with a scan.
+ * Silent for `ok`, `converting` and `none`, where the chip says it all. No
+ * branch may tell the operator to rebuild: that control is off the card.
  */
 function GridStatusNote({ map }: { map: MapSummary }) {
   if (map.grid_status === "ok" || map.grid_status === "converting") return null;
@@ -135,11 +133,11 @@ function GridStatusNote({ map }: { map: MapSummary }) {
       <p className="mt-2 text-[11px] leading-tight text-signal-warn">
         {map.grid_error ??
           "The floor plan could not be built, and the robot did not record why."}{" "}
-        <span className="text-muted-foreground">
-          {map.grid
-            ? "The map is still using the floor plan it had before. Try rebuilding it with the other setting."
-            : "Rebuilding with the same setting will fail the same way — try the other one."}
-        </span>
+        {map.grid && (
+          <span className="text-muted-foreground">
+            The map is still using the floor plan it had before.
+          </span>
+        )}
       </p>
     );
   }
@@ -148,7 +146,7 @@ function GridStatusNote({ map }: { map: MapSummary }) {
     return (
       <p className="mt-2 text-[11px] leading-tight text-muted-foreground">
         The robot restarted before the floor plan was finished, so it was never
-        built. Rebuild it — the scan data is fine.
+        built. The scan data is fine.
       </p>
     );
   }
@@ -165,7 +163,7 @@ function GridStatusNote({ map }: { map: MapSummary }) {
  * No readouts, by request — the screen answers "which maps are here and which
  * is loaded"; what a map measures is the editor's business. Always shown: "In
  * use", the floor plan chip and its note — a map the robot can't load must say
- * so at a glance, and a conversion in flight is why Edit and Rebuild are greyed.
+ * so at a glance, and a conversion in flight is why Edit is greyed.
  *
  * "In use" gets three signals so one card wins outright: a solid corner check,
  * a ring, and first place in the sort. `aria-current` carries it to a screen
@@ -244,11 +242,11 @@ export function MapCard({
           <MapExportControl map={map} />
         </div>
 
-        {/* Why the floor plan is missing or stale, then the control that fixes
-         * it, below the chips since both carry sentences. Only with a scan —
-         * without one the backend would 400. */}
+        {/* Why the floor plan is missing or stale, below the chips since it
+         * carries sentences. Rebuild is off the card for now, by request
+         * (GridRebuildControl is kept), so no note may tell the operator to
+         * press it. */}
         <GridStatusNote map={map} />
-        {map.has_pointcloud && <GridRebuildControl map={map} />}
       </div>
     </article>
   );

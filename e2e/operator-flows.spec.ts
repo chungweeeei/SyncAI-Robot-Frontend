@@ -153,29 +153,6 @@ test.describe("the map library", () => {
     ).toHaveCount(0);
   });
 
-  test("holds Rebuild while a job drives on the map, and says why", async ({
-    page,
-  }) => {
-    const running = [activeTask()];
-    const writes = await mockBackend(page, { activeTasks: running });
-    await page.goto("/maps");
-
-    const held = page.getByRole("button", {
-      name: /^Rebuild: The robot is running a job on this map/,
-    });
-    await expect(held).toHaveAttribute("aria-disabled", "true");
-    await held.click({ force: true });
-    await expect(page.getByRole("menuitem", { name: /Standard/ })).toHaveCount(0);
-
-    // Once the job ends, the real menu is back and a choice is sent.
-    running.length = 0;
-    await page.getByRole("button", { name: "Rebuild", exact: true }).click();
-    await page.getByRole("menuitem", { name: /Standard/ }).click();
-    await expect
-      .poll(() => writes.map((w) => w.path))
-      .toContain(`/api/v1/maps/${MAP_NAME}/grid/convert`);
-  });
-
   test("puts a delete behind a dialog that names what goes with it", async ({
     page,
   }) => {

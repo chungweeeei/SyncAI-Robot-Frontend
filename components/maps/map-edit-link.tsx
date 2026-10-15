@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
 
 const NO_GRID_REASON =
-  "This map has no floor plan to edit yet. Rebuild one from the card first.";
+  "This map has no floor plan to edit yet.";
 const CONVERTING_REASON =
   "This map is still being prepared. Wait for it to finish.";
 
