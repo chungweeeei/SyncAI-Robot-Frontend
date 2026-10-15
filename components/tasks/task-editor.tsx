@@ -30,6 +30,8 @@ import { waypointEditorHref } from "@/lib/map/links";
 import type { TaskStepState } from "@/lib/api/task";
 import { draftIsUnsaved, type TaskDraft } from "@/lib/task/draft-store";
 import {
+  isNavStep,
+  stepDockVertices,
   stepDraftsSubmittable,
   stepIdFor,
   stepWaypointOrdinals,
@@ -111,6 +113,7 @@ export function TaskEditor() {
 
   /** The whole route, so each row's floor plan reads the same. */
   const stepMarks = React.useMemo(() => stepWaypointOrdinals(drafts.steps), [drafts.steps]);
+  const dockMarks = React.useMemo(() => stepDockVertices(drafts.steps), [drafts.steps]);
 
   /**
    * Set when Save is pressed without a usable name, so Save points at the
@@ -131,13 +134,13 @@ export function TaskEditor() {
         "Some steps are incomplete — the marked rows say what is missing."
       : null;
 
-  /** Any MOVE step means the template has to name the map it is in. */
-  const hasMoveStep = drafts.steps.some((step) => step.type === "MOVE");
+  /** Any waypoint step (Move or Dock) means the template has to name the map it is in. */
+  const hasMoveStep = drafts.steps.some(isNavStep);
   const draftMapName = hasMoveStep ? mapName : null;
   const saveReason =
     stepReason ??
     (draftMapName === null && hasMoveStep
-      ? "Pick a map for this job\u2019s Move steps."
+      ? "Pick a map for this job\u2019s waypoints."
       : null);
 
   /** A job for another map saves but cannot run: its coordinates are in that map's frame. */
@@ -149,13 +152,11 @@ export function TaskEditor() {
   /** Picked waypoints mean nothing on another map, so they are cleared, behind a confirm. */
   const selectMap = (next: string) => {
     if (next === mapName) return;
-    const picked = drafts.steps.filter(
-      (step) => step.type === "MOVE" && step.vertexId !== null,
-    );
+    const picked = drafts.steps.filter((step) => isNavStep(step) && step.vertexId !== null);
     if (
       picked.length &&
       !window.confirm(
-        `Switch to ${next}? The waypoint on ${picked.length} Move ${
+        `Switch to ${next}? The waypoint on ${picked.length} ${
           picked.length === 1 ? "step" : "steps"
         } will be cleared, since it belongs to ${mapName}.`,
       )
@@ -445,6 +446,7 @@ export function TaskEditor() {
             mapName={mapName}
             mapGrid={mapGrid}
             stepMarks={stepMarks}
+            dockMarks={dockMarks}
             disabled={false}
             stepStates={NO_STEP_STATES}
             onAdd={drafts.add}

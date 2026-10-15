@@ -7,10 +7,12 @@ import {
   formatDraftAngle,
   formatDraftPosition,
   fromTemplateSteps,
+  isNavStep,
   moveStep,
   moveStepDraft,
   newStepDraft,
   repeatSuffix,
+  stepDockVertices,
   stepDraftError,
   stepDraftsSubmittable,
   stepGroupError,
@@ -486,7 +488,7 @@ describe("step groups", () => {
     const drafts = [move(), linked(speak("hi")), linked(newStepDraft("STANDUP"))];
     expect(stepGroupError(drafts, 0)).toBeNull();
     expect(stepGroupError(drafts, 1)).toBeNull();
-    expect(stepGroupError(drafts, 2)).toMatch(/one Move, Stand or Lie at a time/);
+    expect(stepGroupError(drafts, 2)).toMatch(/one Move, Dock, Undock, Stand or Lie at a time/);
     expect(stepDraftsSubmittable(drafts)).toBe(false);
   });
 
@@ -596,9 +598,9 @@ describe("step groups", () => {
   describe("stepLinkProblem", () => {
     it("refuses to start a body step together with one", () => {
       // Move with Stand, Move with Lie, Move with Move: the robot has one body.
-      for (const type of ["MOVE", "STANDUP", "LIEDOWN"] as const) {
+      for (const type of ["MOVE", "DOCK", "UNDOCK", "STANDUP", "LIEDOWN"] as const) {
         expect(stepLinkProblem([move(), newStepDraft(type)], 1)).toMatch(
-          /one Move, Stand or Lie at a time/,
+          /one Move, Dock, Undock, Stand or Lie at a time/,
         );
       }
     });
@@ -633,5 +635,91 @@ describe("step groups", () => {
         { type: "STANDUP" },
       ]),
     ).toBe("M [M T] S");
+  });
+});
+
+describe("dock steps", () => {
+  // A Dock is a Move to the approach point plus the last metre, on the same
+  // pose and waypoint wire as a Move; only the type tells the robot which. An
+  // Undock is the opposite kind: a back-out from wherever the robot stands.
+  function dock(over: Partial<StepDraft> = {}): StepDraft {
+    return { ...newStepDraft("DOCK"), x: "2.5", y: "1.25", theta: "90", vertexId: "v-dock", ...over };
+  }
+
+  it("needs a waypoint to Dock, in the same words as a Move, and nothing to Undock", () => {
+    // The robot backs out from wherever it stands: there is nothing to pick.
+    expect(stepDraftError(newStepDraft("DOCK"))).toBe("Pick a waypoint.");
+    expect(stepDraftError(dock())).toBeNull();
+    expect(stepDraftError(newStepDraft("UNDOCK"))).toBeNull();
+    expect(stepDraftsSubmittable([newStepDraft("UNDOCK")])).toBe(true);
+  });
+
+  it("keeps its type on the wire, and its waypoint in a saved template", () => {
+    expect(toStepRequests([dock()])).toEqual([
+      { id: "1-dock", type: "DOCK", params: { x: 2.5, y: 1.25, theta: 90 } },
+    ]);
+    expect(toTemplateSteps([dock()])).toEqual([
+      { id: "1-dock", type: "DOCK", params: { x: 2.5, y: 1.25, theta: 90 }, vertex_id: "v-dock" },
+    ]);
+  });
+
+  it("sends an Undock bare, even from a row that was a Dock", () => {
+    // A type change keeps the old fields in the draft; the backend refuses an
+    // Undock carrying params or a waypoint, so neither may leak onto the wire.
+    const undock = { ...dock(), type: "UNDOCK" as const };
+    expect(toStepRequests([undock])).toEqual([{ id: "1-undock", type: "UNDOCK" }]);
+    expect(toTemplateSteps([undock])).toEqual([{ id: "1-undock", type: "UNDOCK" }]);
+    expect([...stepDockVertices([undock])]).toEqual([]);
+    expect(stepWaypointOrdinals([undock]).size).toBe(0);
+  });
+
+  it("ties a job to its map for a Dock, never for an Undock alone", () => {
+    // isNavStep is the editor's map scope: a template with only an Undock must
+    // name no map, or the backend refuses it.
+    expect([newStepDraft("DOCK")].some(isNavStep)).toBe(true);
+    expect([newStepDraft("UNDOCK"), newStepDraft("SPEAK")].some(isNavStep)).toBe(false);
+  });
+
+  it("loads back from a template and dispatches the resolved pose under its own type", () => {
+    const stored: TemplateStep[] = [
+      {
+        id: "1-dock",
+        type: "DOCK",
+        vertex_id: "v-dock",
+        vertex_name: "dock",
+        vertex_status: "CURRENT",
+        group: null,
+        params: { x: 0, y: 0, theta: 0 },
+        resolved_params: { x: 2.5, y: 1.25, theta: 90 },
+      },
+    ];
+    const [loaded] = fromTemplateSteps(stored);
+    expect(loaded).toMatchObject({ type: "DOCK", x: "2.5", y: "1.25", theta: "90", vertexId: "v-dock" });
+    expect(toDispatchSteps(stored)).toEqual([
+      { id: "1-dock", type: "DOCK", params: { x: 2.5, y: 1.25, theta: 90 } },
+    ]);
+  });
+
+  it("lights its waypoint like a Move's, and marks it for an approach point", () => {
+    const drafts = [move({ vertexId: "v-hall" }), dock(), move({ vertexId: null })];
+    expect(stepWaypointOrdinals(drafts).get("v-dock")).toEqual([2]);
+    expect([...stepDockVertices(drafts)]).toEqual(["v-dock"]);
+  });
+
+  it("loads a stored Undock back bare, and dispatches it without params", () => {
+    const stored: TemplateStep[] = [
+      {
+        id: "1-undock",
+        type: "UNDOCK",
+        vertex_id: null,
+        vertex_name: null,
+        vertex_status: "NONE",
+        group: null,
+        params: null,
+        resolved_params: null,
+      },
+    ];
+    expect(fromTemplateSteps(stored)[0]).toMatchObject({ type: "UNDOCK", vertexId: null });
+    expect(toDispatchSteps(stored)).toEqual([{ id: "1-undock", type: "UNDOCK" }]);
   });
 });

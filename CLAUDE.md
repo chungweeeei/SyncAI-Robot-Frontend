@@ -211,7 +211,7 @@ lib/
                 robot mesh
   theme/        the signal hues both canvases draw with
   task/         step, schedule and history domain helpers, template name limit,
-                the group rule (step.ts: one Move, Stand or Lie per group,
+                the group rule (step.ts: one Move, Dock, Undock, Stand or Lie per group,
                 refused as it is built by stepLinkProblem / stepMoveProblem,
                 with stepGroupError as the backstop for a list handed in),
                 the masthead's rules for the running job (run.ts: which step is

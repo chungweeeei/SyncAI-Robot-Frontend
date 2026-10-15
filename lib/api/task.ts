@@ -99,8 +99,22 @@ const TaskAckResponseSchema: z.ZodType<TaskAckResponse> = z.object({
 /** Posture steps carry no params; sending any is refused. */
 export type Posture = "STANDUP" | "LIEDOWN";
 
+/**
+ * The steps set by a pose in the map frame, which is what ties a job to its
+ * map. DOCK carries the *dock* pose: the robot works out the approach point in
+ * front of it (lib/map/dock.ts).
+ */
+export type NavStepType = "MOVE" | "DOCK";
+
+/**
+ * The steps that carry no params; sending any is refused. UNDOCK is one beside
+ * the postures: the robot backs out 1 m from wherever it stands, so there is
+ * no pose to send and no map it depends on.
+ */
+export type BareStepType = Posture | "UNDOCK";
+
 /** The backend's full `StepType` vocabulary. */
-export type StepType = "MOVE" | "SPEAK" | "WAIT" | Posture;
+export type StepType = NavStepType | "SPEAK" | "WAIT" | BareStepType;
 
 /** `theta` in degrees, folded into (-180, 180] on the way out. */
 export interface MoveStepParams {
@@ -128,14 +142,14 @@ export interface WaitStepParams {
 }
 
 /**
- * One step as the endpoint takes it. Discriminated so a posture step cannot
+ * One step as the endpoint takes it. Discriminated so a bare step cannot
  * carry `params`, which 422s with a validation array instead of a sentence.
  */
 export type TaskStepRequest = (
-  | { id: string; type: "MOVE"; params: MoveStepParams }
+  | { id: string; type: NavStepType; params: MoveStepParams }
   | { id: string; type: "SPEAK"; params: SpeakStepParams }
   | { id: string; type: "WAIT"; params: WaitStepParams }
-  | { id: string; type: Posture }
+  | { id: string; type: BareStepType }
 ) & {
   /**
    * Adjacent steps in one group start together; the next waits for all.
@@ -162,13 +176,13 @@ export const WaitStepParamsSchema: z.ZodType<WaitStepParams> = z.object({
 });
 
 /**
- * For a schedule's step list read back. A plain union: posture's
- * discriminator is two literals.
+ * For a schedule's step list read back. A plain union: a bare step's
+ * discriminator is three literals.
  */
 export const TaskStepRequestSchema: z.ZodType<TaskStepRequest> = z.union([
   z.object({
     id: z.string(),
-    type: z.literal("MOVE"),
+    type: z.enum(["MOVE", "DOCK"]),
     params: MoveStepParamsSchema,
     group: z.string().nullish(),
   }),
@@ -186,7 +200,7 @@ export const TaskStepRequestSchema: z.ZodType<TaskStepRequest> = z.union([
   }),
   z.object({
     id: z.string(),
-    type: z.enum(["STANDUP", "LIEDOWN"]),
+    type: z.enum(["STANDUP", "LIEDOWN", "UNDOCK"]),
     group: z.string().nullish(),
   }),
 ]);

@@ -19,6 +19,8 @@ export interface WaypointPreviewProps {
   vertices: MapVertex[];
   /** Vertex id → the job's step numbers that go there; see stepWaypointOrdinals. */
   steps: ReadonlyMap<string, readonly number[]>;
+  /** The waypoints a Dock row is picked on; see stepDockVertices. */
+  docks: ReadonlySet<string>;
 }
 
 /** The one pointer dragging the map, in container-local px at its last move. */
@@ -42,7 +44,13 @@ interface Pan {
  * with the floor plan editor's view machinery so both feel the same. Draws on
  * change with one rAF, no persistent loop, as the editor does.
  */
-export function WaypointPreview({ mapName, meta, vertices, steps }: WaypointPreviewProps) {
+export function WaypointPreview({
+  mapName,
+  meta,
+  vertices,
+  steps,
+  docks,
+}: WaypointPreviewProps) {
   const { image } = useMapImage(mapName);
   const { resolvedTheme } = useTheme();
   const theme: "light" | "dark" = resolvedTheme === "dark" ? "dark" : "light";
@@ -80,7 +88,7 @@ export function WaypointPreview({ mapName, meta, vertices, steps }: WaypointPrev
 
   // Read at draw time so `draw` stays stable and a prop change does not
   // rebuild the listener effect below.
-  const frameRef = React.useRef({ image, meta, vertices, steps, theme });
+  const frameRef = React.useRef({ image, meta, vertices, steps, docks, theme });
 
   const draw = React.useCallback(() => {
     const container = containerRef.current;
@@ -115,7 +123,7 @@ export function WaypointPreview({ mapName, meta, vertices, steps }: WaypointPrev
       frame.image,
       frame.meta,
       frame.vertices,
-      { steps: frame.steps },
+      { steps: frame.steps, docks: frame.docks },
       PALETTES[frame.theme],
     );
     setZoomPercent(Math.round(view.scale * 100));
@@ -130,9 +138,9 @@ export function WaypointPreview({ mapName, meta, vertices, steps }: WaypointPrev
   }, [draw]);
 
   React.useEffect(() => {
-    frameRef.current = { image, meta, vertices, steps, theme };
+    frameRef.current = { image, meta, vertices, steps, docks, theme };
     requestDraw();
-  }, [requestDraw, image, meta, vertices, steps, theme]);
+  }, [requestDraw, image, meta, vertices, steps, docks, theme]);
 
   // A different map refits.
   React.useEffect(() => {

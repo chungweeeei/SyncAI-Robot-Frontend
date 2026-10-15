@@ -8,6 +8,7 @@ import {
   vertexScreen,
   type Palette,
 } from "@/lib/map/draw";
+import { stagingPose } from "@/lib/map/dock";
 import { vertexGlyph } from "@/lib/map/vertex";
 import { fitView, type Size, type View } from "@/lib/map/view";
 import type { MapVertex } from "@/lib/types/map";
@@ -16,12 +17,21 @@ import type { MapMetadata } from "@/lib/types/robot";
 /** Which markers the preview lights up, and what it says about them. */
 export interface PreviewMarks {
   /**
-   * Vertex id → the 1-based numbers of the job's MOVE steps that go there,
+   * Vertex id → the 1-based numbers of the job's waypoint steps that go there,
    * in job order (lib/task/step.ts stepWaypointOrdinals). A stop with an
    * entry is filled in the command hue and captioned with those numbers.
    */
   steps: ReadonlyMap<string, readonly number[]>;
+  /**
+   * Vertex ids a Dock row is picked on (stepDockVertices). Each gets its
+   * approach point drawn and joined to it: the robot goes there first, and no
+   * row says so.
+   */
+  docks?: ReadonlySet<string>;
 }
+
+/** The approach point's ring, smaller than a stop's dot so it never reads as one. */
+const STAGING_RING_RADIUS = 3;
 
 /**
  * Room around the map, in CSS px, so a stop on the boundary keeps its arrow and
@@ -166,6 +176,12 @@ export function drawWaypointPreview(
     (text) => ctx.measureText(text).width,
   );
 
+  // Under the markers: the leg ends at the dot, which must stay on top.
+  for (const vertex of vertices) {
+    if (!marks.docks?.has(vertex.id)) continue;
+    drawApproach(ctx, view, meta, vertex, placed.get(vertex.id)!, palette.cmd);
+  }
+
   for (const vertex of [...rest, ...lit]) {
     const at = placed.get(vertex.id)!;
     const emphasis = ordinals(vertex).length > 0;
@@ -181,5 +197,34 @@ export function drawWaypointPreview(
     });
   }
 
+  ctx.restore();
+}
+
+/**
+ * A dock's last metre: a ring at the approach point and a dashed line from it
+ * to the dock's dot, the straight walk the robot makes once it gets there.
+ */
+function drawApproach(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  meta: MapMetadata,
+  dock: MapVertex,
+  at: { cx: number; cy: number },
+  colour: string,
+): void {
+  const stage = stagingPose(dock);
+  const from = vertexScreen(view, meta, stage.x, stage.y);
+  ctx.save();
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(from.cx, from.cy);
+  ctx.lineTo(at.cx, at.cy);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(from.cx, from.cy, STAGING_RING_RADIUS, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.restore();
 }

@@ -1548,7 +1548,7 @@ test.describe("the task console", () => {
     await expect(
       page.getByRole("menuitem", { name: "Start together with step 1" }),
     ).toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByText(/one Move, Stand or Lie at a time/)).toBeVisible();
+    await expect(page.getByText(/one Move, Dock, Undock, Stand or Lie at a time/)).toBeVisible();
     expect(writes).toEqual([]);
   });
 
@@ -3706,6 +3706,78 @@ test.describe("the step editor", () => {
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     await expect(waypoint).toContainText("room-a");
     await expect(second).toContainText("dock");
+  });
+
+  test("saves a Dock on the waypoint picked and an Undock with nothing to set", async ({ page }) => {
+    // A Dock rides the Move wire with its own type; an Undock backs out from
+    // wherever the robot stands, so it has no waypoint and goes out bare.
+    // Both halves asserted: the rows on screen, and the types, waypoint and
+    // map in the body.
+    await mockBackend(page);
+    const posted: { map_name?: string; steps: Record<string, unknown>[] }[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as (typeof posted)[number] & { name: string };
+      posted.push(body);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({ id: "77777777-7777-7777-7777-777777777777", name: body.name }),
+        ),
+      });
+    });
+    await page.goto("/tasks/editor");
+    await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
+    await page.getByRole("textbox", { name: "Task name" }).fill("charge");
+
+    await page.getByTitle(/^Go to a waypoint, then walk straight onto the charger/).click();
+    const dockAt = page.getByRole("combobox", { name: "Charger waypoint for step 1" });
+    await dockAt.click();
+    await page.getByRole("option", { name: "dock" }).click();
+    await expect(dockAt).toContainText("dock");
+
+    await page.getByTitle(/^Stand up and back straight off the charger/).click();
+    // Step 1's picker is the positive control: the rows render pickers, and
+    // the Undock's has none to render.
+    await expect(page.getByRole("combobox", { name: /for step 1$/ })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: /for step 2$/ })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => posted).toHaveLength(1);
+    expect(posted[0]!.map_name).toBe(MAP_NAME);
+    expect(posted[0]!.steps).toEqual([
+      { id: "1-dock", type: "DOCK", params: { x: 2.5, y: 1.25, theta: 90 }, vertex_id: vertex().id },
+      { id: "2-undock", type: "UNDOCK" },
+    ]);
+  });
+
+  test("saves a job whose only drive is an Undock without a map", async ({ page }) => {
+    // The back-out reads no map, so the backend refuses a map_name on a job
+    // with no Move or Dock: the editor must not send one.
+    await mockBackend(page);
+    const posted: { map_name?: string | null; steps: Record<string, unknown>[] }[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as (typeof posted)[number] & { name: string };
+      posted.push(body);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({ id: "77777777-7777-7777-7777-777777777777", name: body.name }),
+        ),
+      });
+    });
+    await page.goto("/tasks/editor");
+    await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
+    await page.getByRole("textbox", { name: "Task name" }).fill("leave");
+
+    await page.getByTitle(/^Stand up and back straight off the charger/).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => posted).toHaveLength(1);
+    expect(posted[0]!.map_name ?? null).toBeNull();
+    expect(posted[0]!.steps).toEqual([{ id: "1-undock", type: "UNDOCK" }]);
   });
 
   test("zooms the floor plan and comes back to fit", async ({ page }) => {

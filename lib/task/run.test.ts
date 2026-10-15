@@ -54,6 +54,8 @@ describe("stepLabel", () => {
     expect(stepLabel("5-wait")).toBe("Wait");
     expect(stepLabel("12-standup")).toBe("Stand");
     expect(stepLabel("3-liedown")).toBe("Lie");
+    expect(stepLabel("4-dock")).toBe("Dock");
+    expect(stepLabel("5-undock")).toBe("Undock");
   });
 
   it("reads a single-gesture step as the dashboard's word for it", () => {

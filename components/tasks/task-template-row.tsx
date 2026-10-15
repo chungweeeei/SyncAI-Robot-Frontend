@@ -20,6 +20,7 @@ import type { TemplateStep, TaskTemplate } from "@/lib/api/task-template";
 import type { TaskStepState } from "@/lib/api/task";
 import { describeTrigger, scheduleChipSummary } from "@/lib/task/schedule";
 import {
+  isNavStep,
   repeatSuffix,
   stepGlyph,
   stepShape,
@@ -250,7 +251,7 @@ function TemplateStepLine({
         </Chip>
       )}
       {/* resolved_params, not params: what a dispatch would actually send. */}
-      {step.type === "MOVE" && step.resolved_params && (
+      {isNavStep(step) && step.resolved_params && (
         <span className="readout min-w-0 truncate">
           {step.resolved_params.x.toFixed(3)}, {step.resolved_params.y.toFixed(3)} ·{" "}
           {step.resolved_params.theta.toFixed(1)}°
