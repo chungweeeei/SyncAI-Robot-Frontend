@@ -4,6 +4,7 @@ import type { TaskStepState } from "@/lib/api/task";
 import {
   currentStep,
   holdOffered,
+  liveDock,
   pauseOffered,
   requestedHold,
   runClosed,
@@ -44,6 +45,41 @@ describe("currentStep", () => {
     expect(currentStep([])).toBeNull();
     expect(currentStep([step("1-move", "PENDING")])).toBeNull();
     expect(currentStep([step("1-move", "COMPLETED")])).toBeNull();
+  });
+});
+
+describe("liveDock", () => {
+  const dock = { x: 3, y: -1.5, theta: 180 };
+
+  it("is the pose of the dock being driven onto", () => {
+    const steps = [
+      step("1-move", "COMPLETED"),
+      { ...step("2-dock", "IN_PROGRESS"), dock },
+    ];
+    expect(liveDock(steps)).toEqual(dock);
+  });
+
+  it("still answers while the dock is held: the target has not moved", () => {
+    expect(liveDock([{ ...step("1-dock", "PAUSED"), dock }])).toEqual(dock);
+  });
+
+  it("finds a dock that is not its group's first member", () => {
+    const steps = [
+      { ...step("1-speak", "IN_PROGRESS"), group: "a" },
+      { ...step("2-dock", "IN_PROGRESS"), group: "a", dock },
+    ];
+    expect(liveDock(steps)).toEqual(dock);
+  });
+
+  it("is null before the dock starts and once it has ended", () => {
+    // A staging point drawn for a dock still queued (or done) would read as
+    // where the robot is heading now.
+    expect(liveDock([step("1-move", "IN_PROGRESS"), { ...step("2-dock", "PENDING"), dock }])).toBeNull();
+    expect(liveDock([{ ...step("1-dock", "COMPLETED"), dock }])).toBeNull();
+  });
+
+  it("is null for a backend that does not send the pose", () => {
+    expect(liveDock([step("1-dock", "IN_PROGRESS")])).toBeNull();
   });
 });
 

@@ -207,8 +207,9 @@ lib/
                 job lock (run-lock.ts) and the mapping run strip's face rule
                 (run-face.ts: what the robot's run state lets the strip offer)
   scene/        three.js scene building for the 3D viewport: theme, markers,
-                vertex layer, zone layer, path ribbon, camera policy, picking,
-                robot mesh
+                vertex layer, zone layer, path ribbon, the running dock's
+                staging point and leg (dock-layer.ts), camera policy,
+                picking, robot mesh
   theme/        the signal hues both canvases draw with
   task/         step, schedule and history domain helpers, template name limit,
                 the group rule (step.ts: one Move, Dock, Stand or Lie per group,
@@ -493,7 +494,13 @@ As built:
   which re-rendered a barely-memoised viewport subtree up to ~40 times a
   second. `path` stays state because it is ~0.333 Hz *and* has a consumer that
   branches on it outside the canvas. A value only a render loop reads does not
-  belong in state; a value a component branches on does.
+  belong in state; a value a component branches on does. `dockPath` (the
+  robot's predicted last metre onto a dock, 2 Hz, its own frame type so a
+  dock's clear never erases the route) is state for the same reason. The
+  staging point is not on the socket at all: the robot does not publish it,
+  so the dashboard derives it with `stagingPose` from the dock pose the
+  running job's `GET /tasks/{id}` step carries (`liveDock` in
+  `lib/task/run.ts`).
 - **A resize draws before the paint.** `renderer.setSize` reassigns the
   canvas's width and height, which clears it, and a `ResizeObserver` fires
   after the frame's render — so the viewport's resize callback renders a
