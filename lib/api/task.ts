@@ -61,6 +61,12 @@ export interface TaskStepState {
   message?: string;
   /** Steps sharing a group ran side by side; null on its own (or absent). */
   group?: string | null;
+  /**
+   * A DOCK step's dock pose as dispatched (map frame, theta in degrees); null
+   * on every other step, absent from older backends. What the dashboard
+   * derives the staging point from while the dock runs.
+   */
+  dock?: PlanarPose | null;
 }
 
 export interface TaskStateResponse {
@@ -79,6 +85,7 @@ const TaskStateResponseSchema: z.ZodType<TaskStateResponse> = z.object({
       error_msg: z.string(),
       message: z.string().optional(),
       group: z.string().nullish(),
+      dock: z.object({ x: z.number(), y: z.number(), theta: z.number() }).nullish(),
     }),
   ),
 });
