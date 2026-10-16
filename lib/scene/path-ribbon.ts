@@ -18,12 +18,11 @@ const PATH_Z_M = 0.012;
  * One flat band following `points` (map-frame xy pairs), plus its disposer.
  * Rebuilt per update: a route arrives every ~3 s, and ~500 quads are cheaper
  * than a preallocated buffer across varying lengths. Null when there is no band
- * to make. `color` defaults to the route's; a dock's approach passes its own.
+ * to make.
  */
 export function createPathRibbon(
   points: Float32Array,
   theme: Theme,
-  color: number = theme.path,
 ): { mesh: THREE.Mesh; dispose: () => void } | null {
   const n = points.length >> 1;
   if (n < 2) return null;
@@ -84,12 +83,108 @@ export function createPathRibbon(
 
   // Double-sided: a grazing camera can catch the back face.
   const material = new THREE.MeshBasicMaterial({
-    color,
+    color: theme.path,
     transparent: true,
     opacity: 0.75,
     side: THREE.DoubleSide,
   });
 
+  const mesh = new THREE.Mesh(geometry, material);
+  return {
+    mesh,
+    dispose: () => {
+      geometry.dispose();
+      material.dispose();
+    },
+  };
+}
+
+/* A dash and its gap along a dashed band, in metres of floor. */
+const DASH_ON_M = 0.12;
+const DASH_OFF_M = 0.08;
+
+/**
+ * The pieces of a polyline (map-frame xy pairs) that carry a dash, as
+ * [ax, ay, bx, by] each. The dash phase runs on across vertices rather than
+ * restarting per segment, so a bend does not bunch the dashes up; a dash
+ * that spans a vertex is split there, and the last one is clipped at the end
+ * rather than overrunning it.
+ */
+export function dashPieces(
+  points: Float32Array | readonly number[],
+  on: number = DASH_ON_M,
+  off: number = DASH_OFF_M,
+): [number, number, number, number][] {
+  const pieces: [number, number, number, number][] = [];
+  if (!(on > 0)) return pieces;
+  const period = on + Math.max(off, 0);
+  const n = points.length >> 1;
+  let travelled = 0;
+  for (let i = 1; i < n; i++) {
+    const ax = points[(i - 1) * 2];
+    const ay = points[(i - 1) * 2 + 1];
+    const dx = points[i * 2] - ax;
+    const dy = points[i * 2 + 1] - ay;
+    const length = Math.hypot(dx, dy);
+    if (!(length > 1e-6)) continue;
+    const tx = dx / length;
+    const ty = dy / length;
+    // Dash k covers [k * period, k * period + on] along the whole line. Stepping
+    // by k rather than by a running phase is what keeps float error from
+    // stalling the walk on a step too small to move it.
+    const start = travelled;
+    const end = travelled + length;
+    for (let k = Math.floor(start / period); k * period < end; k++) {
+      const from = Math.max(k * period, start) - start;
+      const to = Math.min(k * period + on, end) - start;
+      if (to > from) {
+        pieces.push([ax + tx * from, ay + ty * from, ax + tx * to, ay + ty * to]);
+      }
+    }
+    travelled += length;
+  }
+  return pieces;
+}
+
+/**
+ * A dashed band following `points`, one quad per dash piece, plus its
+ * disposer. Null when there is no dash to draw. `width` and `z` default to the
+ * route's, so a dashed approach lies where the route would.
+ */
+export function createDashedRibbon(
+  points: Float32Array | readonly number[],
+  color: number,
+  { width = PATH_WIDTH_M, z = PATH_Z_M, opacity = 0.85 } = {},
+): { mesh: THREE.Mesh; dispose: () => void } | null {
+  const half = width / 2;
+  const positions: number[] = [];
+  const indices: number[] = [];
+  for (const [ax, ay, bx, by] of dashPieces(points)) {
+    const length = Math.hypot(bx - ax, by - ay);
+    if (!(length > 0)) continue;
+    // Left normal, as in createPathRibbon.
+    const ox = (-(by - ay) / length) * half;
+    const oy = ((bx - ax) / length) * half;
+    const v = positions.length / 3;
+    positions.push(
+      ax + ox, ay + oy, z,
+      ax - ox, ay - oy, z,
+      bx + ox, by + oy, z,
+      bx - ox, by - oy, z,
+    );
+    indices.push(v, v + 1, v + 3, v, v + 3, v + 2);
+  }
+  if (!indices.length) return null;
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    side: THREE.DoubleSide,
+  });
   const mesh = new THREE.Mesh(geometry, material);
   return {
     mesh,
