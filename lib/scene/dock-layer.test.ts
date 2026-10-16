@@ -2,40 +2,27 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { DOCK_STAGING_DISTANCE_M } from "@/lib/map/dock";
-import { createDockLayer, dashSpans } from "@/lib/scene/dock-layer";
+import { createDockLayer } from "@/lib/scene/dock-layer";
 import { THEMES } from "@/lib/scene/theme";
-
-describe("dashSpans", () => {
-  it("never runs a dash past the end of the leg", () => {
-    // The leg ends on the dock; a dash poking past it would draw onto the
-    // charger as if the robot were meant to walk through it.
-    for (const length of [0.05, 0.3, 1, 1.07]) {
-      const spans = dashSpans(length);
-      expect(spans.at(-1)![1]).toBeLessThanOrEqual(length);
-      for (const [from, to] of spans) expect(to).toBeGreaterThan(from);
-    }
-  });
-
-  it("starts on the staging point", () => {
-    expect(dashSpans(1)[0]![0]).toBe(0);
-  });
-
-  it("draws nothing for a leg with no length", () => {
-    expect(dashSpans(0)).toEqual([]);
-    expect(dashSpans(Number.NaN)).toEqual([]);
-  });
-});
 
 describe("createDockLayer", () => {
   it("puts the staging point the robot's distance back from the dock", () => {
     const layer = createDockLayer({ x: 3, y: 2, theta: 90 }, THEMES.light);
-    const marker = layer.group.children[0]!;
+    const dot = layer.group.children[0]!;
 
-    expect(marker.visible).toBe(true);
-    expect(marker.position.x).toBeCloseTo(3);
-    expect(marker.position.y).toBeCloseTo(2 - DOCK_STAGING_DISTANCE_M);
-    // Facing the dock, so the last metre reads as a walk straight forward.
-    expect(marker.rotation.z).toBeCloseTo(Math.PI / 2);
+    expect(dot.position.x).toBeCloseTo(3);
+    expect(dot.position.y).toBeCloseTo(2 - DOCK_STAGING_DISTANCE_M);
+    layer.dispose();
+  });
+
+  it("marks the staging point with a dot, not a goal-sized marker", () => {
+    // A ring and arrow is how an operator's own goal looks; the staging point
+    // is only passed through, so it must not read as one.
+    const layer = createDockLayer({ x: 0, y: 0, theta: 0 }, THEMES.light);
+    const dot = layer.group.children[0] as THREE.Mesh;
+    dot.geometry.computeBoundingSphere();
+
+    expect(dot.geometry.boundingSphere!.radius).toBeLessThan(0.1);
     layer.dispose();
   });
 

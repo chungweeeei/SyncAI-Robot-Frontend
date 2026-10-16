@@ -29,7 +29,7 @@ import {
   setMarkerColor,
 } from "@/lib/scene/markers";
 import { createDockLayer } from "@/lib/scene/dock-layer";
-import { createPathRibbon } from "@/lib/scene/path-ribbon";
+import { createDashedRibbon, createPathRibbon } from "@/lib/scene/path-ribbon";
 import { aimRaycaster, intersectGround } from "@/lib/scene/picking";
 import { POSE_EASE_TAU_S, type SmoothPose } from "@/lib/scene/pose";
 import {
@@ -966,12 +966,13 @@ export function PointCloudCanvas({
 
   // ---- A dock's approach band ---------------------------------------------
   // The route's rule: each sample replaces the last, the empty one erases it.
+  // Dashed, so the last metre onto the dock never reads as more of the route.
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx || !showPath || !dockPath || dockPath.points.length < 4) return;
 
     const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
-    const ribbon = createPathRibbon(dockPath.points, theme, theme.dock);
+    const ribbon = createDashedRibbon(dockPath.points, theme.dock);
     if (!ribbon) return;
     ctx.scene.add(ribbon.mesh);
 
