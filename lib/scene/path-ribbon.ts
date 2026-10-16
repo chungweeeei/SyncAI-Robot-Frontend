@@ -18,11 +18,12 @@ const PATH_Z_M = 0.012;
  * One flat band following `points` (map-frame xy pairs), plus its disposer.
  * Rebuilt per update: a route arrives every ~3 s, and ~500 quads are cheaper
  * than a preallocated buffer across varying lengths. Null when there is no band
- * to make.
+ * to make. `color` defaults to the route's; a dock's approach passes its own.
  */
 export function createPathRibbon(
   points: Float32Array,
   theme: Theme,
+  color: number = theme.path,
 ): { mesh: THREE.Mesh; dispose: () => void } | null {
   const n = points.length >> 1;
   if (n < 2) return null;
@@ -83,7 +84,7 @@ export function createPathRibbon(
 
   // Double-sided: a grazing camera can catch the back face.
   const material = new THREE.MeshBasicMaterial({
-    color: theme.path,
+    color,
     transparent: true,
     opacity: 0.75,
     side: THREE.DoubleSide,

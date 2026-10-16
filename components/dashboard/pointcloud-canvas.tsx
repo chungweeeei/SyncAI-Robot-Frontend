@@ -28,6 +28,7 @@ import {
   placePoseMarker,
   setMarkerColor,
 } from "@/lib/scene/markers";
+import { createDockLayer } from "@/lib/scene/dock-layer";
 import { createPathRibbon } from "@/lib/scene/path-ribbon";
 import { aimRaycaster, intersectGround } from "@/lib/scene/picking";
 import { POSE_EASE_TAU_S, type SmoothPose } from "@/lib/scene/pose";
@@ -95,7 +96,21 @@ interface PointCloudCanvasProps {
    * `points` means the route is over.
    */
   path?: PlannedPath;
-  /** Hide the path layer without unmounting the canvas. Defaults to true. */
+  /**
+   * A running dock's target. Drawn as its staging point and the leg onto it,
+   * so an operator can see where the route is taking the robot and why it
+   * stops short of the dock. Null when no dock runs.
+   */
+  dock?: PlanarPose | null;
+  /**
+   * The approach the robot predicts for a dock's last metre, from where it
+   * stands to the dock; an empty `points` means the dock goal ended.
+   */
+  dockPath?: PlannedPath;
+  /**
+   * Hide the path layer — the route, and a dock's staging leg and approach
+   * with it — without unmounting the canvas. Defaults to true.
+   */
   showPath?: boolean;
   /**
    * The active map's stored vertices. Draw-only: the "vertex" and "place" picks
@@ -177,6 +192,8 @@ export function PointCloudCanvas({
   telemetry,
   mapCloud = null,
   path,
+  dock = null,
+  dockPath,
   showPath = true,
   vertices,
   showVertices = true,
@@ -946,6 +963,44 @@ export function PointCloudCanvas({
       ribbon.dispose();
     };
   }, [path, showPath, meta, mapImageUrl, resolvedTheme]);
+
+  // ---- A dock's approach band ---------------------------------------------
+  // The route's rule: each sample replaces the last, the empty one erases it.
+  React.useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx || !showPath || !dockPath || dockPath.points.length < 4) return;
+
+    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
+    const ribbon = createPathRibbon(dockPath.points, theme, theme.dock);
+    if (!ribbon) return;
+    ctx.scene.add(ribbon.mesh);
+
+    return () => {
+      ctx.scene.remove(ribbon.mesh);
+      ribbon.dispose();
+    };
+  }, [dockPath, showPath, meta, mapImageUrl, resolvedTheme]);
+
+  // ---- A dock's staging point --------------------------------------------
+  // Keyed on the pose's numbers, not its identity: the run is re-read every
+  // 2 s and each read is a fresh object for the same dock.
+  const dockX = dock?.x;
+  const dockY = dock?.y;
+  const dockTheta = dock?.theta;
+  React.useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx || !showPath || dockX === undefined || dockY === undefined) return;
+    if (dockTheta === undefined) return;
+
+    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
+    const layer = createDockLayer({ x: dockX, y: dockY, theta: dockTheta }, theme);
+    ctx.scene.add(layer.group);
+
+    return () => {
+      ctx.scene.remove(layer.group);
+      layer.dispose();
+    };
+  }, [dockX, dockY, dockTheta, showPath, meta, mapImageUrl, resolvedTheme]);
 
   // ---- Optional static map cloud (toggle) ------------------------------
   React.useEffect(() => {

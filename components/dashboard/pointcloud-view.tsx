@@ -20,6 +20,7 @@ import {
   type LayerOption,
 } from "@/components/dashboard/viewport-toolbar";
 import { useActiveMapVertices } from "@/hooks/use-active-map-vertices";
+import { useActiveRun } from "@/hooks/use-active-run";
 import { useAutoLocalize } from "@/hooks/use-auto-localize";
 import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useGoalTask } from "@/hooks/use-goal-task";
@@ -33,6 +34,7 @@ import { useTelemetry } from "@/hooks/use-telemetry";
 import { apiUrl } from "@/lib/api/config";
 import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
 import { dispatchMapLock } from "@/lib/map/run-lock";
+import { liveDock } from "@/lib/task/run";
 import { cn } from "@/lib/utils";
 import type { MapVertex, VertexType } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
@@ -72,7 +74,16 @@ export function PointCloudView({
   // The reverse: no goal onto a map whose floor plan is mid-rebuild.
   const { engaged: stopped } = useConsoleEstop();
   const dispatchLock = dispatchMapLock(activeMap);
-  const { feed, path } = useTelemetry();
+  const { feed, path, dockPath } = useTelemetry();
+  // A running dock's target, for its staging point. The same query entry the
+  // status strip polls, so this adds no request. Only on the map the job runs
+  // on: a dock pose drawn on another map's floor plan would be a place that
+  // does not exist there.
+  const { run } = useActiveRun();
+  const dock =
+    run && activeMap && run.task.map_name === activeMap.name
+      ? liveDock(run.steps)
+      : null;
   // Off by default: the map scan is for checking localization. Path, waypoints
   // and zones are on: a few marks that say what the robot and map are for.
   const [showMapCloud, setShowMapCloud] = React.useState(false);
@@ -261,7 +272,8 @@ export function PointCloudView({
       onToggle: () => setShowZones((v) => !v),
     });
   }
-  if (path !== undefined && path.points.length > 0) {
+  const docking = dock !== null || (dockPath !== undefined && dockPath.points.length > 0);
+  if ((path !== undefined && path.points.length > 0) || docking) {
     layers.push({
       kind: "path",
       label: "Path",
@@ -278,6 +290,8 @@ export function PointCloudView({
         telemetry={feed}
         mapCloud={scan.cloud}
         path={path}
+        dock={dock}
+        dockPath={dockPath}
         showPath={showPath}
         vertices={vertices}
         showVertices={showVertices}

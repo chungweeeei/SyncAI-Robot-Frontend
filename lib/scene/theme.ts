@@ -33,6 +33,13 @@ export interface Theme {
    * turned into, but a step darker so the longest mark does not outshine it.
    */
   path: number;
+  /**
+   * A dock's own leg: the staging point and the approach from it onto the
+   * dock. Not a signal hue and not the route's cyan, so the last metre reads
+   * as a different kind of driving from the route that brought the robot to
+   * the staging point — the robot walks it blind, steering to the dock.
+   */
+  dock: number;
   /** Forbidden zones: `signal-warn`, the same mark as on the floor plan editor. */
   zone: number;
 }
@@ -51,6 +58,7 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     vertex: 0x173845,
     vertexHover: SIGNAL.light.cmd,
     path: 0x2b86a8,
+    dock: 0x6a4fc0,
     zone: SIGNAL.light.warn,
   },
   dark: {
@@ -65,6 +73,7 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     vertex: 0x2b5f77,
     vertexHover: SIGNAL.dark.cmd,
     path: 0x3aa8cc,
+    dock: 0xa991f2,
     zone: SIGNAL.dark.warn,
   },
 };
