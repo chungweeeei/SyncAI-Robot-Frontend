@@ -7,6 +7,7 @@ import {
   PaintbrushIcon,
   Redo2Icon,
   SaveIcon,
+  SunMediumIcon,
   Undo2Icon,
   ZoomInIcon,
   ZoomOutIcon,
@@ -50,6 +51,8 @@ export function GroundToolBar({
   onToolChange,
   radius,
   onRadiusChange,
+  shading,
+  onShadingChange,
   className,
 }: {
   onFit: () => void;
@@ -69,6 +72,9 @@ export function GroundToolBar({
   /** Brush radius, metres; one of BRUSH_RADII_M. */
   radius: number;
   onRadiusChange: (radius: number) => void;
+  /** Whether the 3D map is drawn with depth outlines (eye-dome lighting). */
+  shading: boolean;
+  onShadingChange: (shading: boolean) => void;
   className?: string;
 }) {
   return (
@@ -78,6 +84,13 @@ export function GroundToolBar({
         <ToolButton label="Zoom in" hint="closer" icon={ZoomInIcon} onClick={onZoomIn} />
         <ToolButton label="Zoom out" hint="further" icon={ZoomOutIcon} onClick={onZoomOut} />
       </ToolGroup>
+      <ToolButton
+        label="Shading"
+        hint="outline walls and steps by depth"
+        icon={SunMediumIcon}
+        pressed={shading}
+        onClick={() => onShadingChange(!shading)}
+      />
 
       <ToolDivider />
 

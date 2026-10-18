@@ -150,6 +150,8 @@ function GroundSurface({
   const [band, setBand] = React.useState(() => fullBand(voxels));
   const [fitNonce, setFitNonce] = React.useState(0);
   const [zoomStep, setZoomStep] = React.useState<{ factor: number } | null>(null);
+  // On by default: the outlines are what make walls and steps readable.
+  const [shading, setShading] = React.useState(true);
   const [canUndo, setCanUndo] = React.useState(false);
   const [canRedo, setCanRedo] = React.useState(false);
   const [count, setCount] = React.useState(session.edits.size);
@@ -326,6 +328,7 @@ function GroundSurface({
         editsVersion={editsVersion}
         fitNonce={fitNonce}
         zoomStep={zoomStep}
+        shading={shading}
         onStrokeCommit={commit}
       />
 
@@ -348,6 +351,8 @@ function GroundSurface({
             onToolChange={setTool}
             radius={radiusM}
             onRadiusChange={setRadiusM}
+            shading={shading}
+            onShadingChange={setShading}
           />
         </div>
 

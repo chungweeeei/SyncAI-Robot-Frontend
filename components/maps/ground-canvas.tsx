@@ -16,6 +16,7 @@ import {
   type GroundSession,
 } from "@/lib/map/ground-fill";
 import { applyGroundControls, dollyStep, frameGround } from "@/lib/scene/camera";
+import { createEdlPass, type EdlPass } from "@/lib/scene/edl";
 import { createPatchLayer, type PatchLayer } from "@/lib/scene/ground-patch-layer";
 import { aimRaycaster } from "@/lib/scene/picking";
 import { THEMES } from "@/lib/scene/theme";
@@ -49,6 +50,8 @@ export interface GroundCanvasProps {
   editsVersion: number;
   fitNonce: number;
   zoomStep: { factor: number } | null;
+  /** Eye-dome lighting on the 3D map (lib/scene/edl.ts): outlines by depth. */
+  shading: boolean;
   onStrokeCommit: (patch: GroundPatch) => void;
   className?: string;
 }
@@ -87,11 +90,23 @@ export function GroundCanvas(props: GroundCanvasProps) {
     controls: OrbitControls;
     layer: VoxelLayer;
     brush: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+    edl: EdlPass;
   } | null>(null);
   /** The brush's aim, metres: the shown floor's height. */
   const planeZRef = React.useRef(0);
   /** Set when the patches changed and the marks are not yet rebuilt. */
   const patchesDirtyRef = React.useRef(true);
+  /**
+   * Set when the picture is out of date. The loop draws only then, or while
+   * the camera moves (a drag, damping's coast after one): a still view is
+   * not redrawn sixty times a second, which with the shading pass is two
+   * full-screen draws a frame for nothing, on a robot's GPU or a phone's
+   * battery.
+   */
+  const frameDirtyRef = React.useRef(true);
+  const invalidate = React.useCallback(() => {
+    frameDirtyRef.current = true;
+  }, []);
   const strokeRef = React.useRef(new GroundStroke());
   const gestureRef = React.useRef<{ pointerId: number; last: Column; erase: boolean } | null>(
     null,
@@ -107,7 +122,8 @@ export function GroundCanvas(props: GroundCanvasProps) {
   const fit = React.useCallback(() => {
     const ctx = sceneRef.current;
     if (ctx) frameGround(ctx.camera, ctx.controls, ctx.layer.frame, planeZRef.current);
-  }, []);
+    invalidate();
+  }, [invalidate]);
 
   // ---- Scene (rebuilds on a new tree or theme) ---------------------------
   React.useEffect(() => {
@@ -125,9 +141,13 @@ export function GroundCanvas(props: GroundCanvasProps) {
     renderer.domElement.style.height = "100%";
     renderer.domElement.style.display = "block";
     container.appendChild(renderer.domElement);
+    const edl = createEdlPass(voxels.res);
+    edl.enabled = propsRef.current.shading;
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    // Any camera move the controls make themselves, beside what update() reports.
+    controls.addEventListener("change", invalidate);
     applyGroundControls(controls, propsRef.current.tool !== "orbit");
 
     const layer = createVoxelLayer(voxels);
@@ -139,7 +159,13 @@ export function GroundCanvas(props: GroundCanvasProps) {
     // since the floor's own cells would otherwise hide it.
     const brush = new THREE.Mesh(
       new THREE.RingGeometry(1 - RING_WIDTH, 1, 48),
-      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9, depthTest: false }),
+      // No depth either, so the shading does not outline it as a step.
+      new THREE.MeshBasicMaterial({
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false,
+        depthWrite: false,
+      }),
     );
     brush.renderOrder = 1;
     brush.visible = false;
@@ -147,19 +173,21 @@ export function GroundCanvas(props: GroundCanvasProps) {
 
     aimAtFloor();
     frameGround(camera, controls, layer.frame, planeZRef.current);
-    sceneRef.current = { scene, camera, controls, layer, brush };
+    sceneRef.current = { scene, camera, controls, layer, brush, edl };
 
     let patches: PatchLayer | null = null;
     patchesDirtyRef.current = true;
+    frameDirtyRef.current = true;
 
     const resize = () => {
       const rect = container.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
       renderer.setSize(rect.width, rect.height, false);
+      edl.setSize(rect.width, rect.height, renderer.getPixelRatio());
       camera.aspect = rect.width / rect.height;
       camera.updateProjectionMatrix();
       // Draw now: setSize clears the canvas (see Realtime in CLAUDE.md).
-      renderer.render(scene, camera);
+      edl.render(renderer, scene, camera);
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -178,8 +206,12 @@ export function GroundCanvas(props: GroundCanvasProps) {
         }
         patches = createPatchLayer(session.edits, voxels, SIGNAL[theme].cmd);
         scene.add(patches.points);
+        frameDirtyRef.current = true;
       }
-      controls.update();
+      // True while the camera moves, damping's coast included.
+      if (controls.update()) frameDirtyRef.current = true;
+      if (!frameDirtyRef.current) return;
+      frameDirtyRef.current = false;
       // What the phone test reads a pinch off: the camera's distance to its
       // target, in centimetres, written only when it moves.
       const next = String(Math.round(camera.position.distanceTo(controls.target) * 100));
@@ -187,13 +219,14 @@ export function GroundCanvas(props: GroundCanvasProps) {
         distance = next;
         container.dataset.distance = next;
       }
-      renderer.render(scene, camera);
+      edl.render(renderer, scene, camera);
     };
     frame = requestAnimationFrame(loop);
 
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
+      controls.removeEventListener("change", invalidate);
       controls.dispose();
       scene.remove(layer.points);
       layer.dispose();
@@ -203,25 +236,35 @@ export function GroundCanvas(props: GroundCanvasProps) {
       }
       brush.geometry.dispose();
       brush.material.dispose();
+      edl.dispose();
       renderer.dispose();
       renderer.domElement.remove();
       sceneRef.current = null;
     };
-  }, [session, theme, aimAtFloor]);
+  }, [session, theme, aimAtFloor, invalidate]);
+
+  // ---- Shading follows its toggle -----------------------------------------
+  React.useEffect(() => {
+    const ctx = sceneRef.current;
+    if (ctx) ctx.edl.enabled = props.shading;
+    invalidate();
+  }, [props.shading, invalidate]);
 
   // ---- Controls follow the tool ------------------------------------------
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (ctx) applyGroundControls(ctx.controls, props.tool !== "orbit");
     if (ctx && props.tool === "orbit") ctx.brush.visible = false;
-  }, [props.tool]);
+    invalidate();
+  }, [props.tool, invalidate]);
 
   // ---- Heights shown, and the floor the brush aims at -------------------
   const { lo: bandLo, hi: bandHi } = props.band;
   React.useEffect(() => {
     sceneRef.current?.layer.setBand(bandLo, bandHi);
     aimAtFloor();
-  }, [bandLo, bandHi, aimAtFloor]);
+    invalidate();
+  }, [bandLo, bandHi, aimAtFloor, invalidate]);
 
   // ---- Patches changed outside a stroke ----------------------------------
   React.useEffect(() => {
@@ -235,7 +278,8 @@ export function GroundCanvas(props: GroundCanvasProps) {
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (ctx && props.zoomStep) dollyStep(ctx.camera, ctx.controls, props.zoomStep.factor);
-  }, [props.zoomStep]);
+    invalidate();
+  }, [props.zoomStep, invalidate]);
 
   /** The point on the brush's floor under the pointer, metres, or null. */
   const cast = (event: React.PointerEvent): THREE.Vector3 | null => {
@@ -310,6 +354,7 @@ export function GroundCanvas(props: GroundCanvasProps) {
         ctx.brush.scale.set(r, r, 1);
         ctx.brush.material.color.set(erase ? SIGNAL[theme].warn : SIGNAL[theme].cmd);
       }
+      invalidate();
     }
   };
 
@@ -364,6 +409,7 @@ export function GroundCanvas(props: GroundCanvasProps) {
     if (gestureRef.current) return;
     const ctx = sceneRef.current;
     if (ctx) ctx.brush.visible = false;
+    invalidate();
   };
 
   return (
