@@ -138,6 +138,55 @@ test.describe("the map library", () => {
     ).toHaveAttribute("href", `/maps/${MAP_NAME}/edit`);
   });
 
+  test("shows a card its 3D map when it has one, else its floor plan", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const treeReads: string[] = [];
+    page.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (pathname.endsWith("/octomap")) treeReads.push(pathname);
+    });
+    await mockBackend(page, {
+      maps: [
+        mapSummary({ active: true, name: "site-3d", ...withOctomap() }),
+        mapSummary({ active: false, name: "site-2d" }),
+        mapSummary({
+          active: false,
+          name: "site-bare",
+          grid: null,
+          thumbnail: null,
+          grid_status: "none",
+        }),
+      ],
+    });
+    await page.goto("/maps");
+
+    const still = page.getByRole("img", { name: "3D map of site-3d" });
+    await expect(still).toBeVisible();
+    await expect(still).toHaveAttribute("src", /^data:image\/png;base64,/);
+    // The 3D map stands in for the floor plan, not beside it.
+    await expect(page.getByRole("img", { name: "Floor plan of site-3d" })).toHaveCount(0);
+    await expect(page.getByRole("img", { name: "Floor plan of site-2d" })).toBeVisible();
+    await expect(page.getByRole("img", { name: "3D map of site-2d" })).toHaveCount(0);
+    await expect(
+      page.getByRole("article").filter({ hasText: "site-bare" }).getByText("No preview"),
+    ).toBeVisible();
+    // Only the map that has a tree downloads one.
+    expect(treeReads).toEqual(["/api/v1/maps/site-3d/octomap"]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("falls back to the floor plan when the 3D map cannot be read", async ({ page }) => {
+    await mockBackend(page, {
+      maps: [mapSummary({ active: true, name: "site-3d", ...withOctomap() })],
+      octomap: Buffer.from("not a tree"),
+    });
+    await page.goto("/maps");
+
+    await expect(page.getByRole("img", { name: "Floor plan of site-3d" })).toBeVisible();
+    await expect(page.getByRole("img", { name: "3D map of site-3d" })).toHaveCount(0);
+  });
+
   test("holds Edit on the map in use while a job drives on it", async ({
     page,
   }) => {

@@ -189,7 +189,12 @@ components/
                 map — its face is lib/map/run-face.ts), the save dialog, the
                 refusal panel under the strip and the save receipt's two
                 lines: the floor plan conversion and the 3D map build
-  maps/         map library cards, the gridmap editor (grid-canvas) and the
+  maps/         map library cards (each tile the map's 3D map when it has
+                one — a still drawn in the browser once the card nears the
+                screen, lib/scene/voxel-snapshot.ts, each storey cut under
+                its ceiling — else its floor plan thumbnail, and the floor
+                plan again when the tree cannot be read), the gridmap editor
+                (grid-canvas) and the
                 ground editor (/maps/[name]/ground, ground-canvas: the 3D map
                 in 3D, orbited freely, and a brush that patches the holes the
                 lidar never saw — a press is cast onto the height the shown
