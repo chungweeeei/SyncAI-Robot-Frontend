@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { CheckIcon, LayersIcon, PencilIcon } from "lucide-react";
+import { CheckIcon, LayersIcon } from "lucide-react";
 
 import { Chip } from "@/components/console/instrument";
 import { MapActivateControl } from "@/components/maps/map-activate-control";
@@ -225,8 +224,6 @@ export function MapCard({
   /** The backend's sentence about where the robot ended up after a map switch. */
   onSwitched?: (message: string) => void;
 }) {
-  const grid = map.grid;
-
   return (
     <article
       aria-current={map.active ? "true" : undefined}
