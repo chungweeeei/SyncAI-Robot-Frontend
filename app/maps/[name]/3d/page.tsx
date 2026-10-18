@@ -8,11 +8,12 @@ import { GroundEditor } from "@/components/maps/ground-editor";
 import { MapTitleRename } from "@/components/maps/map-title-rename";
 
 /**
- * The ground editor's page: chrome only, like the floor plan editor's.
+ * The 3D map's page (/maps/[name]/3d): chrome only, like the floor plan
+ * editor's.
  * GroundEditor owns the editing; this column gives its canvas a definite
  * height and the back button its unsaved-changes question.
  */
-export default function MapGroundPage() {
+export default function Map3dPage() {
   const params = useParams<{ name: string }>();
   const router = useRouter();
   const name = params.name;
@@ -41,7 +42,7 @@ export default function MapGroundPage() {
           <ArrowLeftIcon className="size-3.5" aria-hidden />
         </button>
         <MapTitleRename name={name} dirty={dirty} />
-        <span className="instrument-label text-muted-foreground">Ground</span>
+        <span className="instrument-label text-muted-foreground">3D map</span>
       </header>
 
       <div className="min-h-0 flex-1">

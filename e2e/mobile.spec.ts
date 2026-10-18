@@ -439,7 +439,7 @@ test.describe("the console on a phone", () => {
       maps: [mapSummary(withOctomap())],
       octomap: octomapBt(size),
     });
-    await page.goto(`/maps/${MAP_NAME}/ground`);
+    await page.goto(`/maps/${MAP_NAME}/3d`);
     const canvas = page.getByTestId("ground-canvas");
     await expect(canvas).toHaveAttribute("data-distance", /\d+/);
     const box = (await canvas.boundingBox())!;

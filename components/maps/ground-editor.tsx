@@ -351,18 +351,24 @@ function GroundSurface({
           />
         </div>
 
+        {/* The floors, top-right as on the dashboard; the sliders on the left
+          * set any other band. Out of the toolbar's row so its height does not
+          * push the panel down, and under the toolbar on a phone, where the
+          * toolbar takes the whole width. */}
+        {floorOptions.length > 1 && (
+          <FloorPicker
+            className="pointer-events-auto absolute top-0 right-0 max-sm:top-14"
+            floors={floorOptions}
+            value={pickedFloor}
+            onChange={pickFloor}
+          />
+        )}
+
         {/* Narrower on a phone so the map's middle stays reachable beside it;
           * the long hint is desktop-only, since a finger has no room for prose. */}
         <div className="pointer-events-none flex min-h-0 w-44 flex-col gap-2 overflow-y-auto sm:w-60">
           <div className={cn(overlayPanel, "pointer-events-auto space-y-2 p-2.5")}>
             <p className="instrument-label text-muted-foreground">Heights shown</p>
-            {floorOptions.length > 1 && (
-              <FloorPicker
-                floors={floorOptions}
-                value={pickedFloor}
-                onChange={pickFloor}
-              />
-            )}
             <label className="block text-[11px] leading-snug">
               <span className="flex justify-between text-muted-foreground">
                 <span>Lowest</span>

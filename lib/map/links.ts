@@ -2,9 +2,9 @@
 // the editor reads (app/maps/[name]/edit/page.tsx).
 
 
-/** The ground editor (app/maps/[name]/ground/page.tsx): the 3D map's holes. */
-export function groundEditorHref(mapName: string): string {
-  return `/maps/${encodeURIComponent(mapName)}/ground`;
+/** The 3D map and its ground editor (app/maps/[name]/3d/page.tsx). */
+export function map3dHref(mapName: string): string {
+  return `/maps/${encodeURIComponent(mapName)}/3d`;
 }
 
 /** The gridmap editor, opened in Waypoints mode, with a way back to `from`. */
