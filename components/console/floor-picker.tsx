@@ -2,15 +2,17 @@
 
 import * as React from "react";
 
+import { overlayPanel } from "@/components/console/instrument";
 import { cn } from "@/lib/utils";
 import type { MapFloor } from "@/lib/types/map";
 
 /**
- * Which floor of a multi-storey 3D map is on show: All, then each floor
- * lowest first. Shared by the dashboard's 3D map and the ground editor, so
- * a floor reads the same on both. Pressed buttons in a named group rather
- * than a radio group: each is one press that changes the view, and a
- * screen reader hears "Floor, 2F, pressed".
+ * Which floor of a multi-storey 3D map is on show: a column in the 3D view's
+ * top-right corner, read like a lift's panel — the top floor at the top, the
+ * ground floor under it, All at the foot. Shared by the dashboard's 3D map
+ * and the 3D map page, so a floor reads the same on both. Pressed buttons in
+ * a named group rather than a radio group: each is one press that changes
+ * the view, and a screen reader hears "Floor, 2F, pressed".
  */
 export function FloorPicker({
   floors,
@@ -31,11 +33,21 @@ export function FloorPicker({
   className?: string;
 }) {
   const options: { key: string | null; label: string }[] = [
+    ...[...floors]
+      .sort((a, b) => b.level - a.level)
+      .map((floor) => ({ key: floor.name, label: floor.name })),
     { key: null, label: allLabel },
-    ...floors.map((floor) => ({ key: floor.name, label: floor.name })),
   ];
   return (
-    <div role="group" aria-label="Floor" className={cn("flex flex-wrap gap-1", className)}>
+    <div
+      role="group"
+      aria-label="Floor"
+      className={cn(
+        overlayPanel,
+        "flex w-12 flex-col gap-1 p-1 pointer-coarse:w-14",
+        className,
+      )}
+    >
       {options.map((option) => {
         const pressed = option.key === value;
         return (
@@ -43,9 +55,10 @@ export function FloorPicker({
             key={option.key ?? "\u0000all"}
             type="button"
             aria-pressed={pressed}
+            title={option.key === null ? "Show every floor" : `Show ${option.label}`}
             onClick={() => onChange(option.key)}
             className={cn(
-              "readout h-6 min-w-8 rounded-sm border px-1.5 text-[11px] pointer-coarse:h-10 pointer-coarse:min-w-10",
+              "readout h-7 w-full truncate rounded-sm border px-1 text-[11px] pointer-coarse:h-10",
               "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
               pressed
                 ? "border-signal-cmd bg-signal-cmd/15 text-signal-cmd"

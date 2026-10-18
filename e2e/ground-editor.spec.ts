@@ -70,7 +70,7 @@ test.describe("the ground editor", () => {
 
     await expect(page.getByRole("link", { name: "Fill the ground of flat" })).toHaveCount(0);
     const link = page.getByRole("link", { name: "Fill the ground of solid" });
-    await expect(link).toHaveAttribute("href", "/maps/solid/ground");
+    await expect(link).toHaveAttribute("href", "/maps/solid/3d");
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -80,7 +80,7 @@ test.describe("the ground editor", () => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, { maps: [mapSummary(withOctomap())] });
-    await page.goto(`/maps/${MAP_NAME}/ground`);
+    await page.goto(`/maps/${MAP_NAME}/3d`);
     await expect(page.getByTestId("ground-canvas")).toBeVisible();
     await expect(patched(page)).toHaveAttribute("data-patched", "0");
 
@@ -118,7 +118,7 @@ test.describe("the ground editor", () => {
       maps: [mapSummary(withOctomap())],
       octomapEdits: { [MAP_NAME]: HOLE },
     });
-    await page.goto(`/maps/${MAP_NAME}/ground`);
+    await page.goto(`/maps/${MAP_NAME}/3d`);
     await expect(page.getByTestId("ground-canvas")).toBeVisible();
     // The saved record is what it opens on, and is not unsaved.
     await expect(patched(page)).toHaveAttribute("data-patched", "4");
@@ -159,7 +159,7 @@ test.describe("the ground editor", () => {
       activeTasks: running,
       taskStates: states,
     });
-    await page.goto(`/maps/${MAP_NAME}/ground`);
+    await page.goto(`/maps/${MAP_NAME}/3d`);
     await expect(page.getByTestId("ground-canvas")).toBeVisible();
     await expect(page.getByRole("status").filter({ hasText: "Read-only." })).toBeVisible();
 
@@ -185,7 +185,7 @@ test.describe("the ground editor", () => {
     page,
   }) => {
     await mockBackend(page, { maps: [mapSummary()] });
-    await page.goto(`/maps/${MAP_NAME}/ground`);
+    await page.goto(`/maps/${MAP_NAME}/3d`);
     await expect(page.getByText("This map has no 3D map to edit.")).toBeVisible();
 
     await mockBackend(page, { maps: [mapSummary(withOctomap())] });
@@ -201,7 +201,7 @@ test.describe("the ground editor", () => {
           })
         : route.fallback(),
     );
-    await page.goto(`/maps/${MAP_NAME}/ground`);
+    await page.goto(`/maps/${MAP_NAME}/3d`);
     await armFill(page);
     const hole = await holeOnScreen(page);
     await page.mouse.click(hole.x, hole.y);
@@ -219,7 +219,7 @@ test.describe("the ground editor", () => {
       maps: [mapSummary(withOctomap())],
       octomapEdits: { [MAP_NAME]: [[O + 1, O + 1, O - 5], [O + 400, O + 400, O - 5]] },
     });
-    await page.goto(`/maps/${MAP_NAME}/ground`);
+    await page.goto(`/maps/${MAP_NAME}/3d`);
     await expect(patched(page)).toHaveAttribute("data-patched", "1");
     await expect(
       page.getByRole("status").filter({ hasText: "1 saved patch lies outside" }),
@@ -233,7 +233,7 @@ test.describe("the ground editor", () => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { maps: [mapSummary(withOctomap())] });
-    await page.goto(`/maps/${MAP_NAME}/ground`);
+    await page.goto(`/maps/${MAP_NAME}/3d`);
     const canvas = page.getByTestId("ground-canvas");
     await expect(canvas).toHaveAttribute("data-distance", /\d+/);
     const opening = await canvas.getAttribute("data-distance");
@@ -265,7 +265,7 @@ test.describe("the ground editor", () => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { maps: [mapSummary(withOctomap())] });
-    await page.goto(`/maps/${MAP_NAME}/ground`);
+    await page.goto(`/maps/${MAP_NAME}/3d`);
     await armFill(page);
     const hole = await holeOnScreen(page);
     await page.mouse.click(hole.x, hole.y);
@@ -306,7 +306,7 @@ test.describe("the ground editor", () => {
         octomap: twoStoreys(),
         floors: { [MAP_NAME]: { detected: TWO_FLOORS } },
       });
-      await page.goto(`/maps/${MAP_NAME}/ground`);
+      await page.goto(`/maps/${MAP_NAME}/3d`);
       await expect(page.getByTestId("ground-canvas")).toBeVisible();
       const floors = page.getByRole("group", { name: "Floor" });
       await expect(floors.getByRole("button", { name: "All" })).toHaveAttribute(

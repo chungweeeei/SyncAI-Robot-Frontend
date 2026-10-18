@@ -458,64 +458,70 @@ export function PointCloudView({
           />
         </div>
 
-        {/* Goal first: it is used on every run, an initial pose is recovery.
-          * Scrolls because a sideways phone leaves the viewport ~200 px tall.
-          * Pointer-transparent with each panel opting back in, so the armed
-          * hint never swallows the press it asks for. */}
-        <div className="pointer-events-none flex min-h-0 w-56 flex-col gap-2 overflow-y-auto empty:hidden">
-          {/* Over the panels: it is part of what is drawn, not a job. */}
+        <div className="flex min-h-0 items-start justify-between gap-2">
+          {/* Goal first: it is used on every run, an initial pose is recovery.
+            * Scrolls because a sideways phone leaves the viewport ~200 px tall.
+            * Pointer-transparent with each panel opting back in, so the armed
+            * hint never swallows the press it asks for. */}
+          <div className="pointer-events-none flex max-h-full min-h-0 w-56 flex-col gap-2 overflow-y-auto empty:hidden">
+            {/* The next step happens on the map, away from the tooltip, so it
+              * is spelled out here while the tool is armed. */}
+            {pick?.mode === "goal" && (
+              <ArmedHint tone="cmd">Aim and release to send</ArmedHint>
+            )}
+            {pick?.mode === "initial-pose" && (
+              <ArmedHint tone="caution">Press the map, then drag to aim</ArmedHint>
+            )}
+            {/* No hint for Add waypoint, by request: the carried marker says it. */}
+            <GoalControl task={task} className="pointer-events-auto" />
+            <InitialPoseControl estimate={estimate} className="pointer-events-auto" />
+            <AutoLocalizeControl localize={localize} className="pointer-events-auto" />
+            {/* Shown while a re-place is live, and after it when the write fails
+              * so the sentence lands where the operator is looking. */}
+            <VertexPlaceControl
+              className="pointer-events-auto"
+              vertex={pick?.mode === "vertex" ? pick.vertex : null}
+              // One busy flag and error for every write; an open dialog owns them.
+              busy={placement || askedVertex ? false : stops.busy}
+              error={placement || askedVertex ? null : stops.writeError}
+              onCancel={() => setPick(null)}
+              onDismissError={stops.clearWriteError}
+            />
+            {/* Lasts while the layer is on; toggling it off and on is the retry. */}
+            {scan.error && (
+              <p
+                role="alert"
+                className={cn(
+                  overlayPanel,
+                  "pointer-events-auto px-2 py-1.5 text-[11px] leading-snug break-words text-signal-warn",
+                )}
+              >
+                {scan.error}
+              </p>
+            )}
+            {/* The same for the 3D map: its toggle is the retry. */}
+            {octomap.error && (
+              <p
+                role="alert"
+                className={cn(
+                  overlayPanel,
+                  "pointer-events-auto px-2 py-1.5 text-[11px] leading-snug break-words text-signal-warn",
+                )}
+              >
+                {octomap.error}
+              </p>
+            )}
+          </div>
+
+          {/* The 3D map's floors, top-right under the view tools: part of what
+            * is drawn, not a job, so apart from the panels on the left. */}
           {voxels && bands.length > 1 && (
-            <div className={cn(overlayPanel, "pointer-events-auto px-2 py-1.5")}>
-              <p className="instrument-label mb-1 text-muted-foreground">3D map floor</p>
-              <FloorPicker floors={bands} value={floorBand?.name ?? null} onChange={setFloorName} />
-            </div>
-          )}
-          {/* The next step happens on the map, away from the tooltip, so it
-            * is spelled out here while the tool is armed. */}
-          {pick?.mode === "goal" && (
-            <ArmedHint tone="cmd">Aim and release to send</ArmedHint>
-          )}
-          {pick?.mode === "initial-pose" && (
-            <ArmedHint tone="caution">Press the map, then drag to aim</ArmedHint>
-          )}
-          {/* No hint for Add waypoint, by request: the carried marker says it. */}
-          <GoalControl task={task} className="pointer-events-auto" />
-          <InitialPoseControl estimate={estimate} className="pointer-events-auto" />
-          <AutoLocalizeControl localize={localize} className="pointer-events-auto" />
-          {/* Shown while a re-place is live, and after it when the write fails
-            * so the sentence lands where the operator is looking. */}
-          <VertexPlaceControl
-            className="pointer-events-auto"
-            vertex={pick?.mode === "vertex" ? pick.vertex : null}
-            // One busy flag and error for every write; an open dialog owns them.
-            busy={placement || askedVertex ? false : stops.busy}
-            error={placement || askedVertex ? null : stops.writeError}
-            onCancel={() => setPick(null)}
-            onDismissError={stops.clearWriteError}
-          />
-          {/* Lasts while the layer is on; toggling it off and on is the retry. */}
-          {scan.error && (
-            <p
-              role="alert"
-              className={cn(
-                overlayPanel,
-                "pointer-events-auto px-2 py-1.5 text-[11px] leading-snug break-words text-signal-warn",
-              )}
-            >
-              {scan.error}
-            </p>
-          )}
-          {/* The same for the 3D map: its toggle is the retry. */}
-          {octomap.error && (
-            <p
-              role="alert"
-              className={cn(
-                overlayPanel,
-                "pointer-events-auto px-2 py-1.5 text-[11px] leading-snug break-words text-signal-warn",
-              )}
-            >
-              {octomap.error}
-            </p>
+            <FloorPicker
+              className="pointer-events-auto ml-auto shrink-0"
+              floors={bands}
+              value={floorBand?.name ?? null}
+              onChange={setFloorName}
+            />
           )}
         </div>
       </div>

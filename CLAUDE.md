@@ -156,7 +156,8 @@ components/
                 state) and its disclosures: the sensor alerts (where an
                 overheating motor interrupts, on every screen), the drive
                 panel and camera window every screen can open, and the
-                floor picker both 3D map surfaces share (floor-picker.tsx)
+                floor picker both 3D map surfaces share (floor-picker.tsx: a
+                column in the view's top-right, top floor first, All last)
   dashboard/    3D viewport (pointcloud-canvas) with the pose laid over its
                 corner — its layers are the saved scan, the robot's 3D map
                 (the occupancy tree, off by default like the scan under a
@@ -195,7 +196,7 @@ components/
                 its ceiling — else its floor plan thumbnail, and the floor
                 plan again when the tree cannot be read), the gridmap editor
                 (grid-canvas) and the
-                ground editor (/maps/[name]/ground, ground-canvas: the 3D map
+                ground editor (/maps/[name]/3d, ground-canvas: the 3D map
                 in 3D, orbited freely, and a brush that patches the holes the
                 lidar never saw — a press is cast onto the height the shown
                 floor mostly stands on, since a hole has no cell to hit and a

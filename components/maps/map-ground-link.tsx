@@ -4,7 +4,7 @@ import Link from "next/link";
 import { MountainIcon } from "lucide-react";
 
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
-import { groundEditorHref } from "@/lib/map/links";
+import { map3dHref } from "@/lib/map/links";
 import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
 
@@ -42,7 +42,7 @@ export function MapGroundLink({ map }: { map: MapSummary }) {
 
   return (
     <Link
-      href={groundEditorHref(map.name)}
+      href={map3dHref(map.name)}
       aria-label={`Fill the ground of ${map.name}`}
       title={`Fill the ground of ${map.name}`}
       className={cn(
