@@ -16,6 +16,20 @@ export const EDL_RADIUS_PX = 1.4;
 export const EDL_STRENGTH = 0.85;
 
 /**
+ * The smallest depth step that draws a line, in cells of the map: one and a
+ * half, so a single cell's roughness on a floor never does and a kerb two
+ * cells high always does, whatever resolution the robot built the map at.
+ * 0.15 m on the robot's 0.1 m maps.
+ */
+export const EDL_STEP_CELLS = 1.5;
+/**
+ * How much the step grows per metre of distance, metres: a pixel covers more
+ * of a floor the further off it is, so a grazing floor far away differs from
+ * pixel to pixel by more than one near by. Set by the screen, not the map.
+ */
+export const EDL_STEP_PER_M = 0.003;
+
+/**
  * The eight neighbours, at unit distance. Diagonals included, so a wall
  * seen at any angle is outlined evenly.
  */
@@ -45,7 +59,7 @@ void main() {
  * line on its far side. Two departures, both because a voxel map is a lattice
  * of square sprites rather than a scan's scattered points:
  *  - Steps are read in metres against a threshold that grows with distance
- *    (`STEP_M` + `STEP_PER_M` per metre), not as Potree's log-depth sum: at
+ *    (`stepM` + `stepPerM` per metre), not as Potree's log-depth sum: at
  *    a grazing angle neighbouring rows of one floor differ by a few
  *    centimetres per pixel, which Potree's gain turns into stripes.
  *  - Background is never darkened. Potree outlines the silhouette by shading
@@ -61,11 +75,10 @@ uniform float near;
 uniform float far;
 uniform float radius;
 uniform float strength;
+uniform float stepM;
+uniform float stepPerM;
 uniform vec2 neighbours[8];
 varying vec2 vUv;
-
-const float STEP_M = 0.15;
-const float STEP_PER_M = 0.003;
 
 // The eye distance in metres; background (nothing drawn) is flagged by -1.
 float eyeDepth(vec2 uv) {
@@ -82,7 +95,7 @@ void main() {
     #include <colorspace_fragment>
     return;
   }
-  float step = STEP_M + STEP_PER_M * depth;
+  float step = stepM + stepPerM * depth;
   float occluded = 0.0;
   for (int i = 0; i < 8; i++) {
     float n = eyeDepth(vUv + neighbours[i] * radius * texel);
@@ -105,13 +118,20 @@ export interface EdlPass {
 }
 
 /**
- * One EDL pass for one canvas: the scene into an offscreen colour + depth
- * target, then a full-screen triangle that shades the colour by the depth.
- * Multisampled, as the canvas is (WebGL2 resolves the depth too).
+ * One EDL pass for one canvas, for a map of cell size `res` metres: the
+ * scene into an offscreen colour + depth target, then a full-screen
+ * triangle that shades the colour by the depth. Multisampled, as the canvas
+ * is (WebGL2 resolves the depth too).
+ *
+ * The colour target is 8-bit sRGB, as the canvas is: the scene is flat
+ * colours with no lighting to keep headroom for, and half floats at 4x MSAA
+ * on a dense screen were twice the memory traffic for nothing. sRGB rather
+ * than linear so the dark end of the ramp keeps its steps.
  */
-export function createEdlPass(): EdlPass {
+export function createEdlPass(res: number): EdlPass {
   const target = new THREE.WebGLRenderTarget(1, 1, {
-    type: THREE.HalfFloatType,
+    type: THREE.UnsignedByteType,
+    colorSpace: THREE.SRGBColorSpace,
     depthTexture: new THREE.DepthTexture(1, 1, THREE.UnsignedIntType),
     // The canvas's own antialias fills the sub-pixel gaps between sprites;
     // drawn offscreen without it, every row of floor shows a line of
@@ -129,6 +149,8 @@ export function createEdlPass(): EdlPass {
       far: { value: 1000 },
       radius: { value: EDL_RADIUS_PX },
       strength: { value: EDL_STRENGTH },
+      stepM: { value: EDL_STEP_CELLS * res },
+      stepPerM: { value: EDL_STEP_PER_M },
       neighbours: { value: NEIGHBOURS.map(([x, y]) => new THREE.Vector2(x, y)) },
     },
     depthTest: false,
