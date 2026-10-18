@@ -16,6 +16,7 @@ import {
   type GroundSession,
 } from "@/lib/map/ground-fill";
 import { applyGroundControls, dollyStep, frameGround } from "@/lib/scene/camera";
+import { createEdlPass, type EdlPass } from "@/lib/scene/edl";
 import { createPatchLayer, type PatchLayer } from "@/lib/scene/ground-patch-layer";
 import { aimRaycaster } from "@/lib/scene/picking";
 import { THEMES } from "@/lib/scene/theme";
@@ -49,6 +50,8 @@ export interface GroundCanvasProps {
   editsVersion: number;
   fitNonce: number;
   zoomStep: { factor: number } | null;
+  /** Eye-dome lighting on the 3D map (lib/scene/edl.ts): outlines by depth. */
+  shading: boolean;
   onStrokeCommit: (patch: GroundPatch) => void;
   className?: string;
 }
@@ -87,6 +90,7 @@ export function GroundCanvas(props: GroundCanvasProps) {
     controls: OrbitControls;
     layer: VoxelLayer;
     brush: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+    edl: EdlPass;
   } | null>(null);
   /** The brush's aim, metres: the shown floor's height. */
   const planeZRef = React.useRef(0);
@@ -125,6 +129,8 @@ export function GroundCanvas(props: GroundCanvasProps) {
     renderer.domElement.style.height = "100%";
     renderer.domElement.style.display = "block";
     container.appendChild(renderer.domElement);
+    const edl = createEdlPass();
+    edl.enabled = propsRef.current.shading;
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -139,7 +145,13 @@ export function GroundCanvas(props: GroundCanvasProps) {
     // since the floor's own cells would otherwise hide it.
     const brush = new THREE.Mesh(
       new THREE.RingGeometry(1 - RING_WIDTH, 1, 48),
-      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9, depthTest: false }),
+      // No depth either, so the shading does not outline it as a step.
+      new THREE.MeshBasicMaterial({
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false,
+        depthWrite: false,
+      }),
     );
     brush.renderOrder = 1;
     brush.visible = false;
@@ -147,7 +159,7 @@ export function GroundCanvas(props: GroundCanvasProps) {
 
     aimAtFloor();
     frameGround(camera, controls, layer.frame, planeZRef.current);
-    sceneRef.current = { scene, camera, controls, layer, brush };
+    sceneRef.current = { scene, camera, controls, layer, brush, edl };
 
     let patches: PatchLayer | null = null;
     patchesDirtyRef.current = true;
@@ -156,10 +168,11 @@ export function GroundCanvas(props: GroundCanvasProps) {
       const rect = container.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
       renderer.setSize(rect.width, rect.height, false);
+      edl.setSize(rect.width, rect.height, renderer.getPixelRatio());
       camera.aspect = rect.width / rect.height;
       camera.updateProjectionMatrix();
       // Draw now: setSize clears the canvas (see Realtime in CLAUDE.md).
-      renderer.render(scene, camera);
+      edl.render(renderer, scene, camera);
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -187,7 +200,7 @@ export function GroundCanvas(props: GroundCanvasProps) {
         distance = next;
         container.dataset.distance = next;
       }
-      renderer.render(scene, camera);
+      edl.render(renderer, scene, camera);
     };
     frame = requestAnimationFrame(loop);
 
@@ -203,11 +216,18 @@ export function GroundCanvas(props: GroundCanvasProps) {
       }
       brush.geometry.dispose();
       brush.material.dispose();
+      edl.dispose();
       renderer.dispose();
       renderer.domElement.remove();
       sceneRef.current = null;
     };
   }, [session, theme, aimAtFloor]);
+
+  // ---- Shading follows its toggle -----------------------------------------
+  React.useEffect(() => {
+    const ctx = sceneRef.current;
+    if (ctx) ctx.edl.enabled = props.shading;
+  }, [props.shading]);
 
   // ---- Controls follow the tool ------------------------------------------
   React.useEffect(() => {
