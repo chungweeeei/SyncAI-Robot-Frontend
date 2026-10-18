@@ -97,6 +97,17 @@ export const queryKeys = {
       ? (["map-octomap", name] as const)
       : (["map-octomap", name, version] as const),
   /**
+   * The Maps card's still of the 3D map (lib/scene/voxel-snapshot.ts), drawn
+   * from the `mapOctomap` entry and the map's floors. Keyed by the tree's
+   * version and the floor levels it was cut at, so a re-clean or a floors
+   * save draws a new one; without them it is the prefix the write hooks drop
+   * a map's stills by.
+   */
+  mapOctomapPreview: (name: string, version?: string, levels?: string) =>
+    version === undefined
+      ? (["map-octomap-preview", name] as const)
+      : (["map-octomap-preview", name, version, levels ?? ""] as const),
+  /**
    * GET /api/v1/maps/<name>/octomap/edits — the ground patches saved for the
    * 3D map. Like `mapKeepout`: the editor seeds from it once and a save
    * writes its answer here, since a save is the whole list.

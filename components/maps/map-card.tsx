@@ -10,16 +10,51 @@ import { MapEditLink } from "@/components/maps/map-edit-link";
 import { MapExportControl } from "@/components/maps/map-export-control";
 import { MapGroundLink } from "@/components/maps/map-ground-link";
 import { MapRenameControl } from "@/components/maps/map-rename-control";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useInView } from "@/hooks/use-in-view";
+import { useMapOctomapPreview } from "@/hooks/use-map-octomap-preview";
 import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
 
 /**
- * The map's tile, on a fixed light neutral rather than a theme surface: a
- * floor plan image has near-black walls in both themes, so a dark tile would
- * read as an empty rectangle. A hair lighter than the 205 unknown-grey so the
- * map's own unknown region still reads as map.
+ * The map's tile: its 3D map when it has one, else its floor plan, else a
+ * note that there is nothing to show. The 3D still is drawn in the browser
+ * (useMapOctomapPreview) once the card nears the screen, so a long list
+ * downloads only the trees an operator scrolls to; while it is drawn the
+ * tile pulses, and a tree that cannot be read falls back to the floor plan.
+ *
+ * On a fixed light neutral rather than a theme surface: a floor plan image
+ * has near-black walls in both themes, so a dark tile would read as an
+ * empty rectangle. A hair lighter than the 205 unknown-grey so the map's own
+ * unknown region still reads as map; the 3D still is drawn on the same grey.
  */
 function MapThumbnail({ map }: { map: MapSummary }) {
+  const [ref, inView] = useInView<HTMLDivElement>();
+  const has3d = map.octomap_status === "ok";
+  const preview = useMapOctomapPreview(has3d && inView ? map.name : null);
+
+  if (has3d && preview.status !== "error") {
+    if (!preview.url) {
+      return (
+        <div ref={ref} className="aspect-[4/3] border-b border-hairline">
+          <Skeleton className="size-full rounded-none" />
+          <span className="sr-only">Drawing the 3D map of {map.name}</span>
+        </div>
+      );
+    }
+    return (
+      <div className="aspect-[4/3] border-b border-hairline bg-[#e4e4e4]">
+        {/* A data URL drawn here, so next/image has nothing to optimise. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={preview.url}
+          alt={`3D map of ${map.name}`}
+          className="size-full object-contain"
+        />
+      </div>
+    );
+  }
+
   if (!map.thumbnail) {
     return (
       <div className="flex aspect-[4/3] flex-col items-center justify-center gap-2 border-b border-hairline bg-elevated">

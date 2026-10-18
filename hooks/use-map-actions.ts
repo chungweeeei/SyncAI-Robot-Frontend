@@ -45,6 +45,7 @@ export function useRenameMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(from) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapOctomapPreview(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapFloors(from) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       // `templates_moved`: every template bound to the old name now carries
@@ -65,6 +66,7 @@ export function useDeleteMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(name) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapOctomapPreview(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapFloors(name) });
       // Templates need nothing: the backend refuses the delete while any
       // template is still bound (409 `template_bound`).
