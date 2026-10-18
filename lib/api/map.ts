@@ -11,9 +11,11 @@ import { z } from "zod";
 
 import { requestJson, requestRaw } from "@/lib/api/http";
 import type { MapGrid } from "@/lib/map/grid";
+import { decodeOctomapBt } from "@/lib/map/octree";
 import { decodePointCloud } from "@/lib/ros/pointcloud-stream";
 import { GridStatusSchema } from "@/lib/types/map";
-import type { GridRecipe, GridStatus, MapSummary } from "@/lib/types/map";
+import type { GridRecipe, GridStatus, MapFloor, MapSummary } from "@/lib/types/map";
+import type { OccupiedVoxels } from "@/lib/types/octree";
 import type { PointCloudFrame } from "@/lib/types/pointcloud";
 
 interface WireGrid {
@@ -23,7 +25,12 @@ interface WireGrid {
   height: number;
 }
 
-/** `thumbnail` is a path, not an absolute URL. */
+/**
+ * `thumbnail` is a path, not an absolute URL. The `octomap_*` fields are
+ * optional on the wire only: a backend from before the 3D map existed sends
+ * none, and the robots run whichever branch of each repo is checked out, so
+ * the console reads "no 3D map" rather than refusing the whole catalogue.
+ */
 interface WireSummary {
   name: string;
   active: boolean;
@@ -36,6 +43,10 @@ interface WireSummary {
   size_bytes: number;
   modified_at: string;
   vertex_count: number;
+  octomap_status?: GridStatus;
+  octomap_error?: string | null;
+  octomap_version?: string | null;
+  octomap_resolution?: number | null;
 }
 
 /** Checked before `toSummary`, so a failure names the field the backend sent. */
@@ -58,6 +69,10 @@ const WireSummarySchema: z.ZodType<WireSummary> = z.object({
   size_bytes: z.number(),
   modified_at: z.string(),
   vertex_count: z.number(),
+  octomap_status: GridStatusSchema.optional(),
+  octomap_error: z.string().nullable().optional(),
+  octomap_version: z.string().nullable().optional(),
+  octomap_resolution: z.number().nullable().optional(),
 });
 
 function toSummary(wire: WireSummary): MapSummary {
@@ -73,6 +88,10 @@ function toSummary(wire: WireSummary): MapSummary {
       : null,
     // Absolute: <img src> would resolve against :3001, not the backend's :3000.
     thumbnail: wire.thumbnail ? apiUrl(wire.thumbnail) : null,
+    octomap_status: wire.octomap_status ?? "none",
+    octomap_error: wire.octomap_error ?? null,
+    octomap_version: wire.octomap_version ?? null,
+    octomap_resolution: wire.octomap_resolution ?? null,
   };
 }
 
@@ -186,6 +205,151 @@ export async function fetchMapPointCloud(
     throw new Error("The map scan arrived incomplete. Turn Map scan off and on to try again.");
   }
   return frame;
+}
+
+/**
+ * A stored map's 3D map, the robot's occupancy tree served byte for byte and
+ * decoded here (lib/map/octree.ts). A refusal is the backend's sentence; a
+ * body that is not a tree, or was cut short, is the decoder's — written for
+ * the operator, since a truncated 2xx has no sentence of its own.
+ */
+export async function fetchMapOctomap(
+  name: string,
+  signal?: AbortSignal,
+): Promise<OccupiedVoxels> {
+  const encoded = encodeURIComponent(name);
+  const res = await requestRaw(apiUrl(`/api/v1/maps/${encoded}/octomap`), {
+    signal,
+  });
+  return decodeOctomapBt(await res.arrayBuffer());
+}
+
+/** `OctomapEditsResponse`, verbatim: the ground patches saved for a map. */
+export interface MapOctomapEdits {
+  name: string;
+  /** Cell edge the keys index, null with none saved. */
+  res: number | null;
+  /** Absolute OcTree keys `[kx, ky, kz]`, one per column; `[]` with none saved. */
+  fill_key: number[][];
+  created_at: string | null;
+}
+
+const MapOctomapEditsSchema: z.ZodType<MapOctomapEdits> = z.object({
+  name: z.string(),
+  res: z.number().nullable(),
+  fill_key: z.array(z.array(z.number())),
+  created_at: z.string().nullable(),
+});
+
+function octomapEditsPath(name: string): string {
+  return apiUrl(`/api/v1/maps/${encodeURIComponent(name)}/octomap/edits`);
+}
+
+export function fetchMapOctomapEdits(
+  name: string,
+  signal?: AbortSignal,
+): Promise<MapOctomapEdits> {
+  return requestJson<MapOctomapEdits>(octomapEditsPath(name), {
+    signal,
+    schema: MapOctomapEditsSchema,
+  });
+}
+
+/** `SaveOctomapEditsResponse`, verbatim. */
+export interface SaveOctomapEditsResult {
+  name: string;
+  count: number;
+  /** Operator-facing; render verbatim. Says the patches wait to be applied. */
+  message: string;
+}
+
+const SaveOctomapEditsResultSchema: z.ZodType<SaveOctomapEditsResult> = z.object({
+  name: z.string(),
+  count: z.number(),
+  message: z.string(),
+});
+
+/**
+ * Replace the map's ground patches, whole (an empty list clears them). A
+ * record on the robot, not a change to its 3D map: the robot's own tool
+ * applies it, which the backend's sentence says. 409 `task_running` while a
+ * job drives on the map, `octomap_converting` while the tree is being built.
+ *
+ * No `AbortSignal`, for `saveKeepout`'s reason.
+ */
+export function saveMapOctomapEdits(
+  name: string,
+  fillKey: readonly (readonly number[])[],
+): Promise<SaveOctomapEditsResult> {
+  return requestJson<SaveOctomapEditsResult>(octomapEditsPath(name), {
+    method: "PUT",
+    body: JSON.stringify({ fill_key: fillKey.map((key) => [key[0], key[1], key[2]]) }),
+    schema: SaveOctomapEditsResultSchema,
+  });
+}
+
+/** `MapFloorsResponse`, verbatim: the storeys a map spans. */
+export interface MapFloors {
+  name: string;
+  /** The floors to show, lowest first: the saved list, else the detected one. `[]` is one storey. */
+  floors: MapFloor[];
+  /** What the robot's walk while mapping says, whatever is saved. */
+  detected: MapFloor[];
+  /** Whether `floors` is a saved list. */
+  saved: boolean;
+}
+
+const MapFloorSchema: z.ZodType<MapFloor> = z.object({
+  name: z.string(),
+  level: z.number(),
+});
+
+const MapFloorsSchema: z.ZodType<MapFloors> = z.object({
+  name: z.string(),
+  floors: z.array(MapFloorSchema),
+  detected: z.array(MapFloorSchema),
+  saved: z.boolean(),
+});
+
+function floorsPath(name: string): string {
+  return apiUrl(`/api/v1/maps/${encodeURIComponent(name)}/floors`);
+}
+
+export function fetchMapFloors(name: string, signal?: AbortSignal): Promise<MapFloors> {
+  return requestJson<MapFloors>(floorsPath(name), { signal, schema: MapFloorsSchema });
+}
+
+/** `SaveMapFloorsResponse`, verbatim. */
+export interface SaveMapFloorsResult {
+  name: string;
+  /** What was saved, lowest first and trimmed: the list the next read answers. */
+  floors: MapFloor[];
+  /** Operator-facing; render verbatim. */
+  message: string;
+}
+
+const SaveMapFloorsResultSchema: z.ZodType<SaveMapFloorsResult> = z.object({
+  name: z.string(),
+  floors: z.array(MapFloorSchema),
+  message: z.string(),
+});
+
+/**
+ * Replace the map's floors, whole (`[]` saves one storey). Display-only on
+ * the robot's side too, so no job holds it. No `AbortSignal`, for
+ * `saveKeepout`'s reason.
+ */
+export function saveMapFloors(
+  name: string,
+  floors: readonly MapFloor[],
+): Promise<SaveMapFloorsResult> {
+  return requestJson<SaveMapFloorsResult>(floorsPath(name), {
+    method: "PUT",
+    body: JSON.stringify({
+      floors: floors.map((floor) => ({ name: floor.name, level: floor.level })),
+    }),
+    schema: SaveMapFloorsResultSchema,
+  });
 }
 
 export interface SaveGridResult {

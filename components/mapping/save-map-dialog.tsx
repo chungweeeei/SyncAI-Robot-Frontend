@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConversionLine } from "@/components/mapping/conversion-line";
+import { OctomapLine } from "@/components/mapping/octomap-line";
 import { MAP_NAME_RE } from "@/lib/map/name";
 import type { MapSummary } from "@/lib/types/map";
 
@@ -141,8 +142,10 @@ export function SaveMapDialog({
             </AlertDialogHeader>
 
             {/* Under the receipt, not replacing it: one says the scan is on
-              * disk, the other how the floor plan went. */}
+              * disk, the other how the floor plan went — and the 3D map, for
+              * a robot set up to build one. */}
             <ConversionLine map={conversion} />
+            <OctomapLine map={conversion} />
 
             <AlertDialogFooter>
               <Button type="button" size="sm" autoFocus onClick={close}>

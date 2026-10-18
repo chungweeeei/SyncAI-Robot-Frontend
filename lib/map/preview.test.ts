@@ -32,6 +32,7 @@ function stop(over: Partial<MapVertex>): MapVertex {
     x: 0,
     y: 0,
     theta: 0,
+    z: 0,
     ...over,
   };
 }

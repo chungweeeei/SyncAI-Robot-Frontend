@@ -626,6 +626,9 @@ function EditorSurface({
         x: draft.x,
         y: draft.y,
         theta: draft.theta,
+        // The floor plan has no floors: a waypoint placed on it is on the
+        // ground floor. Upper floors are placed on the dashboard's 3D map.
+        z: 0,
       };
       recordWaypoints([...vertexList, staged]);
       // Cleared rather than selected: placing a run of stops is the common case.

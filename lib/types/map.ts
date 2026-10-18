@@ -66,6 +66,24 @@ export interface MapSummary {
   /** ISO 8601, newest file in the directory. */
   modified_at: string;
   vertex_count: number;
+  /**
+   * How the map's 3D map stands — the occupancy tree the robot's map cleaning
+   * writes beside the scan when asked to, which the dashboard draws and the
+   * ground editor patches. The same five words as `grid_status`, read off a
+   * different file: `none` also covers a save that never asked for one.
+   */
+  octomap_status: GridStatus;
+  /** Null unless `octomap_status` is `"failed"`. Operator-facing; render verbatim. */
+  octomap_error: string | null;
+  /**
+   * An opaque tag for the 3D map's current bytes, null unless `"ok"`. The
+   * backend changes it whenever the file is replaced (a re-clean, the robot's
+   * edit tool), which is how the console's cache of the decoded tree is
+   * retired — `modified_at` covers the whole directory and cannot say.
+   */
+  octomap_version: string | null;
+  /** Cell edge of the 3D map in metres, null unless `"ok"`. */
+  octomap_resolution: number | null;
 }
 
 /**
@@ -93,6 +111,12 @@ export interface MapVertex {
   y: number;
   /** **Degrees**, CCW from +x — not radians, unlike `MapMetadata.origin[2]`. */
   theta: number;
+  /**
+   * Height of the ground the waypoint stands on, metres in the map frame:
+   * which floor it is on (`floorOfHeight`) and what the robot's planner aims
+   * a goal at. 0 is the ground floor.
+   */
+  z: number;
 }
 
 export const MapVertexSchema: z.ZodType<MapVertex> = z.object({
@@ -103,6 +127,9 @@ export const MapVertexSchema: z.ZodType<MapVertex> = z.object({
   x: z.number(),
   y: z.number(),
   theta: z.number(),
+  // A backend from before floors sends none, and every waypoint it holds is
+  // on the ground floor.
+  z: z.number().default(0),
 });
 
 /**
@@ -127,3 +154,13 @@ export const ZonePolygonSchema: z.ZodType<ZonePolygon> = z.object({
   id: z.string(),
   points: z.array(z.object({ x: z.number(), y: z.number() })),
 });
+
+/**
+ * One storey of a map that spans several: what it is called and the body
+ * height the robot stands at on it, metres in the map frame (the trajectory's
+ * z, about half a metre above the ground it walks on).
+ */
+export interface MapFloor {
+  name: string;
+  level: number;
+}

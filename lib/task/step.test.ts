@@ -320,6 +320,15 @@ describe("toStepRequests", () => {
     expect(step).toEqual({ id: "1-speak", type: "SPEAK", params: { text: "hi" } });
   });
 
+  it("sends an upstairs waypoint's floor height, and none for the ground floor", () => {
+    // Without z the robot's planner aims at the floor under the waypoint; with
+    // one on every step, a backend from before floors would get a new key.
+    const [upstairs, ground] = toStepRequests([move({ z: 5.02 }), move()]);
+    expect(upstairs).toMatchObject({ params: { x: 1.5, y: -2, theta: 90, z: 5.02 } });
+    expect(ground).toMatchObject({ params: { x: 1.5, y: -2, theta: 90 } });
+    expect("z" in (ground as { params: object }).params).toBe(false);
+  });
+
   it("throws rather than dispatch a MOVE to the origin", () => {
     // Callers gate on stepDraftsSubmittable, so reaching here is a programming
     // error — and silently sending (0, 0) would drive a real robot there.

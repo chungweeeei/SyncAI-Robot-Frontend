@@ -168,6 +168,7 @@ export function TaskEditor() {
         x: "",
         y: "",
         theta: "0",
+        z: 0,
         vertexId: null,
         vertexMissing: false,
       });

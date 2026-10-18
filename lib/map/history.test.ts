@@ -19,6 +19,7 @@ const row = (id: string, name = id): MapVertex => ({
   x: 0,
   y: 0,
   theta: 0,
+  z: 0,
 });
 
 const grid = (): EditorEdit => ({

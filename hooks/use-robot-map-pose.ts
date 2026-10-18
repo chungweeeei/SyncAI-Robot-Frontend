@@ -7,8 +7,11 @@ import { useActiveMap } from "@/hooks/use-maps";
 import type { PlanarPose } from "@/lib/types/robot";
 
 export interface UseRobotMapPose {
-  /** Where the robot stands on *this* map, or null when unknowable. */
-  pose: PlanarPose | null;
+  /**
+   * Where the robot stands on *this* map, or null when unknowable. `z` is its
+   * body height, which says which floor it is on (`floorBands` cuts by it).
+   */
+  pose: (PlanarPose & { z: number }) | null;
   /** Why `pose` is null, as a sentence for the operator. */
   reason: string | null;
 }
@@ -34,6 +37,7 @@ export function useRobotMapPose(name: string): UseRobotMapPose {
   const x = position?.x ?? 0;
   const y = position?.y ?? 0;
   const theta = position?.theta ?? 0;
+  const z = position?.z ?? 0;
 
   const activeName = activeMap?.name ?? null;
 
@@ -57,6 +61,6 @@ export function useRobotMapPose(name: string): UseRobotMapPose {
       // The pose is a zeroed placeholder here (see RobotState.localization_valid).
       return { pose: null, reason: "The robot does not know where it is yet." };
     }
-    return { pose: { x, y, theta }, reason: null };
-  }, [mapsStatus, activeName, name, hasState, valid, x, y, theta]);
+    return { pose: { x, y, theta, z }, reason: null };
+  }, [mapsStatus, activeName, name, hasState, valid, x, y, theta, z]);
 }

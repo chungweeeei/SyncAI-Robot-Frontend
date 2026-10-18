@@ -25,6 +25,7 @@ const row = (id: string, over: Partial<MapVertex> = {}): MapVertex => ({
   x: 1,
   y: 2,
   theta: 0,
+  z: 0,
   ...over,
 });
 

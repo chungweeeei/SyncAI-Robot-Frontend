@@ -3,7 +3,9 @@
 import * as React from "react";
 import {
   BanIcon,
+  Building2Icon,
   CrosshairIcon,
+  CuboidIcon,
   FocusIcon,
   Grid2x2Icon,
   HandIcon,
@@ -49,6 +51,7 @@ export function ViewportToolbar({
   cameraMode,
   onCameraMode,
   onTopDown,
+  onFront,
   onZoomIn,
   onZoomOut,
   layers,
@@ -70,6 +73,12 @@ export function ViewportToolbar({
   cameraMode: CameraMode;
   onCameraMode: (mode: CameraMode) => void;
   onTopDown: () => void;
+  /**
+   * Look at the map level from the front. Omitted, no button: from the
+   * front a floor plan is a line, so it is offered while the 3D map is up,
+   * which also keeps the strip to one row on a phone the rest of the time.
+   */
+  onFront?: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   /** Only the layers that have something to draw. */
@@ -142,6 +151,15 @@ export function ViewportToolbar({
           icon={Grid2x2Icon}
           onClick={onTopDown}
         />
+        {/* Its pair: level, from the south, where storeys stack as bands. */}
+        {onFront && (
+          <ToolButton
+            label="Front view"
+            hint="look at the map level, from the front"
+            icon={Building2Icon}
+            onClick={onFront}
+          />
+        )}
 
         {layers.length > 0 && (
           <>
@@ -237,7 +255,7 @@ export function MapToolbar({
 }
 
 export interface LayerOption {
-  kind: "scan" | "waypoints" | "path" | "zones";
+  kind: "scan" | "voxels" | "waypoints" | "path" | "zones";
   label: string;
   on: boolean;
   /** On, but still downloading; the viewport shows nothing yet. */
@@ -247,6 +265,9 @@ export interface LayerOption {
 
 const LAYER_ICONS = {
   scan: ScanLineIcon,
+  // A solid, where the scan is a sweep: the 3D map is the scan made into
+  // cells, and the two sit side by side in the strip.
+  voxels: CuboidIcon,
   waypoints: MapPinIcon,
   path: RouteIcon,
   // The floor plan editor's forbidden zone icon.

@@ -2,6 +2,9 @@ import { deflateSync } from "node:zlib";
 
 import type { Page, Route } from "@playwright/test";
 
+import { encodeOctomapBt } from "@/lib/map/octree";
+import { OCTREE_KEY_ORIGIN } from "@/lib/types/octree";
+
 /**
  * A fake `syncai_backend`, installed per test. Routes match on path and ignore
  * the host, so a test need not know which port the client resolved.
@@ -12,6 +15,30 @@ import type { Page, Route } from "@playwright/test";
  */
 
 export const MAP_NAME = "dp2f";
+
+/**
+ * A 3D map the size of a doormat: a `size`×`size` floor one cell thick,
+ * half a metre under the origin like the robot's own floor, with one 2×2
+ * hole in the middle (cells `size/2 - 1` and `size/2` on both axes). Enough
+ * for the dashboard to draw and for the ground editor to have a hole to
+ * patch. Built by the console's own encoder, which the decoder's unit tests
+ * pin, so the fake and the client agree on the bit order. The 4×4 default
+ * puts a hole cell under a click wherever the editor is; a phone test that
+ * pinches hands in a larger one, since the editor's zoom tops out at 32 px
+ * a cell and four cells already fill a phone past that.
+ */
+export function octomapBt(size = 4): Buffer {
+  const O = OCTREE_KEY_ORIGIN;
+  const lo = size / 2 - 1;
+  const occupied: Array<[number, number, number]> = [];
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const hole = x >= lo && x <= lo + 1 && y >= lo && y <= lo + 1;
+      if (!hole) occupied.push([O + x, O + y, O - 5]);
+    }
+  }
+  return Buffer.from(encodeOctomapBt({ res: 0.1, occupied }));
+}
 
 /** A 1x1 transparent PNG, so an <img> and a TextureLoader both succeed. */
 const PNG_1PX = Buffer.from(
@@ -113,7 +140,23 @@ export function mapSummary(over: Record<string, unknown> = {}) {
     size_bytes: 24_117_248,
     modified_at: "2026-09-18T09:22:41Z",
     vertex_count: 2,
+    // No 3D map unless a test says so: the robot builds one only when asked.
+    // Typed loosely so a test can move the version under a mounted page.
+    octomap_status: "none" as string,
+    octomap_error: null as string | null,
+    octomap_version: null as string | null,
+    octomap_resolution: null as number | null,
     ...over,
+  };
+}
+
+/** The 3D map fields of a map whose tree is on disk, for `mapSummary(over)`. */
+export function withOctomap(version = "2971216-1760414598000000000") {
+  return {
+    octomap_status: "ok",
+    octomap_error: null,
+    octomap_version: version,
+    octomap_resolution: 0.1,
   };
 }
 
@@ -292,6 +335,19 @@ export interface BackendOverrides {
   taskStates?: Record<string, Record<string, unknown>>;
   /** The floor plan every map's /image answers with; see floorPlanPng. */
   gridImage?: Buffer;
+  /** The tree every map's /octomap answers with; see octomapBt. */
+  octomap?: Buffer;
+  /**
+   * The ground patches by map name, as GET .../octomap/edits lists them
+   * (`fill_key` triples); none by default. A PUT replaces a map's list.
+   */
+  octomapEdits?: Record<string, number[][]>;
+  /**
+   * The floors by map name, as GET .../floors lists them: `detected` is what
+   * the walk found, `saved` an operator's list if there is one. One storey
+   * (nothing either way) by default; a PUT saves a map's list.
+   */
+  floors?: Record<string, { detected?: MapFloorFixture[]; saved?: MapFloorFixture[] }>;
   /** GET /robot/restart's record before any press; `idle` by default. */
   restart?: Record<string, unknown>;
   /** Forbidden zones by map name, as GET .../keepout lists them; none by default. */
@@ -309,6 +365,18 @@ export interface BackendOverrides {
   /** GET /network/wifi/scan's networks. */
   wifiNetworks?: Record<string, unknown>[];
 }
+
+/** One floor, as GET .../floors lists it. */
+export interface MapFloorFixture {
+  name: string;
+  level: number;
+}
+
+/** A building of two storeys, as the robot's walk finds them. */
+export const TWO_FLOORS: MapFloorFixture[] = [
+  { name: "1F", level: -0.2 },
+  { name: "2F", level: 5.5 },
+];
 
 /** A saved network, as GET /network/wifi/connections lists one. */
 export function wifiConnection(
@@ -372,10 +440,15 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   const taskHistoryPageSize = over.taskHistoryPageSize ?? 20;
   const taskStates = over.taskStates ?? {};
   const gridImage = over.gridImage ?? PNG_1PX;
+  const octomap = over.octomap ?? octomapBt();
   // Copied: the PUT below replaces a map's list, and a test's fixture must
   // not change under it.
   const keepout: Record<string, Record<string, unknown>[]> = {
     ...over.keepout,
+  };
+  const octomapEdits: Record<string, number[][]> = { ...over.octomapEdits };
+  const floors: Record<string, { detected?: MapFloorFixture[]; saved?: MapFloorFixture[] }> = {
+    ...over.floors,
   };
   // The mapping run state; the run writes below move it, so the rail's next
   // poll sees a start land or a save end the run.
@@ -558,6 +631,58 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         route,
         vertices.filter((entry) => entry.map_name === name),
       );
+    }
+    const editsMatch = /^\/api\/v1\/maps\/([^/]+)\/octomap\/edits$/.exec(path);
+    if (editsMatch && method === "GET") {
+      const name = decodeURIComponent(editsMatch[1]);
+      const keys = octomapEdits[name];
+      return json(route, {
+        name,
+        res: keys ? 0.1 : null,
+        fill_key: keys ?? [],
+        created_at: keys ? "2026-10-14T03:00:00Z" : null,
+      });
+    }
+    if (editsMatch && method === "PUT") {
+      const name = decodeURIComponent(editsMatch[1]);
+      const body = parseBody(route.request().postData()) as { fill_key?: number[][] } | null;
+      const keys = body?.fill_key ?? [];
+      octomapEdits[name] = keys;
+      return json(route, {
+        name,
+        count: keys.length,
+        message:
+          keys.length === 0
+            ? `Cleared the ground patches of '${name}'.`
+            : `Saved ${keys.length} ground ${keys.length === 1 ? "patch" : "patches"} for '${name}'. They take effect once applied to the robot's 3D map.`,
+      });
+    }
+    const floorsMatch = /^\/api\/v1\/maps\/([^/]+)\/floors$/.exec(path);
+    if (floorsMatch && method === "GET") {
+      const name = decodeURIComponent(floorsMatch[1]);
+      const entry = floors[name] ?? {};
+      const detected = entry.detected ?? [];
+      return json(route, {
+        name,
+        floors: entry.saved ?? detected,
+        detected,
+        saved: entry.saved !== undefined,
+      });
+    }
+    if (floorsMatch && method === "PUT") {
+      const name = decodeURIComponent(floorsMatch[1]);
+      const body = parseBody(route.request().postData()) as { floors?: MapFloorFixture[] } | null;
+      const saved = [...(body?.floors ?? [])]
+        .map((floor) => ({ name: floor.name.trim(), level: floor.level }))
+        .sort((a, b) => a.level - b.level);
+      floors[name] = { ...floors[name], saved };
+      return json(route, {
+        name,
+        floors: saved,
+        message: saved.length
+          ? `Saved ${saved.length} floor${saved.length === 1 ? "" : "s"} for '${name}'.`
+          : `Saved '${name}' as one floor.`,
+      });
     }
     const keepoutMatch = /^\/api\/v1\/maps\/([^/]+)\/keepout$/.exec(path);
     if (keepoutMatch && method === "GET") {
@@ -812,6 +937,13 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       status: 200,
       contentType: "application/octet-stream",
       body: Buffer.alloc(4),
+    }),
+  );
+  await page.route(/\/api\/v1\/maps\/[^/]+\/octomap$/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/octet-stream",
+      body: octomap,
     }),
   );
 

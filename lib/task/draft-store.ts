@@ -57,6 +57,8 @@ const StepDraftSchema: z.ZodType<StepDraft> = z.object({
   // Defaulted likewise: a draft from before the count says every line once.
   repeat: z.string().default("1"),
   vertexId: z.string().nullable(),
+  // Defaulted likewise: a draft from before floors is on the ground floor.
+  z: z.number().default(0),
   vertexMissing: z.boolean().optional(),
   // Defaulted likewise: a draft from before groups has every row on its own.
   withPrevious: z.boolean().default(false),

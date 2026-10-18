@@ -149,6 +149,7 @@ export function StepRow({
       x: formatDraftPosition(vertex.x),
       y: formatDraftPosition(vertex.y),
       theta: formatDraftAngle(normalizeTheta(vertex.theta)),
+      z: vertex.z,
       vertexId: vertex.id,
       vertexMissing: false,
     });

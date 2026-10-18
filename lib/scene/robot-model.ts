@@ -9,8 +9,9 @@ import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.j
 const ROBOT_MODEL_URL = "/models/g23.glb";
 
 // base_link height at the GLB's rest pose (link offsets to the foot plus the
-// 22 mm foot sphere). The pose feed is planar (z ~0), so without this the robot
-// renders buried to its knees.
+// 22 mm foot sphere). The pose feed carries base_link's real height, so the
+// model is drawn at it as is; this is for standing the robot on a ground
+// height instead (an initial pose placed on a floor).
 export const ROBOT_BASE_HEIGHT_M = 0.43212;
 
 

@@ -2,7 +2,16 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { describe, expect, it } from "vitest";
 
-import { MIN_DOLLY_M, dollyStep, frameMap } from "@/lib/scene/camera";
+import {
+  MIN_DOLLY_M,
+  applyGroundControls,
+  frameGround,
+  dollyStep,
+  frameMap,
+  frontView,
+  frontViewAround,
+  overheadDistance,
+} from "@/lib/scene/camera";
 
 function rig() {
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 2000);
@@ -86,5 +95,63 @@ describe("dollyStep", () => {
     dollyStep(camera, controls, 2);
 
     expect(camera.position.toArray()).toEqual([0, 0, 0]);
+  });
+});
+
+describe("frontView", () => {
+  const frame = { cx: 10, cy: 4, widthM: 30, heightM: 20 };
+  const z = { lo: -0.5, hi: 6 };
+
+  it("looks level along +y from south of the map, at the middle of the heights", () => {
+    const { camera, controls } = rig();
+    frontView(camera, controls, frame, z);
+    expect(controls.target.distanceTo(new THREE.Vector3(10, 4, 2.75))).toBeCloseTo(0);
+    expect(camera.position.x).toBeCloseTo(10);
+    expect(camera.position.z).toBeCloseTo(2.75);
+    // South of the near edge, never inside the box.
+    expect(camera.position.y).toBeLessThan(frame.cy - frame.heightM / 2);
+  });
+
+  it("stands back far enough to fit the width and the heights", () => {
+    const { camera, controls } = rig();
+    frontView(camera, controls, frame, z);
+    const fromNearEdge = frame.cy - frame.heightM / 2 - camera.position.y;
+    expect(fromNearEdge).toBeCloseTo(overheadDistance(camera, 30, 6.5));
+  });
+});
+
+describe("frontViewAround", () => {
+  it("swings level and due south of a pinned target, keeping the zoom", () => {
+    const { camera, controls } = rig();
+    controls.target.set(1, 2, 0.5);
+    camera.position.set(4, 6, 12.5);
+    const before = camera.position.distanceTo(controls.target);
+    frontViewAround(camera, controls);
+    expect(controls.target.distanceTo(new THREE.Vector3(1, 2, 0.5))).toBeCloseTo(0);
+    expect(camera.position.x).toBeCloseTo(1);
+    expect(camera.position.z).toBeCloseTo(0.5);
+    expect(camera.position.y).toBeCloseTo(2 - before);
+  });
+});
+
+describe("the ground editor's controls", () => {
+  it("gives the primary button and one finger to the brush only while one is armed", () => {
+    const { controls } = rig();
+    applyGroundControls(controls, false);
+    expect(controls.mouseButtons.LEFT).toBe(THREE.MOUSE.ROTATE);
+    expect(controls.touches.ONE).toBe(THREE.TOUCH.ROTATE);
+    applyGroundControls(controls, true);
+    expect(controls.mouseButtons.LEFT).toBeNull();
+    expect(controls.touches.ONE).toBeNull();
+    // Still a way to look around mid-edit, and a pinch still zooms.
+    expect(controls.mouseButtons.RIGHT).toBe(THREE.MOUSE.ROTATE);
+    expect(controls.touches.TWO).toBe(THREE.TOUCH.DOLLY_PAN);
+  });
+
+  it("opens on the floor the brush aims at, so the middle of the screen is the map's", () => {
+    const { camera, controls } = rig();
+    frameGround(camera, controls, { cx: 3, cy: 4, widthM: 10, heightM: 6 }, -0.45);
+    expect(controls.target.distanceTo(new THREE.Vector3(3, 4, -0.45))).toBeCloseTo(0);
+    expect(camera.position.x).toBeCloseTo(3);
   });
 });

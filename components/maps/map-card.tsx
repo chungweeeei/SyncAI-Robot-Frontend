@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { BoxIcon, CheckIcon, LayersIcon, PencilIcon } from "lucide-react";
+import { CheckIcon, LayersIcon, PencilIcon } from "lucide-react";
 
 import { Chip } from "@/components/console/instrument";
-import { GridRebuildControl } from "@/components/maps/grid-rebuild-control";
 import { MapActivateControl } from "@/components/maps/map-activate-control";
 import { MapDeleteControl } from "@/components/maps/map-delete-control";
 import { MapEditLink } from "@/components/maps/map-edit-link";
 import { MapExportControl } from "@/components/maps/map-export-control";
+import { MapGroundLink } from "@/components/maps/map-ground-link";
 import { MapRenameControl } from "@/components/maps/map-rename-control";
 import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
@@ -46,10 +46,27 @@ function MapThumbnail({ map }: { map: MapSummary }) {
 }
 
 /**
- * The chip for a map's floor plan state, or nothing for a good one (a chip on
- * every healthy card would just say "fine"). Only `failed` is a fault (`warn`:
- * the same recipe will fail again); `none` and `interrupted` are not-done
- * (`caution`); `converting` is mid-action (`active`).
+ * `2D` / `3D`: whether the map has that layer, lit when it does and dimmed when
+ * it does not, so every card answers both at a glance in the same two places.
+ * The words are terse on purpose, by request; the hover text and the
+ * screen-reader text carry the full name.
+ */
+function LayerBadge({ label, name, present }: { label: string; name: string; present: boolean }) {
+  const fact = present ? `Has a ${name}` : `No ${name}`;
+  return (
+    <Chip tone={present ? "live" : "neutral"} title={fact} className={cn(!present && "opacity-50")}>
+      <span aria-hidden>{label}</span>
+      <span className="sr-only">{fact}</span>
+    </Chip>
+  );
+}
+
+/**
+ * The chip for a map's floor plan state. `ok` and `none` are the 2D badge, lit
+ * or dimmed; the rest keep words, because they are something happening or
+ * something to fix. Only `failed` is a fault (`warn`: the same recipe will
+ * fail again); `interrupted` is not-done (`caution`); `converting` is
+ * mid-action (`active`). An unknown status from a newer backend reads as none.
  */
 function GridStatusChip({ map }: { map: MapSummary }) {
   switch (map.grid_status) {
@@ -63,21 +80,39 @@ function GridStatusChip({ map }: { map: MapSummary }) {
       );
     case "interrupted":
       return <Chip tone="caution">Build stopped</Chip>;
-    case "none":
-      return <Chip tone="caution">No floor plan</Chip>;
     default:
-      return null;
+      return <LayerBadge label="2D" name="floor plan" present={map.grid_status === "ok"} />;
   }
 }
 
 /**
- * What to do about a missing or stale floor plan — the actionable half of the
- * chip, beside the control that acts. Always shown, because a failed
- * conversion's reason is otherwise only in the robot's log.
+ * The chip for a map's 3D map, the floor plan chip's twin: `ok` and `none` are
+ * the 3D badge, the rest keep words.
+ */
+function OctomapStatusChip({ map }: { map: MapSummary }) {
+  switch (map.octomap_status) {
+    case "converting":
+      return <Chip tone="active">Building 3D map…</Chip>;
+    case "failed":
+      return (
+        <Chip tone="warn" title={map.octomap_error ?? undefined}>
+          3D map failed
+        </Chip>
+      );
+    case "interrupted":
+      return <Chip tone="caution">3D map stopped</Chip>;
+    default:
+      return <LayerBadge label="3D" name="3D map" present={map.octomap_status === "ok"} />;
+  }
+}
+
+/**
+ * Why a floor plan is missing or stale — the half the chip cannot say.
+ * Always shown, because a failed conversion's reason is otherwise only in the
+ * robot's log.
  *
- * Silent for `ok` and `converting`, where the chip says it all. No branch may
- * name Build grid unless it is on the card: GridRebuildControl renders only
- * for a map with a scan.
+ * Silent for `ok`, `converting` and `none`, where the chip says it all. No
+ * branch may tell the operator to rebuild: that control is off the card.
  */
 function GridStatusNote({ map }: { map: MapSummary }) {
   if (map.grid_status === "ok" || map.grid_status === "converting") return null;
@@ -98,11 +133,11 @@ function GridStatusNote({ map }: { map: MapSummary }) {
       <p className="mt-2 text-[11px] leading-tight text-signal-warn">
         {map.grid_error ??
           "The floor plan could not be built, and the robot did not record why."}{" "}
-        <span className="text-muted-foreground">
-          {map.grid
-            ? "The map is still using the floor plan it had before. Try rebuilding it with the other setting."
-            : "Rebuilding with the same setting will fail the same way — try the other one."}
-        </span>
+        {map.grid && (
+          <span className="text-muted-foreground">
+            The map is still using the floor plan it had before.
+          </span>
+        )}
       </p>
     );
   }
@@ -111,19 +146,14 @@ function GridStatusNote({ map }: { map: MapSummary }) {
     return (
       <p className="mt-2 text-[11px] leading-tight text-muted-foreground">
         The robot restarted before the floor plan was finished, so it was never
-        built. Rebuild it — the scan data is fine.
+        built. The scan data is fine.
       </p>
     );
   }
 
-  // "none" is last because it doubles as the fallback: an unknown status means
-  // a newer backend, and "build one" is the safe thing to say.
-  return (
-    <p className="mt-2 text-[11px] leading-tight text-muted-foreground">
-      This map was saved but its floor plan was never built, so the robot cannot
-      navigate with it yet. Build the floor plan to start using it.
-    </p>
-  );
+  // "none" (and an unknown status from a newer backend) says nothing, by
+  // request: the chip and the Build control beside it already carry it.
+  return null;
 }
 
 /**
@@ -133,7 +163,7 @@ function GridStatusNote({ map }: { map: MapSummary }) {
  * No readouts, by request — the screen answers "which maps are here and which
  * is loaded"; what a map measures is the editor's business. Always shown: "In
  * use", the floor plan chip and its note — a map the robot can't load must say
- * so at a glance, and a conversion in flight is why Edit and Rebuild are greyed.
+ * so at a glance, and a conversion in flight is why Edit is greyed.
  *
  * "In use" gets three signals so one card wins outright: a solid corner check,
  * a ring, and first place in the sort. `aria-current` carries it to a screen
@@ -194,6 +224,7 @@ export function MapCard({
       )}
       <MapDeleteControl map={map} onDeleted={onDeleted} />
       <MapEditLink map={map} />
+      <MapGroundLink map={map} />
       <MapThumbnail map={map} />
 
       <div className="px-3 py-3">
@@ -202,13 +233,8 @@ export function MapCard({
         </header>
 
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-          {map.has_pointcloud && (
-            <Chip tone="neutral">
-              <BoxIcon className="mr-1 size-3" aria-hidden />
-              Point cloud
-            </Chip>
-          )}
           <GridStatusChip map={map} />
+          <OctomapStatusChip map={map} />
 
           {/* Export at the right: the one verb that takes a copy without
            * touching the map. Its refusal line is a `basis-full` child of this
@@ -216,11 +242,11 @@ export function MapCard({
           <MapExportControl map={map} />
         </div>
 
-        {/* Why the floor plan is missing or stale, then the control that fixes
-         * it, below the chips since both carry sentences. Only with a scan —
-         * without one the backend would 400. */}
+        {/* Why the floor plan is missing or stale, below the chips since it
+         * carries sentences. Rebuild is off the card for now, by request
+         * (GridRebuildControl is kept), so no note may tell the operator to
+         * press it. */}
         <GridStatusNote map={map} />
-        {map.has_pointcloud && <GridRebuildControl map={map} />}
       </div>
     </article>
   );

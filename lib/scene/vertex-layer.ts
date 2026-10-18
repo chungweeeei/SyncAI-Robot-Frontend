@@ -120,6 +120,8 @@ export interface VertexLayer {
   setHovered: (id: string | null) => void;
   /** Take one marker off the map while its pose is in the operator's hands. */
   setMoving: (id: string | null) => void;
+  /** Show only the stops whose ground height is in [lo, hi); ±Infinity is every floor. */
+  setBand: (lo: number, hi: number) => void;
   dispose: () => void;
 }
 
@@ -188,7 +190,8 @@ export function createVertexLayer(
     byId.set(vertex.id, vertex);
 
     const marker = new THREE.Group();
-    marker.position.set(vertex.x, vertex.y, VERTEX_Z_M);
+    // On the ground of its own floor, so an upstairs stop stands on that floor.
+    marker.position.set(vertex.x, vertex.y, vertex.z + VERTEX_Z_M);
     marker.rotation.z = (vertex.theta * Math.PI) / 180;
 
     const disc = new THREE.Mesh(discGeom, base.fill);
@@ -225,7 +228,7 @@ export function createVertexLayer(
     badge.position.set(
       vertex.x,
       vertex.y,
-      VERTEX_Z_M + VERTEX_STEM_HEIGHT_M + VERTEX_BADGE_SIZE_M / 3,
+      vertex.z + VERTEX_Z_M + VERTEX_STEM_HEIGHT_M + VERTEX_BADGE_SIZE_M / 3,
     );
     badge.userData.vertexId = vertex.id;
     group.add(badge);
@@ -270,19 +273,42 @@ export function createVertexLayer(
   };
 
   let moving: string | null = null;
+  // The floor shown, by ground height: [lo, hi), the 3D map's band rule.
+  let bandLo = -Infinity;
+  let bandHi = Infinity;
+  const onFloor = (vertex: MapVertex) => vertex.z >= bandLo && vertex.z < bandHi;
+  const allPickables = [...pickables];
+
+  const show = (id: string) => {
+    const handle = handles.get(id)!;
+    // The badge hangs off the layer, not the marker, so hide it separately.
+    const shown = id !== moving && onFloor(byId.get(id)!);
+    handle.marker.visible = shown;
+    handle.badge.visible = shown;
+  };
 
   const setMoving = (id: string | null) => {
     const next = id && handles.has(id) ? id : null;
     if (next === moving) return;
-    for (const candidate of [moving, next]) {
-      const handle = candidate ? handles.get(candidate) : undefined;
-      if (!handle) continue;
-      // The badge hangs off the layer, not the marker, so hide it separately.
-      const shown = candidate !== next;
-      handle.marker.visible = shown;
-      handle.badge.visible = shown;
-    }
+    const previous = moving;
     moving = next;
+    for (const candidate of [previous, next]) if (candidate) show(candidate);
+  };
+
+  /**
+   * Show only the stops on one floor. Another floor's stop is hidden *and*
+   * unpickable: a raycast ignores `visible`, and a tap through the floor
+   * shown must not open a stop under it.
+   */
+  const setBand = (lo: number, hi: number) => {
+    if (lo === bandLo && hi === bandHi) return;
+    bandLo = lo;
+    bandHi = hi;
+    for (const id of handles.keys()) show(id);
+    pickables.length = 0;
+    for (const object of allPickables) {
+      if (onFloor(byId.get(object.userData.vertexId as string)!)) pickables.push(object);
+    }
   };
 
   const dispose = () => {
@@ -306,5 +332,5 @@ export function createVertexLayer(
     for (const handle of handles.values()) handle.badge.material.dispose();
   };
 
-  return { group, pickables, byId, setHovered, setMoving, dispose };
+  return { group, pickables, byId, setHovered, setMoving, setBand, dispose };
 }

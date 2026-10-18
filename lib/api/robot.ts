@@ -19,17 +19,28 @@ export function fetchRobotState(signal?: AbortSignal): Promise<RobotState> {
 }
 
 /**
+ * An initial pose, with the ground height of the floor it was placed on when
+ * one was picked. Without `z` the localizer keeps the storey it is on.
+ */
+export type InitialPose = PlanarPose & { z?: number };
+
+/**
  * Seed localization with an operator pose (RViz's "2D Pose Estimate"). Fire
  * and forget: a 200 means it was sent, not that localization converged — the
  * pose feed moving to the marker is the answer.
+ *
+ * `z` is sent whenever it is set, 0 included: unlike a goal's, a missing one
+ * is not the ground floor but "the storey the localizer thinks it is on",
+ * which is the very guess a seed onto the ground floor has to overrule.
  */
-export async function setInitialPose(pose: PlanarPose): Promise<void> {
+export async function setInitialPose(pose: InitialPose): Promise<void> {
   await requestJson<void>(apiUrl("/api/v1/robot/set_initial_pose"), {
     method: "POST",
     body: JSON.stringify({
       x: pose.x,
       y: pose.y,
       theta: normalizeTheta(pose.theta),
+      ...(pose.z === undefined ? {} : { z: pose.z }),
     }),
     parse: false,
   });

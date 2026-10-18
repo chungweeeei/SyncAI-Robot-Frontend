@@ -8,7 +8,7 @@ import { useActiveMap } from "@/hooks/use-maps";
 import { queryKeys } from "@/lib/api/query-keys";
 import { createVertex, deleteVertex, updateVertex, type VertexDraft } from "@/lib/api/vertex";
 import type { MapVertex } from "@/lib/types/map";
-import type { PlanarPose } from "@/lib/types/robot";
+import type { PlacedPose } from "@/lib/types/robot";
 
 export type ActiveVerticesStatus = MapVertexListStatus;
 
@@ -22,7 +22,7 @@ export interface UseActiveMapVertices {
   /** The last write failure, rendered verbatim. */
   writeError: string | null;
   /** Move one vertex (position only). True when the row is stored. */
-  moveVertex: (id: string, pose: PlanarPose) => Promise<boolean>;
+  moveVertex: (id: string, pose: PlacedPose) => Promise<boolean>;
   /** The created row, or null on failure or with no active map. */
   createVertex: (draft: VertexDraft) => Promise<MapVertex | null>;
   /** True when the row is gone. */
@@ -50,8 +50,8 @@ export function useActiveMapVertices(): UseActiveMapVertices {
   // The map name travels in the variables: a write landing after the active
   // map changed must patch the list it was made against.
   const move = useMutation({
-    mutationFn: ({ map, id, pose }: { map: string; id: string; pose: PlanarPose }) =>
-      updateVertex(map, id, { x: pose.x, y: pose.y, theta: pose.theta }),
+    mutationFn: ({ map, id, pose }: { map: string; id: string; pose: PlacedPose }) =>
+      updateVertex(map, id, { x: pose.x, y: pose.y, theta: pose.theta, z: pose.z }),
     onSuccess: (updated, { map, id }) => {
       // The response is the stored row, so it is spliced rather than refetched.
       queryClient.setQueryData<MapVertex[]>(
@@ -96,7 +96,7 @@ export function useActiveMapVertices(): UseActiveMapVertices {
   const { mutateAsync: removeAsync, reset: resetRemove } = remove;
 
   const moveVertex = React.useCallback(
-    (id: string, pose: PlanarPose) => {
+    (id: string, pose: PlacedPose) => {
       if (!name) return Promise.resolve(false);
       return moveAsync({ map: name, id, pose }).then(
         () => true,

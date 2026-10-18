@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { ArmedHint } from "@/components/console/armed-hint";
+import { FloorPicker } from "@/components/console/floor-picker";
 import { overlayPanel } from "@/components/console/instrument";
 import { AutoLocalizeControl } from "@/components/dashboard/auto-localize-control";
 import { GoalControl } from "@/components/dashboard/goal-control";
@@ -25,13 +26,18 @@ import { useAutoLocalize } from "@/hooks/use-auto-localize";
 import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useGoalTask } from "@/hooks/use-goal-task";
 import { useInitialPose } from "@/hooks/use-initial-pose";
+import { useMapFloors } from "@/hooks/use-map-floors";
 import { useMapKeepout } from "@/hooks/use-map-keepout";
+import { useMapOctomap } from "@/hooks/use-map-octomap";
+import { useMapOctomapEdits } from "@/hooks/use-map-octomap-edits";
 import { useMapPointCloud } from "@/hooks/use-map-point-cloud";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useActiveMap } from "@/hooks/use-maps";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import { apiUrl } from "@/lib/api/config";
+import { floorBands } from "@/lib/map/floors";
+import { withGroundPatches } from "@/lib/map/ground-fill";
 import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
 import { dispatchMapLock } from "@/lib/map/run-lock";
 import { liveDock } from "@/lib/task/run";
@@ -98,9 +104,65 @@ export function PointCloudView({
   const scan = useMapPointCloud(
     showMapCloud && hasScan && activeMap ? activeMap.name : null,
   );
+  // The robot's 3D map. Its default follows what else the map has: off
+  // under a floor plan, for the scan's reason — a million cells, decoded
+  // and drawn when someone wants to look — and on without one, since a map
+  // with no floor plan would otherwise open on an empty viewport while the
+  // floor it has goes unshown (the viewport frames on the tree instead).
+  // The operator's own toggle wins, held per map so another map's choice
+  // does not carry over. Offered only once the robot reports it built —
+  // building, failed or never made has nothing to give but a refusal, and
+  // the Maps screen is where those states are said.
+  const [voxelChoice, setVoxelChoice] = React.useState<{ map: string; on: boolean } | null>(
+    null,
+  );
+  const hasVoxels = activeMap?.octomap_status === "ok";
+  const showVoxels =
+    activeMap && voxelChoice?.map === activeMap.name ? voxelChoice.on : !activeMap?.grid;
+  const toggleVoxels = () => {
+    if (activeMap) setVoxelChoice({ map: activeMap.name, on: !showVoxels });
+  };
+  const voxelMap = showVoxels && hasVoxels && activeMap ? activeMap.name : null;
+  const octomap = useMapOctomap(voxelMap);
+  // The ground patches saved for it, drawn in: the operator saved them for
+  // the robot to drive on, and a save is only a record until the robot's
+  // tool writes it into the tree — the dashboard showing the tree as built
+  // read as if the save had been lost. Held back until the record has
+  // answered, so a million-cell layer is built once and not twice. A record
+  // that cannot be read costs the patches, never the map: this is a view.
+  const patches = useMapOctomapEdits(voxelMap);
+  const voxels = React.useMemo(
+    () =>
+      !octomap.voxels || patches.status === "loading"
+        ? null
+        : patches.fillKey
+          ? withGroundPatches(octomap.voxels, patches.fillKey)
+          : octomap.voxels,
+    [octomap.voxels, patches.status, patches.fillKey],
+  );
+  // One floor of the 3D map at a time, for a map that spans storeys. A map
+  // of one storey (or a failed read) has no floors and shows whole. Read
+  // only while the layer is up: the floor picked is for showing, not for
+  // placing (see pickZ). Held by name, so a floor renamed or gone elsewhere
+  // falls back to the whole map instead of to a stale band.
+  const { floors } = useMapFloors(showVoxels && hasVoxels && activeMap ? activeMap.name : null);
+  const [floorName, setFloorName] = React.useState<string | null>(null);
+  const bands = React.useMemo(() => floorBands(floors), [floors]);
+  const floorBand = voxels
+    ? (bands.find((band) => band.name === floorName) ?? null)
+    : null;
+  // Keyed on the two numbers: `floors` is a fresh list on every refetch, and
+  // a fresh band object would repaint the layer for nothing.
+  const bandLo = floorBand?.lo;
+  const bandHi = floorBand?.hi;
+  const voxelBand = React.useMemo(
+    () => (bandLo === undefined || bandHi === undefined ? null : { lo: bandLo, hi: bandHi }),
+    [bandLo, bandHi],
+  );
   const [cameraMode, setCameraMode] = React.useState<"move" | "focus">("move");
   // Counters, not booleans: the button must work again after orbiting away.
   const [topDownNonce, setTopDownNonce] = React.useState(0);
+  const [frontNonce, setFrontNonce] = React.useState(0);
   const [recenterNonce, setRecenterNonce] = React.useState(0);
   /** A fresh object per press; the factor is the floor plan editor's. */
   const [zoomStep, setZoomStep] = React.useState<{ factor: number } | null>(null);
@@ -165,35 +227,42 @@ export function PointCloudView({
     setPick({ mode: "vertex", vertex });
   }, []);
 
+  // Picks land on the ground floor whatever floor is shown: placing on an
+  // upper floor is not offered yet. A re-place keeps the stop's own height,
+  // so one stored upstairs is not dropped to the ground floor by a move.
+  const pickZ = pick?.mode === "vertex" ? pick.vertex.z : 0;
+
   // Single-shot: one drag, one pose, then disarm. Every branch acts on release
   // (a goal moves the robot), so the disarm is what makes a stray second click
   // inert.
   const commitPick = React.useCallback(
     (picked: PlanarPose) => {
+      const placed = { ...picked, z: pickZ };
       if (pick?.mode === "initial-pose") {
+        // No height: the localizer keeps the storey it is on.
         commitPose(picked);
       } else if (pick?.mode === "place") {
-        setPlacement({ key: ++placementSeq.current, pose: picked });
+        setPlacement({ key: ++placementSeq.current, pose: placed });
       } else if (pick?.mode === "vertex") {
         const target = pick.vertex;
         setSavingVertex(target);
         // The echo patches the list in the same render that clears this.
-        void moveVertex(target.id, picked).finally(() => setSavingVertex(null));
+        void moveVertex(target.id, placed).finally(() => setSavingVertex(null));
       } else {
         // Dispatched at once: the aimed arrow is the confirmation. Failures
         // surface in GoalControl through the task state.
-        void sendGoal(picked);
+        void sendGoal(placed);
       }
       setPick(null);
     },
-    [pick, commitPose, sendGoal, moveVertex],
+    [pick, pickZ, commitPose, sendGoal, moveVertex],
   );
 
   // The dialog closes first; GoalControl reports the job and any error.
   const moveToVertex = React.useCallback(
     (vertex: MapVertex) => {
       setAskedVertex(null);
-      void sendGoal({ x: vertex.x, y: vertex.y, theta: vertex.theta });
+      void sendGoal({ x: vertex.x, y: vertex.y, theta: vertex.theta, z: vertex.z });
     },
     [sendGoal],
   );
@@ -212,9 +281,11 @@ export function PointCloudView({
 
   // A snapshot, not a live binding: a pose that crept while the name was typed
   // would be a stop nobody placed. Same key, so the typed name survives.
+  // On the ground floor, as every placement is.
   const useRobotPose = React.useCallback(() => {
     if (!robotPose) return;
-    setPlacement((cur) => (cur ? { ...cur, pose: robotPose } : cur));
+    const pose = { x: robotPose.x, y: robotPose.y, theta: robotPose.theta, z: 0 };
+    setPlacement((cur) => (cur ? { ...cur, pose } : cur));
   }, [robotPose]);
 
   const { clearWriteError } = stops;
@@ -256,6 +327,15 @@ export function PointCloudView({
       onToggle: () => setShowMapCloud((v) => !v),
     });
   }
+  if (hasVoxels) {
+    layers.push({
+      kind: "voxels",
+      label: "3D map",
+      on: showVoxels,
+      busy: octomap.status === "loading" || (octomap.voxels !== null && patches.status === "loading"),
+      onToggle: toggleVoxels,
+    });
+  }
   if (vertices.length > 0) {
     layers.push({
       kind: "waypoints",
@@ -289,6 +369,9 @@ export function PointCloudView({
         mapImageUrl={mapImageUrl}
         telemetry={feed}
         mapCloud={scan.cloud}
+        voxels={voxels}
+        voxelBand={voxelBand}
+        pickZ={pickZ}
         path={path}
         dock={dock}
         dockPath={dockPath}
@@ -305,6 +388,7 @@ export function PointCloudView({
         goal={task.goal}
         initialPose={estimate.pose}
         topDownNonce={topDownNonce}
+        frontNonce={frontNonce}
         recenterNonce={recenterNonce}
         zoomStep={zoomStep}
         pickMode={pick?.mode ?? null}
@@ -367,6 +451,7 @@ export function PointCloudView({
             cameraMode={cameraMode}
             onCameraMode={setCameraMode}
             onTopDown={() => setTopDownNonce((n) => n + 1)}
+            onFront={voxels ? () => setFrontNonce((n) => n + 1) : undefined}
             onZoomIn={() => setZoomStep({ factor: ZOOM_STEP_FACTOR })}
             onZoomOut={() => setZoomStep({ factor: 1 / ZOOM_STEP_FACTOR })}
             layers={layers}
@@ -378,6 +463,13 @@ export function PointCloudView({
           * Pointer-transparent with each panel opting back in, so the armed
           * hint never swallows the press it asks for. */}
         <div className="pointer-events-none flex min-h-0 w-56 flex-col gap-2 overflow-y-auto empty:hidden">
+          {/* Over the panels: it is part of what is drawn, not a job. */}
+          {voxels && bands.length > 1 && (
+            <div className={cn(overlayPanel, "pointer-events-auto px-2 py-1.5")}>
+              <p className="instrument-label mb-1 text-muted-foreground">3D map floor</p>
+              <FloorPicker floors={bands} value={floorBand?.name ?? null} onChange={setFloorName} />
+            </div>
+          )}
           {/* The next step happens on the map, away from the tooltip, so it
             * is spelled out here while the tool is armed. */}
           {pick?.mode === "goal" && (
@@ -411,6 +503,18 @@ export function PointCloudView({
               )}
             >
               {scan.error}
+            </p>
+          )}
+          {/* The same for the 3D map: its toggle is the retry. */}
+          {octomap.error && (
+            <p
+              role="alert"
+              className={cn(
+                overlayPanel,
+                "pointer-events-auto px-2 py-1.5 text-[11px] leading-snug break-words text-signal-warn",
+              )}
+            >
+              {octomap.error}
             </p>
           )}
         </div>

@@ -81,6 +81,35 @@ export const queryKeys = {
    * would close it.
    */
   mapPointCloud: (name: string) => ["map-point-cloud", name] as const,
+  /**
+   * GET /api/v1/maps/<name>/octomap, decoded — the dashboard's "3D map" and
+   * the ground editor's floor, one entry shared by both.
+   *
+   * Keyed like `mapImage`, by a version the catalogue reports
+   * (`octomap_version`, see useMapOctomap): unlike the scan, the tree is
+   * replaced in place — by a re-clean, or by the robot's edit tool applying
+   * the ground patches — and `modified_at` cannot say which file moved.
+   * Without the version it is the prefix the write hooks drop a map's
+   * entries by.
+   */
+  mapOctomap: (name: string, version?: string) =>
+    version === undefined
+      ? (["map-octomap", name] as const)
+      : (["map-octomap", name, version] as const),
+  /**
+   * GET /api/v1/maps/<name>/octomap/edits — the ground patches saved for the
+   * 3D map. Like `mapKeepout`: the editor seeds from it once and a save
+   * writes its answer here, since a save is the whole list.
+   */
+  mapOctomapEdits: (name: string) => ["map-octomap-edits", name] as const,
+  /**
+   * GET /api/v1/maps/<name>/floors — the storeys a map spans, which the
+   * dashboard's 3D map and the ground editor both pick a band from, so a
+   * rename on one is the other's list too. A save writes its answer here; a
+   * mapping save into the name drops it, since the detection reads the new
+   * walk.
+   */
+  mapFloors: (name: string) => ["map-floors", name] as const,
   /** GET /api/v1/task_templates — the operator's template library. */
   taskTemplates: ["task-templates"] as const,
   /** GET /api/v1/schedules */

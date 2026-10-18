@@ -10,10 +10,13 @@ import { cn } from "@/lib/utils";
 import { G23_JOINTS } from "@/lib/robot/g23-joints";
 import {
   DEFAULT_SPAN_M,
+  FRONT_DEFAULT_Z,
   TOP_DOWN_TILT,
   applyCameraMode,
   dollyStep,
   frameMap,
+  frontView,
+  frontViewAround,
   overheadDistance,
   type MapFrame,
 } from "@/lib/scene/camera";
@@ -29,8 +32,13 @@ import {
   setMarkerColor,
 } from "@/lib/scene/markers";
 import { createDockLayer } from "@/lib/scene/dock-layer";
-import { createDashedRibbon, createPathRibbon } from "@/lib/scene/path-ribbon";
+import {
+  createDashedRibbon,
+  createPathRibbon,
+  type PathRibbon,
+} from "@/lib/scene/path-ribbon";
 import { aimRaycaster, intersectGround } from "@/lib/scene/picking";
+import { columnAt } from "@/lib/map/ground-fill";
 import { POSE_EASE_TAU_S, type SmoothPose } from "@/lib/scene/pose";
 import {
   ROBOT_BASE_HEIGHT_M,
@@ -38,6 +46,11 @@ import {
   warnedUnknownJoints,
 } from "@/lib/scene/robot-model";
 import { THEMES } from "@/lib/scene/theme";
+import {
+  createVoxelLayer,
+  thinGroundUnderVoxels,
+  type VoxelLayer,
+} from "@/lib/scene/voxel-layer";
 import { createZoneLayer } from "@/lib/scene/zone-layer";
 import {
   createVertexLayer,
@@ -45,6 +58,7 @@ import {
 } from "@/lib/scene/vertex-layer";
 import { headingDegrees, isDrag } from "@/lib/map/gesture";
 import type { MapVertex, ZonePolygon } from "@/lib/types/map";
+import type { OccupiedVoxels } from "@/lib/types/octree";
 import type {
   MapMetadata,
   PlanarPose,
@@ -91,9 +105,29 @@ interface PointCloudCanvasProps {
    */
   mapCloud?: PointCloudFrame | null;
   /**
-   * The planner's remaining route, drawn as a band on the floor so an operator
-   * can catch a route that hugs a wall before the robot is against it. An empty
-   * `points` means the route is over.
+   * A stored map's 3D map, decoded; null draws none. Fetched by useMapOctomap
+   * for `mapCloud`'s reason. With no floor plan it is also what Recenter and
+   * Top down frame.
+   */
+  voxels?: OccupiedVoxels | null;
+  /**
+   * The heights of the 3D map to draw, metres, `[lo, hi)`: one floor of a
+   * map that spans several. Null draws them all. Moving it never rebuilds
+   * the layer (see VoxelLayer.setBand).
+   */
+  voxelBand?: { lo: number; hi: number } | null;
+  /**
+   * The ground height a pick lands at, metres: the floor shown, so a goal or
+   * a waypoint placed with 2F up is on 2F. 0 is the ground floor, bounded by
+   * the floor plan; any other height is bounded by the 3D map's box, since
+   * the floor plan need not reach over an upper storey.
+   */
+  pickZ?: number;
+  /**
+   * The planner's remaining route, drawn as a band on the ground it crosses so
+   * an operator can catch a route that hugs a wall before the robot is against
+   * it. A route up a stair is on two storeys; with a floor picked, only that
+   * floor's stretch is drawn. An empty `points` means the route is over.
    */
   path?: PlannedPath;
   /**
@@ -148,6 +182,11 @@ interface PointCloudCanvasProps {
    */
   topDownNonce?: number;
   /**
+   * Bumped to look at the map level from the south, so storeys read as
+   * bands. A nonce for `topDownNonce`'s reason.
+   */
+  frontNonce?: number;
+  /**
    * Bumped to return to the opening view. The view also switches to "move" in
    * the same click, since focus mode would re-pin the target to the robot.
    */
@@ -165,16 +204,24 @@ interface PointCloudCanvasProps {
   mapCloudStream?: boolean;
   /** The map-cloud stream's status; it fails independently of `onStatus`. */
   onMapStatus?: (status: StreamStatus) => void;
-  /** Committed goal, drawn on the ground until the caller clears it. */
-  goal?: PlanarPose | null;
+  /** Committed goal, drawn on its floor's ground until the caller clears it. */
+  goal?: (PlanarPose & { z?: number }) | null;
   /**
    * The initial pose last placed, kept as the reference the reported pose is
-   * read against while localization converges. useInitialPose expires it.
+   * read against while localization converges, on its floor's ground when it
+   * was placed on one. useInitialPose expires it.
    */
-  initialPose?: PlanarPose | null;
+  initialPose?: (PlanarPose & { z?: number }) | null;
+  /**
+   * The ground the initial pose being placed stands on, metres, when it says
+   * which floor; the robot is carried at that floor's height mid-drag. Null
+   * carries it at the height it is drawn at, as the localizer will keep the
+   * storey it is on.
+   */
+  initialPoseGround?: number | null;
   /**
    * What a press-drag-release on the ground produces, or null: the press is
-   * projected onto z=0 and the drag gives the heading. Left-button camera
+   * projected onto `pickZ` and the drag gives the heading. Left-button camera
    * motion is suspended while armed. In "initial-pose" the robot model itself
    * follows the pointer until a press plants it. One mode at a time, since the
    * gesture is identical for all of them.
@@ -191,6 +238,9 @@ export function PointCloudCanvas({
   mapImageUrl,
   telemetry,
   mapCloud = null,
+  voxels = null,
+  voxelBand = null,
+  pickZ = 0,
   path,
   dock = null,
   dockPath,
@@ -203,12 +253,14 @@ export function PointCloudCanvas({
   movingVertex = null,
   cameraMode = "move",
   topDownNonce = 0,
+  frontNonce = 0,
   recenterNonce = 0,
   zoomStep = null,
   mapCloudStream = false,
   onMapStatus,
   goal = null,
   initialPose = null,
+  initialPoseGround = null,
   pickMode = null,
   onPickCommit,
   onStatus,
@@ -247,11 +299,32 @@ export function PointCloudCanvas({
      * re-frame the camera on every map load.
      */
     mapFrame: MapFrame | null;
+    /**
+     * The floor plan's plane, or null with no 2D map. Held so the 3D map's
+     * layer can thin it while it is shown (see thinGroundUnderVoxels).
+     */
+    ground: THREE.Mesh | null;
     goalMarker: THREE.Group;
     initialPoseMarker: THREE.Group;
     draftMarker: THREE.Group;
     dispose: () => void;
   } | null>(null);
+
+  /**
+   * The 3D map's xy box while its layer is up and there is no floor plan:
+   * what Recenter and Top down frame instead of the 20 m fallback. A ref,
+   * since those effects are nonce-only on purpose.
+   */
+  const voxelFrameRef = React.useRef<MapFrame | null>(null);
+  /**
+   * The 3D map's layer while it is up, so a floor switch can move its band
+   * without a rebuild and Front can measure the heights it shows.
+   */
+  const voxelLayerRef = React.useRef<VoxelLayer | null>(null);
+  /** The band as last asked for, which a rebuilt layer starts from. */
+  const voxelBandRef = React.useRef(voxelBand);
+  /** The route's band while it is drawn, so a floor switch can cut it without a rebuild. */
+  const pathRibbonRef = React.useRef<PathRibbon | null>(null);
 
   // Keep the latest onStatus without forcing the setup effect to re-run.
   const onStatusRef = React.useRef(onStatus);
@@ -457,16 +530,18 @@ export function PointCloudCanvas({
 
     // Ground plane textured with the floor plan, when there is one.
     let groundTexture: THREE.Texture | null = null;
-    if (meta) {
-      const ground = new THREE.Mesh(
-        new THREE.PlaneGeometry(widthM, heightM),
-        new THREE.MeshBasicMaterial({
-          color: theme.ground,
-          transparent: true,
-          opacity: theme.groundOpacity,
-          side: THREE.DoubleSide,
-        }),
-      );
+    const ground = meta
+      ? new THREE.Mesh(
+          new THREE.PlaneGeometry(widthM, heightM),
+          new THREE.MeshBasicMaterial({
+            color: theme.ground,
+            transparent: true,
+            opacity: theme.groundOpacity,
+            side: THREE.DoubleSide,
+          }),
+        )
+      : null;
+    if (ground) {
       ground.position.set(centerX, centerY, 0);
       scene.add(ground);
 
@@ -525,6 +600,9 @@ export function PointCloudCanvas({
     scene.add(initialPoseMarker);
     scene.add(draftMarker);
 
+    // Placed at the reported pose, which is base_link's own height, so the
+    // model (base_link at its origin) goes in unlifted: lifting it too would
+    // float the robot its own leg length over the floor it stands on.
     const robotGroup = new THREE.Group();
     // Hidden until the first pose arrives.
     robotGroup.visible = false;
@@ -535,7 +613,6 @@ export function PointCloudCanvas({
     loadRobotModel()
       .then((model) => {
         if (cancelled) return;
-        model.position.z = ROBOT_BASE_HEIGHT_M;
         robotGroup.add(model);
         if (!jointNodesRef.current) {
           const nodes = new Map<
@@ -688,6 +765,7 @@ export function PointCloudCanvas({
       mapPoints: null,
       streamedMapPoints: null,
       mapFrame: meta ? { cx: centerX, cy: centerY, widthM, heightM } : null,
+      ground,
       goalMarker,
       initialPoseMarker,
       draftMarker,
@@ -809,7 +887,9 @@ export function PointCloudCanvas({
 
     // In focus the target is the robot, so keep it and the operator's zoom.
     // Otherwise frame the whole map: going overhead is for seeing the site.
-    const framing = cameraModeRef.current !== "focus" ? mapFrame : null;
+    // With no floor plan the 3D map's box stands in, when its layer is up.
+    const framing =
+      cameraModeRef.current !== "focus" ? (mapFrame ?? voxelFrameRef.current) : null;
     if (framing) controls.target.set(framing.cx, framing.cy, 0);
 
     const height = framing
@@ -825,6 +905,36 @@ export function PointCloudCanvas({
     controls.update();
   }, [topDownNonce]);
 
+  // ---- Front view (one-shot) --------------------------------------------
+  // Nonce-only deps, as for top-down. In focus the robot stays the target;
+  // otherwise the map's box, at the heights of the floor on show — the whole
+  // map's when no floor is picked, a person's height when no 3D map is up.
+  React.useEffect(() => {
+    if (!frontNonce) return;
+    const ctx = sceneRef.current;
+    if (!ctx) return;
+    if (cameraModeRef.current === "focus") {
+      frontViewAround(ctx.camera, ctx.controls);
+      return;
+    }
+    const band = voxelBandRef.current;
+    const z =
+      voxelLayerRef.current?.zExtent(band?.lo ?? -Infinity, band?.hi ?? Infinity) ??
+      FRONT_DEFAULT_Z;
+    frontView(
+      ctx.camera,
+      ctx.controls,
+      ctx.mapFrame ??
+        voxelFrameRef.current ?? {
+          cx: 0,
+          cy: 0,
+          widthM: DEFAULT_SPAN_M,
+          heightM: DEFAULT_SPAN_M,
+        },
+      z,
+    );
+  }, [frontNonce]);
+
   // ---- Recenter (one-shot) ----------------------------------------------
   // Declared after the camera-mode effect on purpose: the same click sets the
   // mode to "move", and effects run in order, so this one gets the last word.
@@ -836,8 +946,15 @@ export function PointCloudCanvas({
     frameMap(
       ctx.camera,
       ctx.controls,
-      // No map: the setup effect's fallback box around the origin.
-      ctx.mapFrame ?? { cx: 0, cy: 0, widthM: DEFAULT_SPAN_M, heightM: DEFAULT_SPAN_M },
+      // No floor plan: the 3D map's box if its layer is up, else the setup
+      // effect's fallback box around the origin.
+      ctx.mapFrame ??
+        voxelFrameRef.current ?? {
+          cx: 0,
+          cy: 0,
+          widthM: DEFAULT_SPAN_M,
+          heightM: DEFAULT_SPAN_M,
+        },
     );
   }, [recenterNonce]);
 
@@ -875,8 +992,8 @@ export function PointCloudCanvas({
       ctx.draftMarker,
       pickMode === "initial-pose" ? theme.initialPoseDraft : theme.goalDraft,
     );
-    placePoseMarker(ctx.draftMarker, pickMode ? draft : null);
-  }, [goal, initialPose, draft, pickMode, meta, mapImageUrl, resolvedTheme]);
+    placePoseMarker(ctx.draftMarker, pickMode && draft ? { ...draft, z: pickZ } : null);
+  }, [goal, initialPose, draft, pickMode, pickZ, meta, mapImageUrl, resolvedTheme]);
 
   // ---- Initial-pose pick: the robot itself is the preview ----------------
   // An initial pose asserts where the machine is, so the machine moves: what
@@ -891,11 +1008,16 @@ export function PointCloudCanvas({
     posePreviewRef.current = {
       x: draft.x,
       y: draft.y,
-      // The height it is already drawn at, plus the lift while in hand.
-      z: (renderedPoseRef.current?.z ?? 0) + (carrying ? CARRY_LIFT_M : 0),
+      // Standing on the floor it is placed on, else at the height it is
+      // already drawn at; plus the lift while in hand.
+      z:
+        (initialPoseGround !== null
+          ? initialPoseGround + ROBOT_BASE_HEIGHT_M
+          : (renderedPoseRef.current?.z ?? pickZ + ROBOT_BASE_HEIGHT_M)) +
+        (carrying ? CARRY_LIFT_M : 0),
       yaw: (draft.theta * Math.PI) / 180,
     };
-  }, [draft, carrying, pickMode]);
+  }, [draft, carrying, pickMode, initialPoseGround, pickZ]);
 
   // ---- Stored map vertices (toggle) ------------------------------------
   // Held in a ref because hover recolours it per pointer move. Lists the
@@ -913,6 +1035,7 @@ export function PointCloudCanvas({
     // patching the list mid-gesture).
     layer.setHovered(hoverIdRef.current);
     layer.setMoving(movingIdRef.current);
+    layer.setBand(voxelBandRef.current?.lo ?? -Infinity, voxelBandRef.current?.hi ?? Infinity);
 
     return () => {
       // `ctx.scene` may already be discarded; the dispose is what matters,
@@ -951,14 +1074,18 @@ export function PointCloudCanvas({
   // erases it by failing the guard; nothing here decides when a route is over.
   React.useEffect(() => {
     const ctx = sceneRef.current;
-    if (!ctx || !showPath || !path || path.points.length < 4) return;
+    if (!ctx || !showPath || !path || path.points.length < 6) return;
 
     const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const ribbon = createPathRibbon(path.points, theme);
     if (!ribbon) return;
+    const band = voxelBandRef.current;
+    if (band) ribbon.setBand(band.lo, band.hi);
     ctx.scene.add(ribbon.mesh);
+    pathRibbonRef.current = ribbon;
 
     return () => {
+      if (pathRibbonRef.current === ribbon) pathRibbonRef.current = null;
       ctx.scene.remove(ribbon.mesh);
       ribbon.dispose();
     };
@@ -969,10 +1096,10 @@ export function PointCloudCanvas({
   // Dashed, so the last metre onto the dock never reads as more of the route.
   React.useEffect(() => {
     const ctx = sceneRef.current;
-    if (!ctx || !showPath || !dockPath || dockPath.points.length < 4) return;
+    if (!ctx || !showPath || !dockPath || dockPath.points.length < 6) return;
 
     const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
-    const ribbon = createDashedRibbon(dockPath.points, theme.dock);
+    const ribbon = createDashedRibbon(dockPath.points, theme.dock, { stride: 3 });
     if (!ribbon) return;
     ctx.scene.add(ribbon.mesh);
 
@@ -1035,6 +1162,46 @@ export function PointCloudCanvas({
     };
   }, [mapCloud, meta, mapImageUrl, resolvedTheme]);
 
+  // ---- Optional 3D map (toggle) -----------------------------------------
+  // Same shape as the map scan above, and the same rebuild deps for the same
+  // reason. Beyond adding its marks it thins the floor plan while it is up
+  // (see thinGroundUnderVoxels) and lends its box to Recenter and Top down
+  // when there is no floor plan to frame; the cleanup undoes both, so turning
+  // the layer off restores the viewport without a rebuild.
+  React.useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx || !voxels) return;
+
+    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
+    const layer = createVoxelLayer(voxels);
+    const band = voxelBandRef.current;
+    if (band) layer.setBand(band.lo, band.hi);
+    ctx.scene.add(layer.points);
+    voxelLayerRef.current = layer;
+    const restoreGround = thinGroundUnderVoxels(ctx.ground, theme);
+    if (!ctx.mapFrame) voxelFrameRef.current = layer.frame;
+
+    return () => {
+      if (voxelLayerRef.current === layer) voxelLayerRef.current = null;
+      ctx.scene.remove(layer.points);
+      layer.dispose();
+      restoreGround();
+      if (voxelFrameRef.current === layer.frame) voxelFrameRef.current = null;
+    };
+  }, [voxels, meta, mapImageUrl, resolvedTheme]);
+
+  // ---- 3D map floor (band) ----------------------------------------------
+  // Two numbers on the layer, not a rebuild. Declared after the layer effect
+  // so a new layer is built before the band lands on it; the layer effect
+  // reads the ref for the same reason, should it rebuild on its own.
+  React.useEffect(() => {
+    voxelBandRef.current = voxelBand;
+    voxelLayerRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
+    // The waypoints and the route follow the floor shown, by their own ground height.
+    vertexLayerRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
+    pathRibbonRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
+  }, [voxelBand]);
+
   // ---- Pose picking -----------------------------------------------------
   // The anchor keeps the raw pointer position beside the ground point so the
   // heading deadzone is in screen pixels; a metric one would vary wildly with
@@ -1069,10 +1236,10 @@ export function PointCloudCanvas({
     return raycaster;
   };
 
-  /** Project a pointer position onto the z=0 map plane. */
+  /** Project a pointer position onto the ground of the floor shown. */
   const pickGround = (event: React.PointerEvent) => {
     const raycaster = castFromPointer(event);
-    return raycaster ? intersectGround(raycaster) : null;
+    return raycaster ? intersectGround(raycaster, pickZ) : null;
   };
 
   /** The stored vertex under a pointer position, or null (also when hidden). */
@@ -1102,6 +1269,7 @@ export function PointCloudCanvas({
    * against, so it is refused. With no floor plan anything goes.
    */
   const insideMap = (wx: number, wy: number) => {
+    if (pickZ !== 0 && voxels) return columnAt(voxels, wx, wy) !== null;
     if (!meta) return true;
     const [x0, y0] = meta.origin;
     return (

@@ -116,3 +116,87 @@ export function overheadDistance(
   const forWidth = widthM / 2 / (Math.tan(halfFov) * camera.aspect);
   return Math.max(forHeight, forWidth) * TOP_DOWN_MARGIN;
 }
+
+/** The heights a side-on view frames when there is no 3D map to measure: ground to head. */
+export const FRONT_DEFAULT_Z: { lo: number; hi: number } = { lo: -0.5, hi: 2 };
+
+/**
+ * Look at the map level from the south, along +y: storeys stack as bands,
+ * which no view from above can show. `frame` sets the width and where the
+ * camera stands, `z` the heights it must fit. The camera stands back from
+ * the near edge of the box, not from its centre, so what is nearest is
+ * framed too; the target sits in the box's middle so an orbit from here
+ * turns about the map rather than its front wall.
+ */
+export function frontView(
+  camera: THREE.PerspectiveCamera,
+  controls: OrbitControls,
+  frame: MapFrame,
+  z: { lo: number; hi: number },
+) {
+  const cz = (z.lo + z.hi) / 2;
+  const distance = overheadDistance(camera, frame.widthM, z.hi - z.lo);
+  controls.target.set(frame.cx, frame.cy, cz);
+  camera.position.set(frame.cx, frame.cy - frame.heightM / 2 - distance, cz);
+  controls.update();
+}
+
+/**
+ * The same side-on view about a target that must stay put (focus mode's
+ * robot): level with it, due south, at the distance the operator zoomed to.
+ */
+export function frontViewAround(camera: THREE.PerspectiveCamera, controls: OrbitControls) {
+  const distance = camera.position.distanceTo(controls.target);
+  camera.position.set(controls.target.x, controls.target.y - distance, controls.target.z);
+  controls.update();
+}
+
+/**
+ * The ground editor's controls. With no brush armed the primary button
+ * orbits (nothing here aims a goal, unlike the dashboard), right-drag pans,
+ * one finger orbits and two pan and pinch. With a brush armed the primary
+ * button and one finger are the brush's, so OrbitControls is told to ignore
+ * them; right-drag still orbits, the middle button pans, and two fingers
+ * still pan and pinch. The wheel zooms to the cursor either way.
+ */
+export function applyGroundControls(controls: OrbitControls, painting: boolean) {
+  controls.enablePan = true;
+  controls.zoomToCursor = true;
+  controls.screenSpacePanning = true;
+  controls.mouseButtons = painting
+    ? { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE }
+    : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+  controls.touches = {
+    ONE: painting ? null : THREE.TOUCH.ROTATE,
+    TWO: THREE.TOUCH.DOLLY_PAN,
+  };
+}
+
+/**
+ * The ground editor's opening view: `frameMap`'s three-quarter view, with
+ * the target on the floor the brush aims at rather than at z=0. The middle
+ * of the screen is then the middle of the map on that floor, which is where
+ * a press there paints.
+ */
+export function frameGround(
+  camera: THREE.PerspectiveCamera,
+  controls: OrbitControls,
+  frame: MapFrame,
+  floorZ: number,
+) {
+  const span = Math.max(frame.widthM, frame.heightM);
+  const place = () => {
+    camera.position.set(frame.cx, frame.cy - span * 0.6, floorZ + span * 0.8);
+    controls.target.set(frame.cx, frame.cy, floorZ);
+  };
+  // A drag that just ended leaves damping's leftover turn in the controls,
+  // which would carry the camera off the framing over the next second. One
+  // undamped update spends it, then the framing is set again on top.
+  const damping = controls.enableDamping;
+  controls.enableDamping = false;
+  place();
+  controls.update();
+  place();
+  controls.update();
+  controls.enableDamping = damping;
+}
