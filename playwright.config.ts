@@ -18,6 +18,10 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:3001",
     trace: "on-first-retry",
+    // UTC on every machine, as CI's runners are: tests read the browser's
+    // clock as UTC unless they pin a zone of their own (test.use), and a
+    // laptop in Taipei otherwise fails them eight hours out.
+    timezoneId: "UTC",
   },
   projects: [
     {
