@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
+import { GROUND_FLOOR_Z_M } from "@/lib/map/floors";
 import { THEMES } from "@/lib/scene/theme";
 import { createZoneLayer } from "@/lib/scene/zone-layer";
 
@@ -28,8 +29,9 @@ describe("createZoneLayer", () => {
 
   it("lies under the route, so a route through a zone stays on top", () => {
     const { group } = createZoneLayer([triangle("a")], THEMES.dark);
-    expect(group.position.z).toBeGreaterThan(0);
-    expect(group.position.z).toBeLessThan(0.012);
+    // On the floor plan, which is the ground floor's real ground.
+    expect(group.position.z - GROUND_FLOOR_Z_M).toBeGreaterThan(0);
+    expect(group.position.z - GROUND_FLOOR_Z_M).toBeLessThan(0.012);
   });
 
   it("skips a zone that encloses nothing rather than throwing", () => {

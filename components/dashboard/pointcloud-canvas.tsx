@@ -38,6 +38,7 @@ import {
   type PathRibbon,
 } from "@/lib/scene/path-ribbon";
 import { aimRaycaster, intersectGround } from "@/lib/scene/picking";
+import { GROUND_FLOOR_Z_M, drawnGround } from "@/lib/map/floors";
 import { columnAt } from "@/lib/map/ground-fill";
 import { POSE_EASE_TAU_S, type SmoothPose } from "@/lib/scene/pose";
 import {
@@ -528,7 +529,9 @@ export function PointCloudCanvas({
     );
     controls.update();
 
-    // Ground plane textured with the floor plan, when there is one.
+    // Ground plane textured with the floor plan, when there is one. At the
+    // ground floor's real ground, not 0: the robot's pose and the scans are
+    // in the map frame, whose 0 is a body height over that floor.
     let groundTexture: THREE.Texture | null = null;
     const ground = meta
       ? new THREE.Mesh(
@@ -542,7 +545,7 @@ export function PointCloudCanvas({
         )
       : null;
     if (ground) {
-      ground.position.set(centerX, centerY, 0);
+      ground.position.set(centerX, centerY, GROUND_FLOOR_Z_M);
       scene.add(ground);
 
       if (mapImageUrl) {
@@ -1012,8 +1015,8 @@ export function PointCloudCanvas({
       // already drawn at; plus the lift while in hand.
       z:
         (initialPoseGround !== null
-          ? initialPoseGround + ROBOT_BASE_HEIGHT_M
-          : (renderedPoseRef.current?.z ?? pickZ + ROBOT_BASE_HEIGHT_M)) +
+          ? drawnGround(initialPoseGround) + ROBOT_BASE_HEIGHT_M
+          : (renderedPoseRef.current?.z ?? drawnGround(pickZ) + ROBOT_BASE_HEIGHT_M)) +
         (carrying ? CARRY_LIFT_M : 0),
       yaw: (draft.theta * Math.PI) / 180,
     };
@@ -1239,7 +1242,7 @@ export function PointCloudCanvas({
   /** Project a pointer position onto the ground of the floor shown. */
   const pickGround = (event: React.PointerEvent) => {
     const raycaster = castFromPointer(event);
-    return raycaster ? intersectGround(raycaster, pickZ) : null;
+    return raycaster ? intersectGround(raycaster, drawnGround(pickZ)) : null;
   };
 
   /** The stored vertex under a pointer position, or null (also when hidden). */

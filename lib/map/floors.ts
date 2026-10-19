@@ -69,13 +69,35 @@ export function floorBands(floors: readonly MapFloor[]): FloorBand[] {
 
 /**
  * The ground height a waypoint placed on `band` stands at, metres. The
- * lowest floor is 0, as every waypoint was before floors and as the floor
- * plan is drawn. Any other floor is where the 3D map shows its ground
- * (`measured`), else a body height under its level.
+ * lowest floor is 0, as every waypoint was before floors (drawn at its real
+ * ground, see `drawnGround`). Any other floor is where the 3D map shows its
+ * ground (`measured`), else a body height under its level.
  */
 export function floorGround(band: FloorBand | null, measured: number | null = null): number {
   if (!band || band.lo === -Infinity) return 0;
   return measured ?? band.level - FLOOR_GROUND_BELOW_LEVEL_M;
+}
+
+/**
+ * Where the ground floor's ground really is, in the map frame the scan, the
+ * 3D map and the robot's pose all share, metres. The frame's origin is where
+ * the robot's odometry started, standing, so the floor it stood on is a body
+ * height under 0 — about -0.43 and -0.45 m on two site scans. The floor plan
+ * is drawn here: at 0 it cut through the robot, whose reported height is its
+ * body's, and hid its legs and the scan's floor under the plan.
+ */
+export const GROUND_FLOOR_Z_M = -FLOOR_GROUND_BELOW_LEVEL_M;
+
+/**
+ * The map-frame height a ground height is drawn at, metres. 0 is the
+ * console's word for the ground floor (`floorGround`'s answer for it, a 2D
+ * planner's route, a dock's approach, every waypoint from before floors) and
+ * stands for `GROUND_FLOOR_Z_M`; any other height was read off the 3D map or
+ * a floor's level, which are in the map frame already. Drawing only: the
+ * wire keeps its 0, which a backend without floors reads as "no height".
+ */
+export function drawnGround(z: number): number {
+  return z === 0 ? GROUND_FLOOR_Z_M : z;
 }
 
 /**

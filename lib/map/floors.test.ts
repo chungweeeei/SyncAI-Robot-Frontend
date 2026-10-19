@@ -4,6 +4,8 @@ import {
   FLOOR_BAND_ABOVE_M,
   FLOOR_BAND_BELOW_M,
   FLOOR_GROUND_BELOW_LEVEL_M,
+  GROUND_FLOOR_Z_M,
+  drawnGround,
   floorBands,
   floorGround,
   floorOfHeight,
@@ -11,6 +13,7 @@ import {
   nextFloor,
   sameFloors,
 } from "@/lib/map/floors";
+import { ROBOT_BASE_HEIGHT_M } from "@/lib/scene/robot-model";
 
 const TWO = [
   { name: "2F", level: 5.5 },
@@ -113,6 +116,27 @@ describe("floorGround", () => {
   it("puts an upper floor where the 3D map shows its ground, else a body height under its level", () => {
     expect(floorGround(second, 5.05)).toBe(5.05);
     expect(floorGround(second)).toBeCloseTo(5.5 - FLOOR_GROUND_BELOW_LEVEL_M);
+  });
+});
+
+describe("drawnGround", () => {
+  it("draws the ground floor's 0 at its real ground, a body height under the map frame's origin", () => {
+    expect(drawnGround(0)).toBe(GROUND_FLOOR_Z_M);
+    expect(GROUND_FLOOR_Z_M).toBeCloseTo(-FLOOR_GROUND_BELOW_LEVEL_M);
+  });
+
+  it("stands the robot on the floor plan at the height it reports", () => {
+    // base_link as robot01 reported it standing on its floor plan in AUTO
+    // (2026-10-19). Its feet, a rest-pose leg under it, must meet the plan
+    // rather than hang half a metre through it, as they did with the plan at 0.
+    const reportedBase = -0.056;
+    expect(reportedBase - ROBOT_BASE_HEIGHT_M).toBeCloseTo(drawnGround(0), 1);
+  });
+
+  it("keeps a height the 3D map measured, which is in the map frame already", () => {
+    const [, second] = floorBands(TWO);
+    expect(drawnGround(-0.45)).toBe(-0.45);
+    expect(drawnGround(floorGround(second, 5.05))).toBe(5.05);
   });
 });
 
