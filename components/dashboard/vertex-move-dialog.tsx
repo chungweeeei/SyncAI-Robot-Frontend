@@ -81,6 +81,9 @@ export function VertexMoveDialog({
             <div className="space-y-1 rounded-md border border-hairline bg-elevated/50 p-2.5">
               <Readout label="X" value={shown.x.toFixed(2)} unit="m" tone="cmd" />
               <Readout label="Y" value={shown.y.toFixed(2)} unit="m" tone="cmd" />
+              {/* The stored height: which floor the stop is on, and the z its
+                * goal goes out with. */}
+              <Readout label="Z" value={shown.z.toFixed(2)} unit="m" tone="cmd" />
               <Readout
                 label="Orientation"
                 value={shown.theta.toFixed(1)}

@@ -144,6 +144,8 @@ export function VertexPanel(props: VertexPanelProps) {
           key="draft"
           kind="create"
           pose={draft}
+          // What the shell stages it at: the floor plan has no floors.
+          z={0}
           initialName=""
           initialType={props.type}
           busy={props.busy}
@@ -169,6 +171,8 @@ export function VertexPanel(props: VertexPanelProps) {
           key={selected.id}
           kind="edit"
           pose={props.stagedPose ?? selected}
+          // A move here re-aims and re-places in plan only; the height stays.
+          z={selected.z}
           moved={props.stagedPose !== null}
           initialName={selected.name}
           initialType={selected.type}
@@ -426,6 +430,7 @@ function VertexList({
 function VertexForm({
   kind,
   pose,
+  z,
   moved = false,
   initialName,
   initialType,
@@ -438,6 +443,8 @@ function VertexForm({
 }: {
   kind: "create" | "edit";
   pose: PlanarPose;
+  /** Ground height, metres: which floor the waypoint is on. */
+  z: number;
   /** Edit mode only: the heading shown is staged, not what the row holds. */
   moved?: boolean;
   initialName: string;
@@ -521,6 +528,7 @@ function VertexForm({
       <div className="space-y-1 border-t border-hairline pt-2">
         <Readout label="X" value={pose.x.toFixed(2)} unit="m" tone="cmd" />
         <Readout label="Y" value={pose.y.toFixed(2)} unit="m" tone="cmd" />
+        <Readout label="Z" value={z.toFixed(2)} unit="m" tone="cmd" />
         <Readout label="Orientation" value={pose.theta.toFixed(1)} unit="°" tone="cmd" />
       </div>
 
