@@ -113,7 +113,7 @@ function NameForm({
   onCreate,
   onClose,
 }: {
-  pose: PlanarPose;
+  pose: PlacedPose;
   lockedReason: string | null;
   robotPose: PlanarPose | null;
   robotPoseReason: string | null;
@@ -196,6 +196,7 @@ function NameForm({
       <div className="space-y-1 rounded-md border border-hairline bg-elevated/50 p-2.5">
         <Readout label="X" value={pose.x.toFixed(2)} unit="m" tone="cmd" />
         <Readout label="Y" value={pose.y.toFixed(2)} unit="m" tone="cmd" />
+        <Readout label="Z" value={pose.z.toFixed(2)} unit="m" tone="cmd" />
         <Readout label="Orientation" value={pose.theta.toFixed(1)} unit="°" tone="cmd" />
       </div>
 

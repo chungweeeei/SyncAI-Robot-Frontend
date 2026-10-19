@@ -1295,6 +1295,12 @@ test.describe("waypoints on an upper floor", () => {
         page.getByRole("alertdialog", { name: `Move to ${landing.name}` }),
       ).toBeVisible({ timeout: 500 });
     }).toPass();
+    // Its height is read back beside X and Y: the stop says it is upstairs.
+    await expect(
+      page
+        .getByRole("alertdialog", { name: `Move to ${landing.name}` })
+        .getByText(UPSTAIRS_M.toFixed(2)),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Move", exact: true }).click();
     await expect
       .poll(() => writes.filter((w) => w.path === "/api/v1/tasks"))
