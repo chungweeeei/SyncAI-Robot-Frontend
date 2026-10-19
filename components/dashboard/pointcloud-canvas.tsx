@@ -32,6 +32,7 @@ import {
   setMarkerColor,
 } from "@/lib/scene/markers";
 import { createDockLayer } from "@/lib/scene/dock-layer";
+import { EDL_LAYER, createEdlPass, type EdlPass } from "@/lib/scene/edl";
 import {
   createDashedRibbon,
   createPathRibbon,
@@ -324,6 +325,8 @@ export function PointCloudCanvas({
   const voxelLayerRef = React.useRef<VoxelLayer | null>(null);
   /** The band as last asked for, which a rebuilt layer starts from. */
   const voxelBandRef = React.useRef(voxelBand);
+  /** The 3D map's shading while its layer is up, which every draw goes through. */
+  const edlRef = React.useRef<EdlPass | null>(null);
   /** The route's band while it is drawn, so a floor switch can cut it without a rebuild. */
   const pathRibbonRef = React.useRef<PathRibbon | null>(null);
 
@@ -505,6 +508,9 @@ export function PointCloudCanvas({
     // z-up world so ROS map coordinates (x, y, z) map straight through.
     const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 2000);
     camera.up.set(0, 0, 1);
+    // The 3D map's own layer, so it is drawn by any render that is not its
+    // shading pass too.
+    camera.layers.enable(EDL_LAYER);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -650,16 +656,23 @@ export function PointCloudCanvas({
       return (cachedRect ??= renderer.domElement.getBoundingClientRect());
     };
 
+    const draw = () => {
+      const edl = edlRef.current;
+      if (edl) edl.render(renderer, scene, camera);
+      else renderer.render(scene, camera);
+    };
+
     const resize = () => {
       invalidateRect();
       const rect = container.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
       renderer.setSize(rect.width, rect.height, false);
+      edlRef.current?.setSize(rect.width, rect.height, renderer.getPixelRatio());
       camera.aspect = rect.width / rect.height;
       camera.updateProjectionMatrix();
       // Draw now: setSize clears the canvas and the observer fires after this
       // frame's render, so without it the cleared canvas is painted.
-      renderer.render(scene, camera);
+      draw();
     };
     resize();
     const observer = new ResizeObserver(resize);
@@ -730,7 +743,7 @@ export function PointCloudCanvas({
       pumpTelemetry();
       stepPose(dt);
       controls.update();
-      renderer.render(scene, camera);
+      draw();
       raf = requestAnimationFrame(animate);
     };
     raf = requestAnimationFrame(animate);
@@ -1168,8 +1181,9 @@ export function PointCloudCanvas({
   // ---- Optional 3D map (toggle) -----------------------------------------
   // Same shape as the map scan above, and the same rebuild deps for the same
   // reason. Beyond adding its marks it thins the floor plan while it is up
-  // (see thinGroundUnderVoxels) and lends its box to Recenter and Top down
-  // when there is no floor plan to frame; the cleanup undoes both, so turning
+  // (see thinGroundUnderVoxels), lends its box to Recenter and Top down
+  // when there is no floor plan to frame, and is shaded by depth as on the
+  // 3D map page (lib/scene/edl.ts); the cleanup undoes all three, so turning
   // the layer off restores the viewport without a rebuild.
   React.useEffect(() => {
     const ctx = sceneRef.current;
@@ -1183,8 +1197,18 @@ export function PointCloudCanvas({
     voxelLayerRef.current = layer;
     const restoreGround = thinGroundUnderVoxels(ctx.ground, theme);
     if (!ctx.mapFrame) voxelFrameRef.current = layer.frame;
+    // Only the map is shaded, on its own layer, and the rest is drawn over
+    // it. Built here rather than with the scene, so its offscreen target is
+    // only held while there is a 3D map to shade.
+    layer.points.layers.set(EDL_LAYER);
+    const edl = createEdlPass(voxels.res, { layer: EDL_LAYER });
+    const size = ctx.renderer.getSize(new THREE.Vector2());
+    edl.setSize(size.x, size.y, ctx.renderer.getPixelRatio());
+    edlRef.current = edl;
 
     return () => {
+      if (edlRef.current === edl) edlRef.current = null;
+      edl.dispose();
       if (voxelLayerRef.current === layer) voxelLayerRef.current = null;
       ctx.scene.remove(layer.points);
       layer.dispose();
