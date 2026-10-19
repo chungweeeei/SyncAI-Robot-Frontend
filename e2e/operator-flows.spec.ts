@@ -1232,7 +1232,7 @@ test.describe("waypoints on an upper floor", () => {
     };
   };
 
-  test("places a waypoint on the ground floor whatever floor is shown", async ({ page }) => {
+  test("places a waypoint on the floor shown, at that floor's height", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, {
@@ -1261,8 +1261,8 @@ test.describe("waypoints on an upper floor", () => {
       .poll(() => writes.filter((w) => w.path === verticesPath))
       .toHaveLength(1);
     const [draft] = writes.find((w) => w.path === verticesPath)!.body as { z: number }[];
-    // Placing on an upper floor is not offered yet: 2F is only on show.
-    expect(draft.z).toBe(0);
+    // On the 2F slab the 3D map shows, not on the ground floor under it.
+    expect(draft.z).toBeCloseTo(UPSTAIRS_M);
     expect(errors, "the page logged errors").toEqual([]);
   });
 

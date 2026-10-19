@@ -131,12 +131,45 @@ export function medianFloor(floors: ColumnFloors): number | null {
 /**
  * Where the 3D map shows a floor's ground, metres: the median column floor
  * of the heights `[loM, hiM)`, at the cell's centre. Null when the tree has
- * no cell in them. The height an upstairs waypoint is placed at.
+ * no cell in them. Where an upstairs pick stands when `groundAt` has no
+ * answer under it.
  */
 export function floorHeightIn(voxels: OccupiedVoxels, loM: number, hiM: number): number | null {
   const band = bandForHeights(voxels, loM, hiM);
   const median = band && medianFloor(columnFloors(voxels, band));
   return median === null ? null : kzToMetres(median, voxels);
+}
+
+/**
+ * Where the 3D map shows the ground under a map-frame point, metres: the
+ * lowest cell of that column within the heights `[loM, hiM)`, at the cell's
+ * centre, as `floorHeightIn` measures a whole floor. Null off the tree's box
+ * or with no cell there (a hole, the void over a stairwell). The height a
+ * pick on a floor stands at: a floor is rarely one height — a ramp, a step
+ * between two halls — and the floor's median put every waypoint on it at
+ * the same z, half a metre off the ground on robot01's `dp` 2F.
+ */
+export function groundAt(
+  voxels: OccupiedVoxels,
+  wx: number,
+  wy: number,
+  loM: number,
+  hiM: number,
+): number | null {
+  const column = columnAt(voxels, wx, wy);
+  const band = bandForHeights(voxels, loM, hiM);
+  if (!column || !band) return null;
+  // One column, so a pass over the keys rather than columnFloors' whole
+  // grid: it runs once per pick, not per frame.
+  let floor = NO_FLOOR;
+  const { keys, count } = voxels;
+  for (let i = 0; i < count * 3; i += 3) {
+    if (keys[i] !== column.x || keys[i + 1] !== column.y) continue;
+    const kz = keys[i + 2];
+    if (kz < band.lo || kz > band.hi) continue;
+    if (floor === NO_FLOOR || kz < floor) floor = kz;
+  }
+  return floor === NO_FLOOR ? null : kzToMetres(floor, voxels);
 }
 
 /**
