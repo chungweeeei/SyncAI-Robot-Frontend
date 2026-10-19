@@ -30,6 +30,13 @@ export const EDL_STEP_CELLS = 1.5;
 export const EDL_STEP_PER_M = 0.003;
 
 /**
+ * The layer the dashboard puts its 3D map on, so only the map is shaded:
+ * the viewport draws a robot, a live scan and markers beside it, and each
+ * scan point outlined against the floor plan behind it would be a dark ring.
+ */
+export const EDL_LAYER = 1;
+
+/**
  * The eight neighbours, at unit distance. Diagonals included, so a wall
  * seen at any angle is outlined evenly.
  */
@@ -88,6 +95,9 @@ float eyeDepth(vec2 uv) {
 }
 
 void main() {
+  #ifdef WRITE_DEPTH
+  gl_FragDepth = texture2D(tDepth, vUv).x;
+  #endif
   vec4 color = texture2D(tColor, vUv);
   float depth = eyeDepth(vUv);
   if (depth < 0.0) {
@@ -123,12 +133,18 @@ export interface EdlPass {
  * triangle that shades the colour by the depth. Multisampled, as the canvas
  * is (WebGL2 resolves the depth too).
  *
+ * With a `layer`, only the objects on it go through the pass, and the rest
+ * of the scene is drawn over the shaded picture afterwards. The triangle
+ * hands the layer's depth to the canvas with its colour, so what is drawn
+ * after is still hidden behind the map as it would be in one render. The
+ * camera has to see the layer itself, for the draws made while off.
+ *
  * The colour target is 8-bit sRGB, as the canvas is: the scene is flat
  * colours with no lighting to keep headroom for, and half floats at 4x MSAA
  * on a dense screen were twice the memory traffic for nothing. sRGB rather
  * than linear so the dark end of the ramp keeps its steps.
  */
-export function createEdlPass(res: number): EdlPass {
+export function createEdlPass(res: number, { layer }: { layer?: number } = {}): EdlPass {
   const target = new THREE.WebGLRenderTarget(1, 1, {
     type: THREE.UnsignedByteType,
     colorSpace: THREE.SRGBColorSpace,
@@ -153,8 +169,12 @@ export function createEdlPass(res: number): EdlPass {
       stepPerM: { value: EDL_STEP_PER_M },
       neighbours: { value: NEIGHBOURS.map(([x, y]) => new THREE.Vector2(x, y)) },
     },
-    depthTest: false,
-    depthWrite: false,
+    defines: layer === undefined ? {} : { WRITE_DEPTH: "" },
+    // Depth is only written with the test on, so a layer's pass tests and
+    // always passes.
+    depthTest: layer !== undefined,
+    depthFunc: THREE.AlwaysDepth,
+    depthWrite: layer !== undefined,
   });
   // One triangle over the whole screen, in clip space.
   const geometry = new THREE.BufferGeometry();
@@ -173,12 +193,28 @@ export function createEdlPass(res: number): EdlPass {
         renderer.render(scene, camera);
         return;
       }
+      const mask = camera.layers.mask;
+      if (layer !== undefined) camera.layers.set(layer);
       renderer.setRenderTarget(target);
       renderer.render(scene, camera);
       renderer.setRenderTarget(null);
       material.uniforms.near.value = camera.near;
       material.uniforms.far.value = camera.far;
       renderer.render(screen, screenCamera);
+      if (layer === undefined) return;
+
+      // The rest over it, without the clear: three clears for a colour
+      // background whatever autoClear says, which would wipe the map.
+      camera.layers.mask = mask;
+      camera.layers.disable(layer);
+      const background = scene.background;
+      const autoClear = renderer.autoClear;
+      scene.background = null;
+      renderer.autoClear = false;
+      renderer.render(scene, camera);
+      renderer.autoClear = autoClear;
+      scene.background = background;
+      camera.layers.mask = mask;
     },
     setSize: (width, height, pixelRatio) => {
       const w = Math.max(1, Math.round(width * pixelRatio));
