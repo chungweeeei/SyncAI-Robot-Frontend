@@ -37,7 +37,7 @@ import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import { apiUrl } from "@/lib/api/config";
 import { type FloorBand, floorBands, floorGround } from "@/lib/map/floors";
-import { floorHeightIn, withGroundPatches } from "@/lib/map/ground-fill";
+import { floorHeightIn, groundAt, withGroundPatches } from "@/lib/map/ground-fill";
 import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
 import { dispatchMapLock } from "@/lib/map/run-lock";
 import { liveDock } from "@/lib/task/run";
@@ -159,8 +159,19 @@ export function PointCloudView({
       floorGround(band, band && voxels ? floorHeightIn(voxels, band.lo, band.hi) : null),
     [voxels],
   );
-  // What a pick lands on: the floor shown. Memoised because the measure walks
-  // every cell of the tree.
+  /**
+   * The ground under a point on a floor: where the 3D map shows it in that
+   * column, else the floor's own (groundOf) — over a hole, or before the
+   * tree has loaded.
+   */
+  const groundUnder = React.useCallback(
+    (band: FloorBand, x: number, y: number) =>
+      (voxels ? groundAt(voxels, x, y, band.lo, band.hi) : null) ?? groundOf(band),
+    [voxels, groundOf],
+  );
+  // The floor shown's one height: the plane a pick is projected onto and its
+  // marker drawn at, not what it is stored at (see commitPick). Memoised
+  // because the measure walks every cell of the tree.
   const floorZ = React.useMemo(() => groundOf(floorBand), [groundOf, floorBand]);
   // Keyed on the two numbers: `floors` is a fresh list on every refetch, and
   // a fresh band object would repaint the layer for nothing.
@@ -255,10 +266,15 @@ export function PointCloudView({
   // inert.
   const commitPick = React.useCallback(
     (picked: PlanarPose) => {
-      // The floor it was placed on goes with it.
-      const placed = { ...picked, z: pickZ };
+      // The ground under it on the floor it was placed on goes with it, not
+      // that floor's one height: a floor with a ramp or a step in it put
+      // every stop on it at the same z, half a metre off on dp's 2F.
+      const placed = {
+        ...picked,
+        z: floorBand ? groundUnder(floorBand, picked.x, picked.y) : pickZ,
+      };
       if (pick?.mode === "initial-pose") {
-        commitPose(initialPoseGround === null ? picked : { ...picked, z: initialPoseGround });
+        commitPose(floorBand ? placed : picked);
       } else if (pick?.mode === "place") {
         setPlacement({ key: ++placementSeq.current, pose: placed });
       } else if (pick?.mode === "vertex") {
@@ -273,7 +289,7 @@ export function PointCloudView({
       }
       setPick(null);
     },
-    [pick, pickZ, initialPoseGround, commitPose, sendGoal, moveVertex],
+    [pick, pickZ, floorBand, groundUnder, commitPose, sendGoal, moveVertex],
   );
 
   // The dialog closes first; GoalControl reports the job and any error.
@@ -299,13 +315,14 @@ export function PointCloudView({
 
   // A snapshot, not a live binding: a pose that crept while the name was typed
   // would be a stop nobody placed. Same key, so the typed name survives.
-  // On the ground of the floor the robot is on, by its body height.
+  // On the ground under the robot, on the floor its body height is in.
   const useRobotPose = React.useCallback(() => {
     if (!robotPose) return;
     const band = bands.find((b) => robotPose.z >= b.lo && robotPose.z < b.hi) ?? null;
-    const pose = { x: robotPose.x, y: robotPose.y, theta: robotPose.theta, z: groundOf(band) };
+    const z = band ? groundUnder(band, robotPose.x, robotPose.y) : groundOf(null);
+    const pose = { x: robotPose.x, y: robotPose.y, theta: robotPose.theta, z };
     setPlacement((cur) => (cur ? { ...cur, pose } : cur));
-  }, [robotPose, bands, groundOf]);
+  }, [robotPose, bands, groundOf, groundUnder]);
 
   const { clearWriteError } = stops;
 

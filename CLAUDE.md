@@ -165,11 +165,12 @@ components/
                 floor plan and on by default without one, drawn whether or
                 not the map has a floor plan, one floor at a time
                 on a map that spans storeys, with its saved ground patches
-                drawn in before the robot has applied them), waypoints (each at its own
-                floor's ground height; with a floor picked, only that floor's
+                drawn in before the robot has applied them), waypoints (each at
+                the ground under it; with a floor picked, only that floor's
                 are shown or tappable, and a goal, a new waypoint or an
-                initial pose lands on it — the initial pose sends that
-                floor's ground, and without a floor picked sends no height,
+                initial pose lands on it, at the ground the 3D map shows
+                under the point on that floor — the floor's one height only
+                over a hole — and without a floor picked the initial pose sends no height,
                 so the localizer keeps its storey; a 2D map, one without an
                 octomap.bt, has no floors, so its picks stay at 0), zones
                 and the path (on

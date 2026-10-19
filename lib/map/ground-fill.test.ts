@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   floorHeightIn,
+  groundAt,
   GroundStroke,
   NO_FLOOR,
   applyGroundPatch,
@@ -81,6 +82,31 @@ describe("floorHeightIn", () => {
 
   it("has no answer for heights the tree has no cell in", () => {
     expect(floorHeightIn(site(), 1, 2)).toBeNull();
+  });
+});
+
+describe("groundAt", () => {
+  // The centre of column (x, y) in the world: keyMin is shifted, so the
+  // relative column x starts at world x (x + 10) * 0.1 and y at (y - 3) * 0.1.
+  const at = (x: number, y: number) => [(x + 10.5) * 0.1, (y - 2.5) * 0.1] as const;
+
+  it("reads the ground under the point", () => {
+    expect(groundAt(site(), ...at(1, 1), -Infinity, 2)).toBeCloseTo(-0.45);
+  });
+
+  it("takes each storey's own ground in a column both are over", () => {
+    expect(groundAt(site(), ...at(6, 6), -Infinity, 2)).toBeCloseTo(-0.45);
+    expect(groundAt(site(), ...at(6, 6), 2, Infinity)).toBeCloseTo(2.55);
+  });
+
+  it("stands on a wall's foot, not its top", () => {
+    expect(groundAt(site(), ...at(0, 0), -Infinity, Infinity)).toBeCloseTo(-0.45);
+  });
+
+  it("has no answer over a hole, off the tree or outside the heights", () => {
+    expect(groundAt(site(), ...at(3, 3), -Infinity, Infinity)).toBeNull();
+    expect(groundAt(site(), 50, 50, -Infinity, Infinity)).toBeNull();
+    expect(groundAt(site(), ...at(1, 1), 2, Infinity)).toBeNull();
   });
 });
 
