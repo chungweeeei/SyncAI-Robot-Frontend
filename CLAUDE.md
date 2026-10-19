@@ -167,10 +167,11 @@ components/
                 on a map that spans storeys, with its saved ground patches
                 drawn in before the robot has applied them), waypoints (each at its own
                 floor's ground height; with a floor picked, only that floor's
-                are shown or tappable, but a goal, a new waypoint or an
-                initial pose still lands on the ground floor — placing on
-                an upper floor is not offered yet, and the initial pose
-                sends no height, so the localizer keeps its storey), zones
+                are shown or tappable, and a goal, a new waypoint or an
+                initial pose lands on it — the initial pose sends that
+                floor's ground, and without a floor picked sends no height,
+                so the localizer keeps its storey; a 2D map, one without an
+                octomap.bt, has no floors, so its picks stay at 0), zones
                 and the path (on
                 the ground it crosses, so a route up a stair is on both
                 storeys; with a floor picked,
