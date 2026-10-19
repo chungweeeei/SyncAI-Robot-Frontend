@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { GROUND_FLOOR_Z_M } from "@/lib/map/floors";
 import { createDashedRibbon, createPathRibbon, dashPieces } from "@/lib/scene/path-ribbon";
 import { THEMES } from "@/lib/scene/theme";
 
@@ -14,6 +15,9 @@ const heightsOf = (ribbon: NonNullable<ReturnType<typeof createPathRibbon>>) => 
   return Array.from({ length: position.count }, (_, i) => +position.getZ(i).toFixed(3));
 };
 
+/** The ground floor's band, just over the floor plan. */
+const onGround = +(GROUND_FLOOR_Z_M + 0.012).toFixed(3);
+
 /** How many segments are drawn: two triangles, six indices, each. */
 const segmentsOf = (ribbon: NonNullable<ReturnType<typeof createPathRibbon>>) =>
   ribbon.mesh.geometry.getIndex()!.count / 6;
@@ -21,16 +25,20 @@ const segmentsOf = (ribbon: NonNullable<ReturnType<typeof createPathRibbon>>) =>
 describe("createPathRibbon", () => {
   it("lays each stretch on its own ground, just over it", () => {
     const ribbon = createPathRibbon(upTheStair, THEMES.light)!;
-    // Two vertices per point, both at the point's ground plus the lift.
-    expect(heightsOf(ribbon)).toEqual([0.012, 0.012, 0.012, 0.012, 1.512, 1.512, 3.012, 3.012, 3.012, 3.012]);
+    // Two vertices per point, both at the point's ground plus the lift; the
+    // ground floor's 0 is its real ground, where the floor plan is drawn.
+    expect(heightsOf(ribbon)).toEqual([
+      onGround, onGround, onGround, onGround, 1.512, 1.512, 3.012, 3.012, 3.012, 3.012,
+    ]);
     expect(segmentsOf(ribbon)).toBe(4);
   });
 
   it("never goes under the floor plan", () => {
-    // A planner's ground a few centimetres under 0 is still the ground floor,
-    // which the floor plan is drawn at; under it, the route would be hidden.
-    const ribbon = createPathRibbon(route([0, 0, -0.05], [1, 0, -0.05]), THEMES.light)!;
-    expect(heightsOf(ribbon).every((z) => z === 0.012)).toBe(true);
+    // A planner's ground a few centimetres under the floor plan is still the
+    // ground floor; under the plan, the route would be hidden.
+    const under = GROUND_FLOOR_Z_M - 0.05;
+    const ribbon = createPathRibbon(route([0, 0, under], [1, 0, under]), THEMES.light)!;
+    expect(heightsOf(ribbon).every((z) => z === onGround)).toBe(true);
   });
 
   it("draws only the floor shown, and the whole route again with none", () => {

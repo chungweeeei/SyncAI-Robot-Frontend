@@ -2,10 +2,11 @@
 
 import * as THREE from "three";
 
+import { drawnGround } from "@/lib/map/floors";
 import type { PlanarPose } from "@/lib/types/robot";
 
 // Pose marker (goal / initial pose), in metres: robot-sized, so it reads as a
-// place on the floor in perspective. Lifted off z=0 to avoid z-fighting.
+// place on the floor in perspective. Lifted off the ground to avoid z-fighting.
 const MARKER_RING_INNER_M = 0.26;
 const MARKER_RING_OUTER_M = 0.34;
 const MARKER_SHAFT_LEN_M = 0.5;
@@ -66,7 +67,8 @@ export function createPoseMarker(color: number, opacity: number): THREE.Group {
 
 /**
  * Move a marker to a pose (theta in degrees), or hide it when there is none.
- * `z` is the ground of the pose's floor, 0 when it has none.
+ * `z` is the ground of the pose's floor, 0 when it has none (the ground
+ * floor, drawn where it really is: see `drawnGround`).
  */
 export function placePoseMarker(
   marker: THREE.Group,
@@ -74,7 +76,7 @@ export function placePoseMarker(
 ) {
   marker.visible = pose !== null;
   if (!pose) return;
-  marker.position.set(pose.x, pose.y, (pose.z ?? 0) + MARKER_Z_M);
+  marker.position.set(pose.x, pose.y, drawnGround(pose.z ?? 0) + MARKER_Z_M);
   marker.rotation.z = (pose.theta * Math.PI) / 180;
 }
 

@@ -255,8 +255,14 @@ lib/
                 from a metre under its level, so a slab's top is in the
                 floor above, to a cut 1.5 m over it, under the ceiling that
                 would hide the floor from above — the ground a waypoint
-                on a floor stands at, which floor a height is on, and the
-                rules a saved list keeps, mirrored from the backend)
+                on a floor stands at, which floor a height is on, the
+                rules a saved list keeps, mirrored from the backend, and
+                where a ground height is drawn: the map frame's 0 is a
+                body height over the floor the robot's odometry started
+                on, so the console's 0 for the ground floor is drawn at
+                GROUND_FLOOR_Z_M (drawnGround), and the floor plan with
+                it, or the robot stands half through the plan; the wire
+                keeps its 0)
   scene/        three.js scene building for the 3D viewport: theme, markers,
                 vertex layer, zone layer, path ribbon, the running dock's
                 staging point and leg (dock-layer.ts), the 3D map's voxel

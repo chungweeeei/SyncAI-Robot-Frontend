@@ -3,6 +3,7 @@
 import * as THREE from "three";
 
 import { stagingPose } from "@/lib/map/dock";
+import { GROUND_FLOOR_Z_M } from "@/lib/map/floors";
 import { createDashedRibbon } from "@/lib/scene/path-ribbon";
 import type { Theme } from "@/lib/scene/theme";
 import type { PlanarPose } from "@/lib/types/robot";
@@ -36,6 +37,8 @@ export function createDockLayer(
   theme: Theme,
 ): { group: THREE.Group; dispose: () => void } {
   const group = new THREE.Group();
+  // A dock is on the floor plan, which is the ground floor's.
+  group.position.z = GROUND_FLOOR_Z_M;
   const staging = stagingPose(dock);
 
   const dotGeometry = new THREE.CircleGeometry(STAGING_DOT_RADIUS_M, 24);

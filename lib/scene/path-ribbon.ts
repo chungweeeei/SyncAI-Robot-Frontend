@@ -2,6 +2,7 @@
 
 import * as THREE from "three";
 
+import { GROUND_FLOOR_Z_M, drawnGround } from "@/lib/map/floors";
 import type { Theme } from "@/lib/scene/theme";
 
 /*
@@ -40,10 +41,10 @@ export function createPathRibbon(points: Float32Array, theme: Theme): PathRibbon
   for (let i = 0; i < n; i++) {
     const x = points[i * 3];
     const y = points[i * 3 + 1];
-    // Never under 0, where the floor plan is drawn: the ground floor is 0 to
-    // this console (as a waypoint on it is), and a planner's ground a few
-    // centimetres lower would put the whole route out of sight beneath it.
-    const z = Math.max(points[i * 3 + 2], 0) + PATH_Z_M;
+    // Never under the floor plan: a planner's ground on the ground floor
+    // wanders a few centimetres around it with the odometry's drift, and
+    // under it the whole route would be out of sight beneath the plan.
+    const z = Math.max(drawnGround(points[i * 3 + 2]), GROUND_FLOOR_Z_M) + PATH_Z_M;
 
     // Tangent from the neighbours (one-sided at the ends), in the ground
     // plane: both segments share the offset vertices, so a corner joins with
@@ -86,7 +87,7 @@ export function createPathRibbon(points: Float32Array, theme: Theme): PathRibbon
     const indices: number[] = [];
     let previousOn = false;
     for (let i = 0; i < n; i++) {
-      const ground = points[i * 3 + 2];
+      const ground = drawnGround(points[i * 3 + 2]);
       const on = ground >= lo && ground < hi;
       if (i > 0 && on && previousOn) {
         const a = (i - 1) * 2; // left vertex of the previous point
@@ -184,13 +185,14 @@ export function dashPieces(
 /**
  * A dashed band following `points`, one quad per dash piece, plus its
  * disposer. Null when there is no dash to draw. `width` and `z` default to the
- * route's, so a dashed approach lies where the route would. `stride` is 3 for
- * a `PlannedPath`'s triples; the band stays flat at `z` either way.
+ * route's on the ground floor, so a dashed approach lies where the route
+ * would. `stride` is 3 for a `PlannedPath`'s triples; the band stays flat at
+ * `z` either way.
  */
 export function createDashedRibbon(
   points: Float32Array | readonly number[],
   color: number,
-  { width = PATH_WIDTH_M, z = PATH_Z_M, opacity = 0.85, stride = 2 } = {},
+  { width = PATH_WIDTH_M, z = GROUND_FLOOR_Z_M + PATH_Z_M, opacity = 0.85, stride = 2 } = {},
 ): { mesh: THREE.Mesh; dispose: () => void } | null {
   const half = width / 2;
   const positions: number[] = [];

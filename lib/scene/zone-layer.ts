@@ -2,6 +2,7 @@
 
 import * as THREE from "three";
 
+import { GROUND_FLOOR_Z_M } from "@/lib/map/floors";
 import type { Theme } from "@/lib/scene/theme";
 import type { ZonePolygon } from "@/lib/types/map";
 
@@ -66,7 +67,8 @@ export function createZoneLayer(
   theme: Theme,
 ): { group: THREE.Group; dispose: () => void } {
   const group = new THREE.Group();
-  group.position.z = ZONE_Z_M;
+  // A zone is drawn on the floor plan, which is the ground floor's.
+  group.position.z = GROUND_FLOOR_Z_M + ZONE_Z_M;
   const geometries: THREE.BufferGeometry[] = [];
 
   const material = (opacity: number) =>

@@ -2,6 +2,7 @@
 
 import * as THREE from "three";
 
+import { drawnGround } from "@/lib/map/floors";
 import { vertexGlyph } from "@/lib/map/vertex";
 import type { Theme } from "@/lib/scene/theme";
 import { cssHex } from "@/lib/theme/signal";
@@ -188,10 +189,11 @@ export function createVertexLayer(
 
   for (const vertex of vertices) {
     byId.set(vertex.id, vertex);
+    const ground = drawnGround(vertex.z);
 
     const marker = new THREE.Group();
     // On the ground of its own floor, so an upstairs stop stands on that floor.
-    marker.position.set(vertex.x, vertex.y, vertex.z + VERTEX_Z_M);
+    marker.position.set(vertex.x, vertex.y, ground + VERTEX_Z_M);
     marker.rotation.z = (vertex.theta * Math.PI) / 180;
 
     const disc = new THREE.Mesh(discGeom, base.fill);
@@ -228,7 +230,7 @@ export function createVertexLayer(
     badge.position.set(
       vertex.x,
       vertex.y,
-      vertex.z + VERTEX_Z_M + VERTEX_STEM_HEIGHT_M + VERTEX_BADGE_SIZE_M / 3,
+      ground + VERTEX_Z_M + VERTEX_STEM_HEIGHT_M + VERTEX_BADGE_SIZE_M / 3,
     );
     badge.userData.vertexId = vertex.id;
     group.add(badge);
@@ -276,7 +278,10 @@ export function createVertexLayer(
   // The floor shown, by ground height: [lo, hi), the 3D map's band rule.
   let bandLo = -Infinity;
   let bandHi = Infinity;
-  const onFloor = (vertex: MapVertex) => vertex.z >= bandLo && vertex.z < bandHi;
+  const onFloor = (vertex: MapVertex) => {
+    const ground = drawnGround(vertex.z);
+    return ground >= bandLo && ground < bandHi;
+  };
   const allPickables = [...pickables];
 
   const show = (id: string) => {
