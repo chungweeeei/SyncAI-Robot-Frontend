@@ -271,7 +271,11 @@ lib/
                 layer (one cell-sized point per occupied cell, coloured by
                 height, held in height order so a floor is one draw range;
                 it thins the floor plan while up and lends its box to
-                Recenter when there is no floor plan), camera policy (the
+                Recenter when there is no floor plan), the eye-dome
+                lighting that outlines the 3D map by depth (edl.ts: the
+                ground editor's whole scene; on the dashboard only the
+                map's own layer, the rest drawn over it against its
+                depth, so a scan point is not ringed), camera policy (the
                 opening, overhead and front framings, and the ground
                 editor's: the primary button orbits until a brush is armed,
                 then paints while the right button orbits), the ground

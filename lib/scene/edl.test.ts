@@ -1,21 +1,43 @@
 import * as THREE from "three";
 import { describe, expect, it, vi } from "vitest";
 
-import { EDL_STEP_CELLS, createEdlPass } from "@/lib/scene/edl";
+import { EDL_LAYER, EDL_STEP_CELLS, createEdlPass } from "@/lib/scene/edl";
 
-/** The two renderer calls the pass makes, recorded; no WebGL in jsdom. */
+interface RenderCall {
+  target: THREE.WebGLRenderTarget | null;
+  scene: THREE.Scene;
+  /** The camera's layers, what the clear would be and the background, as drawn. */
+  mask: number;
+  autoClear: boolean;
+  background: THREE.Scene["background"];
+}
+
+/** The renderer calls the pass makes, recorded; no WebGL in jsdom. */
 function fakeRenderer() {
-  const calls: Array<{ target: THREE.WebGLRenderTarget | null; scene: THREE.Scene }> = [];
+  const calls: RenderCall[] = [];
   let target: THREE.WebGLRenderTarget | null = null;
   const renderer = {
+    autoClear: true,
     setRenderTarget: vi.fn((next: THREE.WebGLRenderTarget | null) => {
       target = next;
     }),
-    render: vi.fn((scene: THREE.Scene) => {
-      calls.push({ target, scene });
+    render: vi.fn((scene: THREE.Scene, camera: THREE.Camera) => {
+      calls.push({
+        target,
+        scene,
+        mask: camera.layers.mask,
+        autoClear: renderer.autoClear,
+        background: scene.background,
+      });
     }),
   };
   return { renderer: renderer as unknown as THREE.WebGLRenderer, calls };
+}
+
+/** The shading material a pass draws its screen with. */
+function screenMaterial(calls: RenderCall[]): THREE.ShaderMaterial {
+  const screen = calls.find((call) => call.target === null && call.scene.children.length === 1)!;
+  return (screen.scene.children[0] as THREE.Mesh).material as THREE.ShaderMaterial;
 }
 
 describe("createEdlPass", () => {
@@ -41,8 +63,58 @@ describe("createEdlPass", () => {
     const { renderer, calls } = fakeRenderer();
     pass.render(renderer, scene, camera);
 
-    expect(calls).toEqual([{ target: null, scene }]);
+    expect(calls.map(({ target, scene }) => ({ target, scene }))).toEqual([{ target: null, scene }]);
     pass.dispose();
+  });
+
+  it("with a layer, shades only that layer and draws the rest over it", () => {
+    const pass = createEdlPass(0.1, { layer: EDL_LAYER });
+    const { renderer, calls } = fakeRenderer();
+    const background = new THREE.Color(0x123456);
+    const layered = new THREE.Scene();
+    layered.background = background;
+    const seeing = new THREE.PerspectiveCamera();
+    seeing.layers.enable(EDL_LAYER);
+    const both = seeing.layers.mask;
+    pass.render(renderer, layered, seeing);
+
+    expect(calls).toHaveLength(3);
+    // The map alone, offscreen, on the background its gaps show.
+    expect(calls[0]).toMatchObject({ scene: layered, mask: 1 << EDL_LAYER, background });
+    expect(calls[0].target).not.toBeNull();
+    expect(calls[1]).toMatchObject({ target: null });
+    // The rest on the canvas, without a clear or a background to wipe it.
+    expect(calls[2]).toMatchObject({
+      target: null,
+      scene: layered,
+      mask: both & ~(1 << EDL_LAYER),
+      autoClear: false,
+      background: null,
+    });
+    // And all of it put back for the next draw and the picking.
+    expect(seeing.layers.mask).toBe(both);
+    expect(renderer.autoClear).toBe(true);
+    expect(layered.background).toBe(background);
+    pass.dispose();
+  });
+
+  it("with a layer, leaves its depth on the canvas, so the rest is hidden behind it", () => {
+    const { renderer, calls } = fakeRenderer();
+    createEdlPass(0.1, { layer: EDL_LAYER }).render(renderer, scene, camera);
+    const layered = screenMaterial(calls);
+    expect(layered.defines).toHaveProperty("WRITE_DEPTH");
+    expect([layered.depthTest, layered.depthWrite, layered.depthFunc]).toEqual([
+      true,
+      true,
+      THREE.AlwaysDepth,
+    ]);
+
+    // The whole scene through it has nothing left to draw after, and writes none.
+    calls.length = 0;
+    createEdlPass(0.1).render(renderer, scene, camera);
+    const whole = screenMaterial(calls);
+    expect(whole.defines).not.toHaveProperty("WRITE_DEPTH");
+    expect(whole.depthWrite).toBe(false);
   });
 
   it("reads a step in cells of the map, so a finer map draws finer steps", () => {
