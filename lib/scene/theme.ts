@@ -43,6 +43,17 @@ export interface Theme {
   /** Forbidden zones: `signal-warn`, the same mark as on the floor plan editor. */
   zone: number;
   /**
+   * What the robot itself sees around it while it drives (the costmap its
+   * controller steers on): `signal-caution`, an assertion about the world.
+   * Not the zones' `signal-warn`, which marks a rule the operator drew.
+   */
+  localCostmap: number;
+  /**
+   * The next 2 s the robot means to drive: `signal-live`, measured and
+   * happening now, apart from the route's cyan that it follows.
+   */
+  localPlan: number;
+  /**
    * The floor plan's opacity while the 3D map is shown. The robot's floor
    * lies about half a metre under the plane the floor plan is drawn on (the
    * map frame's zero is the body, not the ground), so at full opacity the
@@ -69,6 +80,8 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     path: 0x2b86a8,
     dock: 0x6a4fc0,
     zone: SIGNAL.light.warn,
+    localCostmap: SIGNAL.light.caution,
+    localPlan: SIGNAL.light.live,
     groundOpacityUnderVoxels: 0.35,
   },
   dark: {
@@ -85,6 +98,8 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     path: 0x3aa8cc,
     dock: 0xa991f2,
     zone: SIGNAL.dark.warn,
+    localCostmap: SIGNAL.dark.caution,
+    localPlan: SIGNAL.dark.live,
     groundOpacityUnderVoxels: 0.3,
   },
 };
