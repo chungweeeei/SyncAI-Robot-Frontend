@@ -69,6 +69,27 @@ export interface PlannedPath {
   stamp: number;
 }
 
+/**
+ * The robot's own picture of what is around it while it drives: the 4 × 4 m
+ * costmap its controller steers on, sent only during a navigation.
+ *
+ * `cells` is one byte per cell, row-major from the `origin` corner with x
+ * along a row, in the robot's own cost values: 0 free, 1–252 the margin kept
+ * from an obstacle, 253 too close for the body, 254 an obstacle, 255 never
+ * seen. The grid is turned by `origin.yaw` (radians) in the map frame. It is
+ * planar: it is drawn on the ground the robot stands on.
+ *
+ * A `width` of 0 is the explicit "no costmap", sent when the navigation ends.
+ */
+export interface LocalCostmap {
+  resolution: number;
+  width: number;
+  height: number;
+  origin: { x: number; y: number; yaw: number };
+  cells: Uint8Array;
+  stamp: number;
+}
+
 export interface RobotLocalizationStatus {
   position: RobotPose;
   /** linear velocity in m/s */

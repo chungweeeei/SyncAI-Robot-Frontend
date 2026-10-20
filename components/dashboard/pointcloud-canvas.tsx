@@ -32,6 +32,10 @@ import {
   setMarkerColor,
 } from "@/lib/scene/markers";
 import { createDockLayer } from "@/lib/scene/dock-layer";
+import {
+  createLocalNavLayer,
+  type LocalNavLayer,
+} from "@/lib/scene/local-nav-layer";
 import { EDL_LAYER, createEdlPass, type EdlPass } from "@/lib/scene/edl";
 import {
   createDashedRibbon,
@@ -144,8 +148,10 @@ interface PointCloudCanvasProps {
    */
   dockPath?: PlannedPath;
   /**
-   * Hide the path layer — the route, and a dock's staging leg and approach
-   * with it — without unmounting the canvas. Defaults to true.
+   * Hide the path layer — the route, a dock's staging leg and approach, and
+   * what the robot sees and means to drive around it while it navigates (the
+   * telemetry feed's local costmap and trajectory) — without unmounting the
+   * canvas. Defaults to true.
    */
   showPath?: boolean;
   /**
@@ -329,6 +335,20 @@ export function PointCloudCanvas({
   const edlRef = React.useRef<EdlPass | null>(null);
   /** The route's band while it is drawn, so a floor switch can cut it without a rebuild. */
   const pathRibbonRef = React.useRef<PathRibbon | null>(null);
+  /**
+   * The robot's local costmap and trajectory, one per scene. The render loop
+   * feeds it from the telemetry feed and keeps it on the robot's ground.
+   */
+  const localNavRef = React.useRef<LocalNavLayer | null>(null);
+  /**
+   * The feed's costmap and trajectory last handed to the layer, compared by
+   * identity like the pose. Reset by a scene rebuild, so the new layer is
+   * handed the latest of each on its first frame instead of the next message.
+   */
+  const appliedLocalCostmapRef = React.useRef<unknown>(undefined);
+  const appliedLocalPlanRef = React.useRef<unknown>(undefined);
+  /** `showPath` for the scene setup, which must not rebuild on a toggle. */
+  const showPathRef = React.useRef(showPath);
 
   // Keep the latest onStatus without forcing the setup effect to re-run.
   const onStatusRef = React.useRef(onStatus);
@@ -485,6 +505,21 @@ export function PointCloudCanvas({
       latestJointsRef.current = nextJoints;
       applyJoints();
     }
+
+    // Only while a navigation runs; the backend's empty frames clear them.
+    const localNav = localNavRef.current;
+    if (localNav) {
+      const nextCostmap = feed.localCostmap.current;
+      if (nextCostmap !== appliedLocalCostmapRef.current) {
+        appliedLocalCostmapRef.current = nextCostmap;
+        localNav.setCostmap(nextCostmap);
+      }
+      const nextPlan = feed.localPlan.current;
+      if (nextPlan !== appliedLocalPlanRef.current) {
+        appliedLocalPlanRef.current = nextPlan;
+        localNav.setPlan(nextPlan);
+      }
+    }
   }, [setTargetPose, applyJoints]);
 
   // ---- Scene setup (rebuilds on map / theme change) --------------------
@@ -617,6 +652,15 @@ export function PointCloudCanvas({
     robotGroup.visible = false;
     scene.add(robotGroup);
 
+    // The robot's local costmap and trajectory. Part of the path layer, so
+    // the same toggle hides them; empty until a navigation sends them.
+    const localNav = createLocalNavLayer(theme);
+    localNav.group.visible = showPathRef.current;
+    scene.add(localNav.group);
+    localNavRef.current = localNav;
+    appliedLocalCostmapRef.current = undefined;
+    appliedLocalPlanRef.current = undefined;
+
     // `cancelled` matters here: add() reparents, so a stale callback would
     // steal the shared model from the rebuilt scene's group.
     loadRobotModel()
@@ -723,6 +767,13 @@ export function PointCloudCanvas({
         controls.target.set(cur.x, cur.y, cur.z);
       }
 
+      // The local costmap and trajectory lie on the ground the machine stands
+      // on (its body height under base_link), never under the floor plan, as
+      // the route's band is held over it.
+      if (cur) {
+        localNav.setGround(Math.max(cur.z - ROBOT_BASE_HEIGHT_M, GROUND_FLOOR_Z_M));
+      }
+
       // An initial-pose drag draws the robot at the dragged pose, un-eased so
       // it tracks the pointer 1:1.
       const drawn = posePreviewRef.current ?? cur;
@@ -758,6 +809,9 @@ export function PointCloudCanvas({
       // Detach the cached robot model first, or the sweep would dispose it for
       // every later mount.
       robotGroup.clear();
+      // Its texture is beyond the sweep's reach.
+      localNav.dispose();
+      if (localNavRef.current === localNav) localNavRef.current = null;
       scene.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         if (mesh.geometry) mesh.geometry.dispose();
@@ -1106,6 +1160,14 @@ export function PointCloudCanvas({
       ribbon.dispose();
     };
   }, [path, showPath, meta, mapImageUrl, resolvedTheme]);
+
+  // ---- The robot's local costmap and trajectory ---------------------------
+  // Built with the scene and fed by the render loop; only the path toggle
+  // reaches it from here, without a rebuild.
+  React.useEffect(() => {
+    showPathRef.current = showPath;
+    if (localNavRef.current) localNavRef.current.group.visible = showPath;
+  }, [showPath]);
 
   // ---- A dock's approach band ---------------------------------------------
   // The route's rule: each sample replaces the last, the empty one erases it.

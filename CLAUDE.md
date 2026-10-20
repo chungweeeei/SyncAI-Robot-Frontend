@@ -267,7 +267,10 @@ lib/
                 keeps its 0)
   scene/        three.js scene building for the 3D viewport: theme, markers,
                 vertex layer, zone layer, path ribbon, the running dock's
-                staging point and leg (dock-layer.ts), the 3D map's voxel
+                staging point and leg (dock-layer.ts), what the robot sees
+                and means to drive around it while it navigates
+                (local-nav-layer.ts: its costmap as one texture, each cost's
+                opacity, and its trajectory), the 3D map's voxel
                 layer (one cell-sized point per occupied cell, coloured by
                 height, held in height order so a floor is one draw range;
                 it thins the floor plan while up and lends its box to
@@ -584,6 +587,14 @@ As built:
   belong in state; a value a component branches on does. `dockPath` (the
   robot's predicted last metre onto a dock, 2 Hz, its own frame type so a
   dock's clear never erases the route) is state for the same reason. The
+  robot's local picture — `localCostmap` (2 Hz, the costmap its controller
+  steers on, base64 cells) and `localPlan` (5 Hz, the next 2 s it means to
+  drive) — is on the feed as refs beside pose and joints, because only the
+  render loop reads it: `PointCloudCanvas` hands each new one to its
+  `LocalNavLayer` (`lib/scene/local-nav-layer.ts`) by identity and keeps the
+  layer on the robot's ground every frame. The backend sends both only while
+  a navigation it sent is running, and once empty when it ends; the path
+  toggle hides them with the route. The
   staging point is not on the socket at all: the robot does not publish it,
   so the dashboard derives it with `stagingPose` from the dock pose the
   running job's `GET /tasks/{id}` step carries (`liveDock` in
