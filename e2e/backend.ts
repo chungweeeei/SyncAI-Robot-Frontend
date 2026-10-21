@@ -612,6 +612,30 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         : json(route, { detail: `Task ${id} not found` }, 404);
     }
     if (path === "/api/v1/maps" && method === "GET") return json(route, maps);
+    const activateMatch = /^\/api\/v1\/maps\/([^/]+)\/activate$/.exec(path);
+    if (activateMatch && method === "POST") {
+      // The backend's rule: a floor plan or a 3D map, either one. `active`
+      // moves, so the cards' next read shows the switch.
+      const name = decodeURIComponent(activateMatch[1]);
+      const map = maps.find((entry) => entry.name === name);
+      if (!map) return json(route, { detail: `Map "${name}" not found` }, 404);
+      if (map.grid_status !== "ok" && map.octomap_status !== "ok") {
+        return json(
+          route,
+          { detail: `'${name}' has no floor plan and no 3D map.`, code: "grid_missing" },
+          409,
+        );
+      }
+      const previous = maps.find((entry) => entry.active)?.name ?? null;
+      for (const entry of maps) entry.active = entry.name === name;
+      return json(route, {
+        name,
+        previous,
+        switched: true,
+        localized: false,
+        message: `Switched to '${name}'. Set an initial pose on the dashboard.`,
+      });
+    }
     const mapMatch = /^\/api\/v1\/maps\/([^/]+)$/.exec(path);
     if (mapMatch && method === "GET") {
       // The editor's first request; a name not in the catalogue is a 404

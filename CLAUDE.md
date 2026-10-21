@@ -239,7 +239,9 @@ lib/
                 the task editor's floor plan preview (preview.ts: fit, markers,
                 hit test), the gesture rules both map surfaces share
                 (gesture.ts: press intent, drag deadzone, heading, band), the
-                job lock (run-lock.ts), the mapping run strip's face rule
+                job lock (run-lock.ts), which maps the robot may be switched
+                onto (switch.ts: a floor plan or a 3D map, either one — the
+                backend's rule), the mapping run strip's face rule
                 (run-face.ts: what the robot's run state lets the strip offer)
                 and the robot's 3D map (octree.ts: the `.bt` decoder — the
                 occupancy tree's own compact form, read into its occupied

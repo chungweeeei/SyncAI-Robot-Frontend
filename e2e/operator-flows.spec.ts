@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { encodeOctomapBt } from "@/lib/map/octree";
+import { SWITCH_NO_MAP } from "@/lib/map/switch";
 import { OCTREE_KEY_ORIGIN } from "@/lib/types/octree";
 
 import {
@@ -136,6 +137,56 @@ test.describe("the map library", () => {
     await expect(
       page.getByRole("link", { name: `Edit ${MAP_NAME}` }),
     ).toHaveAttribute("href", `/maps/${MAP_NAME}/edit`);
+  });
+
+  test("switches the robot onto a map with a 3D map and no floor plan", async ({ page }) => {
+    // The robot navigates a map on its 3D map whenever it has one, so a
+    // missing floor plan is no reason to hold the switch. A map with neither
+    // still is, with the reason where the button would be.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, {
+      maps: [
+        mapSummary({ active: true, name: "site-2d" }),
+        mapSummary({
+          active: false,
+          name: "site-3d",
+          grid: null,
+          thumbnail: null,
+          grid_status: "none",
+          ...withOctomap(),
+        }),
+        mapSummary({
+          active: false,
+          name: "site-bare",
+          grid: null,
+          thumbnail: null,
+          grid_status: "none",
+        }),
+      ],
+    });
+    await page.goto("/maps");
+
+    const bare = page.getByRole("article").filter({ hasText: "site-bare" });
+    await expect(bare.locator(`span[aria-disabled="true"][title="${SWITCH_NO_MAP}"]`)).toHaveCount(1);
+    await expect(
+      page.getByRole("button", { name: "Switch the robot to site-bare" }),
+    ).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Switch the robot to site-3d" }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Switch", exact: true })
+      .click();
+
+    await expect(page.getByText("Switched to 'site-3d'.")).toBeVisible();
+    await expect(
+      page.getByRole("article").filter({ hasText: "site-3d" }).getByLabel("In use"),
+    ).toBeVisible();
+    expect(
+      writes.filter((w) => w.path.endsWith("/activate")).map((w) => `${w.method} ${w.path}`),
+    ).toEqual(["POST /api/v1/maps/site-3d/activate"]);
+    expect(errors, "the page logged errors").toEqual([]);
   });
 
   test("shows a card its 3D map when it has one, else its floor plan", async ({ page }) => {
