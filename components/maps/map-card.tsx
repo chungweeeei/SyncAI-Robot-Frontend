@@ -7,7 +7,6 @@ import { MapActivateControl } from "@/components/maps/map-activate-control";
 import { MapDeleteControl } from "@/components/maps/map-delete-control";
 import { MapEditLink } from "@/components/maps/map-edit-link";
 import { MapExportControl } from "@/components/maps/map-export-control";
-import { MapGroundLink } from "@/components/maps/map-ground-link";
 import { MapRenameControl } from "@/components/maps/map-rename-control";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useInView } from "@/hooks/use-in-view";
@@ -197,7 +196,7 @@ function GridStatusNote({ map }: { map: MapSummary }) {
  * No readouts, by request — the screen answers "which maps are here and which
  * is loaded"; what a map measures is the editor's business. Always shown: "In
  * use", the floor plan chip and its note — a map the robot can't load must say
- * so at a glance, and a conversion in flight is why Edit is greyed.
+ * so at a glance, and a conversion in flight is why Edit may be greyed.
  *
  * "In use" gets three signals so one card wins outright: a solid corner check,
  * a ring, and first place in the sort. `aria-current` carries it to a screen
@@ -256,7 +255,6 @@ export function MapCard({
       )}
       <MapDeleteControl map={map} onDeleted={onDeleted} />
       <MapEditLink map={map} />
-      <MapGroundLink map={map} />
       <MapThumbnail map={map} />
 
       <div className="px-3 py-3">

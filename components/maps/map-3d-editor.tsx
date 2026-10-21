@@ -36,8 +36,10 @@ import type { MapVertex, VertexType } from "@/lib/types/map";
 import type { OccupiedVoxels } from "@/lib/types/octree";
 import type { PlanarPose } from "@/lib/types/robot";
 
+const subscribeNoop = () => () => {};
+
 /**
- * The 3D map page: the 3D map in 3D, and the map's waypoints on it. It is
+ * The editor's 3D view: the 3D map in 3D, and the map's waypoints on it. It is
  * where a map with no floor plan gets its waypoints, which the floor plan
  * editor cannot place without a raster to place them on. They are written
  * as they are placed, the dashboard's flow, so there is nothing to save.
@@ -55,8 +57,16 @@ export function Map3dEditor({
 }) {
   const entry = useMapEntry(name);
   const tree = useMapOctomap(name);
+  // The status strip reads the catalogue too, so the entry can be cached
+  // before this boundary hydrates; a guard drawn from it then would not be
+  // the "Loading" the server drew without one.
+  const mounted = React.useSyncExternalStore(
+    subscribeNoop,
+    () => true,
+    () => false,
+  );
 
-  if (entry && entry.octomap_status !== "ok") {
+  if (mounted && entry && entry.octomap_status !== "ok") {
     return (
       <Guard title="Cannot open the 3D map">
         {entry.octomap_status === "converting"

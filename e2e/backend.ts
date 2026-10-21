@@ -19,7 +19,7 @@ export const MAP_NAME = "dp2f";
 /**
  * A 3D map the size of a doormat: a `size`×`size` floor one cell thick,
  * half a metre under the origin like the robot's own floor. Enough for the
- * dashboard to draw and for the 3D map page to place waypoints on. Built by
+ * dashboard to draw and for the editor's 3D view to place waypoints on. Built by
  * the console's own encoder, which the decoder's unit tests pin, so the fake
  * and the client agree on the bit order. A phone test that pinches hands in
  * a larger one, since four cells already fill a phone at the closest zoom.

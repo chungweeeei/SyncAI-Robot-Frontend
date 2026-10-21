@@ -196,15 +196,18 @@ components/
                 one — a still drawn in the browser once the card nears the
                 screen, lib/scene/voxel-snapshot.ts, each storey cut under
                 its ceiling — else its floor plan thumbnail, and the floor
-                plan again when the tree cannot be read), the gridmap editor
-                (grid-canvas) and the
-                3D map page (/maps/[name]/3d, map-3d-canvas: the 3D map
-                in 3D, orbited freely, its heights narrowed by a band or a
-                floor, and a Waypoint tool — the dashboard's place, tap,
-                re-place and delete, written at once — which is where a
-                map with no floor plan gets its waypoints: the card's pencil
-                and the task editor's links open it with Waypoint armed
-                there)
+                plan again when the tree cannot be read), and the map's
+                editor (/maps/[name]/edit, map-editor: one page, two views,
+                the 2D / 3D switch in its header for a map with both and
+                the view in the URL — which views a map has is
+                lib/map/links.ts's editorViews): the gridmap editor
+                (map-grid-editor, grid-canvas) and the 3D view
+                (?view=3d, map-3d-editor, map-3d-canvas: the 3D map in 3D,
+                orbited freely, its heights narrowed by a band or a floor,
+                and a Waypoint tool — the dashboard's place, tap, re-place
+                and delete, written at once — which is where a map with no
+                floor plan gets its waypoints: the card's pencil opens it
+                there, and the task editor's links with Waypoint armed)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
                 and the /tasks/editor page (step composer, name, save, delete)
@@ -241,9 +244,12 @@ lib/
                 hit test), the gesture rules both map surfaces share
                 (gesture.ts: press intent, drag deadzone, heading, band), the
                 job lock (run-lock.ts), where a map's waypoints are placed
-                (links.ts: waypointEditor — the floor plan editor, else the
-                3D map page, else nowhere — the rule every link offering to
-                place them goes through), which maps the robot may be switched
+                (links.ts: waypointEditor — the editor's floor plan view, else
+                its 3D view, else nowhere — the rule every link offering to
+                place them goes through) and which views the map editor offers
+                (editorViews: the floor plan unless it is mid-conversion,
+                then a finished 3D map; the first is where the pencil opens,
+                and a bare /edit is always the floor plan), which maps the robot may be switched
                 onto (switch.ts: a floor plan or a 3D map, either one — the
                 backend's rule), the mapping run strip's face rule
                 (run-face.ts: what the robot's run state lets the strip offer)
@@ -252,12 +258,12 @@ lib/
                 cells with the tree's 16-bit keys — and the encoder the tests
                 and the e2e fake build trees with), with where it shows the
                 ground (ground.ts: each column's floor inside a height
-                band, the floor a band mostly stands on, which the 3D map
-                page frames its view on, the ground under a point and the
+                band, the floor a band mostly stands on, which the editor's
+                3D view frames itself on, the ground under a point and the
                 column under it), the z a placed waypoint is written with
                 (waypoint-ground.ts: the ground under it on the floor
                 picked, a re-placed stop's own with none, else the ground
-                floor's 0 — the rule the dashboard and the 3D map page
+                floor's 0 — the rule the dashboard and the editor's 3D view
                 share), and the floors of a
                 map that spans storeys (floors.ts: the band each floor owns —
                 from a metre under its level, so a slab's top is in the
@@ -282,11 +288,11 @@ lib/
                 it thins the floor plan while up and lends its box to
                 Recenter when there is no floor plan), the eye-dome
                 lighting that outlines the 3D map by depth (edl.ts: the
-                3D map page's whole scene; on the dashboard only the
+                editor's whole 3D view; on the dashboard only the
                 map's own layer, the rest drawn over it against its
                 depth, so a scan point is not ringed), camera policy (the
-                opening, overhead and front framings, and the 3D map
-                page's: the primary button orbits until Waypoint is armed,
+                opening, overhead and front framings, and the editor's
+                3D view's: the primary button orbits until Waypoint is armed,
                 then places while the right button orbits), picking,
                 robot mesh
   theme/        the signal hues both canvases draw with, and the height ramp

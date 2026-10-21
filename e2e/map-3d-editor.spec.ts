@@ -7,6 +7,7 @@ import {
   MAP_NAME,
   activeTask,
   failOnConsoleErrors,
+  floorPlanPng,
   mapSummary,
   mockBackend,
   taskState,
@@ -16,11 +17,15 @@ import {
 } from "./backend";
 
 /**
- * The 3D map page: the fake's doormat-sized 3D map (see octomapBt in
- * backend.ts), half a metre under the origin, and the map's waypoints on it.
- * Every test that writes asserts what the console sent, not only what the
- * screen says.
+ * The map editor's 3D view: the fake's doormat-sized 3D map (see octomapBt
+ * in backend.ts), half a metre under the origin, and the map's waypoints on
+ * it; and the 2D / 3D switch between it and the floor plan. Every test that
+ * writes asserts what the console sent, not only what the screen says.
  */
+
+const VIEW_3D = `/maps/${MAP_NAME}/edit?view=3d`;
+const viewSwitch = (page: Page) => page.getByRole("group", { name: "View" });
+const drawList = (page: Page) => page.getByRole("combobox", { name: "Draw" });
 
 /**
  * The middle of the canvas. The page opens looking at the middle of the map
@@ -32,32 +37,124 @@ async function centreOnScreen(page: Page) {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
-test.describe("the 3D map page", () => {
-  test("is reached from the card only for a map with a 3D map", async ({ page }) => {
+test.describe("the editor's 3D view", () => {
+  test("opens a map with both on its floor plan, and switches to the 3D map and back", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, {
+      maps: [mapSummary(withOctomap())],
+      gridImage: floorPlanPng(400, 300, 254),
+    });
+    await page.goto("/maps");
+    const pencil = page.getByRole("link", { name: `Edit ${MAP_NAME}` });
+    await expect(pencil).toHaveAttribute("href", `/maps/${MAP_NAME}/edit`);
+    await pencil.click();
+
+    await expect(drawList(page)).toBeVisible();
+    await expect(viewSwitch(page).getByRole("button", { name: "2D" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await viewSwitch(page).getByRole("button", { name: "3D" }).click();
+    await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit\\?view=3d$`));
+    await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+    await expect(drawList(page)).toHaveCount(0);
+
+    await viewSwitch(page).getByRole("button", { name: "2D" }).click();
+    await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit$`));
+    await expect(drawList(page)).toBeVisible();
+    await expect(page.getByTestId("map-3d-canvas")).toHaveCount(0);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("asks before a switch drops unsaved floor plan changes", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, {
+      maps: [mapSummary(withOctomap())],
+      gridImage: floorPlanPng(400, 300, 254),
+    });
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    const canvas = page.locator("canvas");
+    await canvas.waitFor();
+
+    // A Wall stroke over free cells: a real, unsaved change.
+    await drawList(page).click();
+    await page.getByRole("option", { name: "Wall", exact: true }).click();
+    await page.getByRole("button", { name: "Brush" }).click();
+    const box = (await canvas.boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height * 0.6;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 60, y, { steps: 4 });
+    await page.mouse.up();
+    const save = page.getByRole("button", { name: "Save" });
+    await expect(save).toBeEnabled();
+
+    // Declined: still the floor plan, the stroke still unsaved.
+    const asked: string[] = [];
+    page.once("dialog", (dialog) => {
+      asked.push(dialog.message());
+      void dialog.dismiss();
+    });
+    await viewSwitch(page).getByRole("button", { name: "3D" }).click();
+    await expect.poll(() => asked).toHaveLength(1);
+    expect(asked[0]).toMatch(/unsaved changes/);
+    await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit$`));
+    await expect(save).toBeEnabled();
+
+    // Accepted: the 3D view, and nothing was written on the way.
+    page.once("dialog", (dialog) => void dialog.accept());
+    await viewSwitch(page).getByRole("button", { name: "3D" }).click();
+    await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit\\?view=3d$`));
+    await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+    expect(writes).toEqual([]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("offers no switch on a map with one view", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page, {
       maps: [
-        mapSummary({ name: "flat", active: false }),
-        mapSummary({ name: "solid", active: true, ...withOctomap() }),
+        mapSummary({ name: "flat", active: true }),
+        mapSummary({
+          name: "solid",
+          active: false,
+          grid: null,
+          thumbnail: null,
+          grid_status: "none",
+          ...withOctomap(),
+        }),
       ],
+      gridImage: floorPlanPng(400, 300, 254),
     });
-    await page.goto("/maps");
-    await expect(page.getByRole("heading", { name: "Maps", level: 1 })).toBeVisible();
 
-    await expect(page.getByRole("link", { name: "Open the 3D map of flat" })).toHaveCount(0);
-    const link = page.getByRole("link", { name: "Open the 3D map of solid" });
-    await expect(link).toHaveAttribute("href", "/maps/solid/3d");
+    await page.goto("/maps/flat/edit");
+    await expect(drawList(page)).toBeVisible();
+    await expect(viewSwitch(page)).toHaveCount(0);
+
+    await page.goto("/maps/solid/edit?view=3d");
+    await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+    await expect(viewSwitch(page)).toHaveCount(0);
+    await expect(page.getByText("3D map", { exact: true })).toBeVisible();
     expect(errors, "the page logged errors").toEqual([]);
   });
 
   test("says why it cannot open a map with no 3D map", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    await mockBackend(page, { maps: [mapSummary()] });
-    await page.goto(`/maps/${MAP_NAME}/3d`);
+    await mockBackend(page, { maps: [mapSummary()], gridImage: floorPlanPng(400, 300, 254) });
+    await page.goto(VIEW_3D);
     await expect(page.getByText("This map has no 3D map.")).toBeVisible();
     await expect(page.getByTestId("map-3d-canvas")).toHaveCount(0);
+    // The switch still offers the way out, to the floor plan it does have.
+    await viewSwitch(page).getByRole("button", { name: "2D" }).click();
+    await expect(drawList(page)).toBeVisible();
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -67,7 +164,7 @@ test.describe("the 3D map page", () => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, { maps: [mapSummary(withOctomap())], vertices: [] });
-    await page.goto(`/maps/${MAP_NAME}/3d`);
+    await page.goto(VIEW_3D);
     const canvas = page.getByTestId("map-3d-canvas");
     await expect(canvas).toHaveAttribute("data-distance", /\d+/);
     const opening = await canvas.getAttribute("data-distance");
@@ -85,9 +182,10 @@ test.describe("the 3D map page", () => {
     await expect(dialog).toHaveCount(0);
 
     // Fit puts the camera back where it opened. The wheel zooms, with
-    // Waypoint still armed.
+    // Waypoint still armed — over the map, not the toolbar Fit left it on.
     await page.getByRole("button", { name: "Fit to view" }).click();
     await expect(canvas).toHaveAttribute("data-distance", opening!);
+    await page.mouse.move(centre.x, centre.y);
     await page.mouse.wheel(0, -400);
     await expect.poll(async () => Number(await canvas.getAttribute("data-distance"))).toBeLessThan(
       Number(opening),
@@ -128,7 +226,7 @@ test.describe("the 3D map page", () => {
         octomap: twoStoreys(),
         floors: { [MAP_NAME]: { detected: TWO_FLOORS } },
       });
-      await page.goto(`/maps/${MAP_NAME}/3d`);
+      await page.goto(VIEW_3D);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       const floors = page.getByRole("group", { name: "Floor" });
       await expect(floors.getByRole("button", { name: "All" })).toHaveAttribute(
@@ -179,10 +277,10 @@ test.describe("the 3D map page", () => {
       await page.mouse.up();
     }
 
-    test("is reached from the card's pencil, with Waypoint armed", async ({ page }) => {
+    test("is reached from the card's pencil, opening on Orbit", async ({ page }) => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
-      const writes = await mockBackend(page, {
+      await mockBackend(page, {
         maps: [
           treeOnly(),
           // Neither a floor plan nor a 3D map: nothing for the pencil to open.
@@ -199,23 +297,23 @@ test.describe("the 3D map page", () => {
       await page.goto("/maps");
       await expect(page.getByRole("heading", { name: "Maps", level: 1 })).toBeVisible();
 
-      await expect(page.getByRole("link", { name: /^Edit (the waypoints of )?bare$/ })).toHaveCount(0);
-      const pencil = page.getByRole("link", { name: `Edit the waypoints of ${MAP_NAME}` });
-      // Not the floor plan editor, which has no raster to open here.
-      await expect(pencil).toHaveAttribute("href", `/maps/${MAP_NAME}/3d?tool=waypoint`);
+      await expect(page.getByRole("link", { name: "Edit bare" })).toHaveCount(0);
+      const pencil = page.getByRole("link", { name: `Edit ${MAP_NAME}` });
+      // The 3D view, named: there is no floor plan view to open here.
+      await expect(pencil).toHaveAttribute("href", VIEW_3D);
       await pencil.click();
-      await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/3d\\?tool=waypoint$`));
+      await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit\\?view=3d$`));
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
-
-      const tool = page.getByRole("button", { name: "Waypoint" });
-      await expect(tool).toHaveAttribute("aria-pressed", "true");
-      // Armed for real, not only drawn pressed: the first press asks for a
-      // name with no click on the tool before it.
-      await pressAndAim(page);
-      const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
-      await expect(dialog).toBeVisible();
-      await dialog.getByRole("button", { name: "Cancel" }).click();
-      expect(writes.filter((w) => w.path.endsWith("/vertices"))).toEqual([]);
+      // An editor opened to look round, as the floor plan's opens on Pan:
+      // only a link that came to place waypoints arms the tool.
+      await expect(page.getByRole("button", { name: "Orbit" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await expect(page.getByRole("button", { name: "Waypoint" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
 
       await page.getByRole("button", { name: "Back to maps" }).click();
       await expect(page).toHaveURL(/\/maps$/);
@@ -238,7 +336,7 @@ test.describe("the 3D map page", () => {
         activeTasks,
         taskStates: states,
       });
-      await page.goto(`/maps/${MAP_NAME}/3d?tool=waypoint`);
+      await page.goto(`${VIEW_3D}&tool=waypoint`);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
 
       const tool = page.getByRole("button", { name: "Waypoint" });
@@ -262,26 +360,34 @@ test.describe("the 3D map page", () => {
       await page.goto("/tasks/editor");
       await page.getByTitle("Drive to a pose in the map frame.").click();
 
-      const href = `/maps/${MAP_NAME}/3d?tool=waypoint&from=tasks`;
+      const href = `${VIEW_3D}&tool=waypoint&from=tasks`;
       // The row's hint names the 3D map, which is where they go on this map.
       const hint = page.getByText(/has no waypoints yet/);
       await expect(hint).toContainText("place some on the 3D map first.");
       await expect(hint.getByRole("link", { name: "place some" })).toHaveAttribute("href", href);
 
       await page.getByRole("link", { name: "Add waypoints on the 3D map" }).click();
-      await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/3d\\?tool=waypoint&from=tasks$`));
+      await expect(page).toHaveURL(
+        new RegExp(`/maps/${MAP_NAME}/edit\\?view=3d&tool=waypoint&from=tasks$`),
+      );
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       await expect(page.getByRole("button", { name: "Waypoint" })).toHaveAttribute(
         "aria-pressed",
         "true",
       );
+      // Armed for real, not only drawn pressed: the first press asks for a
+      // name with no click on the tool before it.
+      await pressAndAim(page);
+      const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole("button", { name: "Cancel" }).click();
 
       await page.getByRole("button", { name: "Back to tasks" }).click();
       await expect(page).toHaveURL(/\/tasks\/editor$/);
       expect(errors, "the page logged errors").toEqual([]);
     });
 
-    test("stays on the 3D map page across a rename", async ({ page }) => {
+    test("stays in the 3D view across a rename", async ({ page }) => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
       const map = treeOnly();
@@ -302,7 +408,7 @@ test.describe("the 3D map page", () => {
           },
         });
       });
-      await page.goto(`/maps/${MAP_NAME}/3d?tool=waypoint`);
+      await page.goto(`${VIEW_3D}&tool=waypoint`);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
 
       await page.getByRole("heading", { name: new RegExp(`^${MAP_NAME} — `) }).dblclick();
@@ -310,8 +416,8 @@ test.describe("the 3D map page", () => {
       await input.fill("dp3f");
       await input.press("Enter");
 
-      // Not the floor plan editor, which this map has no floor plan for.
-      await expect(page).toHaveURL(/\/maps\/dp3f\/3d\?tool=waypoint$/);
+      // Not the floor plan view, which this map has no floor plan for.
+      await expect(page).toHaveURL(/\/maps\/dp3f\/edit\?view=3d&tool=waypoint$/);
       expect(sent).toEqual({ name: "dp3f" });
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       expect(errors, "the page logged errors").toEqual([]);
@@ -323,7 +429,7 @@ test.describe("the 3D map page", () => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
       const writes = await mockBackend(page, { maps: [treeOnly()], vertices: [] });
-      await page.goto(`/maps/${MAP_NAME}/3d`);
+      await page.goto(VIEW_3D);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
 
       // Positive control: with no tool armed a press only turns the map.
@@ -377,7 +483,7 @@ test.describe("the 3D map page", () => {
       failOnConsoleErrors(page, errors);
       const stop = vertex({ name: "lobby", type: "MOVE", x: 0.2, y: 0.2, theta: 0, z: 0 });
       const writes = await mockBackend(page, { maps: [treeOnly()], vertices: [stop] });
-      await page.goto(`/maps/${MAP_NAME}/3d`);
+      await page.goto(VIEW_3D);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
 
       const centre = await centreOnScreen(page);

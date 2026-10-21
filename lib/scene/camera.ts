@@ -152,7 +152,7 @@ export function frontViewAround(camera: THREE.PerspectiveCamera, controls: Orbit
 }
 
 /**
- * The 3D map page's controls. With no tool armed the primary button orbits
+ * The 3D view's controls. With no tool armed the primary button orbits
  * (nothing here aims a goal, unlike the dashboard), right-drag pans, one
  * finger orbits and two pan and pinch. With Waypoint armed the primary
  * button and one finger place the stop, so OrbitControls is told to ignore
@@ -173,7 +173,7 @@ export function applyMap3dControls(controls: OrbitControls, placing: boolean) {
 }
 
 /**
- * The 3D map page's opening view: `frameMap`'s three-quarter view, with the
+ * The 3D view's opening view: `frameMap`'s three-quarter view, with the
  * target on the floor the shown heights mostly stand on rather than at z=0.
  * The middle of the screen is then the middle of the map on that floor.
  */

@@ -61,7 +61,7 @@ export interface Map3dCanvasProps {
 }
 
 /**
- * The 3D map page's surface: the 3D map in 3D, orbited freely, and the
+ * The 3D view's surface: the 3D map in 3D, orbited freely, and the
  * map's waypoints on it.
  *
  * Waypoint is the dashboard's placing gesture (pointcloud-canvas.tsx): a

@@ -27,7 +27,7 @@ function swatchColor(level: number, lo: number, hi: number): string {
  * Which floor of a multi-storey 3D map is on show: a pill-shaped column in
  * the 3D view's top-right corner — All at the top, then each floor, the top
  * floor first, as a lift's panel reads. Shared by the dashboard's 3D map and
- * the 3D map page, so a floor reads the same on both.
+ * the editor's 3D view, so a floor reads the same on both.
  *
  * The floor on show is a solid pill that slides to the button pressed, so
  * the change is seen where the eye already is. Each floor carries a swatch
@@ -46,7 +46,7 @@ export function FloorPicker({
   floors: readonly MapFloor[];
   /**
    * The floor's name, null for the whole map, or undefined for heights set
-   * some other way (the 3D map page's sliders), which presses nothing.
+   * some other way (the 3D view's sliders), which presses nothing.
    */
   value: string | null | undefined;
   onChange: (name: string | null) => void;

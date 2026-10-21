@@ -134,7 +134,7 @@ describe("frontViewAround", () => {
   });
 });
 
-describe("the 3D map page's controls", () => {
+describe("the 3D view's controls", () => {
   it("gives the primary button and one finger to Waypoint only while it is armed", () => {
     const { controls } = rig();
     applyMap3dControls(controls, false);

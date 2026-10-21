@@ -1245,7 +1245,7 @@ export function PointCloudCanvas({
   // reason. Beyond adding its marks it thins the floor plan while it is up
   // (see thinGroundUnderVoxels), lends its box to Recenter and Top down
   // when there is no floor plan to frame, and is shaded by depth as on the
-  // 3D map page (lib/scene/edl.ts); the cleanup undoes all three, so turning
+  // editor's 3D view (lib/scene/edl.ts); the cleanup undoes all three, so turning
   // the layer off restores the viewport without a rebuild.
   React.useEffect(() => {
     const ctx = sceneRef.current;

@@ -1,6 +1,6 @@
 // Where the 3D map shows the ground: each column's floor inside a height
 // band, the height a floor mostly stands on, and the ground under a point.
-// Read by the 3D map page and the dashboard to stand a placed waypoint on
+// Read by the editor's 3D view and the dashboard to stand a placed waypoint on
 // the floor it was placed on, and to frame a view on it.
 
 import type { GridSize } from "@/lib/map/grid";
@@ -67,8 +67,8 @@ export function kzToMetres(kz: number, voxels: OccupiedVoxels): number {
 
 /**
  * The floor the shown heights mostly stand on: the median of every column's
- * floor, relative kz, or null with no floor in the band. What the 3D map
- * page frames its view on, so the middle of the screen is the middle of the
+ * floor, relative kz, or null with no floor in the band. What the editor's
+ * 3D view frames itself on, so the middle of the screen is the middle of the
  * map at the height the robot walks, not under it.
  */
 export function medianFloor(floors: ColumnFloors): number | null {

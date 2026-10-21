@@ -13,7 +13,7 @@ import { ToolButton, ToolDivider, ToolGroup, ToolStrip } from "@/components/cons
 import type { Map3dTool } from "@/components/maps/map-3d-canvas";
 
 /*
- * The 3D map page's one strip, built like the floor plan editor's: the view
+ * The 3D view's one strip, built like the floor plan editor's: the view
  * (fit, zoom, shading), then the tools — Orbit and Waypoint. Orbit first for
  * the floor plan editor's reason: the strip opens on it. No Save: a
  * waypoint is written as it is placed, as on the dashboard.

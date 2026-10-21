@@ -432,7 +432,7 @@ test.describe("the console on a phone", () => {
     expect(body.kind).toBe("goal");
   });
 
-  test("zooms the 3D map page with two fingers, and places a waypoint with one", async ({
+  test("zooms the editor's 3D view with two fingers, and places a waypoint with one", async ({
     page,
   }) => {
     // A 40×40 floor (4 m; see octomapBt). On a phone the heights panel hangs
@@ -443,7 +443,7 @@ test.describe("the console on a phone", () => {
       octomap: octomapBt(40),
       vertices: [],
     });
-    await page.goto(`/maps/${MAP_NAME}/3d`);
+    await page.goto(`/maps/${MAP_NAME}/edit?view=3d`);
     const canvas = page.getByTestId("map-3d-canvas");
     await expect(canvas).toHaveAttribute("data-distance", /\d+/);
     const box = (await canvas.boundingBox())!;

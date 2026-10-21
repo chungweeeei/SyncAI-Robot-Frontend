@@ -83,7 +83,7 @@ export const queryKeys = {
   mapPointCloud: (name: string) => ["map-point-cloud", name] as const,
   /**
    * GET /api/v1/maps/<name>/octomap, decoded — the dashboard's "3D map" and
-   * the 3D map page's, one entry shared by both.
+   * the 3D view's, one entry shared by both.
    *
    * Keyed like `mapImage`, by a version the catalogue reports
    * (`octomap_version`, see useMapOctomap): unlike the scan, the tree is
@@ -109,7 +109,7 @@ export const queryKeys = {
       : (["map-octomap-preview", name, version, levels ?? ""] as const),
   /**
    * GET /api/v1/maps/<name>/floors — the storeys a map spans, which the
-   * dashboard's 3D map and the 3D map page both pick a band from, so a
+   * dashboard's 3D map and the editor's 3D view both pick a band from, so a
    * rename on one is the other's list too. A save writes its answer here; a
    * mapping save into the name drops it, since the detection reads the new
    * walk.

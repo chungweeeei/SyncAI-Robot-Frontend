@@ -23,7 +23,7 @@ import type { MapVertex } from "@/lib/types/map";
  * secondary action, for a stop that turns out to be in a wall. Delete asks
  * once more, since the write goes through with no undo.
  *
- * Without `onConfirm` there is no Move: the 3D map page opens maps the robot
+ * Without `onConfirm` there is no Move: the editor's 3D view opens maps the robot
  * is not running on, where a goal would only be refused, and is an editor
  * rather than somewhere to send the robot from.
  */

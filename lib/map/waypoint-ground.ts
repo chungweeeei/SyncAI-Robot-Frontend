@@ -1,5 +1,5 @@
 // The height a waypoint placed on a 3D map is stored at: the rule the
-// dashboard and the 3D map page share, so a stop put down on either lands at
+// dashboard and the editor's 3D view share, so a stop put down on either lands at
 // the same z.
 
 import { type FloorBand, floorGround } from "@/lib/map/floors";
