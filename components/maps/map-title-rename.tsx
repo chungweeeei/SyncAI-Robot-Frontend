@@ -23,8 +23,19 @@ const DIRTY_REASON =
  * it has no MapSummary to grey from. Its own refusal is `dirty`: a rename
  * navigates to the new route, which reloads the grid and would throw unsaved
  * cells away.
+ *
+ * `page` is the screen it heads, which the rename lands back on: the floor
+ * plan editor, or the 3D map page, whose map may have no floor plan to open.
  */
-export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }) {
+export function MapTitleRename({
+  name,
+  dirty,
+  page,
+}: {
+  name: string;
+  dirty: boolean;
+  page: "edit" | "3d";
+}) {
   const router = useRouter();
   const rename = useRenameMap();
 
@@ -82,8 +93,8 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
           setEditing(false);
           setNote(result.message);
           // replace, not push: the old URL names a directory that no longer
-          // exists. The query (editor mode, back target) rides along.
-          router.replace(`/maps/${encodeURIComponent(trimmed)}/edit${window.location.search}`);
+          // exists. The query (editor mode or tool, back target) rides along.
+          router.replace(`/maps/${encodeURIComponent(trimmed)}/${page}${window.location.search}`);
         },
       },
     );

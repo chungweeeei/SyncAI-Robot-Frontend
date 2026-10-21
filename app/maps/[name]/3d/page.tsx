@@ -58,7 +58,7 @@ function Map3dScreen() {
         >
           <ArrowLeftIcon className="size-3.5" aria-hidden />
         </button>
-        <MapTitleRename name={name} dirty={dirty} />
+        <MapTitleRename name={name} dirty={dirty} page="3d" />
         <span className="instrument-label text-muted-foreground">3D map</span>
       </header>
 

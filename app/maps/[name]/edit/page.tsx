@@ -63,7 +63,7 @@ function MapEditScreen() {
         >
           <ArrowLeftIcon className="size-3.5" aria-hidden />
         </button>
-        <MapTitleRename name={name} dirty={dirty} />
+        <MapTitleRename name={name} dirty={dirty} page="edit" />
       </header>
 
       <div className="min-h-0 flex-1">

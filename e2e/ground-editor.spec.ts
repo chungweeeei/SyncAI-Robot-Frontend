@@ -460,6 +460,42 @@ test.describe("the ground editor", () => {
       expect(errors, "the page logged errors").toEqual([]);
     });
 
+    test("stays on the 3D map page across a rename", async ({ page }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const map = treeOnly();
+      await mockBackend(page, { maps: [map], vertices: [] });
+      // The fake has no map rename; this one renames its catalogue entry too.
+      let sent: unknown = null;
+      await page.route(new RegExp(`/api/v1/maps/${MAP_NAME}$`), async (route) => {
+        if (route.request().method() !== "PATCH") return route.fallback();
+        sent = route.request().postDataJSON();
+        map.name = "dp3f";
+        await route.fulfill({
+          json: {
+            old_name: MAP_NAME,
+            name: "dp3f",
+            vertices_moved: 0,
+            templates_moved: 0,
+            message: `Renamed '${MAP_NAME}' to 'dp3f'.`,
+          },
+        });
+      });
+      await page.goto(`/maps/${MAP_NAME}/3d?tool=waypoint`);
+      await expect(page.getByTestId("ground-canvas")).toBeVisible();
+
+      await page.getByRole("heading", { name: new RegExp(`^${MAP_NAME} — `) }).dblclick();
+      const input = page.getByRole("textbox", { name: "New map name" });
+      await input.fill("dp3f");
+      await input.press("Enter");
+
+      // Not the floor plan editor, which this map has no floor plan for.
+      await expect(page).toHaveURL(/\/maps\/dp3f\/3d\?tool=waypoint$/);
+      expect(sent).toEqual({ name: "dp3f" });
+      await expect(page.getByTestId("ground-canvas")).toBeVisible();
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
     test("places one with a press and a drag, and posts it at the ground floor's 0", async ({
       page,
     }) => {
