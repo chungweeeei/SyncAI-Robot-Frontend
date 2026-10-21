@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   ZERO_FRAME,
   encodeTeleopFrame,
+  isAtRest,
   parseTeleopError,
+  teleopTick,
 } from "@/lib/ros/teleop-frame";
 
 /**
@@ -79,5 +81,39 @@ describe("parseTeleopError", () => {
 
   it("skips a binary frame instead of throwing", () => {
     expect(parseTeleopError(new ArrayBuffer(8))).toBeNull();
+  });
+});
+
+/**
+ * Every frame is a cmd_vel the backend publishes, so an armed panel nobody
+ * touches must put nothing on the wire — and a release must still say stop.
+ */
+describe("teleopTick", () => {
+  const REST = { vx: 0, vy: 0, wz: 0 };
+  const FORWARD = { vx: 0.5, vy: 0, wz: 0 };
+
+  it("stays quiet at rest when nothing was moving", () => {
+    expect(teleopTick(REST, false)).toEqual({ frame: null, driving: false });
+  });
+
+  it("sends every tick while an input deflects", () => {
+    // The positive control: a deflection does reach the wire, held or new.
+    for (const driving of [false, true]) {
+      const tick = teleopTick(FORWARD, driving);
+      expect(tick.driving).toBe(true);
+      expect(JSON.parse(tick.frame!)).toEqual(FORWARD);
+    }
+  });
+
+  it("sends one zero on release, then nothing", () => {
+    const release = teleopTick(REST, true);
+    expect(release).toEqual({ frame: ZERO_FRAME, driving: false });
+    expect(teleopTick(REST, release.driving).frame).toBeNull();
+  });
+
+  it("reads a broken axis as rest, as the encoder sends it", () => {
+    // A NaN encodes to 0, so a frame of it would be a zero nobody asked for.
+    expect(isAtRest({ vx: NaN, vy: 0, wz: 0 })).toBe(true);
+    expect(teleopTick({ vx: NaN, vy: 0, wz: 0 }, false).frame).toBeNull();
   });
 });

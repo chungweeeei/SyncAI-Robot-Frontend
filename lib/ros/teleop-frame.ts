@@ -48,3 +48,26 @@ export function parseTeleopError(data: string | ArrayBuffer | Blob): string | nu
 
 /** Precomputed stop frame, sent best-effort on close (see teleop-channel). */
 export const ZERO_FRAME = encodeTeleopFrame({ vx: 0, vy: 0, wz: 0 });
+
+/** Whether a command, as encoded, moves nothing: NaN counts as rest. */
+export function isAtRest(v: TeleopVector): boolean {
+  return clampAxis(v.vx) === 0 && clampAxis(v.vy) === 0 && clampAxis(v.wz) === 0;
+}
+
+export interface TeleopTick {
+  /** The frame to send this tick, or null to stay quiet. */
+  frame: string | null;
+  /** Whether the robot was last told to move; the next tick's `driving`. */
+  driving: boolean;
+}
+
+/**
+ * One send tick. Every frame the backend receives is a cmd_vel it publishes,
+ * so an armed panel nobody is touching sends nothing: frames flow only while
+ * an input deflects, every tick (the watchdog wants them), and the first tick
+ * back at rest sends one zero to stop the robot, then the channel goes quiet.
+ */
+export function teleopTick(v: TeleopVector, driving: boolean): TeleopTick {
+  if (!isAtRest(v)) return { frame: encodeTeleopFrame(v), driving: true };
+  return { frame: driving ? ZERO_FRAME : null, driving: false };
+}
