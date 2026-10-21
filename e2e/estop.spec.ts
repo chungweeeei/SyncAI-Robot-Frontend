@@ -154,12 +154,16 @@ test.describe("the emergency stop", () => {
     await arm.click();
     await expect(arm).toHaveAttribute("aria-checked", "true");
     await expect(page.getByText("Streaming to robot · 10 Hz")).toBeVisible();
+    // Driving when the stop lands: an idle channel sends nothing to zero.
+    await page.keyboard.down("w");
+    await expect.poll(() => frames.at(-1)?.vx).toBe(1);
 
     await stopButton(page).click();
     await expect(arm).toHaveAttribute("aria-checked", "false");
     await expect(arm).toHaveAttribute("aria-disabled", "true");
     // Disarming closes the channel, and its last word is a zero command.
     await expect.poll(() => frames.at(-1)).toEqual({ vx: 0, vy: 0, wz: 0 });
+    await page.keyboard.up("w");
 
     // Released, it may be armed again — but it was not re-armed for us.
     await holdStop(page, 1300);

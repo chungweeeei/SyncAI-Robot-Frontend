@@ -2689,6 +2689,10 @@ test.describe("the manual drive panel", () => {
 
     await page.getByRole("switch", { name: "Arm manual drive input" }).click();
     await expect(page.getByText("Streaming to robot · 10 Hz")).toBeVisible();
+    // Armed but untouched: nothing on the wire, since every frame is a
+    // command the robot publishes. Several ticks' worth of quiet.
+    await page.waitForTimeout(400);
+    expect(frames).toEqual([]);
 
     // Forward and turn together, at full.
     await page.keyboard.down("w");
@@ -2718,6 +2722,10 @@ test.describe("the manual drive panel", () => {
     await expect.poll(last).toEqual({ vx: 0.5, vy: 0, wz: 0 });
     await page.keyboard.up("w");
     await expect.poll(last).toEqual({ vx: 0, vy: 0, wz: 0 });
+    // The release is one zero, and then the channel is quiet again.
+    const sent = frames.length;
+    await page.waitForTimeout(400);
+    expect(frames.length).toBe(sent);
     expect(errors, "the page logged errors").toEqual([]);
   });
 });
