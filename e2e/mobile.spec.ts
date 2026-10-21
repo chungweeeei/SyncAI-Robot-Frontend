@@ -286,7 +286,9 @@ test.describe("the console on a phone", () => {
     failOnConsoleErrors(page, errors);
     await mockBackend(page);
     const frames: { vx: number; vy: number; wz: number }[] = [];
+    let sockets = 0;
     await page.routeWebSocket(/\/api\/v1\/robot\/teleop$/, (ws) => {
+      sockets += 1;
       ws.onMessage((message) => {
         if (typeof message === "string") frames.push(JSON.parse(message));
       });
@@ -295,7 +297,9 @@ test.describe("the console on a phone", () => {
 
     await page.goto("/drive");
     await page.getByRole("switch", { name: "Arm manual drive input" }).click();
-    await expect(page.getByText("Streaming to robot · 10 Hz")).toBeVisible();
+    // Connected: the fake took the socket and the panel stopped saying so.
+    await expect.poll(() => sockets).toBe(1);
+    await expect(page.getByText("Connecting to robot…")).toBeHidden();
 
     const well = (await page.getByRole("group", { name: "Translation stick" }).boundingBox())!;
     const cx = well.x + well.width / 2;

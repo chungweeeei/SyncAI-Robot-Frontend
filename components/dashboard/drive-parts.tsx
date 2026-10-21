@@ -107,8 +107,11 @@ export function SpeedLimit({
 
 /**
  * Owns the teleop channel for exactly as long as it is mounted, so mount it
- * only while armed; the mount also resets its state. One line: connecting,
- * streaming, or the backend's refusal (e.g. during an autonomous move).
+ * only while armed; the mount also resets its state. One line while
+ * connecting or while the backend refuses (e.g. during an autonomous move),
+ * and nothing once connected: the channel only sends while an input
+ * deflects, so a standing "streaming" line would claim frames that are not
+ * going out.
  */
 export function TeleopFooter({
   vectorRef,
@@ -133,9 +136,5 @@ export function TeleopFooter({
       </p>
     );
   }
-  return (
-    <p className="mt-2 text-[11px] leading-tight text-signal-cmd">
-      Streaming to robot · 10 Hz
-    </p>
-  );
+  return null;
 }
