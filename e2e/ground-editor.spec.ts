@@ -11,6 +11,7 @@ import {
   mockBackend,
   taskState,
   TWO_FLOORS,
+  vertex,
   withOctomap,
 } from "./backend";
 
@@ -68,8 +69,8 @@ test.describe("the ground editor", () => {
     await page.goto("/maps");
     await expect(page.getByRole("heading", { name: "Maps", level: 1 })).toBeVisible();
 
-    await expect(page.getByRole("link", { name: "Fill the ground of flat" })).toHaveCount(0);
-    const link = page.getByRole("link", { name: "Fill the ground of solid" });
+    await expect(page.getByRole("link", { name: "Open the 3D map of flat" })).toHaveCount(0);
+    const link = page.getByRole("link", { name: "Open the 3D map of solid" });
     await expect(link).toHaveAttribute("href", "/maps/solid/3d");
     expect(errors, "the page logged errors").toEqual([]);
   });
@@ -331,6 +332,97 @@ test.describe("the ground editor", () => {
           "false",
         );
       }
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+  });
+
+  test.describe("waypoints on a map with no floor plan", () => {
+    const verticesPath = `/api/v1/maps/${MAP_NAME}/vertices`;
+    /** A map the floor plan editor cannot open: a 3D map and no raster. */
+    const treeOnly = () =>
+      mapSummary({
+        active: false,
+        grid: null,
+        thumbnail: null,
+        grid_status: "none",
+        ...withOctomap(),
+      });
+
+    test("places one with a press and a drag, and posts it at the ground floor's 0", async ({
+      page,
+    }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const writes = await mockBackend(page, { maps: [treeOnly()], vertices: [] });
+      await page.goto(`/maps/${MAP_NAME}/3d`);
+      await expect(page.getByTestId("ground-canvas")).toBeVisible();
+
+      // Positive control: with no tool armed a press only turns the map.
+      const centre = await holeOnScreen(page);
+      await page.mouse.click(centre.x, centre.y);
+      const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
+      await expect(dialog).toHaveCount(0);
+
+      const tool = page.getByRole("button", { name: "Waypoint" });
+      await tool.click();
+      await expect(tool).toHaveAttribute("aria-pressed", "true");
+      await page.mouse.move(centre.x, centre.y);
+      await page.mouse.down();
+      await page.mouse.move(centre.x + 40, centre.y, { steps: 4 });
+      await page.mouse.up();
+
+      await expect(dialog).toBeVisible();
+      // The release only asks the question.
+      expect(writes.filter((w) => w.path === verticesPath)).toEqual([]);
+      await dialog.getByLabel("Name").fill("lobby");
+      await dialog.getByRole("button", { name: "Create" }).click();
+
+      await expect.poll(() => writes.filter((w) => w.path === verticesPath)).toHaveLength(1);
+      const write = writes.find((w) => w.path === verticesPath)!;
+      expect(write.method).toBe("POST");
+      const [body] = write.body as {
+        name: string;
+        x: number;
+        y: number;
+        theta: number;
+        z: number;
+      }[];
+      expect(body.name).toBe("lobby");
+      // On the 3D map's box (0..0.4 m each way), not wherever the ray went.
+      for (const value of [body.x, body.y]) {
+        expect(value).toBeGreaterThanOrEqual(0);
+        expect(value).toBeLessThanOrEqual(0.4);
+      }
+      expect(Number.isFinite(body.theta)).toBe(true);
+      // No floors on this map: the ground floor, the wire's 0.
+      expect(body.z).toBe(0);
+
+      await expect(dialog).toHaveCount(0);
+      // Single-shot: the tool disarmed on release.
+      await expect(tool).toHaveAttribute("aria-pressed", "false");
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("opens a stop on a tap, offers no Move, and deletes it", async ({ page }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const stop = vertex({ name: "lobby", type: "MOVE", x: 0.2, y: 0.2, theta: 0, z: 0 });
+      const writes = await mockBackend(page, { maps: [treeOnly()], vertices: [stop] });
+      await page.goto(`/maps/${MAP_NAME}/3d`);
+      await expect(page.getByTestId("ground-canvas")).toBeVisible();
+
+      const centre = await holeOnScreen(page);
+      await page.mouse.click(centre.x, centre.y);
+      const dialog = page.getByRole("alertdialog", { name: "lobby" });
+      await expect(dialog).toBeVisible();
+      // An editor, on a map the robot may not be on: nowhere to send it from.
+      await expect(dialog.getByRole("button", { name: "Move" })).toHaveCount(0);
+
+      page.once("dialog", (confirm) => void confirm.accept());
+      await dialog.getByRole("button", { name: "Delete" }).click();
+      await expect(dialog).toHaveCount(0);
+      const deleted = writes.find((w) => w.method === "DELETE");
+      expect(deleted?.path).toBe(`${verticesPath}/${stop.id}`);
       expect(errors, "the page logged errors").toEqual([]);
     });
   });

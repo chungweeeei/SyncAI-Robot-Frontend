@@ -205,8 +205,11 @@ components/
                 floor mostly stands on, since a hole has no cell to hit and a
                 wall in front of one must not take the stroke; its rules are
                 lib/map/ground-fill.ts, its save a record the robot's own
-                tool applies), and its folded floor list (floor-list-editor:
-                rename, add or drop the floors the robot's walk found)
+                tool applies; and a Waypoint tool, the dashboard's place,
+                tap, re-place and delete written at once, which is where a
+                map with no floor plan gets its waypoints), and its folded
+                floor list (floor-list-editor: rename, add or drop the
+                floors the robot's walk found)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
                 and the /tasks/editor page (step composer, name, save, delete)
@@ -221,6 +224,9 @@ components/
   webrtc/       WHIP/WHEP bench (unlisted developer route — see deviations)
   ui/           shadcn primitives (lint-ignored)
 hooks/          one hook per backend interaction; the only place components get data.
+                A map's waypoint writes from a 3D view are use-map-vertex-writes,
+                keyed by map name; use-active-map-vertices points it at the
+                loaded map for the dashboard.
                 A few talk to no backend at all (use-joystick, use-step-drafts,
                 use-task-draft, use-camera-clip, use-browser-time-zone,
                 use-history-filter): React glue over a lib/ module or a browser
@@ -254,7 +260,11 @@ lib/
                 keys and the tree with them drawn in (withGroundPatches, a union,
                 since an applied patch is in both), the floor the brush
                 aims at and the column under a
-                point), and the floors of a
+                point), the z a placed waypoint is written with
+                (waypoint-ground.ts: the ground under it on the floor
+                picked, a re-placed stop's own with none, else the ground
+                floor's 0 — the rule the dashboard and the 3D map page
+                share), and the floors of a
                 map that spans storeys (floors.ts: the band each floor owns —
                 from a metre under its level, so a slab's top is in the
                 floor above, to a cut 1.5 m over it, under the ceiling that

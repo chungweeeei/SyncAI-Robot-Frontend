@@ -8,7 +8,7 @@ import { map3dHref } from "@/lib/map/links";
 import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
 
-const NO_TREE_REASON = "This map has no 3D map to patch the ground of.";
+const NO_TREE_REASON = "This map has no 3D map.";
 const BUILDING_REASON = "The robot is still building this map's 3D map. Wait for it to finish.";
 
 /** The corner tile one slot in from the pencil: 8 px inset + two 24 px tiles + two 6 px gaps. */
@@ -16,11 +16,12 @@ const CORNER =
   "absolute top-2 right-17 z-10 flex size-6 items-center justify-center rounded-sm border border-hairline bg-panel/90 backdrop-blur-sm";
 
 /**
- * The way into the ground editor, a third corner tile beside the pencil,
- * shown as a verb like the others. Needs the robot's 3D map and nothing
- * else — not a floor plan, since a scan-only save still has ground to
- * patch. Greyed while a job drives on the map, like Edit: a save of the
- * patches is a map write the backend refuses then.
+ * The way into the 3D map page, a third corner tile beside the pencil,
+ * shown as a verb like the others: its ground patches, and the waypoints of
+ * a map with no floor plan for the pencil to open. Needs the robot's 3D map
+ * and nothing else — not a floor plan, since a scan-only save still has
+ * ground to patch and stops to place. Greyed while a job drives on the map,
+ * like Edit: both are map writes the backend refuses then.
  */
 export function MapGroundLink({ map }: { map: MapSummary }) {
   const runLock = useMapRunLock(map.name);
@@ -43,8 +44,8 @@ export function MapGroundLink({ map }: { map: MapSummary }) {
   return (
     <Link
       href={map3dHref(map.name)}
-      aria-label={`Fill the ground of ${map.name}`}
-      title={`Fill the ground of ${map.name}`}
+      aria-label={`Open the 3D map of ${map.name}`}
+      title={`Open the 3D map of ${map.name}`}
       className={cn(
         CORNER,
         "text-muted-foreground transition-colors hover:border-foreground/30 hover:bg-elevated hover:text-foreground",

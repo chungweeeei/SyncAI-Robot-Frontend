@@ -2,6 +2,7 @@
 
 import {
   EraserIcon,
+  MapPinPlusIcon,
   Rotate3dIcon,
   MaximizeIcon,
   PaintbrushIcon,
@@ -26,8 +27,10 @@ import { BRUSH_RADII_M } from "@/lib/map/ground-fill";
 
 /*
  * The ground editor's one strip, built like the floor plan editor's: fit,
- * history, Save, then the tools — Orbit, Fill, Erase — and the brush radius.
- * Orbit first for the floor plan editor's reason: the strip opens on it.
+ * history, Save, then the tools — Orbit, Fill, Erase, Waypoint — and the
+ * brush radius. Orbit first for the floor plan editor's reason: the strip
+ * opens on it. History and Save are the patches' only: a waypoint is written
+ * as it is placed, as on the dashboard.
  */
 
 const RADIUS_ITEMS = BRUSH_RADII_M.map((radius) => ({
@@ -49,6 +52,7 @@ export function GroundToolBar({
   onSave,
   tool,
   onToolChange,
+  placeLock = null,
   radius,
   onRadiusChange,
   shading,
@@ -69,6 +73,8 @@ export function GroundToolBar({
   onSave: () => void;
   tool: GroundTool;
   onToolChange: (tool: GroundTool) => void;
+  /** Why no waypoint may be placed (a job drives on the map), or null. */
+  placeLock?: string | null;
   /** Brush radius, metres; one of BRUSH_RADII_M. */
   radius: number;
   onRadiusChange: (radius: number) => void;
@@ -151,9 +157,17 @@ export function GroundToolBar({
           pressed={tool === "erase"}
           onClick={() => onToolChange("erase")}
         />
+        <ToolButton
+          label="Waypoint"
+          hint={placeLock ?? "press to place a waypoint, drag to aim it; right-drag to turn"}
+          icon={MapPinPlusIcon}
+          pressed={tool === "waypoint"}
+          disabled={placeLock !== null}
+          onClick={() => onToolChange(tool === "waypoint" ? "orbit" : "waypoint")}
+        />
       </ToolGroup>
 
-      {tool !== "orbit" && (
+      {(tool === "fill" || tool === "erase") && (
         <>
           <ToolDivider />
           <Select value={`${radius}`} onValueChange={(value) => onRadiusChange(Number(value))}>
