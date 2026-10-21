@@ -13,15 +13,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { useActivateMap } from "@/hooks/use-map-actions";
+import { switchRefusal } from "@/lib/map/switch";
 import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
-
-const NO_GRID_REASON =
-  "This map has no floor plan yet, and the robot cannot navigate without one. Build it first.";
-const NO_CLOUD_REASON =
-  "This map has no scan data, so the robot could not work out where it is. Only a map made by a mapping run can be used.";
-const CONVERTING_REASON =
-  "This map is still being prepared. Wait for it to finish.";
 
 /**
  * The corner tile, MapDeleteControl's shape on the opposite side; shared by
@@ -39,8 +33,9 @@ const CORNER =
  * Swap arrows rather than an outlined check, which would read as "done,
  * greyed out" and be confused with the real greyed state. `ArrowLeftRight`,
  * to stay clear of Rebuild's `RefreshCw`. Greyed, with the reason in the
- * tooltip, for a map with no floor plan, no scan, or mid-conversion — a span
- * look-alike, since `disabled` swallows the tooltip's pointer events.
+ * tooltip, for a map with neither a floor plan nor a 3D map, no scan, or
+ * mid-conversion (`switchRefusal`) — a span look-alike, since `disabled`
+ * swallows the tooltip's pointer events.
  *
  * Confirmed in an AlertDialog that names the map, because the consequence
  * isn't guessable from an arrow: the pose resets to the new map's origin and
@@ -86,14 +81,7 @@ export function MapActivateControl({
 
   if (map.active) return null;
 
-  const reason =
-    map.grid_status === "converting"
-      ? CONVERTING_REASON
-      : !map.has_pointcloud
-        ? NO_CLOUD_REASON
-        : map.grid_status !== "ok"
-          ? NO_GRID_REASON
-          : null;
+  const reason = switchRefusal(map);
 
   return (
     <>

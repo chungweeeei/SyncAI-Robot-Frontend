@@ -522,8 +522,9 @@ export function deleteMap(name: string): Promise<DeleteMapResult> {
 
 /**
  * The switch's 409 codes. Each is temporary in a different way (clears by
- * itself, needs a floor plan built, needs Navigation mode), so the code decides
- * what is offered beside the rendered sentence.
+ * itself, needs a floor plan or a 3D map built, needs Navigation mode, needs a
+ * robot that can plan in 3D), so the code decides what is offered beside the
+ * rendered sentence.
  */
 export type ActivateConflictCode =
   | "conversion_running"
@@ -532,7 +533,8 @@ export type ActivateConflictCode =
   | "ini_not_writable"
   | "task_running"
   | "tasks_unknown"
-  | "stack_not_ready";
+  | "stack_not_ready"
+  | "planner_3d_unavailable";
 
 const ACTIVATE_CONFLICT_CODES: readonly string[] = [
   "conversion_running",
@@ -542,6 +544,7 @@ const ACTIVATE_CONFLICT_CODES: readonly string[] = [
   "task_running",
   "tasks_unknown",
   "stack_not_ready",
+  "planner_3d_unavailable",
 ];
 
 export class ActivateConflictError extends Error {
