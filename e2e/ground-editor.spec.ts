@@ -339,14 +339,162 @@ test.describe("the ground editor", () => {
   test.describe("waypoints on a map with no floor plan", () => {
     const verticesPath = `/api/v1/maps/${MAP_NAME}/vertices`;
     /** A map the floor plan editor cannot open: a 3D map and no raster. */
-    const treeOnly = () =>
+    const treeOnly = (over: Record<string, unknown> = {}) =>
       mapSummary({
         active: false,
         grid: null,
         thumbnail: null,
         grid_status: "none",
         ...withOctomap(),
+        ...over,
       });
+
+    /** Press, drag and release at the canvas's centre: a placement with Waypoint armed. */
+    async function pressAndAim(page: Page) {
+      const centre = await holeOnScreen(page);
+      await page.mouse.move(centre.x, centre.y);
+      await page.mouse.down();
+      await page.mouse.move(centre.x + 40, centre.y, { steps: 4 });
+      await page.mouse.up();
+    }
+
+    test("is reached from the card's pencil, with Waypoint armed", async ({ page }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const writes = await mockBackend(page, {
+        maps: [
+          treeOnly(),
+          // Neither a floor plan nor a 3D map: nothing for the pencil to open.
+          mapSummary({
+            name: "bare",
+            active: false,
+            grid: null,
+            thumbnail: null,
+            grid_status: "none",
+          }),
+        ],
+        vertices: [],
+      });
+      await page.goto("/maps");
+      await expect(page.getByRole("heading", { name: "Maps", level: 1 })).toBeVisible();
+
+      await expect(page.getByRole("link", { name: /^Edit (the waypoints of )?bare$/ })).toHaveCount(0);
+      const pencil = page.getByRole("link", { name: `Edit the waypoints of ${MAP_NAME}` });
+      // Not the floor plan editor, which has no raster to open here.
+      await expect(pencil).toHaveAttribute("href", `/maps/${MAP_NAME}/3d?tool=waypoint`);
+      await pencil.click();
+      await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/3d\\?tool=waypoint$`));
+      await expect(page.getByTestId("ground-canvas")).toBeVisible();
+
+      const tool = page.getByRole("button", { name: "Waypoint" });
+      await expect(tool).toHaveAttribute("aria-pressed", "true");
+      // Armed for real, not only drawn pressed: the first press asks for a
+      // name with no click on the tool before it.
+      await pressAndAim(page);
+      const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      expect(writes.filter((w) => w.path.endsWith("/vertices"))).toEqual([]);
+
+      await page.getByRole("button", { name: "Back to maps" }).click();
+      await expect(page).toHaveURL(/\/maps$/);
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("holds Waypoint unarmed while a job drives on the map, and arms it once the job ends", async ({
+      page,
+    }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const job = activeTask();
+      const activeTasks = [job];
+      // Given its ending before it leaves the list, as in "holds Save while a
+      // job drives on the map": the masthead reads it once more after.
+      const states: Record<string, Record<string, unknown>> = {};
+      await mockBackend(page, {
+        maps: [treeOnly()],
+        vertices: [],
+        activeTasks,
+        taskStates: states,
+      });
+      await page.goto(`/maps/${MAP_NAME}/3d?tool=waypoint`);
+      await expect(page.getByTestId("ground-canvas")).toBeVisible();
+
+      const tool = page.getByRole("button", { name: "Waypoint" });
+      await expect(page.getByRole("status").filter({ hasText: "Read-only." })).toBeVisible();
+      await expect(tool).toBeDisabled();
+      await expect(tool).toHaveAttribute("aria-pressed", "false");
+
+      // The job leaves the list; the next poll clears the lock, and the
+      // link's ask, held until then, arms the tool.
+      states[job.id as string] = taskState({ id: job.id, status: "COMPLETED" });
+      activeTasks.length = 0;
+      await expect(tool).toHaveAttribute("aria-pressed", "true");
+      await expect(tool).toBeEnabled();
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("is reached from the task editor, and Back returns there", async ({ page }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      await mockBackend(page, { maps: [treeOnly({ active: true })], vertices: [] });
+      await page.goto("/tasks/editor");
+      await page.getByTitle("Drive to a pose in the map frame.").click();
+
+      const href = `/maps/${MAP_NAME}/3d?tool=waypoint&from=tasks`;
+      // The row's hint names the 3D map, which is where they go on this map.
+      const hint = page.getByText(/has no waypoints yet/);
+      await expect(hint).toContainText("place some on the 3D map first.");
+      await expect(hint.getByRole("link", { name: "place some" })).toHaveAttribute("href", href);
+
+      await page.getByRole("link", { name: "Add waypoints on the 3D map" }).click();
+      await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/3d\\?tool=waypoint&from=tasks$`));
+      await expect(page.getByTestId("ground-canvas")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Waypoint" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+
+      await page.getByRole("button", { name: "Back to tasks" }).click();
+      await expect(page).toHaveURL(/\/tasks\/editor$/);
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("stays on the 3D map page across a rename", async ({ page }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const map = treeOnly();
+      await mockBackend(page, { maps: [map], vertices: [] });
+      // The fake has no map rename; this one renames its catalogue entry too.
+      let sent: unknown = null;
+      await page.route(new RegExp(`/api/v1/maps/${MAP_NAME}$`), async (route) => {
+        if (route.request().method() !== "PATCH") return route.fallback();
+        sent = route.request().postDataJSON();
+        map.name = "dp3f";
+        await route.fulfill({
+          json: {
+            old_name: MAP_NAME,
+            name: "dp3f",
+            vertices_moved: 0,
+            templates_moved: 0,
+            message: `Renamed '${MAP_NAME}' to 'dp3f'.`,
+          },
+        });
+      });
+      await page.goto(`/maps/${MAP_NAME}/3d?tool=waypoint`);
+      await expect(page.getByTestId("ground-canvas")).toBeVisible();
+
+      await page.getByRole("heading", { name: new RegExp(`^${MAP_NAME} — `) }).dblclick();
+      const input = page.getByRole("textbox", { name: "New map name" });
+      await input.fill("dp3f");
+      await input.press("Enter");
+
+      // Not the floor plan editor, which this map has no floor plan for.
+      await expect(page).toHaveURL(/\/maps\/dp3f\/3d\?tool=waypoint$/);
+      expect(sent).toEqual({ name: "dp3f" });
+      await expect(page.getByTestId("ground-canvas")).toBeVisible();
+      expect(errors, "the page logged errors").toEqual([]);
+    });
 
     test("places one with a press and a drag, and posts it at the ground floor's 0", async ({
       page,

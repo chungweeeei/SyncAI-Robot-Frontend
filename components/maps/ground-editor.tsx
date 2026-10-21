@@ -65,9 +65,12 @@ import type { PlanarPose } from "@/lib/types/robot";
  */
 export function GroundEditor({
   name,
+  openOnWaypoint = false,
   onDirtyChange,
 }: {
   name: string;
+  /** Arm the Waypoint tool on opening, for a link that came to place waypoints. */
+  openOnWaypoint?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const entry = useMapEntry(name);
@@ -110,6 +113,7 @@ export function GroundEditor({
       name={name}
       voxels={tree.voxels}
       initialFillKey={edits.fillKey}
+      openOnWaypoint={openOnWaypoint}
       onDirtyChange={onDirtyChange}
     />
   );
@@ -141,11 +145,13 @@ function GroundSurface({
   name,
   voxels,
   initialFillKey,
+  openOnWaypoint,
   onDirtyChange,
 }: {
   name: string;
   voxels: OccupiedVoxels;
   initialFillKey: number[][];
+  openOnWaypoint: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [session] = React.useState(() => {
@@ -159,6 +165,13 @@ function GroundSurface({
   );
 
   const [tool, setTool] = React.useState<GroundTool>("orbit");
+  /**
+   * A link's ask to open on Waypoint, held until the run lock first reads
+   * clear rather than armed at once: on a fresh load the job list may not
+   * have answered yet, and the lock fails closed until it has, which would
+   * disarm the tool as soon as it was set. Any tool picked drops the ask.
+   */
+  const [waypointAsked, setWaypointAsked] = React.useState(openOnWaypoint);
   /** Moves on every change to the patches outside a stroke, which the canvas redraws on. */
   const [editsVersion, setEditsVersion] = React.useState(0);
   const [radiusM, setRadiusM] = React.useState<number>(DEFAULT_BRUSH_RADIUS_M);
@@ -195,6 +208,11 @@ function GroundSurface({
    */
   const [savingVertex, setSavingVertex] = React.useState<MapVertex | null>(null);
 
+  if (waypointAsked && !runLock.locked) {
+    setWaypointAsked(false);
+    setTool("waypoint");
+  }
+
   // A lock arriving with Waypoint armed disarms it, during render rather than
   // in an effect, so the next release cannot write onto a read-only map. An
   // open name dialog stays up instead: its Create greys and the name survives.
@@ -206,6 +224,7 @@ function GroundSurface({
   /** Any tool change drops a re-place in hand. */
   const changeTool = React.useCallback((next: GroundTool) => {
     setTool(next);
+    setWaypointAsked(false);
     if (next !== "waypoint") setMoving(null);
   }, []);
   // Each floor's band in the tree's levels; a floor the tree does not reach

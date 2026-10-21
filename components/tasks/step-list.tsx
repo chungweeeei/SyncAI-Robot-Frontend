@@ -34,6 +34,7 @@ import {
   type StepDraft,
   type StepSpan,
 } from "@/lib/task/step";
+import type { WaypointEditor } from "@/lib/map/links";
 import type { MapVertex } from "@/lib/types/map";
 import type { MapMetadata } from "@/lib/types/robot";
 
@@ -44,6 +45,8 @@ export interface StepListProps {
   mapName: string | null;
   /** The map's geometry, for a Move row's floor plan; null with no floor plan. */
   mapGrid: MapMetadata | null;
+  /** Where the map's waypoints are placed, for a row whose map has none yet. */
+  waypointLink: WaypointEditor | null;
   /** Vertex id → the job's step numbers that go there; see stepWaypointOrdinals. */
   stepMarks: ReadonlyMap<string, readonly number[]>;
   /** The waypoints a Dock row is picked on; see stepDockVertices. */
@@ -75,6 +78,7 @@ export function StepList({
   verticesStatus,
   mapName,
   mapGrid,
+  waypointLink,
   stepMarks,
   dockMarks,
   disabled,
@@ -238,6 +242,7 @@ export function StepList({
                     verticesStatus={verticesStatus}
                     mapName={mapName}
                     mapGrid={mapGrid}
+                    waypointLink={waypointLink}
                     stepMarks={stepMarks}
                     dockMarks={dockMarks}
                     disabled={disabled}
