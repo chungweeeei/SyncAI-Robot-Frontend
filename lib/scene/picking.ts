@@ -24,8 +24,8 @@ const GROUND_HIT = new THREE.Vector3();
  * The camera's world matrix is brought up to date first: the ray is cast
  * from it, and only a render refreshes it. A framing (Fit, Top down, Front
  * view) moves the camera between frames, so a press that lands before the
- * next one was aimed from where the camera had been — on the ground editor,
- * a brush armed over a hole painted somewhere else, or nowhere.
+ * next one was aimed from where the camera had been — on the 3D map page,
+ * a waypoint pressed after Fit landed somewhere else, or nowhere.
  */
 export function aimRaycaster(
   raycaster: THREE.Raycaster,

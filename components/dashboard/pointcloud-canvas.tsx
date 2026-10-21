@@ -44,7 +44,7 @@ import {
 } from "@/lib/scene/path-ribbon";
 import { aimRaycaster, intersectGround } from "@/lib/scene/picking";
 import { GROUND_FLOOR_Z_M, drawnGround } from "@/lib/map/floors";
-import { columnAt } from "@/lib/map/ground-fill";
+import { columnAt } from "@/lib/map/ground";
 import { POSE_EASE_TAU_S, type SmoothPose } from "@/lib/scene/pose";
 import {
   ROBOT_BASE_HEIGHT_M,

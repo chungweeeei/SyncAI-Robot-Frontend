@@ -18,24 +18,17 @@ export const MAP_NAME = "dp2f";
 
 /**
  * A 3D map the size of a doormat: a `size`×`size` floor one cell thick,
- * half a metre under the origin like the robot's own floor, with one 2×2
- * hole in the middle (cells `size/2 - 1` and `size/2` on both axes). Enough
- * for the dashboard to draw and for the ground editor to have a hole to
- * patch. Built by the console's own encoder, which the decoder's unit tests
- * pin, so the fake and the client agree on the bit order. The 4×4 default
- * puts a hole cell under a click wherever the editor is; a phone test that
- * pinches hands in a larger one, since the editor's zoom tops out at 32 px
- * a cell and four cells already fill a phone past that.
+ * half a metre under the origin like the robot's own floor. Enough for the
+ * dashboard to draw and for the 3D map page to place waypoints on. Built by
+ * the console's own encoder, which the decoder's unit tests pin, so the fake
+ * and the client agree on the bit order. A phone test that pinches hands in
+ * a larger one, since four cells already fill a phone at the closest zoom.
  */
 export function octomapBt(size = 4): Buffer {
   const O = OCTREE_KEY_ORIGIN;
-  const lo = size / 2 - 1;
   const occupied: Array<[number, number, number]> = [];
   for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const hole = x >= lo && x <= lo + 1 && y >= lo && y <= lo + 1;
-      if (!hole) occupied.push([O + x, O + y, O - 5]);
-    }
+    for (let x = 0; x < size; x += 1) occupied.push([O + x, O + y, O - 5]);
   }
   return Buffer.from(encodeOctomapBt({ res: 0.1, occupied }));
 }
@@ -338,11 +331,6 @@ export interface BackendOverrides {
   /** The tree every map's /octomap answers with; see octomapBt. */
   octomap?: Buffer;
   /**
-   * The ground patches by map name, as GET .../octomap/edits lists them
-   * (`fill_key` triples); none by default. A PUT replaces a map's list.
-   */
-  octomapEdits?: Record<string, number[][]>;
-  /**
    * The floors by map name, as GET .../floors lists them: `detected` is what
    * the walk found, `saved` an operator's list if there is one. One storey
    * (nothing either way) by default; a PUT saves a map's list.
@@ -446,7 +434,6 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   const keepout: Record<string, Record<string, unknown>[]> = {
     ...over.keepout,
   };
-  const octomapEdits: Record<string, number[][]> = { ...over.octomapEdits };
   const floors: Record<string, { detected?: MapFloorFixture[]; saved?: MapFloorFixture[] }> = {
     ...over.floors,
   };
@@ -655,31 +642,6 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         route,
         vertices.filter((entry) => entry.map_name === name),
       );
-    }
-    const editsMatch = /^\/api\/v1\/maps\/([^/]+)\/octomap\/edits$/.exec(path);
-    if (editsMatch && method === "GET") {
-      const name = decodeURIComponent(editsMatch[1]);
-      const keys = octomapEdits[name];
-      return json(route, {
-        name,
-        res: keys ? 0.1 : null,
-        fill_key: keys ?? [],
-        created_at: keys ? "2026-10-14T03:00:00Z" : null,
-      });
-    }
-    if (editsMatch && method === "PUT") {
-      const name = decodeURIComponent(editsMatch[1]);
-      const body = parseBody(route.request().postData()) as { fill_key?: number[][] } | null;
-      const keys = body?.fill_key ?? [];
-      octomapEdits[name] = keys;
-      return json(route, {
-        name,
-        count: keys.length,
-        message:
-          keys.length === 0
-            ? `Cleared the ground patches of '${name}'.`
-            : `Saved ${keys.length} ground ${keys.length === 1 ? "patch" : "patches"} for '${name}'. They take effect once applied to the robot's 3D map.`,
-      });
     }
     const floorsMatch = /^\/api\/v1\/maps\/([^/]+)\/floors$/.exec(path);
     if (floorsMatch && method === "GET") {

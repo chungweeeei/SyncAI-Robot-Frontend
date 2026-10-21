@@ -69,7 +69,7 @@ export interface MapSummary {
   /**
    * How the map's 3D map stands — the occupancy tree the robot's map cleaning
    * writes beside the scan when asked to, which the dashboard draws and the
-   * ground editor patches. The same five words as `grid_status`, read off a
+   * 3D map page places waypoints on. The same five words as `grid_status`, read off a
    * different file: `none` also covers a save that never asked for one.
    */
   octomap_status: GridStatus;

@@ -7,8 +7,8 @@ import type { MapSummary } from "@/lib/types/map";
 export type MapLinkFrom = "tasks";
 
 /**
- * The 3D map and its ground editor (app/maps/[name]/3d/page.tsx), opened with
- * its Waypoint tool armed when `tool` asks for it.
+ * The 3D map page (app/maps/[name]/3d/page.tsx), opened with its Waypoint
+ * tool armed when `tool` asks for it.
  */
 export function map3dHref(
   mapName: string,

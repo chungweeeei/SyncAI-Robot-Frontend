@@ -17,11 +17,10 @@ const CORNER =
 
 /**
  * The way into the 3D map page, a third corner tile beside the pencil,
- * shown as a verb like the others: its ground patches, and the waypoints of
- * a map with no floor plan for the pencil to open. Needs the robot's 3D map
- * and nothing else — not a floor plan, since a scan-only save still has
- * ground to patch and stops to place. Greyed while a job drives on the map,
- * like Edit: both are map writes the backend refuses then.
+ * shown as a verb like the others: the map's waypoints on its 3D map. Needs
+ * the robot's 3D map and nothing else — not a floor plan, since a scan-only
+ * save still has stops to place. Greyed while a job drives on the map, like
+ * Edit: both are map writes the backend refuses then.
  */
 export function MapGroundLink({ map }: { map: MapSummary }) {
   const runLock = useMapRunLock(map.name);

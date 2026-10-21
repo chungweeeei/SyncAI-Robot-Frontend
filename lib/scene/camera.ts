@@ -152,31 +152,30 @@ export function frontViewAround(camera: THREE.PerspectiveCamera, controls: Orbit
 }
 
 /**
- * The ground editor's controls. With no brush armed the primary button
- * orbits (nothing here aims a goal, unlike the dashboard), right-drag pans,
- * one finger orbits and two pan and pinch. With a brush armed the primary
- * button and one finger are the brush's, so OrbitControls is told to ignore
+ * The 3D map page's controls. With no tool armed the primary button orbits
+ * (nothing here aims a goal, unlike the dashboard), right-drag pans, one
+ * finger orbits and two pan and pinch. With Waypoint armed the primary
+ * button and one finger place the stop, so OrbitControls is told to ignore
  * them; right-drag still orbits, the middle button pans, and two fingers
  * still pan and pinch. The wheel zooms to the cursor either way.
  */
-export function applyGroundControls(controls: OrbitControls, painting: boolean) {
+export function applyMap3dControls(controls: OrbitControls, placing: boolean) {
   controls.enablePan = true;
   controls.zoomToCursor = true;
   controls.screenSpacePanning = true;
-  controls.mouseButtons = painting
+  controls.mouseButtons = placing
     ? { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE }
     : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
   controls.touches = {
-    ONE: painting ? null : THREE.TOUCH.ROTATE,
+    ONE: placing ? null : THREE.TOUCH.ROTATE,
     TWO: THREE.TOUCH.DOLLY_PAN,
   };
 }
 
 /**
- * The ground editor's opening view: `frameMap`'s three-quarter view, with
- * the target on the floor the brush aims at rather than at z=0. The middle
- * of the screen is then the middle of the map on that floor, which is where
- * a press there paints.
+ * The 3D map page's opening view: `frameMap`'s three-quarter view, with the
+ * target on the floor the shown heights mostly stand on rather than at z=0.
+ * The middle of the screen is then the middle of the map on that floor.
  */
 export function frameGround(
   camera: THREE.PerspectiveCamera,

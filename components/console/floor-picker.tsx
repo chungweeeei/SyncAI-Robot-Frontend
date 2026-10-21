@@ -46,7 +46,7 @@ export function FloorPicker({
   floors: readonly MapFloor[];
   /**
    * The floor's name, null for the whole map, or undefined for heights set
-   * some other way (the ground editor's sliders), which presses nothing.
+   * some other way (the 3D map page's sliders), which presses nothing.
    */
   value: string | null | undefined;
   onChange: (name: string | null) => void;

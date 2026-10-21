@@ -3,7 +3,7 @@
 // the same z.
 
 import { type FloorBand, floorGround } from "@/lib/map/floors";
-import { floorHeightIn, groundAt } from "@/lib/map/ground-fill";
+import { floorHeightIn, groundAt } from "@/lib/map/ground";
 import type { OccupiedVoxels } from "@/lib/types/octree";
 
 /**

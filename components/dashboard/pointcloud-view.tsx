@@ -29,7 +29,6 @@ import { useInitialPose } from "@/hooks/use-initial-pose";
 import { useMapFloors } from "@/hooks/use-map-floors";
 import { useMapKeepout } from "@/hooks/use-map-keepout";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
-import { useMapOctomapEdits } from "@/hooks/use-map-octomap-edits";
 import { useMapPointCloud } from "@/hooks/use-map-point-cloud";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useActiveMap } from "@/hooks/use-maps";
@@ -37,7 +36,6 @@ import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import { apiUrl } from "@/lib/api/config";
 import { type FloorBand, floorBands } from "@/lib/map/floors";
-import { withGroundPatches } from "@/lib/map/ground-fill";
 import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
 import { dispatchMapLock } from "@/lib/map/run-lock";
 import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
@@ -125,22 +123,7 @@ export function PointCloudView({
   };
   const voxelMap = showVoxels && hasVoxels && activeMap ? activeMap.name : null;
   const octomap = useMapOctomap(voxelMap);
-  // The ground patches saved for it, drawn in: the operator saved them for
-  // the robot to drive on, and a save is only a record until the robot's
-  // tool writes it into the tree — the dashboard showing the tree as built
-  // read as if the save had been lost. Held back until the record has
-  // answered, so a million-cell layer is built once and not twice. A record
-  // that cannot be read costs the patches, never the map: this is a view.
-  const patches = useMapOctomapEdits(voxelMap);
-  const voxels = React.useMemo(
-    () =>
-      !octomap.voxels || patches.status === "loading"
-        ? null
-        : patches.fillKey
-          ? withGroundPatches(octomap.voxels, patches.fillKey)
-          : octomap.voxels,
-    [octomap.voxels, patches.status, patches.fillKey],
-  );
+  const voxels = octomap.voxels;
   // One floor of the 3D map at a time, for a map that spans storeys. A map
   // of one storey (or a failed read) has no floors and shows whole. Read
   // whenever the map has a 3D map, not only while it is drawn: "use the
@@ -362,7 +345,7 @@ export function PointCloudView({
       kind: "voxels",
       label: "3D map",
       on: showVoxels,
-      busy: octomap.status === "loading" || (octomap.voxels !== null && patches.status === "loading"),
+      busy: octomap.status === "loading",
       onToggle: toggleVoxels,
     });
   }
