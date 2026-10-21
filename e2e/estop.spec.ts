@@ -141,7 +141,9 @@ test.describe("the emergency stop", () => {
     // disarms itself, which would pass the assertion below for the wrong
     // reason.
     const frames: { vx: number; vy: number; wz: number }[] = [];
+    let sockets = 0;
     await page.routeWebSocket(/\/api\/v1\/robot\/teleop$/, (ws) => {
+      sockets += 1;
       ws.onMessage((message) => {
         if (typeof message === "string") frames.push(JSON.parse(message));
       });
@@ -153,7 +155,9 @@ test.describe("the emergency stop", () => {
     // Positive control: the switch arms before the stop, and streams.
     await arm.click();
     await expect(arm).toHaveAttribute("aria-checked", "true");
-    await expect(page.getByText("Streaming to robot · 10 Hz")).toBeVisible();
+    // Connected: the fake took the socket and the panel stopped saying so.
+    await expect.poll(() => sockets).toBe(1);
+    await expect(page.getByText("Connecting to robot…")).toBeHidden();
     // Driving when the stop lands: an idle channel sends nothing to zero.
     await page.keyboard.down("w");
     await expect.poll(() => frames.at(-1)?.vx).toBe(1);
