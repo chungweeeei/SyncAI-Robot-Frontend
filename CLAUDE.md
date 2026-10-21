@@ -207,7 +207,9 @@ components/
                 lib/map/ground-fill.ts, its save a record the robot's own
                 tool applies; and a Waypoint tool, the dashboard's place,
                 tap, re-place and delete written at once, which is where a
-                map with no floor plan gets its waypoints), and its folded
+                map with no floor plan gets its waypoints: the card's pencil
+                and the task editor's links open it with Waypoint armed
+                there), and its folded
                 floor list (floor-list-editor: rename, add or drop the
                 floors the robot's walk found)
   recordings/   bag recorder and list
@@ -245,7 +247,10 @@ lib/
                 the task editor's floor plan preview (preview.ts: fit, markers,
                 hit test), the gesture rules both map surfaces share
                 (gesture.ts: press intent, drag deadzone, heading, band), the
-                job lock (run-lock.ts), which maps the robot may be switched
+                job lock (run-lock.ts), where a map's waypoints are placed
+                (links.ts: waypointEditor — the floor plan editor, else the
+                3D map page, else nowhere — the rule every link offering to
+                place them goes through), which maps the robot may be switched
                 onto (switch.ts: a floor plan or a 3D map, either one — the
                 backend's rule), the mapping run strip's face rule
                 (run-face.ts: what the robot's run state lets the strip offer)

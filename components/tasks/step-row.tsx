@@ -46,6 +46,7 @@ import {
   type GroupPlace,
   type StepDraft,
 } from "@/lib/task/step";
+import type { WaypointEditor } from "@/lib/map/links";
 import type { MapVertex } from "@/lib/types/map";
 import type { MapMetadata } from "@/lib/types/robot";
 import { cn } from "@/lib/utils";
@@ -62,6 +63,8 @@ export interface StepRowProps {
   mapName: string | null;
   /** The map's geometry; null when it has no floor plan to show. */
   mapGrid: MapMetadata | null;
+  /** Where the map's waypoints are placed; see waypointEditor. */
+  waypointLink: WaypointEditor | null;
   /** Vertex id → the job's step numbers that go there, lit on the floor plan. */
   stepMarks: ReadonlyMap<string, readonly number[]>;
   dockMarks: ReadonlySet<string>;
@@ -100,6 +103,7 @@ export function StepRow({
   verticesStatus,
   mapName,
   mapGrid,
+  waypointLink,
   stepMarks,
   dockMarks,
   disabled,
@@ -386,6 +390,7 @@ export function StepRow({
                         vertices={vertices}
                         status={verticesStatus}
                         mapName={mapName}
+                        waypointLink={waypointLink}
                         value={step.vertexId}
                         disabled={disabled}
                         onPick={pickWaypoint}

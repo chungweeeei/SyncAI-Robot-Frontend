@@ -26,7 +26,7 @@ import { useTaskTemplates } from "@/hooks/use-task-templates";
 import { useSchedules } from "@/hooks/use-schedules";
 import { useStepDrafts } from "@/hooks/use-step-drafts";
 import { useTaskDraft } from "@/hooks/use-task-draft";
-import { waypointEditorHref } from "@/lib/map/links";
+import { waypointEditor } from "@/lib/map/links";
 import type { TaskStepState } from "@/lib/api/task";
 import { draftIsUnsaved, type TaskDraft } from "@/lib/task/draft-store";
 import {
@@ -105,6 +105,11 @@ export function TaskEditor() {
   );
   // Read here, not per row, so unfolding a row never refetches the catalogue.
   const mapGrid = editorMap?.grid ?? null;
+  /** Where this map's waypoints are placed: its floor plan, else its 3D map. */
+  const waypointLink = React.useMemo(
+    () => (editorMap ? waypointEditor(editorMap, { from: "tasks" }) : null),
+    [editorMap],
+  );
   const list = useMapVertexList(mapName);
   const vertices = list.vertices;
   // The catalogue's state first, so "no-map" never means "not asked yet".
@@ -416,14 +421,14 @@ export function TaskEditor() {
                 disabled={false}
                 onPick={selectMap}
               />
-              {/* Opens the map's editor in Waypoints mode; its back button
-               * returns here. No floor plan means nothing to place on, so a
-               * disabled span. */}
-              {mapName !== null && mapGrid !== null ? (
+              {/* Opens the map's floor plan editor in Waypoints mode, or its
+               * 3D map with Waypoint armed; its back button returns here.
+               * Neither means nothing to place on, so a disabled span. */}
+              {waypointLink !== null ? (
                 <Link
-                  href={waypointEditorHref(mapName, { from: "tasks" })}
-                  aria-label="Add waypoints on the floor plan"
-                  title="Add waypoints on the floor plan"
+                  href={waypointLink.href}
+                  aria-label={`Add waypoints on the ${waypointLink.surface}`}
+                  title={`Add waypoints on the ${waypointLink.surface}`}
                   className="flex size-6 items-center justify-center rounded-sm border border-hairline text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground"
                 >
                   <MapPinPlusIcon className="size-3.5" aria-hidden />
@@ -446,6 +451,7 @@ export function TaskEditor() {
             verticesStatus={verticesStatus}
             mapName={mapName}
             mapGrid={mapGrid}
+            waypointLink={waypointLink}
             stepMarks={stepMarks}
             dockMarks={dockMarks}
             disabled={false}

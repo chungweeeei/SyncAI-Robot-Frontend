@@ -11,14 +11,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ActiveVerticesStatus } from "@/hooks/use-active-map-vertices";
-import { waypointEditorHref } from "@/lib/map/links";
+import type { WaypointEditor } from "@/lib/map/links";
 import type { MapVertex } from "@/lib/types/map";
 
 export interface VertexPickerProps {
   vertices: MapVertex[];
   status: ActiveVerticesStatus;
-  /** For the deep link offered when the active map has no vertices yet. */
+  /** Named in the hint when the map has no vertices yet. */
   mapName: string | null;
+  /** The deep link offered then; null when the map has nothing to place them on. */
+  waypointLink: WaypointEditor | null;
   /** The vertex the row's numbers came from; null once they were hand edited. */
   value: string | null;
   disabled: boolean;
@@ -39,6 +41,7 @@ export function VertexPicker({
   vertices,
   status,
   mapName,
+  waypointLink,
   value,
   disabled,
   onPick,
@@ -61,14 +64,21 @@ export function VertexPicker({
       <Hint>
         {mapName ? (
           <>
-            <span className="readout">{mapName}</span> has no waypoints yet —{" "}
-            <Link
-              href={waypointEditorHref(mapName, { from: "tasks" })}
-              className="underline underline-offset-2 hover:text-foreground"
-            >
-              place some
-            </Link>{" "}
-            on the floor plan first.
+            <span className="readout">{mapName}</span> has no waypoints yet
+            {waypointLink ? (
+              <>
+                {" "}—{" "}
+                <Link
+                  href={waypointLink.href}
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  place some
+                </Link>{" "}
+                on the {waypointLink.surface} first.
+              </>
+            ) : (
+              ", and no floor plan or 3D map to place them on."
+            )}
           </>
         ) : (
           "No waypoints to pick from."
