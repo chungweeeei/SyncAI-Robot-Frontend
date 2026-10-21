@@ -4,14 +4,22 @@ import * as React from "react";
 
 import { FloorPicker } from "@/components/console/floor-picker";
 import { overlayPanel } from "@/components/console/instrument";
+import {
+  VertexCreateDialog,
+  type Placement,
+} from "@/components/dashboard/vertex-create-dialog";
+import { VertexMoveDialog } from "@/components/dashboard/vertex-move-dialog";
+import { VertexPlaceControl } from "@/components/dashboard/vertex-place-control";
 import { GroundCanvas, type GroundTool } from "@/components/maps/ground-canvas";
 import { GroundToolBar } from "@/components/maps/ground-toolbar";
 import { useMapFloors } from "@/hooks/use-map-floors";
+import { useMapVertexWrites } from "@/hooks/use-map-vertex-writes";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
 import { useMapOctomapEdits } from "@/hooks/use-map-octomap-edits";
 import { useSaveMapOctomapEdits } from "@/hooks/use-map-actions";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useMapEntry } from "@/hooks/use-maps";
+import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { floorBands } from "@/lib/map/floors";
 import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
 import {
@@ -34,15 +42,22 @@ import {
   type GroundPatch,
 } from "@/lib/map/ground-fill";
 import { createUndoStack, popRedo, popUndo, pushPatch } from "@/lib/map/patch";
+import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
 import { isTypingTarget } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
+import type { MapVertex, VertexType } from "@/lib/types/map";
 import type { OccupiedVoxels } from "@/lib/types/octree";
+import type { PlanarPose } from "@/lib/types/robot";
 
 /**
  * The ground editor: the 3D map from above, and a brush that paints floor
  * into the holes the lidar never saw. A save records the patches on the
  * robot; the robot's own tool writes them into the tree, so the note after
  * a save says they wait to be applied.
+ *
+ * It is also where a map with no floor plan gets its waypoints, which the
+ * floor plan editor cannot place without a raster to place them on. Those
+ * are written as they are placed, the dashboard's flow, not on Save.
  *
  * Loads the tree (shared with the dashboard's layer) and the saved patches,
  * and mounts the surface only once both are in: a record arriving after
@@ -164,6 +179,35 @@ function GroundSurface({
   const runLock = useMapRunLock(name);
   const { mutate: save } = useSaveMapOctomapEdits();
   const { floors } = useMapFloors(name);
+  const stops = useMapVertexWrites(name);
+  const { vertices, moveVertex, createVertex, removeVertex, clearWriteError } = stops;
+  const { pose: robotPose, reason: robotPoseReason } = useRobotMapPose(name);
+  /** The stop a re-place is carrying; Waypoint is armed while it is set. */
+  const [moving, setMoving] = React.useState<MapVertex | null>(null);
+  /** A placed pose waiting for a name; written only on Create. */
+  const [placement, setPlacement] = React.useState<Placement | null>(null);
+  const placementSeq = React.useRef(0);
+  /** The stop a tap is asking about; null when the dialog is closed. */
+  const [askedVertex, setAskedVertex] = React.useState<MapVertex | null>(null);
+  /**
+   * A stop whose new pose is being written. Keeps its marker hidden until the
+   * PUT lands, or the old mark would flash back as if the move were refused.
+   */
+  const [savingVertex, setSavingVertex] = React.useState<MapVertex | null>(null);
+
+  // A lock arriving with Waypoint armed disarms it, during render rather than
+  // in an effect, so the next release cannot write onto a read-only map. An
+  // open name dialog stays up instead: its Create greys and the name survives.
+  if (runLock.locked && tool === "waypoint") {
+    setTool("orbit");
+    setMoving(null);
+  }
+
+  /** Any tool change drops a re-place in hand. */
+  const changeTool = React.useCallback((next: GroundTool) => {
+    setTool(next);
+    if (next !== "waypoint") setMoving(null);
+  }, []);
   // Each floor's band in the tree's levels; a floor the tree does not reach
   // is not offered. Which one is picked is read back off the band, so a
   // slider moved by hand simply leaves every floor unpressed.
@@ -256,11 +300,12 @@ function GroundSurface({
     );
   }, [runLock.locked, note.kind, session, save, name, voxels]);
 
+  const placeLocked = runLock.locked;
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        setTool("orbit");
+        changeTool("orbit");
         return;
       }
       if (isTypingTarget(event.target)) return;
@@ -281,16 +326,18 @@ function GroundSurface({
         event.preventDefault();
         fit();
       } else if (event.key.toLowerCase() === "b") {
-        setTool("fill");
+        changeTool("fill");
       } else if (event.key.toLowerCase() === "e") {
-        setTool("erase");
+        changeTool("erase");
       } else if (event.key.toLowerCase() === "o") {
-        setTool("orbit");
+        changeTool("orbit");
+      } else if (event.key.toLowerCase() === "w" && !placeLocked) {
+        changeTool("waypoint");
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo, fit]);
+  }, [undo, redo, fit, changeTool, placeLocked]);
 
   React.useEffect(() => {
     if (!dirty) return;
@@ -313,6 +360,72 @@ function GroundSurface({
   const minM = kzToMetres(full.lo, voxels);
   const maxM = kzToMetres(full.hi, voxels);
 
+  // The floor picked, as the dashboard holds it: its stops alone are shown,
+  // and a stop placed on it stands at the ground under it. A hand-set band is
+  // no floor, so a new stop goes to the ground floor as with All.
+  const floorBand = React.useMemo(
+    () => floorBands(floors).find((floor) => floor.name === pickedFloor) ?? null,
+    [floors, pickedFloor],
+  );
+  const vertexLo = floorBand?.lo;
+  const vertexHi = floorBand?.hi;
+  const vertexBand = React.useMemo(
+    () => (vertexLo === undefined || vertexHi === undefined ? null : { lo: vertexLo, hi: vertexHi }),
+    [vertexLo, vertexHi],
+  );
+  // The plane a press is cast onto: the floor's one height (memoised, since
+  // the measure walks every cell), or a re-placed stop's own with none picked.
+  const floorZ = React.useMemo(() => floorGroundOf(voxels, floorBand), [voxels, floorBand]);
+  const placeZ = moving && !floorBand ? moving.z : floorZ;
+
+  // Single-shot, as on the dashboard: one press, one stop, then disarm.
+  const commitPlace = (picked: PlanarPose) => {
+    const placed = {
+      ...picked,
+      z: placedGround({ voxels, band: floorBand, x: picked.x, y: picked.y, moving: moving?.z }),
+    };
+    if (moving) {
+      const target = moving;
+      setSavingVertex(target);
+      // The echo patches the list in the same render that clears this.
+      void moveVertex(target.id, placed).finally(() => setSavingVertex(null));
+    } else {
+      setPlacement({ key: ++placementSeq.current, pose: placed });
+    }
+    changeTool("orbit");
+  };
+
+  // Closes only once the row comes back; a refusal keeps the dialog up with
+  // the backend's sentence.
+  const createPlaced = (stopName: string, type: VertexType) => {
+    if (!placement) return;
+    void createVertex({ name: stopName, type, ...placement.pose }).then((created) => {
+      if (created) setPlacement(null);
+    });
+  };
+
+  // A snapshot, not a live binding: a pose that crept while the name was typed
+  // would be a stop nobody placed. Same key, so the typed name survives.
+  const takeRobotPose = () => {
+    if (!robotPose) return;
+    const z = robotGround(voxels, floorBands(floors), robotPose);
+    const pose = { x: robotPose.x, y: robotPose.y, theta: robotPose.theta, z };
+    setPlacement((cur) => (cur ? { ...cur, pose } : cur));
+  };
+
+  const armReplace = (vertex: MapVertex) => {
+    setAskedVertex(null);
+    setMoving(vertex);
+    setTool("waypoint");
+  };
+
+  // A refusal leaves the dialog up with the sentence in it.
+  const deleteAsked = (vertex: MapVertex) => {
+    void removeVertex(vertex.id).then((gone) => {
+      if (gone) setAskedVertex(null);
+    });
+  };
+
   return (
     // For the e2e suite only, as an attribute so it can't become an on-screen
     // diagnostic: data-patched (columns patched) proves a stroke filled or
@@ -330,6 +443,43 @@ function GroundSurface({
         zoomStep={zoomStep}
         shading={shading}
         onStrokeCommit={commit}
+        vertices={vertices}
+        vertexBand={vertexBand}
+        movingVertex={moving ?? savingVertex}
+        placeZ={placeZ}
+        onPlaceCommit={commitPlace}
+        onVertexActivate={setAskedVertex}
+      />
+
+      <VertexCreateDialog
+        placement={placement}
+        lockedReason={runLock.reason}
+        robotPose={robotPose}
+        robotPoseReason={robotPoseReason}
+        busy={stops.busy}
+        error={stops.writeError}
+        onUseRobotPose={takeRobotPose}
+        onCreate={createPlaced}
+        onClose={() => {
+          setPlacement(null);
+          // A refusal belongs to the attempt it answered, not to the next one.
+          clearWriteError();
+        }}
+      />
+
+      {/* No Move: this page opens maps the robot is not on, and is not where
+        * the robot is sent from (see VertexMoveDialog). */}
+      <VertexMoveDialog
+        vertex={askedVertex}
+        editLock={runLock.reason}
+        deleting={stops.busy}
+        deleteError={stops.writeError}
+        onReplace={armReplace}
+        onDelete={deleteAsked}
+        onClose={() => {
+          setAskedVertex(null);
+          clearWriteError();
+        }}
       />
 
       <div className="pointer-events-none absolute inset-x-3 top-3 flex max-h-[calc(100%-1.5rem)] flex-col gap-2">
@@ -348,7 +498,8 @@ function GroundSurface({
             writeLock={runLock.reason}
             onSave={onSave}
             tool={tool}
-            onToolChange={setTool}
+            onToolChange={changeTool}
+            placeLock={runLock.reason}
             radius={radiusM}
             onRadiusChange={setRadiusM}
             shading={shading}
@@ -372,6 +523,17 @@ function GroundSurface({
         {/* Narrower on a phone so the map's middle stays reachable beside it;
           * the long hint is desktop-only, since a finger has no room for prose. */}
         <div className="pointer-events-none flex min-h-0 w-44 flex-col gap-2 overflow-y-auto sm:w-60">
+          {/* Shown while a re-place is live, and after it when the write
+            * fails, so the sentence lands where the operator is looking. */}
+          <VertexPlaceControl
+            className="pointer-events-auto"
+            vertex={moving}
+            // One busy flag and error for every write; an open dialog owns them.
+            busy={placement || askedVertex ? false : stops.busy}
+            error={placement || askedVertex ? null : stops.writeError}
+            onCancel={() => changeTool("orbit")}
+            onDismissError={clearWriteError}
+          />
           <div className={cn(overlayPanel, "pointer-events-auto space-y-2 p-2.5")}>
             <p className="instrument-label text-muted-foreground">Heights shown</p>
             <label className="block text-[11px] leading-snug">
