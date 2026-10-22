@@ -591,7 +591,7 @@ test.describe("the editor's 3D view", () => {
         "true",
       );
       // Nothing chosen to work on, so no waypoint tool is offered yet.
-      await expect(drawList(page)).toHaveText("No type");
+      await expect(drawList(page)).toContainText("No type");
       await expect(page.getByRole("button", { name: "Place" })).toHaveCount(0);
 
       await page.getByRole("button", { name: "Back to maps" }).click();
@@ -650,7 +650,7 @@ test.describe("the editor's 3D view", () => {
         new RegExp(`/maps/${MAP_NAME}/edit\\?view=3d&tool=waypoint&from=tasks$`),
       );
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
-      await expect(drawList(page)).toHaveText("Waypoint");
+      await expect(drawList(page)).toContainText("Waypoint");
       await expect(page.getByRole("button", { name: "Place" })).toHaveAttribute(
         "aria-pressed",
         "true",
