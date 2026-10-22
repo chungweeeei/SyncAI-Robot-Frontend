@@ -31,6 +31,11 @@ const PRESETS: readonly { topic: string; hint: string }[] = [
   { topic: "/tf", hint: "How the robot's parts are placed as it moves" },
   { topic: "/tf_static", hint: "How the robot's fixed parts are mounted" },
   { topic: "odom", hint: "Where the robot calculates it has travelled" },
+  // The localizer's own answers, so a replay can be checked against what the
+  // robot believed at the time rather than only re-run from its inputs.
+  { topic: "pointlio/lio_odom", hint: "Where the robot placed itself on the map" },
+  { topic: "pointlio/body_cloud", hint: "The scan as the robot lined it up with its own body" },
+  { topic: "initialpose", hint: "Starting positions an operator set on the map" },
   { topic: "robot_state", hint: "Overall status: battery, mode, motor health" },
 ];
 
