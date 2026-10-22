@@ -51,6 +51,16 @@ export interface Theme {
    */
   pathCasing: number;
   /**
+   * The route while the 3D map is shown, and its rim. The map's floor is
+   * the ramp's violet into blue and cyan, the very hues of `path`, so the
+   * route sank into the cells it runs over even with its pale rim. The
+   * neutrals are the ramp's one free family, so the core goes pale and the
+   * rim and chevrons dark. Over the floor plan alone the cyan stays: the
+   * light theme's plan is white, and a white route would vanish on it.
+   */
+  pathOverMap: number;
+  pathCasingOverMap: number;
+  /**
    * A dock's own leg: the staging point and the approach from it onto the
    * dock. Not a signal hue and not the route's cyan, so the last metre reads
    * as a different kind of driving from the route that brought the robot to
@@ -112,6 +122,8 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     vertexHover: SIGNAL.light.cmd,
     path: 0x2b86a8,
     pathCasing: 0xffffff,
+    pathOverMap: 0xffffff,
+    pathCasingOverMap: SIGNAL.dark.elevated,
     dock: 0x6a4fc0,
     zone: SIGNAL.light.warn,
     localCostmap: SIGNAL.light.caution,
@@ -134,6 +146,8 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     vertexHover: SIGNAL.dark.cmd,
     path: 0x3aa8cc,
     pathCasing: 0xf2f7fa,
+    pathOverMap: 0xf2f7fa,
+    pathCasingOverMap: SIGNAL.dark.background,
     dock: 0xa991f2,
     zone: SIGNAL.dark.warn,
     localCostmap: SIGNAL.dark.caution,
