@@ -466,8 +466,8 @@ touch one, prefer moving it toward the rule.
   robot did with the command: `useTaskTracker` for anything dispatched as a
   Temporal task, and the console's shared 1 Hz robot-state poll for the ones
   that command the machine directly (`use-locomotion`, `use-posture` — Stand /
-  Lie down are motion keys, not posture tasks, so a speaking job cannot block
-  them; `postureLock` greys them while a job drives instead). Read the epistemics note in
+  Lie down are motion keys, not posture tasks, so no running job blocks
+  them — deliberately, a driving one included; only the stop greys them). Read the epistemics note in
   `use-locomotion.ts` before adding another: a request is not a reading, and
   which of the two a value is decides whether it may be shown as fact.
   `use-task-hold` is the newest case: a pause is a *request* the ack answers

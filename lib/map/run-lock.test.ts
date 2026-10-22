@@ -5,14 +5,11 @@ import {
   AUTO_LOCALIZE_NOT_NAVIGATING,
   AUTO_LOCALIZE_UNKNOWN,
   DISPATCH_LOCK_CONVERTING,
-  POSTURE_LOCK_DRIVING,
-  POSTURE_LOCK_UNKNOWN,
   RUN_LOCK_RUNNING,
   RUN_LOCK_UNKNOWN,
   autoLocalizeLock,
   dispatchMapLock,
   mapRunLock,
-  postureLock,
 } from "@/lib/map/run-lock";
 
 /**
@@ -110,32 +107,5 @@ describe("autoLocalizeLock", () => {
 
   it("leaves a mode not yet reported to the backend", () => {
     expect(autoLocalizeLock({ mode: null, tasks: [], status: "ok" }).locked).toBe(false);
-  });
-});
-
-describe("postureLock", () => {
-  it("is free with nothing running", () => {
-    expect(postureLock({ tasks: [], status: "ok" })).toEqual({ locked: false, reason: null });
-  });
-
-  it("stays free under a job that drives nowhere, such as one that only speaks", () => {
-    expect(postureLock({ tasks: [{ map_name: null }], status: "ok" })).toEqual({
-      locked: false,
-      reason: null,
-    });
-  });
-
-  it("locks under a job that drives", () => {
-    expect(postureLock({ tasks: [{ map_name: null }, { map_name: "lobby" }], status: "ok" }))
-      .toEqual({ locked: true, reason: POSTURE_LOCK_DRIVING });
-  });
-
-  it("treats an unread job list as unknown, not as idle", () => {
-    for (const status of ["loading", "error"] as const) {
-      expect(postureLock({ tasks: [], status })).toEqual({
-        locked: true,
-        reason: POSTURE_LOCK_UNKNOWN,
-      });
-    }
   });
 });

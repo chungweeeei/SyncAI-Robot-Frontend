@@ -4713,30 +4713,26 @@ test.describe("what a dispatch records about itself", () => {
     expect(writes.filter((w) => w.path === "/api/v1/tasks")).toEqual([]);
   });
 
-  test("stands the robot up while a job only speaks", async ({ page }) => {
+  test("stands and lies the robot down while any job runs", async ({ page }) => {
     // The reason postures are not tasks: a task is refused while any other
-    // runs, and a speaking job must not keep the robot down.
-    const writes = await mockBackend(page, {
-      activeTasks: [activeTask({ map_name: null })],
-    });
-    await page.goto("/");
+    // runs, and the operator must be able to change posture mid-job — one
+    // that only speaks or one that drives.
+    for (const job of [activeTask({ map_name: null }), activeTask()]) {
+      const writes = await mockBackend(page, { activeTasks: [job] });
+      await page.goto("/");
 
-    await page.getByRole("button", { name: "Manual drive panel" }).click();
-    await page.getByRole("button", { name: "Stand", exact: true }).click();
-    await expect
-      .poll(() => writes.filter((w) => w.path === "/api/v1/robot/set_motion_key"))
-      .toHaveLength(1);
-  });
-
-  test("holds the postures while a job drives, and says why", async ({ page }) => {
-    const writes = await mockBackend(page, { activeTasks: [activeTask()] });
-    await page.goto("/");
-
-    await page.getByRole("button", { name: "Manual drive panel" }).click();
-    await expect(page.getByRole("button", { name: "Stand", exact: true })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Lie down", exact: true })).toBeDisabled();
-    await expect(page.getByText(/The robot is driving a job/)).toBeVisible();
-    expect(writes.filter((w) => w.path === "/api/v1/robot/set_motion_key")).toEqual([]);
+      await page.getByRole("button", { name: "Manual drive panel" }).click();
+      await page.getByRole("button", { name: "Stand", exact: true }).click();
+      await page.getByRole("button", { name: "Lie down", exact: true }).click();
+      await expect
+        .poll(() =>
+          writes
+            .filter((w) => w.path === "/api/v1/robot/set_motion_key")
+            .map((w) => (w.body as { key: string }).key),
+        )
+        .toEqual(["0", "2"]);
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+    }
   });
 });
 
