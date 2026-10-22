@@ -307,20 +307,6 @@ export function sendMoveTask(
   );
 }
 
-// A table, not `toLowerCase()`, so the compiler checks the `TaskKind`.
-const POSTURE_KIND: Record<Posture, TaskKind> = {
-  STANDUP: "standup",
-  LIEDOWN: "liedown",
-};
-
-export function sendPostureTask(
-  robotId: string,
-  posture: Posture,
-): Promise<string> {
-  const kind = POSTURE_KIND[posture];
-  return postTask(robotId, kind, [{ id: kind, type: posture }]);
-}
-
 /**
  * Dispatch an authored step list (already wire shape; see lib/task/step.ts)
  * and return its id. `name` is the source template, recorded for history;

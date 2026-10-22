@@ -48,8 +48,8 @@ export async function setInitialPose(pose: InitialPose): Promise<void> {
 
 /**
  * A gait-controller motion key: `"0"` stand, `"1"` locomotion (RL), `"2"` lie
- * down, `"3"` damping, `"4"` emergency stop, `"5"` MPC. Stand and lie down go
- * through the posture task instead; this is for the controller keys.
+ * down, `"3"` damping, `"4"` emergency stop, `"5"` MPC. Stand and lie down are
+ * sent here too (use-posture.ts), not as posture tasks.
  */
 export type MotionKey = "0" | "1" | "2" | "3" | "4" | "5";
 

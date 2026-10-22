@@ -92,3 +92,33 @@ export function autoLocalizeLock({
   if (tasks.length > 0) return { locked: true, reason: AUTO_LOCALIZE_JOB_RUNNING };
   return UNLOCKED;
 }
+
+export const POSTURE_LOCK_DRIVING =
+  "The robot is driving a job. Cancel it or wait for it to finish before it stands or lies down.";
+export const POSTURE_LOCK_UNKNOWN =
+  "Can't confirm the robot isn't driving right now. Try again in a moment.";
+
+/** What `postureLock` reads off the active-tasks poll. */
+export interface PostureLockInput {
+  tasks: readonly { map_name: string | null }[];
+  status: "loading" | "ok" | "error";
+}
+
+/**
+ * Whether Stand / Lie down may be pressed, and if not, why.
+ *
+ * They are motion keys sent straight to the driver, outside Temporal, so the
+ * backend's one-task-at-a-time gate does not stop them and nothing on the
+ * robot refuses a lie-down mid-route. Only a job that drives locks them, read
+ * as one stamped with a map (the backend stamps exactly the runs with a pose
+ * step); a SPEAK or WAIT job does not, which is the point of sending them
+ * directly. An UNDOCK-only job carries no map and is not caught.
+ */
+export function postureLock({ tasks, status }: PostureLockInput): RunLock {
+  // Fail closed, as mapRunLock: an unread list may hide a drive.
+  if (status !== "ok") return { locked: true, reason: POSTURE_LOCK_UNKNOWN };
+  if (tasks.some((task) => task.map_name !== null)) {
+    return { locked: true, reason: POSTURE_LOCK_DRIVING };
+  }
+  return UNLOCKED;
+}

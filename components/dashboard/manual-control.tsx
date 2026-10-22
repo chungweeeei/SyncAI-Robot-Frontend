@@ -15,7 +15,6 @@ import { PanelPostureControl } from "@/components/dashboard/posture-control";
 import { Thumbstick } from "@/components/dashboard/thumbstick";
 import { DRIVE_PAGE } from "@/components/drive/drive-screen";
 import { useConsoleEstop } from "@/hooks/use-console-estop";
-import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { useJoystick } from "@/hooks/use-joystick";
 import { LINEAR_SCALE_DEFAULT } from "@/lib/teleop/stick";
 import { isDrag } from "@/lib/map/gesture";
@@ -48,7 +47,6 @@ function clamp(value: number, min: number, max: number): number {
 export function ManualControl({ className }: { className?: string }) {
   const [armed, setArmed] = React.useState(false);
   const { engaged: stopped } = useConsoleEstop();
-  const robotId = useConsoleRobotState().state?.robot_id ?? null;
   // The stop disarms the panel and it stays disarmed after release: re-arming
   // is the operator's act. During render rather than in an effect, so not one
   // more frame goes out (unmounting the footer sends the zero frame).
@@ -176,9 +174,8 @@ export function ManualControl({ className }: { className?: string }) {
           <ArmSwitch armed={armed} onArmedChange={setArmed} stopped={stopped} />
         </div>
       </header>
-      {/* Above the sticks: the robot stands before it drives. Needs the robot
-        * id, which the posture task carries. */}
-      {robotId !== null && <PanelPostureControl robotId={robotId} className="mb-3" />}
+      {/* Above the sticks: the robot stands before it drives. */}
+      <PanelPostureControl className="mb-3" />
       <div className="flex items-start justify-center gap-4">
         <LabeledStick caption="Translate">
           <Thumbstick
