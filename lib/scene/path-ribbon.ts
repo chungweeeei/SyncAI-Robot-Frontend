@@ -45,11 +45,6 @@ const POLYGON_OFFSET = -4;
  */
 const CASING_DROP_M = 0.004;
 /*
- * The ghost draws before every other translucent mark and with no depth
- * test, so whatever is in front paints over it; then the casing, then the
- * core on the casing's own depth.
- */
-/*
  * Chevrons along the route, pointing the way the robot will go: a band says
  * where, not which way, and from a tilted view the goal it ends on can be
  * off screen. One every 0.8 m, from 0.6 m out so the first is clear of the
@@ -109,6 +104,11 @@ export function arrowStations(
   return stations;
 }
 
+/*
+ * The ghost draws before every other translucent mark and with no depth
+ * test, so whatever is in front paints over it; then the casing, then the
+ * core on the casing's own depth.
+ */
 const GHOST_RENDER_ORDER = -3;
 const CASING_RENDER_ORDER = -2;
 const CORE_RENDER_ORDER = -1;
