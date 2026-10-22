@@ -1,8 +1,8 @@
 // The OcTree `.bt` format, as the robot's clean_map writes octomap.bt and the
 // backend serves it: a short text header, then the tree depth first, two bytes
 // an inner node. Decoded here rather than on the robot because the file is a
-// third the size of its voxel centres as floats, and the ground editor needs
-// the tree's own keys, not metres.
+// third the size of its voxel centres as floats, and the floor rules
+// (lib/map/ground.ts) read the tree's own keys, not metres.
 //
 // Both halves of the format live in this file: the console only ever decodes,
 // but the encoder is how the tests and the e2e fake build a tree with known
@@ -80,9 +80,8 @@ function readHeader(bytes: Uint8Array): Header {
  * level is a pruned block and is expanded to its cells, so what comes back
  * is every occupied cell whatever the tree chose to merge.
  *
- * Free leaves are counted and dropped: the layer draws what is solid, and the
- * ground editor asks whether a column is empty above its floor, which the
- * occupied set answers. Throws one operator sentence for a file that is not
+ * Free leaves are counted and dropped: the layer draws what is solid, and a
+ * column's ground is its lowest solid cell, which the occupied set answers. Throws one operator sentence for a file that is not
  * a tree and another for one cut short, since a 2xx truncated in transit has
  * no backend sentence of its own.
  */

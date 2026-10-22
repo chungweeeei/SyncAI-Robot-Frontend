@@ -164,8 +164,7 @@ components/
                 (the occupancy tree, off by default like the scan under a
                 floor plan and on by default without one, drawn whether or
                 not the map has a floor plan, one floor at a time
-                on a map that spans storeys, with its saved ground patches
-                drawn in before the robot has applied them), waypoints (each at
+                on a map that spans storeys), waypoints (each at
                 the ground under it; with a floor picked, only that floor's
                 are shown or tappable, and a goal, a new waypoint or an
                 initial pose lands on it, at the ground the 3D map shows
@@ -197,21 +196,18 @@ components/
                 one — a still drawn in the browser once the card nears the
                 screen, lib/scene/voxel-snapshot.ts, each storey cut under
                 its ceiling — else its floor plan thumbnail, and the floor
-                plan again when the tree cannot be read), the gridmap editor
-                (grid-canvas) and the
-                ground editor (/maps/[name]/3d, ground-canvas: the 3D map
-                in 3D, orbited freely, and a brush that patches the holes the
-                lidar never saw — a press is cast onto the height the shown
-                floor mostly stands on, since a hole has no cell to hit and a
-                wall in front of one must not take the stroke; its rules are
-                lib/map/ground-fill.ts, its save a record the robot's own
-                tool applies; and a Waypoint tool, the dashboard's place,
-                tap, re-place and delete written at once, which is where a
-                map with no floor plan gets its waypoints: the card's pencil
-                and the task editor's links open it with Waypoint armed
-                there), and its folded
-                floor list (floor-list-editor: rename, add or drop the
-                floors the robot's walk found)
+                plan again when the tree cannot be read), and the map's
+                editor (/maps/[name]/edit, map-editor: one page, two views,
+                the 2D / 3D switch in its header for a map with both and
+                the view in the URL — which views a map has is
+                lib/map/links.ts's editorViews): the gridmap editor
+                (map-grid-editor, grid-canvas) and the 3D view
+                (?view=3d, map-3d-editor, map-3d-canvas: the 3D map in 3D,
+                orbited freely, its heights narrowed by a band or a floor,
+                and a Waypoint tool — the dashboard's place, tap, re-place
+                and delete, written at once — which is where a map with no
+                floor plan gets its waypoints: the card's pencil opens it
+                there, and the task editor's links with Waypoint armed)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
                 and the /tasks/editor page (step composer, name, save, delete)
@@ -248,27 +244,26 @@ lib/
                 hit test), the gesture rules both map surfaces share
                 (gesture.ts: press intent, drag deadzone, heading, band), the
                 job lock (run-lock.ts), where a map's waypoints are placed
-                (links.ts: waypointEditor — the floor plan editor, else the
-                3D map page, else nowhere — the rule every link offering to
-                place them goes through), which maps the robot may be switched
+                (links.ts: waypointEditor — the editor's floor plan view, else
+                its 3D view, else nowhere — the rule every link offering to
+                place them goes through) and which views the map editor offers
+                (editorViews: the floor plan unless it is mid-conversion,
+                then a finished 3D map; the first is where the pencil opens,
+                and a bare /edit is always the floor plan), which maps the robot may be switched
                 onto (switch.ts: a floor plan or a 3D map, either one — the
                 backend's rule), the mapping run strip's face rule
                 (run-face.ts: what the robot's run state lets the strip offer)
                 and the robot's 3D map (octree.ts: the `.bt` decoder — the
                 occupancy tree's own compact form, read into its occupied
                 cells with the tree's 16-bit keys — and the encoder the tests
-                and the e2e fake build trees with), with the ground editor's
-                rules (ground-fill.ts: each column's floor inside a height
-                band, the median a patch is set at and the samples it needs,
-                the hole test — nothing occupied through the clearance band —
-                the dabs and their undo patches, and the record's absolute
-                keys and the tree with them drawn in (withGroundPatches, a union,
-                since an applied patch is in both), the floor the brush
-                aims at and the column under a
-                point), the z a placed waypoint is written with
+                and the e2e fake build trees with), with where it shows the
+                ground (ground.ts: each column's floor inside a height
+                band, the floor a band mostly stands on, which the editor's
+                3D view frames itself on, the ground under a point and the
+                column under it), the z a placed waypoint is written with
                 (waypoint-ground.ts: the ground under it on the floor
                 picked, a re-placed stop's own with none, else the ground
-                floor's 0 — the rule the dashboard and the 3D map page
+                floor's 0 — the rule the dashboard and the editor's 3D view
                 share), and the floors of a
                 map that spans storeys (floors.ts: the band each floor owns —
                 from a metre under its level, so a slab's top is in the
@@ -293,13 +288,12 @@ lib/
                 it thins the floor plan while up and lends its box to
                 Recenter when there is no floor plan), the eye-dome
                 lighting that outlines the 3D map by depth (edl.ts: the
-                ground editor's whole scene; on the dashboard only the
+                editor's whole 3D view; on the dashboard only the
                 map's own layer, the rest drawn over it against its
                 depth, so a scan point is not ringed), camera policy (the
-                opening, overhead and front framings, and the ground
-                editor's: the primary button orbits until a brush is armed,
-                then paints while the right button orbits), the ground
-                patches' 3D marks, picking,
+                opening, overhead and front framings, and the editor's
+                3D view's: the primary button orbits until Waypoint is armed,
+                then places while the right button orbits), picking,
                 robot mesh
   theme/        the signal hues both canvases draw with, and the height ramp
                 the 3D map is coloured by (height-ramp.ts: data colouring,
@@ -534,14 +528,10 @@ touch one, prefer moving it toward the rule.
   editor draws (`mapImage`); a mapping save and a map rename or delete also
   change the scan the dashboard's "Map scan" layer draws (`mapPointCloud`),
   which a grid save or convert leaves alone, and the same writes drop the
-  decoded 3D map (`mapOctomap`, by its name-only prefix) and its ground
-  patches (`mapOctomapEdits`) and its floors (`mapFloors`, detected from
-  the walk a mapping save replaces); a floor save writes its answer into
-  `mapFloors`, which the dashboard and the ground editor share; a ground patch save writes its own list back
-  as the next read and leaves `mapOctomap` alone, since the tree only
-  changes on the robot, by its tool, which the catalogue's version reports
-  (the dashboard reads the same list and draws it into the tree, so a save
-  shows there at once); a map rename, delete or
+  decoded 3D map (`mapOctomap`, by its name-only prefix) and its floors
+  (`mapFloors`, detected from the walk a mapping save replaces); a floor
+  save writes its answer into `mapFloors`, which the dashboard and the 3D
+  map page share; a map rename, delete or
   activate also changes the forbidden zones' read (`mapKeepout`, whose
   `active` moves with a switch); a mapping start, save or reset changes the
   run state (`mappingStatus` — invalidated, never written, because the
@@ -697,9 +687,7 @@ it is run in, so it does not belong to any one of them.
   error string because it would help you debug. The house words are: **floor
   plan** (not gridmap / 2D grid / occupancy grid), **scan** (not point cloud /
   "the cloud"), **3D map** (not octomap / octree / voxels — the occupancy
-  tree the robot builds beside the scan), **ground patch** for a floor cell
-  an operator paints into it (**Fill ground** is the way in; never "edit",
-  which the floor plan owns), **floor** for one storey of a 3D map
+  tree the robot builds beside the scan), **floor** for one storey of a 3D map
   (`1F`, `2F`; never "level" or "layer", which the toolbar already uses), **waypoint** (not vertex / stop), **forbidden zone** (not
   polygon / no-go area), **channel** (not topic),
   **recording** (not bag), **clip** for a video saved out of the camera window,

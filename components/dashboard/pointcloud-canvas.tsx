@@ -44,7 +44,7 @@ import {
 } from "@/lib/scene/path-ribbon";
 import { aimRaycaster, intersectGround } from "@/lib/scene/picking";
 import { GROUND_FLOOR_Z_M, drawnGround } from "@/lib/map/floors";
-import { columnAt } from "@/lib/map/ground-fill";
+import { columnAt } from "@/lib/map/ground";
 import { POSE_EASE_TAU_S, type SmoothPose } from "@/lib/scene/pose";
 import {
   ROBOT_BASE_HEIGHT_M,
@@ -1245,7 +1245,7 @@ export function PointCloudCanvas({
   // reason. Beyond adding its marks it thins the floor plan while it is up
   // (see thinGroundUnderVoxels), lends its box to Recenter and Top down
   // when there is no floor plan to frame, and is shaded by depth as on the
-  // 3D map page (lib/scene/edl.ts); the cleanup undoes all three, so turning
+  // editor's 3D view (lib/scene/edl.ts); the cleanup undoes all three, so turning
   // the layer off restores the viewport without a rebuild.
   React.useEffect(() => {
     const ctx = sceneRef.current;

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { PencilIcon } from "lucide-react";
 
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
-import { waypointEditor } from "@/lib/map/links";
+import { editorViews, mapEditorHref } from "@/lib/map/links";
 import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
 
@@ -23,36 +23,32 @@ const CORNER =
   "absolute top-2 right-9.5 z-10 flex size-6 items-center justify-center rounded-sm border border-hairline bg-panel/90 backdrop-blur-sm";
 
 /**
- * The way into the floor plan editor, as a pencil tile beside the X: the top
- * edge reads as the card's verbs (switch, edit, delete). On a map with no
- * floor plan but a 3D map it opens the 3D map page with Waypoint armed
- * instead, since the waypoints are what is left to edit and the floor plan
- * editor has no raster to place them on.
+ * The way into the map's editor, as a pencil tile beside the X: the top
+ * edge reads as the card's verbs (switch, edit, delete). It opens the
+ * editor's first view (editorViews): the floor plan when the map has one,
+ * else the 3D map with its waypoints. A map with both switches between
+ * them in the editor's header.
  *
  * Greyed while a job drives on this map — not merely because it is in use:
  * the backend saves onto the live map and reloads it, but refuses a write a
  * running job would pick up mid-route (the same run lock as the editor and
- * Rebuild). Also greyed with neither a floor plan nor a finished 3D map, and
- * mid-conversion, when cells saved now would land on a grid about to be
- * replaced. A *failed* re-conversion keeps its editor: it serves the archived
- * grid. A look-alike span, since `disabled` swallows the tooltip.
+ * Rebuild). Also greyed with no view to open: neither a floor plan nor a
+ * finished 3D map, or a floor plan mid-conversion with no 3D map beside it.
+ * A look-alike span, since `disabled` swallows the tooltip.
  */
 export function MapEditLink({ map }: { map: MapSummary }) {
   const runLock = useMapRunLock(map.name);
-  const converting = map.grid_status === "converting";
-  const href = map.grid
-    ? `/maps/${encodeURIComponent(map.name)}/edit`
-    : (waypointEditor(map)?.href ?? null);
-  const label = map.grid ? `Edit ${map.name}` : `Edit the waypoints of ${map.name}`;
+  const [view] = editorViews(map);
+  const label = `Edit ${map.name}`;
 
-  if (runLock.locked || converting || href === null) {
+  if (runLock.locked || view === undefined) {
     return (
       <span
         aria-disabled="true"
         title={
           runLock.locked
             ? (runLock.reason ?? undefined)
-            : converting
+            : map.grid_status === "converting"
               ? CONVERTING_REASON
               : map.octomap_status === "converting"
                 ? BUILDING_REASON
@@ -70,7 +66,7 @@ export function MapEditLink({ map }: { map: MapSummary }) {
 
   return (
     <Link
-      href={href}
+      href={mapEditorHref(map.name, view)}
       aria-label={label}
       title={label}
       className={cn(
