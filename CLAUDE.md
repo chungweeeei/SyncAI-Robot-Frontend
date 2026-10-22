@@ -204,18 +204,22 @@ components/
                 lib/map/links.ts's editorViews): the gridmap editor
                 (map-grid-editor, grid-canvas) and the 3D view
                 (?view=3d, map-3d-editor, map-3d-canvas: the 3D map in 3D,
-                orbited freely, its heights narrowed by a band or a floor;
-                a brush that patches the holes the lidar never saw — a
+                orbited freely, its heights narrowed by a band or a floor
+                picked in the column under the Draw strip; worked like the
+                floor plan — a Draw list on the right (Ground patch or
+                Waypoint) picks what the tools on the left are; a Fill or
+                Erase brush that patches the holes the lidar never saw — a
                 press is cast onto the height the shown floor mostly stands
                 on, since a hole has no cell to hit and a wall in front of
                 one must not take the stroke; its rules are
                 lib/map/ground-fill.ts, its save a record the robot's own
                 tool applies, and its unsaved patches guard Back and the
-                2D / 3D switch as the floor plan's edits do; and a Waypoint
-                tool — the dashboard's place, tap, re-place and delete,
-                written at once — which is where a map with no floor plan
-                gets its waypoints: the card's pencil opens it there, and
-                the task editor's links with Waypoint armed)
+                2D / 3D switch as the floor plan's edits do; and Place and
+                Remove for waypoints — the dashboard's place, tap, re-place
+                and delete, written at once, Remove asking first — which is
+                where a map with no floor plan gets its waypoints: the
+                card's pencil opens it there, and the task editor's links
+                with Waypoint chosen and Place armed)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
                 and the /tasks/editor page (step composer, name, save, delete)

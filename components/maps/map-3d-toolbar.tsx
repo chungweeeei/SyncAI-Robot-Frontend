@@ -2,11 +2,13 @@
 
 import {
   EraserIcon,
+  MapPinIcon,
   MapPinPlusIcon,
-  Rotate3dIcon,
+  MapPinXIcon,
   MaximizeIcon,
   PaintbrushIcon,
   Redo2Icon,
+  Rotate3dIcon,
   SaveIcon,
   SunMediumIcon,
   Undo2Icon,
@@ -14,7 +16,13 @@ import {
   ZoomOutIcon,
 } from "lucide-react";
 
-import { ToolButton, ToolDivider, ToolGroup, ToolStrip } from "@/components/console/tool-strip";
+import {
+  ToolButton,
+  ToolDivider,
+  ToolGroup,
+  ToolStrip,
+  type ToolIcon,
+} from "@/components/console/tool-strip";
 import {
   Select,
   SelectContent,
@@ -26,22 +34,45 @@ import type { Map3dTool } from "@/components/maps/map-3d-canvas";
 import { BRUSH_RADII_M } from "@/lib/map/ground-fill";
 
 /*
- * The 3D view's one strip, built like the floor plan editor's: fit,
- * history, Save, then the tools — Orbit, Fill, Erase, Waypoint — and the
- * brush radius. Orbit first for the floor plan editor's reason: the strip
- * opens on it. History and Save are the patches' only: a waypoint is written
- * as it is placed, as on the dashboard.
+ * The 3D view's controls, as two strips along the top like the floor plan
+ * editor's (grid-toolbar.tsx), so the two views of one map are worked the
+ * same way: choose what to edit on the right, then the tool on the left.
+ *
+ * Right, **Draw**: what a press on the map works on — nothing, ground
+ * patches or waypoints — beside the zoom. Left: fit and shading, history,
+ * Save, then Orbit and the tools the Draw choice allows. History and Save
+ * are the patches' only: a waypoint is written as it is placed or removed,
+ * as on the dashboard.
  */
+
+/** What a press on the 3D map works on, once chosen in the Draw list. */
+export type Map3dDrawKind = "ground" | "waypoint";
+
+const DRAW_KINDS: readonly { value: Map3dDrawKind; label: string; icon: ToolIcon }[] = [
+  { value: "ground", label: "Ground patch", icon: PaintbrushIcon },
+  { value: "waypoint", label: "Waypoint", icon: MapPinIcon },
+];
+
+/** "Nothing chosen": base-ui wants a string per item. */
+const NONE = "none";
+
+const DRAW_ITEMS = [
+  { value: NONE, label: "No type" },
+  ...DRAW_KINDS.map((kind) => ({ value: kind.value, label: kind.label })),
+];
 
 const RADIUS_ITEMS = BRUSH_RADII_M.map((radius) => ({
   value: `${radius}`,
   label: `${radius.toFixed(1)} m`,
 }));
 
+/**
+ * The left strip. Orbit is always offered — with nothing chosen it is the
+ * only tool, lit, so the strip still says what a drag does. The radius shows
+ * only while a brush is armed.
+ */
 export function Map3dToolBar({
   onFit,
-  onZoomIn,
-  onZoomOut,
   canUndo,
   canRedo,
   onUndo,
@@ -50,6 +81,7 @@ export function Map3dToolBar({
   saving,
   writeLock = null,
   onSave,
+  drawKind,
   tool,
   onToolChange,
   placeLock = null,
@@ -60,8 +92,6 @@ export function Map3dToolBar({
   className,
 }: {
   onFit: () => void;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -71,9 +101,10 @@ export function Map3dToolBar({
   /** Why nothing may be written (a job drives on the map), or null. */
   writeLock?: string | null;
   onSave: () => void;
+  drawKind: Map3dDrawKind | null;
   tool: Map3dTool;
   onToolChange: (tool: Map3dTool) => void;
-  /** Why no waypoint may be placed (a job drives on the map), or null. */
+  /** Why no waypoint may be placed or removed (a job drives on the map), or null. */
   placeLock?: string | null;
   /** Brush radius, metres; one of BRUSH_RADII_M. */
   radius: number;
@@ -84,12 +115,8 @@ export function Map3dToolBar({
   className?: string;
 }) {
   return (
-    <ToolStrip label="Ground" compact className={className}>
+    <ToolStrip label="Editor" compact className={className}>
       <ToolButton label="Fit to view" hint="the whole map, centred" icon={MaximizeIcon} onClick={onFit} />
-      <ToolGroup label="Zoom">
-        <ToolButton label="Zoom in" hint="closer" icon={ZoomInIcon} onClick={onZoomIn} />
-        <ToolButton label="Zoom out" hint="further" icon={ZoomOutIcon} onClick={onZoomOut} />
-      </ToolGroup>
       <ToolButton
         label="Shading"
         hint="outline walls and steps by depth"
@@ -137,34 +164,55 @@ export function Map3dToolBar({
       <ToolGroup label="Tool">
         <ToolButton
           label="Orbit"
-          hint="drag turns the map, right-drag pans, the wheel zooms"
+          hint={
+            drawKind === null
+              ? "drag turns the map; choose a type to edit it"
+              : "drag turns the map, right-drag pans, the wheel zooms"
+          }
           icon={Rotate3dIcon}
           pressed={tool === "orbit"}
           onClick={() => onToolChange("orbit")}
         />
-        <ToolButton
-          label="Fill"
-          hint="paint floor into the holes under the brush, at the height of the floor around them; hold Shift to erase, right-drag to turn"
-          icon={PaintbrushIcon}
-          pressed={tool === "fill"}
-          onClick={() => onToolChange("fill")}
-        />
-        <ToolButton
-          label="Erase"
-          hint="take your patches back out from under the brush"
-          icon={EraserIcon}
-          tone="caution"
-          pressed={tool === "erase"}
-          onClick={() => onToolChange("erase")}
-        />
-        <ToolButton
-          label="Waypoint"
-          hint={placeLock ?? "press to place a waypoint, drag to aim it; right-drag to turn"}
-          icon={MapPinPlusIcon}
-          pressed={tool === "waypoint"}
-          disabled={placeLock !== null}
-          onClick={() => onToolChange(tool === "waypoint" ? "orbit" : "waypoint")}
-        />
+        {drawKind === "ground" && (
+          <>
+            <ToolButton
+              label="Fill"
+              hint="paint floor into the holes under the brush, at the height of the floor around them; hold Shift to erase, right-drag to turn"
+              icon={PaintbrushIcon}
+              pressed={tool === "fill"}
+              onClick={() => onToolChange("fill")}
+            />
+            <ToolButton
+              label="Erase"
+              hint="take your patches back out from under the brush"
+              icon={EraserIcon}
+              tone="caution"
+              pressed={tool === "erase"}
+              onClick={() => onToolChange("erase")}
+            />
+          </>
+        )}
+        {drawKind === "waypoint" && (
+          <>
+            <ToolButton
+              label="Place"
+              hint={placeLock ?? "press to place a waypoint, drag to aim it; right-drag to turn"}
+              icon={MapPinPlusIcon}
+              pressed={tool === "waypoint"}
+              disabled={placeLock !== null}
+              onClick={() => onToolChange("waypoint")}
+            />
+            <ToolButton
+              label="Remove"
+              hint={placeLock ?? "press a waypoint to delete it from the robot"}
+              icon={MapPinXIcon}
+              tone="caution"
+              pressed={tool === "remove"}
+              disabled={placeLock !== null}
+              onClick={() => onToolChange("remove")}
+            />
+          </>
+        )}
       </ToolGroup>
 
       {(tool === "fill" || tool === "erase") && (
@@ -184,6 +232,67 @@ export function Map3dToolBar({
           </Select>
         </>
       )}
+    </ToolStrip>
+  );
+}
+
+/**
+ * The right strip: what a press works on, and the zoom. A list, as on the
+ * floor plan editor; "No type" is its own item so putting the choice down is
+ * visible (Escape does the same).
+ */
+export function Map3dDrawBar({
+  drawKind,
+  onDrawKindChange,
+  onZoomIn,
+  onZoomOut,
+  className,
+}: {
+  drawKind: Map3dDrawKind | null;
+  onDrawKindChange: (kind: Map3dDrawKind | null) => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  className?: string;
+}) {
+  return (
+    <ToolStrip label="Draw" compact className={className}>
+      <Select
+        items={DRAW_ITEMS}
+        value={drawKind ?? NONE}
+        onValueChange={(next) => {
+          if (next === null) return;
+          onDrawKindChange(next === NONE ? null : (next as Map3dDrawKind));
+        }}
+      >
+        <SelectTrigger
+          size="sm"
+          aria-label="Draw"
+          title="What a press on the map works on"
+          className="min-w-32 rounded-sm text-[12px] pointer-coarse:min-h-8"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        {/* alignItemWithTrigger off, as on the floor plan editor: the default
+          * lined the chosen item up over the trigger and grew the list upward. */}
+        <SelectContent alignItemWithTrigger={false}>
+          <SelectItem value={NONE}>
+            <span className="text-muted-foreground">No type</span>
+          </SelectItem>
+          {DRAW_KINDS.map((kind) => (
+            <SelectItem key={kind.value} value={kind.value}>
+              <kind.icon className="size-3.5" />
+              {kind.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <ToolDivider />
+
+      <ToolGroup label="Zoom">
+        <ToolButton label="Zoom out" hint="further" icon={ZoomOutIcon} onClick={onZoomOut} />
+        <ToolButton label="Zoom in" hint="closer" icon={ZoomInIcon} onClick={onZoomIn} />
+      </ToolGroup>
     </ToolStrip>
   );
 }

@@ -28,8 +28,14 @@ import { cn } from "@/lib/utils";
 import type { MapVertex } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
-/** Orbit, the two brushes, and Waypoint: put a stop down, or a re-placed one back. */
-export type Map3dTool = "orbit" | "fill" | "erase" | "waypoint";
+/**
+ * Orbit, the two brushes, Waypoint (put a stop down, or a re-placed one
+ * back) and Remove (take a stored stop off the map).
+ */
+export type Map3dTool = "orbit" | "fill" | "erase" | "waypoint" | "remove";
+
+/** The tools a tap on a stored stop means something to. */
+const tapsStops = (tool: Map3dTool) => tool === "orbit" || tool === "remove";
 
 interface Column {
   x: number;
@@ -77,6 +83,8 @@ export interface Map3dCanvasProps {
   onPlaceCommit: (pose: PlanarPose) => void;
   /** A tap on a stored stop with no tool armed. */
   onVertexActivate: (vertex: MapVertex) => void;
+  /** A tap on a stored stop with Remove armed. */
+  onVertexRemove: (vertex: MapVertex) => void;
   className?: string;
 }
 
@@ -100,7 +108,7 @@ const RING_WIDTH = 0.12;
  * Waypoint is the dashboard's placing gesture (pointcloud-canvas.tsx): a
  * press plants the stop, a drag past the deadzone aims it, and only a
  * deliberate release commits — a second finger or a cancel abandons it. With
- * no tool armed, a tap on a stop opens it.
+ * no tool armed, a tap on a stop opens it; with Remove armed, it removes it.
  */
 export function Map3dCanvas(props: Map3dCanvasProps) {
   const { session } = props;
@@ -313,7 +321,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (ctx) applyMap3dControls(ctx.controls, props.tool !== "orbit");
-    if (ctx && (props.tool === "orbit" || props.tool === "waypoint")) ctx.brush.visible = false;
+    if (ctx && props.tool !== "fill" && props.tool !== "erase") ctx.brush.visible = false;
     // Disarming mid-press must not strand a planted stop.
     if (props.tool !== "waypoint") {
       anchorRef.current = null;
@@ -520,7 +528,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     const { tool } = propsRef.current;
-    if (tool === "orbit") {
+    if (tapsStops(tool)) {
       // Maybe a tap on a stop, resolved on release so a drag starting on a
       // marker still orbits. Primary only: a second finger is a pinch.
       tapRef.current =
@@ -572,7 +580,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const { tool } = propsRef.current;
-    if (tool === "orbit") {
+    if (tapsStops(tool)) {
       // Hover-test only with no button down; a button down is a camera drag.
       if (event.buttons === 0) hoverVertex(pickVertex(event));
       return;
@@ -613,13 +621,14 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     const tap = tapRef.current;
     if (tap) {
       tapRef.current = null;
+      const { tool, onVertexActivate, onVertexRemove } = propsRef.current;
       if (
-        propsRef.current.tool === "orbit" &&
+        tapsStops(tool) &&
         tap.pointerId === event.pointerId &&
         !isDrag(tap.cx, tap.cy, event.clientX, event.clientY)
       ) {
         const vertex = pickVertex(event);
-        if (vertex) propsRef.current.onVertexActivate(vertex);
+        if (vertex) (tool === "remove" ? onVertexRemove : onVertexActivate)(vertex);
       }
     }
     const anchor = anchorRef.current;
@@ -670,16 +679,18 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   return (
     <div
       ref={containerRef}
-      data-testid="ground-canvas"
+      data-testid="map-3d-canvas"
       role="application"
-      aria-label="The 3D map. Drag to orbit; with Fill or Erase armed, drag to paint; with Waypoint armed, press to place and drag to aim."
+      aria-label="The 3D map. Drag to orbit; with Fill or Erase armed, drag to paint; with Place armed, press to place and drag to aim; with Remove armed, press a waypoint to delete it."
       className={cn(
         "absolute inset-0 touch-none",
-        props.tool !== "orbit"
-          ? "cursor-crosshair"
-          : hovering
-            ? "cursor-pointer"
-            : "cursor-grab active:cursor-grabbing",
+        tapsStops(props.tool) && hovering
+          ? "cursor-pointer"
+          : props.tool === "orbit"
+            ? "cursor-grab active:cursor-grabbing"
+            : props.tool === "remove"
+              ? "cursor-default"
+              : "cursor-crosshair",
         props.className,
       )}
       onPointerDown={handlePointerDown}

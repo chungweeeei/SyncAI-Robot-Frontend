@@ -11,7 +11,11 @@ import {
 import { VertexMoveDialog } from "@/components/dashboard/vertex-move-dialog";
 import { VertexPlaceControl } from "@/components/dashboard/vertex-place-control";
 import { Map3dCanvas, type Map3dTool } from "@/components/maps/map-3d-canvas";
-import { Map3dToolBar } from "@/components/maps/map-3d-toolbar";
+import {
+  Map3dDrawBar,
+  Map3dToolBar,
+  type Map3dDrawKind,
+} from "@/components/maps/map-3d-toolbar";
 import { useMapFloors } from "@/hooks/use-map-floors";
 import { useMapVertexWrites } from "@/hooks/use-map-vertex-writes";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
@@ -86,22 +90,22 @@ export function Map3dEditor({
 
   if (mounted && entry && entry.octomap_status !== "ok") {
     return (
-      <Guard title="Cannot edit the ground">
+      <Guard title="Cannot open the 3D map">
         {entry.octomap_status === "converting"
           ? "The robot is still building this map's 3D map. Come back once it has finished."
           : entry.octomap_status === "failed"
             ? (entry.octomap_error ?? "The robot could not build this map's 3D map.")
-            : "This map has no 3D map to edit. The robot builds one with the floor plan when it is set up to."}
+            : "This map has no 3D map. The robot builds one with the floor plan when it is set up to."}
       </Guard>
     );
   }
   if (tree.status === "error") {
-    return <Guard title="Cannot edit the ground">{tree.error}</Guard>;
+    return <Guard title="Cannot open the 3D map">{tree.error}</Guard>;
   }
   if (edits.status === "error") {
     // Painting over an unread record would erase it on the first Save.
     return (
-      <Guard title="Cannot edit the ground">
+      <Guard title="Cannot open the 3D map">
         {edits.error ?? "The saved patches could not be read."}
       </Guard>
     );
@@ -171,6 +175,14 @@ function Map3dSurface({
     [initialFillKey, voxels],
   );
 
+  /**
+   * What a press works on, chosen in the Draw list as on the floor plan
+   * editor; the tools offered follow it. A link that came to place
+   * waypoints opens on Waypoint.
+   */
+  const [drawKind, setDrawKind] = React.useState<Map3dDrawKind | null>(
+    openOnWaypoint ? "waypoint" : null,
+  );
   const [tool, setTool] = React.useState<Map3dTool>("orbit");
   /**
    * A link's ask to open on Waypoint, held until the run lock first reads
@@ -220,10 +232,11 @@ function Map3dSurface({
     setTool("waypoint");
   }
 
-  // A lock arriving with Waypoint armed disarms it, during render rather than
-  // in an effect, so the next release cannot write onto a read-only map. An
-  // open name dialog stays up instead: its Create greys and the name survives.
-  if (runLock.locked && tool === "waypoint") {
+  // A lock arriving with Place or Remove armed disarms it, during render
+  // rather than in an effect, so the next release cannot write onto a
+  // read-only map. An open name dialog stays up instead: its Create greys and
+  // the name survives.
+  if (runLock.locked && (tool === "waypoint" || tool === "remove")) {
     setTool("orbit");
     setMoving(null);
   }
@@ -234,6 +247,15 @@ function Map3dSurface({
     setWaypointAsked(false);
     if (next !== "waypoint") setMoving(null);
   }, []);
+
+  /** A new Draw choice starts on Orbit, as the floor plan's starts on Pan. */
+  const chooseDraw = React.useCallback(
+    (kind: Map3dDrawKind | null) => {
+      setDrawKind(kind);
+      changeTool("orbit");
+    },
+    [changeTool],
+  );
   // Each floor's band in the tree's levels; a floor the tree does not reach
   // is not offered. Which one is picked is read back off the band, so a
   // slider moved by hand simply leaves every floor unpressed.
@@ -331,7 +353,7 @@ function Map3dSurface({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        changeTool("orbit");
+        chooseDraw(null);
         return;
       }
       if (isTypingTarget(event.target)) return;
@@ -352,18 +374,21 @@ function Map3dSurface({
         event.preventDefault();
         fit();
       } else if (event.key.toLowerCase() === "b") {
+        setDrawKind("ground");
         changeTool("fill");
       } else if (event.key.toLowerCase() === "e") {
+        setDrawKind("ground");
         changeTool("erase");
       } else if (event.key.toLowerCase() === "o") {
         changeTool("orbit");
       } else if (event.key.toLowerCase() === "w" && !placeLocked) {
+        setDrawKind("waypoint");
         changeTool("waypoint");
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo, fit, changeTool, placeLocked]);
+  }, [undo, redo, fit, changeTool, chooseDraw, placeLocked]);
 
   React.useEffect(() => {
     if (!dirty) return;
@@ -442,7 +467,16 @@ function Map3dSurface({
   const armReplace = (vertex: MapVertex) => {
     setAskedVertex(null);
     setMoving(vertex);
+    setDrawKind("waypoint");
     setTool("waypoint");
+  };
+
+  // Asked once, as the dialog's Delete asks: a finger's tap on the wrong
+  // marker must not take a stop off the robot. Remove stays armed for the
+  // next one; a refusal lands in the place control's error.
+  const removeTapped = (vertex: MapVertex) => {
+    if (!window.confirm(`Delete "${vertex.name}"? This cannot be undone.`)) return;
+    void removeVertex(vertex.id);
   };
 
   // A refusal leaves the dialog up with the sentence in it.
@@ -475,6 +509,7 @@ function Map3dSurface({
         placeZ={placeZ}
         onPlaceCommit={commitPlace}
         onVertexActivate={setAskedVertex}
+        onVertexRemove={removeTapped}
       />
 
       <VertexCreateDialog
@@ -508,13 +543,13 @@ function Map3dSurface({
         }}
       />
 
+      {/* One row across the top, the tools left and Draw right, wrapping on a
+        * phone, as on the floor plan editor. */}
       <div className="pointer-events-none absolute inset-x-3 top-3 flex max-h-[calc(100%-1.5rem)] flex-col gap-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <Map3dToolBar
             className="pointer-events-auto"
             onFit={fit}
-            onZoomIn={zoomIn}
-            onZoomOut={zoomOut}
             canUndo={canUndo}
             canRedo={canRedo}
             onUndo={undo}
@@ -523,6 +558,7 @@ function Map3dSurface({
             saving={note.kind === "saving"}
             writeLock={runLock.reason}
             onSave={onSave}
+            drawKind={drawKind}
             tool={tool}
             onToolChange={changeTool}
             placeLock={runLock.reason}
@@ -531,20 +567,27 @@ function Map3dSurface({
             shading={shading}
             onShadingChange={setShading}
           />
+          {/* The floors hang under Draw, out of the row's flow so their
+            * column does not push the panels on the left down; the sliders
+            * there set any other band. */}
+          <div className="relative ml-auto">
+            <Map3dDrawBar
+              className="pointer-events-auto"
+              drawKind={drawKind}
+              onDrawKindChange={chooseDraw}
+              onZoomIn={zoomIn}
+              onZoomOut={zoomOut}
+            />
+            {floorOptions.length > 1 && (
+              <FloorPicker
+                className="pointer-events-auto absolute top-full right-0 mt-2"
+                floors={floorOptions}
+                value={pickedFloor}
+                onChange={pickFloor}
+              />
+            )}
+          </div>
         </div>
-
-        {/* The floors, top-right as on the dashboard; the sliders on the left
-          * set any other band. Out of the toolbar's row so its height does not
-          * push the panel down, and under the toolbar on a phone, where the
-          * toolbar takes the whole width. */}
-        {floorOptions.length > 1 && (
-          <FloorPicker
-            className="pointer-events-auto absolute top-0 right-0 max-sm:top-14"
-            floors={floorOptions}
-            value={pickedFloor}
-            onChange={pickFloor}
-          />
-        )}
 
         {/* Narrower on a phone so the map's middle stays reachable beside it;
           * the long hint is desktop-only, since a finger has no room for prose. */}

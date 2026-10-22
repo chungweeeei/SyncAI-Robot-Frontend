@@ -29,6 +29,14 @@ import {
 const VIEW_3D = `/maps/${MAP_NAME}/edit?view=3d`;
 const viewSwitch = (page: Page) => page.getByRole("group", { name: "View" });
 const drawList = (page: Page) => page.getByRole("combobox", { name: "Draw" });
+/** The floor plan view's own tool: the 3D view has a Draw list too, but Orbit, not Pan. */
+const floorPlanTools = (page: Page) => page.getByRole("button", { name: "Pan", exact: true });
+
+/** Pick what a press works on in the 3D view's Draw list. */
+async function chooseDraw(page: Page, kind: "Ground patch" | "Waypoint" | "No type") {
+  await drawList(page).click();
+  await page.getByRole("option", { name: kind, exact: true }).click();
+}
 
 /**
  * The middle of the canvas. The page opens looking at the middle of the map
@@ -58,6 +66,7 @@ const byKey = (keys: number[][]) =>
 const holeOnScreen = centreOnScreen;
 
 async function armFill(page: Page, radius = "0.1 m") {
+  await chooseDraw(page, "Ground patch");
   await page.getByRole("button", { name: "Fill" }).click();
   await page.getByRole("combobox", { name: "Brush radius" }).click();
   await page.getByRole("option", { name: radius, exact: true }).click();
@@ -80,7 +89,7 @@ test.describe("the editor's 3D view", () => {
     await expect(pencil).toHaveAttribute("href", `/maps/${MAP_NAME}/edit`);
     await pencil.click();
 
-    await expect(drawList(page)).toBeVisible();
+    await expect(floorPlanTools(page)).toBeVisible();
     await expect(viewSwitch(page).getByRole("button", { name: "2D" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -89,11 +98,11 @@ test.describe("the editor's 3D view", () => {
     await viewSwitch(page).getByRole("button", { name: "3D" }).click();
     await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit\\?view=3d$`));
     await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
-    await expect(drawList(page)).toHaveCount(0);
+    await expect(floorPlanTools(page)).toHaveCount(0);
 
     await viewSwitch(page).getByRole("button", { name: "2D" }).click();
     await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit$`));
-    await expect(drawList(page)).toBeVisible();
+    await expect(floorPlanTools(page)).toBeVisible();
     await expect(page.getByTestId("map-3d-canvas")).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
@@ -163,7 +172,7 @@ test.describe("the editor's 3D view", () => {
     });
 
     await page.goto("/maps/flat/edit");
-    await expect(drawList(page)).toBeVisible();
+    await expect(floorPlanTools(page)).toBeVisible();
     await expect(viewSwitch(page)).toHaveCount(0);
 
     await page.goto("/maps/solid/edit?view=3d");
@@ -182,7 +191,7 @@ test.describe("the editor's 3D view", () => {
     await expect(page.getByTestId("map-3d-canvas")).toHaveCount(0);
     // The switch still offers the way out, to the floor plan it does have.
     await viewSwitch(page).getByRole("button", { name: "2D" }).click();
-    await expect(drawList(page)).toBeVisible();
+    await expect(floorPlanTools(page)).toBeVisible();
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -196,7 +205,8 @@ test.describe("the editor's 3D view", () => {
     const canvas = page.getByTestId("map-3d-canvas");
     await expect(canvas).toHaveAttribute("data-distance", /\d+/);
     const opening = await canvas.getAttribute("data-distance");
-    const tool = page.getByRole("button", { name: "Waypoint" });
+    await chooseDraw(page, "Waypoint");
+    const tool = page.getByRole("button", { name: "Place" });
     await tool.click();
     const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
 
@@ -279,6 +289,7 @@ test.describe("the editor's 3D view", () => {
       await expect(patched(page)).toHaveAttribute("data-patched", "4");
       await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
 
+      await chooseDraw(page, "Ground patch");
       await page.getByRole("button", { name: "Erase" }).click();
       const hole = await holeOnScreen(page);
       await page.mouse.click(hole.x, hole.y);
@@ -459,7 +470,7 @@ test.describe("the editor's 3D view", () => {
       page.once("dialog", (dialog) => void dialog.accept());
       await viewSwitch(page).getByRole("button", { name: "2D" }).click();
       await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit$`));
-      await expect(drawList(page)).toBeVisible();
+      await expect(floorPlanTools(page)).toBeVisible();
       expect(writes.filter((write) => write.path === editsPath)).toEqual([]);
       expect(errors, "the page logged errors").toEqual([]);
     });
@@ -498,6 +509,10 @@ test.describe("the editor's 3D view", () => {
         "aria-pressed",
         "true",
       );
+      // Under the Draw strip, not beside the toolbar.
+      const draw = (await drawList(page).boundingBox())!;
+      const column = (await floors.boundingBox())!;
+      expect(column.y).toBeGreaterThanOrEqual(draw.y + draw.height);
 
       // 2F starts a metre under its level (5.5 m): the slab's top is in it.
       await floors.getByRole("button", { name: "2F" }).click();
@@ -575,10 +590,9 @@ test.describe("the editor's 3D view", () => {
         "aria-pressed",
         "true",
       );
-      await expect(page.getByRole("button", { name: "Waypoint" })).toHaveAttribute(
-        "aria-pressed",
-        "false",
-      );
+      // Nothing chosen to work on, so no waypoint tool is offered yet.
+      await expect(drawList(page)).toHaveText("No type");
+      await expect(page.getByRole("button", { name: "Place" })).toHaveCount(0);
 
       await page.getByRole("button", { name: "Back to maps" }).click();
       await expect(page).toHaveURL(/\/maps$/);
@@ -604,7 +618,7 @@ test.describe("the editor's 3D view", () => {
       await page.goto(`${VIEW_3D}&tool=waypoint`);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
 
-      const tool = page.getByRole("button", { name: "Waypoint" });
+      const tool = page.getByRole("button", { name: "Place" });
       await expect(page.getByRole("status").filter({ hasText: "Read-only." })).toBeVisible();
       await expect(tool).toBeDisabled();
       await expect(tool).toHaveAttribute("aria-pressed", "false");
@@ -636,7 +650,8 @@ test.describe("the editor's 3D view", () => {
         new RegExp(`/maps/${MAP_NAME}/edit\\?view=3d&tool=waypoint&from=tasks$`),
       );
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
-      await expect(page.getByRole("button", { name: "Waypoint" })).toHaveAttribute(
+      await expect(drawList(page)).toHaveText("Waypoint");
+      await expect(page.getByRole("button", { name: "Place" })).toHaveAttribute(
         "aria-pressed",
         "true",
       );
@@ -703,7 +718,8 @@ test.describe("the editor's 3D view", () => {
       const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
       await expect(dialog).toHaveCount(0);
 
-      const tool = page.getByRole("button", { name: "Waypoint" });
+      await chooseDraw(page, "Waypoint");
+      const tool = page.getByRole("button", { name: "Place" });
       await tool.click();
       await expect(tool).toHaveAttribute("aria-pressed", "true");
       await page.mouse.move(centre.x, centre.y);
@@ -763,6 +779,40 @@ test.describe("the editor's 3D view", () => {
       await expect(dialog).toHaveCount(0);
       const deleted = writes.find((w) => w.method === "DELETE");
       expect(deleted?.path).toBe(`${verticesPath}/${stop.id}`);
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("deletes a tapped stop with Remove, once the confirm is accepted", async ({ page }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const stop = vertex({ name: "lobby", type: "MOVE", x: 0.2, y: 0.2, theta: 0, z: 0 });
+      const writes = await mockBackend(page, { maps: [treeOnly()], vertices: [stop] });
+      await page.goto(VIEW_3D);
+      await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+      await chooseDraw(page, "Waypoint");
+      const remove = page.getByRole("button", { name: "Remove" });
+      await remove.click();
+      await expect(remove).toHaveAttribute("aria-pressed", "true");
+      const centre = await centreOnScreen(page);
+
+      // Declined: nothing is sent, and the stop's dialog does not open either.
+      const asked: string[] = [];
+      page.once("dialog", (confirm) => {
+        asked.push(confirm.message());
+        void confirm.dismiss();
+      });
+      await page.mouse.click(centre.x, centre.y);
+      await expect.poll(() => asked).toEqual([`Delete "lobby"? This cannot be undone.`]);
+      await expect(page.getByRole("alertdialog", { name: "lobby" })).toHaveCount(0);
+      expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
+
+      // Accepted: the stop goes, and Remove stays armed for the next one.
+      page.once("dialog", (confirm) => void confirm.accept());
+      await page.mouse.click(centre.x, centre.y);
+      await expect
+        .poll(() => writes.filter((w) => w.method === "DELETE").map((w) => w.path))
+        .toEqual([`${verticesPath}/${stop.id}`]);
+      await expect(remove).toHaveAttribute("aria-pressed", "true");
       expect(errors, "the page logged errors").toEqual([]);
     });
   });

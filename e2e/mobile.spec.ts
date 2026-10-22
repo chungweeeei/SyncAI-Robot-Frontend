@@ -458,7 +458,9 @@ test.describe("the console on a phone", () => {
 
     // With Waypoint armed, fingers spreading zoom in and place nothing: the
     // second finger abandons what the first one planted.
-    await page.getByRole("button", { name: "Waypoint" }).click();
+    await page.getByRole("combobox", { name: "Draw" }).click();
+    await page.getByRole("option", { name: "Waypoint", exact: true }).click();
+    await page.getByRole("button", { name: "Place" }).click();
     const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
     const opening = await distance();
     const a = { x: box.x + box.width * 0.62, y: cy };
@@ -525,6 +527,8 @@ test.describe("the console on a phone", () => {
     // map's middle row, half a metre there is (h / 2) / (d tan 30°) px each.
     await page.getByRole("button", { name: "Fit to view" }).click();
     await expect.poll(distance).toBe(opening);
+    await page.getByRole("combobox", { name: "Draw" }).click();
+    await page.getByRole("option", { name: "Ground patch", exact: true }).click();
     await page.getByRole("button", { name: "Fill" }).click();
     await page.getByRole("combobox", { name: "Brush radius" }).click();
     await page.getByRole("option", { name: "1.0 m", exact: true }).click();
