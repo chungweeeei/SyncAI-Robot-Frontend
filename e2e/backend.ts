@@ -266,6 +266,16 @@ export function taskState(over: Record<string, unknown> = {}) {
   };
 }
 
+/** `taskState`'s run once it has ended: every step done. */
+function finishedTaskState(id: string) {
+  const running = taskState({ id });
+  return {
+    ...running,
+    status: "COMPLETED",
+    steps: running.steps.map((step) => ({ ...step, status: "COMPLETED" })),
+  };
+}
+
 /**
  * A history filter, applied the way the backend does: outcome, kind and name
  * match exactly, the bounds are on the close time. Shared by the page and
@@ -439,6 +449,9 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   const taskHistory = over.taskHistory ?? [];
   const taskHistoryPageSize = over.taskHistoryPageSize ?? 20;
   const taskStates = over.taskStates ?? {};
+  // Every id the active list has carried. A test ends a job by emptying the
+  // list, and the backend still answers a finished run from retention.
+  const listedTaskIds = new Set<string>();
   const gridImage = over.gridImage ?? PNG_1PX;
   const octomap = over.octomap ?? octomapBt();
   // Copied: the PUT below replaces a map's list, and a test's fixture must
@@ -550,6 +563,7 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       }
     }
     if (path === "/api/v1/active_tasks") {
+      for (const task of activeTasks) listedTaskIds.add(task.id as string);
       return json(route, { tasks: activeTasks, as_of: "2026-09-18T09:45:00Z" });
     }
     if (path === "/api/v1/task_history/stats") {
@@ -603,10 +617,16 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       const id = decodeURIComponent(taskMatch[1]);
       // A listed job without a spelled-out state answers the default: the
       // masthead reads every running job, and a 404 would trip the
-      // console-error guard. An unlisted id still answers 404.
+      // console-error guard. One that has left the list answers finished,
+      // since the masthead's 1 Hz read can land before the 2 s list poll
+      // notices. An id never listed still answers 404.
       const state =
         taskStates[id] ??
-        (activeTasks.some((task) => task.id === id) ? taskState({ id }) : undefined);
+        (activeTasks.some((task) => task.id === id)
+          ? taskState({ id })
+          : listedTaskIds.has(id)
+            ? finishedTaskState(id)
+            : undefined);
       return state
         ? json(route, state)
         : json(route, { detail: `Task ${id} not found` }, 404);
