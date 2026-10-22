@@ -1151,6 +1151,9 @@ export function PointCloudCanvas({
     if (!ribbon) return;
     const band = voxelBandRef.current;
     if (band) ribbon.setBand(band.lo, band.hi);
+    // A route that arrives with the 3D map already up; the map's own effect
+    // recolours the one on screen when the layer comes and goes.
+    if (voxelLayerRef.current) ribbon.setOverMap(true);
     ctx.scene.add(ribbon.mesh);
     pathRibbonRef.current = ribbon;
 
@@ -1243,7 +1246,7 @@ export function PointCloudCanvas({
   // ---- Optional 3D map (toggle) -----------------------------------------
   // Same shape as the map scan above, and the same rebuild deps for the same
   // reason. Beyond adding its marks it thins the floor plan while it is up
-  // (see thinGroundUnderVoxels) and turns the costmap pale, lends its box to
+  // (see thinGroundUnderVoxels) and turns the costmap and route pale, lends its box to
   // Recenter and Top down when there is no floor plan to frame, and is shaded
   // by depth as on the editor's 3D view (lib/scene/edl.ts); the cleanup undoes
   // all of it, so turning the layer off restores the viewport without a
@@ -1259,9 +1262,11 @@ export function PointCloudCanvas({
     ctx.scene.add(layer.points);
     voxelLayerRef.current = layer;
     const restoreGround = thinGroundUnderVoxels(ctx.ground, theme);
-    // The costmap's amber is the ramp's yellow; over the map it goes pale.
+    // The costmap's amber is the ramp's yellow and the route's cyan the
+    // floor's own hue; over the map both go pale.
     const localNav = localNavRef.current;
     localNav?.setOverMap(true);
+    pathRibbonRef.current?.setOverMap(true);
     if (!ctx.mapFrame) voxelFrameRef.current = layer.frame;
     // Only the map is shaded, on its own layer, and the rest is drawn over
     // it. Built here rather than with the scene, so its offscreen target is
@@ -1280,6 +1285,9 @@ export function PointCloudCanvas({
       layer.dispose();
       restoreGround();
       localNav?.setOverMap(false);
+      // The route on screen now, which is not the one there at setup:
+      // a new route replaces the band every few seconds.
+      pathRibbonRef.current?.setOverMap(false);
       if (voxelFrameRef.current === layer.frame) voxelFrameRef.current = null;
     };
   }, [voxels, meta, mapImageUrl, resolvedTheme]);

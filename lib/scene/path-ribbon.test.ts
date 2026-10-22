@@ -231,3 +231,27 @@ describe("dashPieces over a route's triples", () => {
     expect(pieces.at(-1)![2]).toBeLessThanOrEqual(1 + 1e-9);
   });
 });
+
+describe("the route over the 3D map", () => {
+  it("turns pale with a dark rim and chevrons, and back to cyan without it", () => {
+    for (const theme of [THEMES.light, THEMES.dark]) {
+      const ribbon = createPathRibbon(route([0, 0, 0], [4, 0, 0]), theme)!;
+      const [ghost, casing, arrows] = ribbon.mesh.children as THREE.Mesh[];
+      const hues = () =>
+        [ribbon.mesh, ghost, casing, arrows].map((m) =>
+          (m.material as THREE.MeshBasicMaterial).color.getHex(),
+        );
+
+      ribbon.setOverMap(true);
+      expect(hues()).toEqual([
+        theme.pathOverMap,
+        theme.pathOverMap,
+        theme.pathCasingOverMap,
+        theme.pathCasingOverMap,
+      ]);
+      ribbon.setOverMap(false);
+      expect(hues()).toEqual([theme.path, theme.path, theme.pathCasing, theme.pathCasing]);
+      ribbon.dispose();
+    }
+  });
+});

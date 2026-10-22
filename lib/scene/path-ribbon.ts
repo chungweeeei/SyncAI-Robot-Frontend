@@ -124,6 +124,11 @@ interface Ribbon {
   dispose: () => void;
 }
 
+/** A ribbon that can change hue in place, materials and all, without a rebuild. */
+interface StackedRibbon extends Ribbon {
+  recolor: (color: number, casingColor?: number) => void;
+}
+
 function bandMaterial(color: number, opacity: number): THREE.MeshBasicMaterial {
   return new THREE.MeshBasicMaterial({
     color,
@@ -142,7 +147,7 @@ function stackRibbon(
   core: THREE.BufferGeometry,
   casing: THREE.BufferGeometry | null,
   { color, opacity, casingColor }: { color: number; opacity: number; casingColor?: number },
-): Ribbon {
+): StackedRibbon {
   const coreMaterial = bandMaterial(color, opacity);
   const mesh = new THREE.Mesh(core, coreMaterial);
   mesh.renderOrder = CORE_RENDER_ORDER;
@@ -171,6 +176,11 @@ function stackRibbon(
 
   return {
     mesh,
+    recolor: (next, nextCasing) => {
+      coreMaterial.color.setHex(next);
+      ghostMaterial.color.setHex(next);
+      if (nextCasing !== undefined) casingMaterial?.color.setHex(nextCasing);
+    },
     dispose: () => {
       core.dispose();
       casing?.dispose();
@@ -189,6 +199,11 @@ export interface PathRibbon {
    * stand in [lo, hi). ±Infinity is every floor, the whole route.
    */
   setBand: (lo: number, hi: number) => void;
+  /**
+   * Whether the 3D map is drawn under it, which swaps the route's hues for
+   * `pathOverMap` and `pathCasingOverMap`, chevrons included.
+   */
+  setOverMap: (over: boolean) => void;
   dispose: () => void;
 }
 
@@ -279,7 +294,7 @@ export function createPathRibbon(points: Float32Array, theme: Theme): PathRibbon
   casing.setAttribute("position", new THREE.BufferAttribute(casingPositions, 3));
   casing.setIndex(all);
 
-  const { mesh, dispose: disposeBand } = stackRibbon(geometry, casing, {
+  const { mesh, recolor, dispose: disposeBand } = stackRibbon(geometry, casing, {
     color: theme.path,
     opacity: 1,
     casingColor: theme.pathCasing,
@@ -339,7 +354,13 @@ export function createPathRibbon(points: Float32Array, theme: Theme): PathRibbon
     arrowGeometry.setIndex(arrowIndicesIn(lo, hi));
   };
 
-  return { mesh, setBand, dispose };
+  const setOverMap = (over: boolean) => {
+    const casingColor = over ? theme.pathCasingOverMap : theme.pathCasing;
+    recolor(over ? theme.pathOverMap : theme.path, casingColor);
+    arrowMaterial.color.setHex(casingColor);
+  };
+
+  return { mesh, setBand, setOverMap, dispose };
 }
 
 /* A dash and its gap along a dashed band, in metres of floor. */
