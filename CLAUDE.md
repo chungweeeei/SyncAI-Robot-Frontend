@@ -464,8 +464,10 @@ touch one, prefer moving it toward the rule.
   SSID or rejoin of a saved network changes `wifiConnections`, invalidated on
   settle because a dropped request has probably joined) — and instead compose a *reader* that reports what the
   robot did with the command: `useTaskTracker` for anything dispatched as a
-  Temporal task, and the console's shared 1 Hz robot-state poll for the two
-  that command the machine directly. Read the epistemics note in
+  Temporal task, and the console's shared 1 Hz robot-state poll for the ones
+  that command the machine directly (`use-locomotion`, `use-posture` — Stand /
+  Lie down are motion keys, not posture tasks, so a speaking job cannot block
+  them; `postureLock` greys them while a job drives instead). Read the epistemics note in
   `use-locomotion.ts` before adding another: a request is not a reading, and
   which of the two a value is decides whether it may be shown as fact.
   `use-task-hold` is the newest case: a pause is a *request* the ack answers

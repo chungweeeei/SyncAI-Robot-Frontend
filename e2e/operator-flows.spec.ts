@@ -2648,8 +2648,8 @@ test.describe("the manual drive panel", () => {
     const writes = await mockBackend(page);
     const postures = () =>
       writes
-        .filter((w) => w.path === "/api/v1/tasks")
-        .map((w) => (w.body as { kind: string }).kind);
+        .filter((w) => w.path === "/api/v1/robot/set_motion_key")
+        .map((w) => (w.body as { key: string }).key);
     await page.goto("/settings");
     await page.getByRole("button", { name: "Manual drive panel" }).click();
     await expect(
@@ -2657,7 +2657,7 @@ test.describe("the manual drive panel", () => {
     ).not.toBeChecked();
 
     await page.getByRole("button", { name: "Stand", exact: true }).click();
-    await expect.poll(postures).toEqual(["standup"]);
+    await expect.poll(postures).toEqual(["0"]);
   });
 
   test("limits translation to the Max speed it shows, and never rotation", async ({
@@ -4698,25 +4698,45 @@ test.describe("what a dispatch records about itself", () => {
     expect(body.steps).toHaveLength(1);
   });
 
-  test("sends a posture as its own kind, with no name", async ({ page }) => {
+  test("sends a posture as a motion key, not a task", async ({ page }) => {
     const writes = await mockBackend(page);
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "Manual drive panel" }).click();
+    await page.getByRole("button", { name: "Lie down", exact: true }).click();
+    await expect
+      .poll(() => writes.filter((w) => w.path === "/api/v1/robot/set_motion_key"))
+      .toHaveLength(1);
+    expect(
+      writes.find((w) => w.path === "/api/v1/robot/set_motion_key")!.body,
+    ).toEqual({ key: "2" });
+    expect(writes.filter((w) => w.path === "/api/v1/tasks")).toEqual([]);
+  });
+
+  test("stands the robot up while a job only speaks", async ({ page }) => {
+    // The reason postures are not tasks: a task is refused while any other
+    // runs, and a speaking job must not keep the robot down.
+    const writes = await mockBackend(page, {
+      activeTasks: [activeTask({ map_name: null })],
+    });
     await page.goto("/");
 
     await page.getByRole("button", { name: "Manual drive panel" }).click();
     await page.getByRole("button", { name: "Stand", exact: true }).click();
     await expect
-      .poll(() => writes.filter((w) => w.path === "/api/v1/tasks"))
+      .poll(() => writes.filter((w) => w.path === "/api/v1/robot/set_motion_key"))
       .toHaveLength(1);
-    const body = writes.find((w) => w.path === "/api/v1/tasks")!.body as {
-      id: string;
-      kind: string;
-      name: string | null;
-    };
-    expect(body.kind).toBe("standup");
-    expect(body.name).toBeNull();
-    // A posture uses no map, so it names none.
-    expect(body).not.toHaveProperty("map_name");
-    expect(body.id).toMatch(/^robot01-standup-\d+-\d+$/);
+  });
+
+  test("holds the postures while a job drives, and says why", async ({ page }) => {
+    const writes = await mockBackend(page, { activeTasks: [activeTask()] });
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "Manual drive panel" }).click();
+    await expect(page.getByRole("button", { name: "Stand", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Lie down", exact: true })).toBeDisabled();
+    await expect(page.getByText(/The robot is driving a job/)).toBeVisible();
+    expect(writes.filter((w) => w.path === "/api/v1/robot/set_motion_key")).toEqual([]);
   });
 });
 
@@ -4746,7 +4766,7 @@ test.describe("a map whose floor plan is being rebuilt", () => {
     await page.getByRole("button", { name: "Manual drive panel" }).click();
     await page.getByRole("button", { name: "Stand", exact: true }).click();
     await expect
-      .poll(() => writes.filter((w) => w.path === "/api/v1/tasks"))
+      .poll(() => writes.filter((w) => w.path === "/api/v1/robot/set_motion_key"))
       .toHaveLength(1);
   });
 });

@@ -17,22 +17,17 @@ const COMMANDS: ReadonlyArray<{
 ];
 
 /**
- * Stand up / lie down, a one-step task each, in the drive panel (the robot
- * must stand before the sticks mean anything). Not gated on the arm switch,
- * which is about the sticks and keys.
+ * Stand up / lie down, motion keys sent straight to the driver, in the drive
+ * panel (the robot must stand before the sticks mean anything). Not gated on
+ * the arm switch, which is about the sticks and keys; greyed under the stop
+ * and while a job drives (`postureLock`), not while one only speaks.
  *
- * The pressed button stays lit until its task ends: the posture itself is in
- * no telemetry the console reads, so that is the only feedback.
+ * The lit button is the reported posture; a press the robot has not reached
+ * yet is lit faintly until a robot-state frame confirms it.
  */
-export function PanelPostureControl({
-  robotId,
-  className,
-}: {
-  robotId: string;
-  className?: string;
-}) {
-  const posture = usePosture(robotId);
-  const { sent, running, busy } = posture;
+export function PanelPostureControl({ className }: { className?: string }) {
+  const posture = usePosture();
+  const { busy, lock, pending } = posture;
   const { engaged: stopped } = useConsoleEstop();
   return (
     <div className={cn("space-y-1.5", className)}>
@@ -41,14 +36,18 @@ export function PanelPostureControl({
           <button
             key={command.posture}
             type="button"
-            // One at a time, or two would race the gait mode change. None
-            // under the stop: standing up is moving.
-            disabled={busy || running || stopped}
+            // One request at a time; a pending one does not lock, so the
+            // opposite posture is always the way back. None under the stop:
+            // standing up is moving.
+            disabled={busy || stopped || lock !== null}
+            title={lock ?? undefined}
             onClick={() => posture.send(command.posture)}
             className={cn(
               "instrument-label flex h-8 items-center justify-center gap-1.5 rounded-sm border px-2 transition-colors disabled:opacity-40 pointer-coarse:h-10",
-              running && sent === command.posture
-                ? "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd"
+              posture.posture === command.posture
+                ? pending === command.posture
+                  ? "border-signal-cmd/30 bg-signal-cmd/6 text-signal-cmd/80"
+                  : "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd"
                 : "border-hairline hover:bg-elevated",
             )}
           >
@@ -57,9 +56,9 @@ export function PanelPostureControl({
           </button>
         ))}
       </div>
-      {posture.error && (
+      {(posture.error ?? lock) && (
         <p className="text-[11px] leading-snug break-words text-signal-warn">
-          {posture.error}
+          {posture.error ?? lock}
         </p>
       )}
     </div>
