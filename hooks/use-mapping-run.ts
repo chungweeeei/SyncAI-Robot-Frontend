@@ -74,6 +74,9 @@ export function useSaveMap() {
       // The same for the 3D map: a save into the name deletes the old tree
       // first and builds a new one minutes later.
       queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(name) });
+      // Its ground patches were painted on the old tree: read again, whatever
+      // the backend kept.
+      queryClient.removeQueries({ queryKey: queryKeys.mapOctomapEdits(name) });
       // And its floors: they are detected from the walk the save replaces.
       queryClient.removeQueries({ queryKey: queryKeys.mapFloors(name) });
     },

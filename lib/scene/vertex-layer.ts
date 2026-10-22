@@ -18,6 +18,10 @@ const VERTEX_DISC_RADIUS_M = 0.2;
 // A 5 cm band: a hairline ring aliases away at distance.
 const VERTEX_RING_INNER_M = 0.2;
 const VERTEX_RING_OUTER_M = 0.25;
+/** The halo's band, a little wider than the ring on both sides so it shows as a rim. */
+const VERTEX_HALO_INNER_M = 0.17;
+const VERTEX_HALO_OUTER_M = 0.29;
+const VERTEX_HALO_OPACITY = 0.85;
 const VERTEX_CHEVRON_BASE_M = 0.31;
 const VERTEX_CHEVRON_TIP_M = 0.46;
 const VERTEX_CHEVRON_HALF_M = 0.1;
@@ -27,10 +31,17 @@ const VERTEX_Z_M = 0.02;
  * A stem and badge, like a map pin, because a floor mark vanishes at the low
  * camera angles that are most useful. The badge carries only the type glyph;
  * per-stop names would be clutter, so the name is in the dialog a tap opens.
+ *
+ * The pin is drawn over everything else (no depth test, a late render order):
+ * over a 3D map a wall between the camera and a stop buried it whole, while
+ * its badge was still pickable through the wall. The ground mark keeps its
+ * depth test, so where the stop stands still reads in 3D.
  */
 const VERTEX_STEM_HEIGHT_M = 0.6;
-const VERTEX_STEM_RADIUS_M = 0.009;
-const VERTEX_BADGE_SIZE_M = 0.22;
+const VERTEX_STEM_RADIUS_M = 0.012;
+const VERTEX_BADGE_SIZE_M = 0.3;
+/** After the scene's own objects, so the pin lands on top of them. */
+const VERTEX_PIN_RENDER_ORDER = 10;
 /** Badge scale-up on hover — the marker under the pointer has to answer back. */
 const VERTEX_BADGE_HOVER_SCALE = 1.3;
 /** Texture resolution of a badge, not its drawn size. */
@@ -48,7 +59,7 @@ interface VertexMaterials {
 }
 
 function createVertexMaterials(color: number): VertexMaterials {
-  const make = (opacity: number) =>
+  const make = (opacity: number, depthTest = true) =>
     new THREE.MeshBasicMaterial({
       color,
       transparent: true,
@@ -57,9 +68,11 @@ function createVertexMaterials(color: number): VertexMaterials {
       // Ground marking, not geometry: writing depth would let one stop's
       // translucent disc erase the cloud behind the next one.
       depthWrite: false,
+      depthTest,
     });
-  // Ring and chevron opaque; the disc translucent but solid enough to read through the scan.
-  return { fill: make(0.35), line: make(1), stem: make(0.7) };
+  // Ring and chevron opaque; the disc solid enough to read as a spot over
+  // the 3D map's coloured cells, not a tint of them.
+  return { fill: make(0.5), line: make(1), stem: make(0.9, false) };
 }
 
 /**
@@ -140,6 +153,13 @@ export function createVertexLayer(
   const group = new THREE.Group();
   const base = createVertexMaterials(theme.vertex);
   const hover = createVertexMaterials(theme.vertexHover);
+  const haloMaterial = new THREE.MeshBasicMaterial({
+    color: theme.vertexHalo,
+    transparent: true,
+    opacity: VERTEX_HALO_OPACITY,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
 
   const discGeom = new THREE.CircleGeometry(VERTEX_DISC_RADIUS_M, 32);
   const ringGeom = new THREE.RingGeometry(
@@ -147,6 +167,7 @@ export function createVertexLayer(
     VERTEX_RING_OUTER_M,
     32,
   );
+  const haloGeom = new THREE.RingGeometry(VERTEX_HALO_INNER_M, VERTEX_HALO_OUTER_M, 32);
   // Ring and chevron lie in the XY plane (flat in this z-up world) and the
   // chevron points down +x, so the group's rotation.z is the heading.
   const chevron = new THREE.Shape();
@@ -197,6 +218,11 @@ export function createVertexLayer(
     marker.rotation.z = (vertex.theta * Math.PI) / 180;
 
     const disc = new THREE.Mesh(discGeom, base.fill);
+    // Under the ring, in draw order as well as in place: a hair below it,
+    // and drawn first, so the ring lands on the rim rather than mixing with it.
+    const halo = new THREE.Mesh(haloGeom, haloMaterial);
+    halo.position.z = -0.001;
+    halo.renderOrder = -1;
     const ring = new THREE.Mesh(ringGeom, base.line);
     const head = new THREE.Mesh(chevronGeom, base.line);
 
@@ -204,12 +230,13 @@ export function createVertexLayer(
     // The cylinder runs along +y by default; +90deg about x stands it up.
     stem.rotation.x = Math.PI / 2;
     stem.position.z = VERTEX_STEM_HEIGHT_M / 2;
+    stem.renderOrder = VERTEX_PIN_RENDER_ORDER;
 
     const hit = new THREE.Mesh(hitGeom, hitMaterial);
     hit.userData.vertexId = vertex.id;
     hit.visible = false;
 
-    marker.add(disc, ring, head, stem, hit);
+    marker.add(halo, disc, ring, head, stem, hit);
     group.add(marker);
 
     const glyph = vertexGlyph(vertex.type);
@@ -222,8 +249,10 @@ export function createVertexLayer(
         map: faces.base,
         transparent: true,
         depthWrite: false,
+        depthTest: false,
       }),
     );
+    badge.renderOrder = VERTEX_PIN_RENDER_ORDER + 1;
     badge.scale.setScalar(VERTEX_BADGE_SIZE_M);
     // Hung off the layer, not the marker: a sprite ignores rotation anyway.
     // Lifted a third of its height so it caps the stem.
@@ -320,6 +349,7 @@ export function createVertexLayer(
     for (const geometry of [
       discGeom,
       ringGeom,
+      haloGeom,
       chevronGeom,
       stemGeom,
       hitGeom,
@@ -332,6 +362,7 @@ export function createVertexLayer(
       set.stem.dispose();
     }
     hitMaterial.dispose();
+    haloMaterial.dispose();
     // Freed by hand: the scene teardown never reaches a material's texture.
     for (const texture of badgeTextures.values()) texture.dispose();
     for (const handle of handles.values()) handle.badge.material.dispose();

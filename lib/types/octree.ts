@@ -6,6 +6,8 @@
 /**
  * An OcTree key is 16 bits per axis with the map origin at its midpoint: a
  * voxel's centre along an axis is `(key - OCTREE_KEY_ORIGIN + 0.5) * res`.
+ * Ground patches are saved as keys in this absolute form, which is what the
+ * robot's edit tool indexes the tree with.
  */
 export const OCTREE_KEY_ORIGIN = 32768;
 

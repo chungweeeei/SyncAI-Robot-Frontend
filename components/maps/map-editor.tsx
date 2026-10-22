@@ -25,7 +25,10 @@ const VIEW_OPTIONS = [
 const subscribeNoop = () => () => {};
 
 const LEAVE_PROMPT = "Leave the editor? Your unsaved changes to this map will be lost.";
-const SWITCH_PROMPT = "Switch to the 3D view? Your unsaved changes to this map will be lost.";
+const SWITCH_PROMPT: Record<MapEditorView, string> = {
+  "2d": "Switch to the floor plan? Your unsaved ground patches will be lost.",
+  "3d": "Switch to the 3D view? Your unsaved changes to this map will be lost.",
+};
 
 /**
  * A map's editor: its floor plan (MapGridEditor) or its 3D map with the
@@ -68,23 +71,23 @@ export function MapEditor({
   const offered = views.includes(view) ? views : [...views, view];
 
   /**
-   * Mirrored out of the floor plan view: the App Router has no navigation
-   * blocker, so Back and the switch have to ask themselves, and the title's
-   * rename navigates too (see MapTitleRename). The 3D view writes each
-   * waypoint as it is placed and has nothing unsaved.
+   * Mirrored out of whichever view is open — the floor plan's strokes,
+   * zones and staged waypoints, or the 3D view's ground patches (its
+   * waypoints are written as they are placed): the App Router has no
+   * navigation blocker, so Back and the switch have to ask themselves, and
+   * the title's rename navigates too (see MapTitleRename).
    */
   const [dirty, setDirty] = React.useState(false);
-  const unsaved = view === "2d" && dirty;
   const returnTo = from === "tasks" ? "/tasks/editor" : "/maps";
 
   const goBack = () => {
-    if (unsaved && !window.confirm(LEAVE_PROMPT)) return;
+    if (dirty && !window.confirm(LEAVE_PROMPT)) return;
     router.push(returnTo);
   };
 
   const switchView = (next: MapEditorView) => {
     if (next === view) return;
-    if (unsaved && !window.confirm(SWITCH_PROMPT)) return;
+    if (dirty && !window.confirm(SWITCH_PROMPT[next])) return;
     setDirty(false);
     // replace, not push: the two views are one screen, and the browser's
     // Back should leave it rather than flip between them.
@@ -103,7 +106,7 @@ export function MapEditor({
         >
           <ArrowLeftIcon className="size-3.5" aria-hidden />
         </button>
-        <MapTitleRename name={name} dirty={unsaved} />
+        <MapTitleRename name={name} dirty={dirty} />
         {offered.length > 1 ? (
           <Segmented
             label="View"
@@ -119,7 +122,7 @@ export function MapEditor({
 
       <div className="min-h-0 flex-1">
         {view === "3d" ? (
-          <Map3dEditor name={name} openOnWaypoint={openOnWaypoint} />
+          <Map3dEditor name={name} openOnWaypoint={openOnWaypoint} onDirtyChange={setDirty} />
         ) : (
           <MapGridEditor name={name} initialMode={initialMode} onDirtyChange={setDirty} />
         )}
