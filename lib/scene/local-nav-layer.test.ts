@@ -10,6 +10,7 @@ import {
   costmapRgba,
   createLocalNavLayer,
 } from "@/lib/scene/local-nav-layer";
+import { createPathRibbon } from "@/lib/scene/path-ribbon";
 import { THEMES } from "@/lib/scene/theme";
 import type { LocalCostmap, PlannedPath } from "@/lib/types/robot";
 
@@ -126,6 +127,36 @@ describe("createLocalNavLayer", () => {
     expect(layer.group.children).toHaveLength(2);
     layer.setPlan(plan([]));
     expect(layer.group.children).toHaveLength(1);
+    layer.dispose();
+  });
+
+  it("draws the trajectory after the route it runs down, rimmed", () => {
+    const layer = createLocalNavLayer(THEMES.dark);
+    layer.setPlan({ points: new Float32Array([0, 0, 0, 1, 0, 0]), stamp: 1 });
+    const thread = layer.group.children[1] as THREE.Mesh;
+    const route = createPathRibbon(Float32Array.from([0, 0, 0, 1, 0, 0]), THEMES.dark)!;
+    const orders = (mesh: THREE.Mesh) => [mesh, ...mesh.children].map((o) => o.renderOrder);
+    expect(Math.min(...orders(thread))).toBeGreaterThan(Math.max(...orders(route.mesh)));
+    const casing = thread.children[1] as THREE.Mesh;
+    expect((casing.material as THREE.MeshBasicMaterial).color.getHex()).toBe(
+      THEMES.dark.localPlanCasing,
+    );
+    route.dispose();
+    layer.dispose();
+  });
+
+  it("turns the costmap pale over the 3D map, repainting the one on screen", () => {
+    const layer = createLocalNavLayer(THEMES.dark);
+    layer.setCostmap(costmap({ width: 1, height: 1, cells: new Uint8Array([COST_LETHAL]) }));
+    const material = quad(layer.group).material as THREE.MeshBasicMaterial;
+    // Blue, the channel amber and the pale wash differ most in.
+    const blue = () => (material.map!.image.data as Uint8Array)[2];
+
+    expect(blue()).toBe(THEMES.dark.localCostmap & 0xff);
+    layer.setOverMap(true);
+    expect(blue()).toBe(THEMES.dark.localCostmapOverMap & 0xff);
+    layer.setOverMap(false);
+    expect(blue()).toBe(THEMES.dark.localCostmap & 0xff);
     layer.dispose();
   });
 

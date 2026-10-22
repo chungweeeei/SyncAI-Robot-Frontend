@@ -1243,10 +1243,11 @@ export function PointCloudCanvas({
   // ---- Optional 3D map (toggle) -----------------------------------------
   // Same shape as the map scan above, and the same rebuild deps for the same
   // reason. Beyond adding its marks it thins the floor plan while it is up
-  // (see thinGroundUnderVoxels), lends its box to Recenter and Top down
-  // when there is no floor plan to frame, and is shaded by depth as on the
-  // editor's 3D view (lib/scene/edl.ts); the cleanup undoes all three, so turning
-  // the layer off restores the viewport without a rebuild.
+  // (see thinGroundUnderVoxels) and turns the costmap pale, lends its box to
+  // Recenter and Top down when there is no floor plan to frame, and is shaded
+  // by depth as on the editor's 3D view (lib/scene/edl.ts); the cleanup undoes
+  // all of it, so turning the layer off restores the viewport without a
+  // rebuild.
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx || !voxels) return;
@@ -1258,6 +1259,9 @@ export function PointCloudCanvas({
     ctx.scene.add(layer.points);
     voxelLayerRef.current = layer;
     const restoreGround = thinGroundUnderVoxels(ctx.ground, theme);
+    // The costmap's amber is the ramp's yellow; over the map it goes pale.
+    const localNav = localNavRef.current;
+    localNav?.setOverMap(true);
     if (!ctx.mapFrame) voxelFrameRef.current = layer.frame;
     // Only the map is shaded, on its own layer, and the rest is drawn over
     // it. Built here rather than with the scene, so its offscreen target is
@@ -1275,6 +1279,7 @@ export function PointCloudCanvas({
       ctx.scene.remove(layer.points);
       layer.dispose();
       restoreGround();
+      localNav?.setOverMap(false);
       if (voxelFrameRef.current === layer.frame) voxelFrameRef.current = null;
     };
   }, [voxels, meta, mapImageUrl, resolvedTheme]);
