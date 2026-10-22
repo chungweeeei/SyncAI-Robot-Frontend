@@ -13,6 +13,7 @@ import {
   renameMap,
   saveMapFloors,
   saveMapGrid,
+  saveMapOctomapEdits,
 } from "@/lib/api/map";
 import { saveKeepout } from "@/lib/api/keepout";
 import { queryKeys } from "@/lib/api/query-keys";
@@ -44,6 +45,7 @@ export function useRenameMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(from) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapOctomapEdits(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapOctomapPreview(from) });
       queryClient.removeQueries({ queryKey: queryKeys.mapFloors(from) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
@@ -65,6 +67,7 @@ export function useDeleteMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(name) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapOctomapEdits(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapOctomapPreview(name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapFloors(name) });
       // Templates need nothing: the backend refuses the delete while any
@@ -177,6 +180,33 @@ export function useSaveMapKeepout() {
 }
 
 /**
+ * PUT /api/v1/maps/{name}/octomap/edits — the map's ground patches, whole.
+ *
+ * The answer carries no list, so the keys sent are written into the cache
+ * as the next read (the backend stores exactly them). The catalogue goes
+ * stale for its `modified_at`; the tree itself is untouched, so
+ * `mapOctomap` keeps its entry — the robot's tool is what changes the tree,
+ * and the catalogue's version is what retires it then.
+ */
+export function useSaveMapOctomapEdits() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, fillKey }: { name: string; fillKey: readonly (readonly number[])[] }) =>
+      saveMapOctomapEdits(name, fillKey),
+    onSuccess: (result, { name, fillKey }) => {
+      queryClient.setQueryData(queryKeys.mapOctomapEdits(name), {
+        name: result.name,
+        res: null,
+        fill_key: fillKey.map((key) => [...key]),
+        created_at: null,
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.mapOctomapEdits(name) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
+    },
+  });
+}
+
+/**
  * PUT /api/v1/maps/{name}/floors. The answer is the list as saved (sorted,
  * trimmed), written straight into the key the dashboard reads too, so a
  * renamed floor is renamed on both without a round trip.
@@ -254,6 +284,7 @@ export function useImportMap() {
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(result.name) });
+      queryClient.removeQueries({ queryKey: queryKeys.mapOctomapEdits(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapFloors(result.name) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       // Not `taskTemplates`: the backend refuses to replace a map any template

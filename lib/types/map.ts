@@ -69,8 +69,8 @@ export interface MapSummary {
   /**
    * How the map's 3D map stands — the occupancy tree the robot's map cleaning
    * writes beside the scan when asked to, which the dashboard draws and the
-   * editor's 3D view places waypoints on. The same five words as `grid_status`, read off a
-   * different file: `none` also covers a save that never asked for one.
+   * editor's 3D view patches and places waypoints on. The same five words as
+   * `grid_status`, read off a different file: `none` also covers a save that never asked for one.
    */
   octomap_status: GridStatus;
   /** Null unless `octomap_status` is `"failed"`. Operator-facing; render verbatim. */

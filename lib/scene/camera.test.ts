@@ -135,7 +135,7 @@ describe("frontViewAround", () => {
 });
 
 describe("the 3D view's controls", () => {
-  it("gives the primary button and one finger to Waypoint only while it is armed", () => {
+  it("gives the primary button and one finger to a tool only while one is armed", () => {
     const { controls } = rig();
     applyMap3dControls(controls, false);
     expect(controls.mouseButtons.LEFT).toBe(THREE.MOUSE.ROTATE);
@@ -143,12 +143,12 @@ describe("the 3D view's controls", () => {
     applyMap3dControls(controls, true);
     expect(controls.mouseButtons.LEFT).toBeNull();
     expect(controls.touches.ONE).toBeNull();
-    // Still a way to look around while placing, and a pinch still zooms.
+    // Still a way to look around mid-edit, and a pinch still zooms.
     expect(controls.mouseButtons.RIGHT).toBe(THREE.MOUSE.ROTATE);
     expect(controls.touches.TWO).toBe(THREE.TOUCH.DOLLY_PAN);
   });
 
-  it("opens on the floor shown, so the middle of the screen is the map's", () => {
+  it("opens on the floor the brush aims at, so the middle of the screen is the map's", () => {
     const { camera, controls } = rig();
     frameGround(camera, controls, { cx: 3, cy: 4, widthM: 10, heightM: 6 }, -0.45);
     expect(controls.target.distanceTo(new THREE.Vector3(3, 4, -0.45))).toBeCloseTo(0);

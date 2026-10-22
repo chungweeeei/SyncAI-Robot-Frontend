@@ -15,20 +15,30 @@ import { Map3dToolBar } from "@/components/maps/map-3d-toolbar";
 import { useMapFloors } from "@/hooks/use-map-floors";
 import { useMapVertexWrites } from "@/hooks/use-map-vertex-writes";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
+import { useMapOctomapEdits } from "@/hooks/use-map-octomap-edits";
+import { useSaveMapOctomapEdits } from "@/hooks/use-map-actions";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useMapEntry } from "@/hooks/use-maps";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { floorBands } from "@/lib/map/floors";
 import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
+import { bandForHeights, fullBand, kzToMetres, metresToKz } from "@/lib/map/ground";
 import {
-  bandForHeights,
-  columnFloors,
-  fullBand,
-  kzToMetres,
-  medianFloor,
-  metresToKz,
-  type Band,
-} from "@/lib/map/ground";
+  DEFAULT_BRUSH_RADIUS_M,
+  LOCAL_FLOOR_RING_M,
+  applyGroundPatch,
+  cellsFor,
+  clearanceCells,
+  createGroundSession,
+  fromFillKeys,
+  groundPatchBytes,
+  sameEdits,
+  setGroundBand,
+  toFillKeys,
+  type GroundEdits,
+  type GroundPatch,
+} from "@/lib/map/ground-fill";
+import { createUndoStack, popRedo, popUndo, pushPatch } from "@/lib/map/patch";
 import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
 import { isTypingTarget } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
@@ -39,24 +49,32 @@ import type { PlanarPose } from "@/lib/types/robot";
 const subscribeNoop = () => () => {};
 
 /**
- * The editor's 3D view: the 3D map in 3D, and the map's waypoints on it. It is
- * where a map with no floor plan gets its waypoints, which the floor plan
- * editor cannot place without a raster to place them on. They are written
- * as they are placed, the dashboard's flow, so there is nothing to save.
+ * The editor's 3D view: the 3D map in 3D, and a brush that paints floor
+ * into the holes the lidar never saw. A save records the patches on the
+ * robot; the robot's own tool writes them into the tree, so the note after
+ * a save says they wait to be applied.
  *
- * Loads the tree (shared with the dashboard's layer) and mounts the surface
- * once it is in.
+ * It is also where a map with no floor plan gets its waypoints, which the
+ * floor plan editor cannot place without a raster to place them on. Those
+ * are written as they are placed, the dashboard's flow, not on Save.
+ *
+ * Loads the tree (shared with the dashboard's layer) and the saved patches,
+ * and mounts the surface only once both are in: a record arriving after
+ * strokes began would have to be merged.
  */
 export function Map3dEditor({
   name,
   openOnWaypoint = false,
+  onDirtyChange,
 }: {
   name: string;
   /** Arm the Waypoint tool on opening, for a link that came to place waypoints. */
   openOnWaypoint?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const entry = useMapEntry(name);
   const tree = useMapOctomap(name);
+  const edits = useMapOctomapEdits(name);
   // The status strip reads the catalogue too, so the entry can be cached
   // before this boundary hydrates; a guard drawn from it then would not be
   // the "Loading" the server drew without one.
@@ -68,19 +86,27 @@ export function Map3dEditor({
 
   if (mounted && entry && entry.octomap_status !== "ok") {
     return (
-      <Guard title="Cannot open the 3D map">
+      <Guard title="Cannot edit the ground">
         {entry.octomap_status === "converting"
           ? "The robot is still building this map's 3D map. Come back once it has finished."
           : entry.octomap_status === "failed"
             ? (entry.octomap_error ?? "The robot could not build this map's 3D map.")
-            : "This map has no 3D map. The robot builds one with the floor plan when it is set up to."}
+            : "This map has no 3D map to edit. The robot builds one with the floor plan when it is set up to."}
       </Guard>
     );
   }
   if (tree.status === "error") {
-    return <Guard title="Cannot open the 3D map">{tree.error}</Guard>;
+    return <Guard title="Cannot edit the ground">{tree.error}</Guard>;
   }
-  if (!tree.voxels) {
+  if (edits.status === "error") {
+    // Painting over an unread record would erase it on the first Save.
+    return (
+      <Guard title="Cannot edit the ground">
+        {edits.error ?? "The saved patches could not be read."}
+      </Guard>
+    );
+  }
+  if (!tree.voxels || edits.fillKey === null) {
     return (
       <p className="instrument-label flex h-full items-center justify-center text-muted-foreground">
         Loading {name}…
@@ -93,7 +119,9 @@ export function Map3dEditor({
       key={`${name}/${entry?.octomap_version ?? ""}`}
       name={name}
       voxels={tree.voxels}
+      initialFillKey={edits.fillKey}
       openOnWaypoint={openOnWaypoint}
+      onDirtyChange={onDirtyChange}
     />
   );
 }
@@ -109,16 +137,40 @@ function Guard({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-/** The page's shell: tool state, the heights shown, shortcuts and the waypoint flow. */
+type SaveNote =
+  | { kind: "idle" }
+  | { kind: "saving" }
+  | { kind: "saved"; message: string }
+  | { kind: "failed"; message: string };
+
+/**
+ * The editor shell: tool state, the undo stack, shortcuts and the save flow.
+ * The canvas owns the scene and the camera; they meet at the session
+ * (lib/map/ground-fill.ts), which is mutable and never in React state.
+ */
 function Map3dSurface({
   name,
   voxels,
+  initialFillKey,
   openOnWaypoint,
+  onDirtyChange,
 }: {
   name: string;
   voxels: OccupiedVoxels;
+  initialFillKey: number[][];
   openOnWaypoint: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
+  const [session] = React.useState(() => {
+    const { edits } = fromFillKeys(initialFillKey, voxels);
+    return createGroundSession(voxels, edits);
+  });
+  /** Patches in the record that lie outside this tree: another save's. */
+  const skipped = React.useMemo(
+    () => fromFillKeys(initialFillKey, voxels).skipped,
+    [initialFillKey, voxels],
+  );
+
   const [tool, setTool] = React.useState<Map3dTool>("orbit");
   /**
    * A link's ask to open on Waypoint, held until the run lock first reads
@@ -127,13 +179,25 @@ function Map3dSurface({
    * disarm the tool as soon as it was set. Any tool picked drops the ask.
    */
   const [waypointAsked, setWaypointAsked] = React.useState(openOnWaypoint);
-  const [band, setBand] = React.useState<Band>(() => fullBand(voxels));
+  /** Moves on every change to the patches outside a stroke, which the canvas redraws on. */
+  const [editsVersion, setEditsVersion] = React.useState(0);
+  const [radiusM, setRadiusM] = React.useState<number>(DEFAULT_BRUSH_RADIUS_M);
+  const [band, setBand] = React.useState(() => fullBand(voxels));
   const [fitNonce, setFitNonce] = React.useState(0);
   const [zoomStep, setZoomStep] = React.useState<{ factor: number } | null>(null);
   // On by default: the outlines are what make walls and steps readable.
   const [shading, setShading] = React.useState(true);
+  const [canUndo, setCanUndo] = React.useState(false);
+  const [canRedo, setCanRedo] = React.useState(false);
+  const [count, setCount] = React.useState(session.edits.size);
+  const [dirty, setDirty] = React.useState(false);
+  const [note, setNote] = React.useState<SaveNote>({ kind: "idle" });
+  /** The patches as last saved, compared against the session's for `dirty`. */
+  const savedRef = React.useRef<GroundEdits>(new Map(session.edits));
+  const historyRef = React.useRef(createUndoStack<GroundPatch>(groundPatchBytes));
 
   const runLock = useMapRunLock(name);
+  const { mutate: save } = useSaveMapOctomapEdits();
   const { floors } = useMapFloors(name);
   const stops = useMapVertexWrites(name);
   const { vertices, moveVertex, createVertex, removeVertex, clearWriteError } = stops;
@@ -183,13 +247,59 @@ function Map3dSurface({
   );
 
   const res = voxels.res;
+  const radius = cellsFor(radiusM, res);
+  const ring = cellsFor(LOCAL_FLOOR_RING_M, res);
+  const clearance = clearanceCells(res);
+
+  const refresh = React.useCallback(() => {
+    setEditsVersion((n) => n + 1);
+    setCount(session.edits.size);
+    setDirty(!sameEdits(session.edits, savedRef.current));
+    setNote({ kind: "idle" });
+  }, [session]);
+
+  React.useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  const commit = React.useCallback(
+    (patch: GroundPatch) => {
+      pushPatch(historyRef.current, patch);
+      setCanUndo(true);
+      setCanRedo(false);
+      refresh();
+    },
+    [refresh],
+  );
+
+  const step = React.useCallback(
+    (direction: "undo" | "redo") => {
+      const stack = historyRef.current;
+      const patch = direction === "undo" ? popUndo(stack) : popRedo(stack);
+      if (!patch) return;
+      setCanUndo(stack.undo.length > 0);
+      setCanRedo(stack.redo.length > 0);
+      applyGroundPatch(session.edits, patch, direction === "undo" ? "before" : "after");
+      refresh();
+    },
+    [session, refresh],
+  );
+  const undo = React.useCallback(() => step("undo"), [step]);
+  const redo = React.useCallback(() => step("redo"), [step]);
   const fit = React.useCallback(() => setFitNonce((n) => n + 1), []);
   const zoomIn = React.useCallback(() => setZoomStep({ factor: ZOOM_STEP_FACTOR }), []);
   const zoomOut = React.useCallback(() => setZoomStep({ factor: 1 / ZOOM_STEP_FACTOR }), []);
 
-  const changeBand = React.useCallback((next: Band) => {
-    setBand({ lo: Math.min(next.lo, next.hi), hi: Math.max(next.lo, next.hi) });
-  }, []);
+  /** Move the height band; the floors are rebuilt, and the canvas re-aims at them. */
+  const changeBand = React.useCallback(
+    (next: { lo: number; hi: number }) => {
+      const lo = Math.min(next.lo, next.hi);
+      const hi = Math.max(next.lo, next.hi);
+      setBand({ lo, hi });
+      setGroundBand(session, { lo, hi });
+    },
+    [session],
+  );
 
   const pickFloor = React.useCallback(
     (floorName: string | null) => {
@@ -198,6 +308,23 @@ function Map3dSurface({
     },
     [floorOptions, changeBand, voxels],
   );
+
+  const onSave = React.useCallback(() => {
+    if (runLock.locked || note.kind === "saving") return;
+    const sent = new Map(session.edits);
+    setNote({ kind: "saving" });
+    save(
+      { name, fillKey: toFillKeys(sent, voxels) },
+      {
+        onSuccess: (result) => {
+          savedRef.current = sent;
+          setDirty(!sameEdits(session.edits, sent));
+          setNote({ kind: "saved", message: result.message });
+        },
+        onError: (cause) => setNote({ kind: "failed", message: cause.message }),
+      },
+    );
+  }, [runLock.locked, note.kind, session, save, name, voxels]);
 
   const placeLocked = runLock.locked;
   React.useEffect(() => {
@@ -208,10 +335,26 @@ function Map3dSurface({
         return;
       }
       if (isTypingTarget(event.target)) return;
-      if (event.ctrlKey || event.metaKey) return;
+      const mod = event.ctrlKey || event.metaKey;
+      if (mod && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (mod && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        redo();
+        return;
+      }
+      if (mod) return;
       if (event.key === "0") {
         event.preventDefault();
         fit();
+      } else if (event.key.toLowerCase() === "b") {
+        changeTool("fill");
+      } else if (event.key.toLowerCase() === "e") {
+        changeTool("erase");
       } else if (event.key.toLowerCase() === "o") {
         changeTool("orbit");
       } else if (event.key.toLowerCase() === "w" && !placeLocked) {
@@ -220,7 +363,14 @@ function Map3dSurface({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [fit, changeTool, placeLocked]);
+  }, [undo, redo, fit, changeTool, placeLocked]);
+
+  React.useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
 
   const bandLoM = kzToMetres(band.lo, voxels);
   const bandHiM = kzToMetres(band.hi, voxels);
@@ -230,12 +380,6 @@ function Map3dSurface({
     () => ({ lo: bandLoM - res / 2, hi: bandHiM + res / 2 }),
     [bandLoM, bandHiM, res],
   );
-  // What Fit frames on: the floor the shown heights mostly stand on. Memoised,
-  // since the measure walks every cell.
-  const frameZ = React.useMemo(() => {
-    const floor = medianFloor(columnFloors(voxels, band));
-    return kzToMetres(floor ?? band.lo, voxels);
-  }, [voxels, band]);
   const pickedFloor =
     floorOptions.find((floor) => floor.levels.lo === band.lo && floor.levels.hi === band.hi)
       ?.name ?? (band.lo === full.lo && band.hi === full.hi ? null : undefined);
@@ -309,15 +453,22 @@ function Map3dSurface({
   };
 
   return (
-    <div className="relative h-full w-full">
+    // For the e2e suite only, as an attribute so it can't become an on-screen
+    // diagnostic: data-patched (columns patched) proves a stroke filled or
+    // erased, now that the Patched readout is off the screen by request.
+    <div className="relative h-full w-full" data-patched={count}>
       <Map3dCanvas
-        voxels={voxels}
+        session={session}
         tool={tool}
+        radius={radius}
+        ring={ring}
+        clearance={clearance}
         band={bandM}
-        frameZ={frameZ}
+        editsVersion={editsVersion}
         fitNonce={fitNonce}
         zoomStep={zoomStep}
         shading={shading}
+        onStrokeCommit={commit}
         vertices={vertices}
         vertexBand={vertexBand}
         movingVertex={moving ?? savingVertex}
@@ -364,9 +515,19 @@ function Map3dSurface({
             onFit={fit}
             onZoomIn={zoomIn}
             onZoomOut={zoomOut}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={undo}
+            onRedo={redo}
+            dirty={dirty}
+            saving={note.kind === "saving"}
+            writeLock={runLock.reason}
+            onSave={onSave}
             tool={tool}
             onToolChange={changeTool}
             placeLock={runLock.reason}
+            radius={radiusM}
+            onRadiusChange={setRadiusM}
             shading={shading}
             onShadingChange={setShading}
           />
@@ -385,7 +546,8 @@ function Map3dSurface({
           />
         )}
 
-        {/* Narrower on a phone so the map's middle stays reachable beside it. */}
+        {/* Narrower on a phone so the map's middle stays reachable beside it;
+          * the long hint is desktop-only, since a finger has no room for prose. */}
         <div className="pointer-events-none flex min-h-0 w-44 flex-col gap-2 overflow-y-auto sm:w-60">
           {/* Shown while a re-place is live, and after it when the write
             * fails, so the sentence lands where the operator is looking. */}
@@ -438,6 +600,19 @@ function Map3dSurface({
             </label>
           </div>
 
+          {skipped > 0 && (
+            <p
+              role="status"
+              className={cn(
+                overlayPanel,
+                "pointer-events-auto px-2 py-1.5 text-[11px] leading-snug text-signal-caution",
+              )}
+            >
+              {skipped} saved patch{skipped === 1 ? " lies" : "es lie"} outside this 3D map and
+              {skipped === 1 ? " is" : " are"} not shown; saving will drop {skipped === 1 ? "it" : "them"}.
+            </p>
+          )}
+
           {runLock.reason && (
             <p
               role="status"
@@ -447,6 +622,29 @@ function Map3dSurface({
               )}
             >
               Read-only. {runLock.reason}
+            </p>
+          )}
+
+          {note.kind === "saved" && (
+            <p
+              role="status"
+              className={cn(
+                overlayPanel,
+                "pointer-events-auto px-2 py-1.5 text-[11px] leading-snug text-signal-live",
+              )}
+            >
+              {note.message}
+            </p>
+          )}
+          {note.kind === "failed" && (
+            <p
+              role="alert"
+              className={cn(
+                overlayPanel,
+                "pointer-events-auto px-2 py-1.5 text-[11px] leading-snug break-words text-signal-warn",
+              )}
+            >
+              Not saved. {note.message}
             </p>
           )}
         </div>

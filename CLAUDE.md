@@ -164,7 +164,8 @@ components/
                 (the occupancy tree, off by default like the scan under a
                 floor plan and on by default without one, drawn whether or
                 not the map has a floor plan, one floor at a time
-                on a map that spans storeys), waypoints (each at
+                on a map that spans storeys, with its saved ground patches
+                drawn in before the robot has applied them), waypoints (each at
                 the ground under it; with a floor picked, only that floor's
                 are shown or tappable, and a goal, a new waypoint or an
                 initial pose lands on it, at the ground the 3D map shows
@@ -203,11 +204,18 @@ components/
                 lib/map/links.ts's editorViews): the gridmap editor
                 (map-grid-editor, grid-canvas) and the 3D view
                 (?view=3d, map-3d-editor, map-3d-canvas: the 3D map in 3D,
-                orbited freely, its heights narrowed by a band or a floor,
-                and a Waypoint tool — the dashboard's place, tap, re-place
-                and delete, written at once — which is where a map with no
-                floor plan gets its waypoints: the card's pencil opens it
-                there, and the task editor's links with Waypoint armed)
+                orbited freely, its heights narrowed by a band or a floor;
+                a brush that patches the holes the lidar never saw — a
+                press is cast onto the height the shown floor mostly stands
+                on, since a hole has no cell to hit and a wall in front of
+                one must not take the stroke; its rules are
+                lib/map/ground-fill.ts, its save a record the robot's own
+                tool applies, and its unsaved patches guard Back and the
+                2D / 3D switch as the floor plan's edits do; and a Waypoint
+                tool — the dashboard's place, tap, re-place and delete,
+                written at once — which is where a map with no floor plan
+                gets its waypoints: the card's pencil opens it there, and
+                the task editor's links with Waypoint armed)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
                 and the /tasks/editor page (step composer, name, save, delete)
@@ -260,7 +268,13 @@ lib/
                 ground (ground.ts: each column's floor inside a height
                 band, the floor a band mostly stands on, which the editor's
                 3D view frames itself on, the ground under a point and the
-                column under it), the z a placed waypoint is written with
+                column under it) and the 3D view's brush rules on top of
+                it (ground-fill.ts: the median a patch is set at and the
+                samples it needs, the hole test — nothing occupied through
+                the clearance band — the dabs and their undo patches, and
+                the record's absolute keys and the tree with them drawn in
+                (withGroundPatches, a union, since an applied patch is in
+                both)), the z a placed waypoint is written with
                 (waypoint-ground.ts: the ground under it on the floor
                 picked, a re-placed stop's own with none, else the ground
                 floor's 0 — the rule the dashboard and the editor's 3D view
@@ -292,8 +306,9 @@ lib/
                 map's own layer, the rest drawn over it against its
                 depth, so a scan point is not ringed), camera policy (the
                 opening, overhead and front framings, and the editor's
-                3D view's: the primary button orbits until Waypoint is armed,
-                then places while the right button orbits), picking,
+                3D view's: the primary button orbits until a brush or
+                Waypoint is armed, then paints or places while the right
+                button orbits), the ground patches' 3D marks, picking,
                 robot mesh
   theme/        the signal hues both canvases draw with, and the height ramp
                 the 3D map is coloured by (height-ramp.ts: data colouring,
@@ -528,10 +543,15 @@ touch one, prefer moving it toward the rule.
   editor draws (`mapImage`); a mapping save and a map rename or delete also
   change the scan the dashboard's "Map scan" layer draws (`mapPointCloud`),
   which a grid save or convert leaves alone, and the same writes drop the
-  decoded 3D map (`mapOctomap`, by its name-only prefix) and its floors
-  (`mapFloors`, detected from the walk a mapping save replaces); a floor
-  save writes its answer into `mapFloors`, which the dashboard and the 3D
-  map page share; a map rename, delete or
+  decoded 3D map (`mapOctomap`, by its name-only prefix) and its ground
+  patches (`mapOctomapEdits`) and its floors (`mapFloors`, detected from
+  the walk a mapping save replaces); a floor save writes its answer into
+  `mapFloors`, which the dashboard and the editor's 3D view share; a ground
+  patch save writes its own list back as the next read and leaves
+  `mapOctomap` alone, since the tree only changes on the robot, by its
+  tool, which the catalogue's version reports (the dashboard reads the same
+  list and draws it into the tree, so a save shows there at once); a map
+  rename, delete or
   activate also changes the forbidden zones' read (`mapKeepout`, whose
   `active` moves with a switch); a mapping start, save or reset changes the
   run state (`mappingStatus` — invalidated, never written, because the
@@ -687,7 +707,9 @@ it is run in, so it does not belong to any one of them.
   error string because it would help you debug. The house words are: **floor
   plan** (not gridmap / 2D grid / occupancy grid), **scan** (not point cloud /
   "the cloud"), **3D map** (not octomap / octree / voxels — the occupancy
-  tree the robot builds beside the scan), **floor** for one storey of a 3D map
+  tree the robot builds beside the scan), **ground patch** for a floor cell
+  an operator paints into it (with **Fill**, in the editor's 3D view),
+  **floor** for one storey of a 3D map
   (`1F`, `2F`; never "level" or "layer", which the toolbar already uses), **waypoint** (not vertex / stop), **forbidden zone** (not
   polygon / no-go area), **channel** (not topic),
   **recording** (not bag), **clip** for a video saved out of the camera window,
