@@ -17,8 +17,12 @@ import type { LocalCostmap, PlannedPath } from "@/lib/types/robot";
 const COSTMAP_Z_M = 0.006;
 const LOCAL_PLAN_Z_M = 0.02;
 /* Narrower than the route (0.12) and the dock's approach, so it reads as a
- * thread through the band rather than a second band. */
-const LOCAL_PLAN_WIDTH_M = 0.05;
+ * thread through the band rather than a second band; with its rim it is
+ * 0.09, which still leaves the route's cyan showing either side of it. */
+const LOCAL_PLAN_WIDTH_M = 0.06;
+const LOCAL_PLAN_CASING_M = 0.015;
+/* Past the route's ghost, casing and core (render orders -3 to -1). */
+const LOCAL_PLAN_RENDER_SHIFT = 3;
 
 /** The robot's cost values that mean something on their own. */
 export const COST_FREE = 0;
@@ -72,6 +76,11 @@ export interface LocalNavLayer {
   setCostmap: (costmap: LocalCostmap | undefined) => void;
   /** Draw a trajectory; undefined, or an empty one, removes it. */
   setPlan: (plan: PlannedPath | undefined) => void;
+  /**
+   * Whether the 3D map is drawn under it, which changes the costmap's hue
+   * (`localCostmapOverMap`); the costmap on screen is repainted at once.
+   */
+  setOverMap: (over: boolean) => void;
   /** The ground the robot stands on, map-frame metres: where both lie. */
   setGround: (z: number) => void;
   dispose: () => void;
@@ -111,7 +120,10 @@ export function createLocalNavLayer(theme: Theme): LocalNavLayer {
   let texWidth = 0;
   let texHeight = 0;
 
-  let plan: { mesh: THREE.Mesh; dispose: () => void } | null = null;
+  let plan: ReturnType<typeof createDashedRibbon> = null;
+  let costmapColor = theme.localCostmap;
+  // The cells on screen, so a hue change repaints them without a new frame.
+  let shownCells: Uint8Array | null = null;
 
   const dropPlan = () => {
     if (!plan) return;
@@ -130,6 +142,7 @@ export function createLocalNavLayer(theme: Theme): LocalNavLayer {
         costmap.cells.length !== costmap.width * costmap.height
       ) {
         mesh.visible = false;
+        shownCells = null;
         return;
       }
       if (!texture || texWidth !== costmap.width || texHeight !== costmap.height) {
@@ -148,8 +161,9 @@ export function createLocalNavLayer(theme: Theme): LocalNavLayer {
         material.map = texture;
         material.needsUpdate = true;
       }
-      costmapRgba(costmap.cells, theme.localCostmap, texels!);
+      costmapRgba(costmap.cells, costmapColor, texels!);
       texture.needsUpdate = true;
+      shownCells = costmap.cells;
 
       mesh.scale.set(costmap.width * costmap.resolution, costmap.height * costmap.resolution, 1);
       costmapFrame.position.set(costmap.origin.x, costmap.origin.y, 0);
@@ -164,8 +178,27 @@ export function createLocalNavLayer(theme: Theme): LocalNavLayer {
         width: LOCAL_PLAN_WIDTH_M,
         z: LOCAL_PLAN_Z_M,
         stride: 3,
+        opacity: 1,
+        casing: theme.localPlanCasing,
+        casingWidth: LOCAL_PLAN_CASING_M,
       });
-      if (plan) group.add(plan.mesh);
+      if (!plan) return;
+      // After the route's own three draws, so where the two lie within a
+      // centimetre of each other (the robot's ground and the planner's
+      // differ by its drift) the thread wins rather than fighting the band.
+      plan.mesh.traverse((object) => {
+        object.renderOrder += LOCAL_PLAN_RENDER_SHIFT;
+      });
+      group.add(plan.mesh);
+    },
+    setOverMap: (over) => {
+      const next = over ? theme.localCostmapOverMap : theme.localCostmap;
+      if (next === costmapColor) return;
+      costmapColor = next;
+      if (shownCells && texture && texels) {
+        costmapRgba(shownCells, costmapColor, texels);
+        texture.needsUpdate = true;
+      }
     },
     setGround: (z) => {
       group.position.z = z;
