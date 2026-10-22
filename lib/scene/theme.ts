@@ -20,12 +20,21 @@ export interface Theme {
   /**
    * Stored vertices, one hue for every type, not a signal colour.
    *
-   * Dark in both themes, unlike the editor's `PALETTES.vertex`: there is no
-   * halo here, and the floor plan texture is white in either theme. Mid-toned
-   * rather than ink, because a map with no floor plan falls back onto the
-   * near-black background.
+   * Magenta, because it is the one hue the 3D map's height ramp
+   * (lib/theme/height-ramp.ts) never reaches: violet through red covers the
+   * rest of the wheel, and the old dark teal sank into the violet the ramp
+   * gives the floor — the very cells a stop stands on. Clear of the zones'
+   * red and the dock leg's violet too. A step deeper in light, where it lies
+   * on the white floor plan; brighter in dark, over the near-black well.
    */
   vertex: number;
+  /**
+   * The rim under a stop's ground ring. The 3D map is dark violet at the
+   * floor and bright at the walls, so no one hue holds an edge against both;
+   * a pale rim beside a saturated ring does, as the floor plan editor's
+   * `MARKER_HALO` does over its grid.
+   */
+  vertexHalo: number;
   /** The vertex under the pointer, in the commanded hue: one tap from being the goal. */
   vertexHover: number;
   /**
@@ -75,7 +84,8 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     goalDraft: 0x4aa6c6,
     initialPose: SIGNAL.light.caution,
     initialPoseDraft: 0xc08c33,
-    vertex: 0x173845,
+    vertex: 0xc2189b,
+    vertexHalo: 0xffffff,
     vertexHover: SIGNAL.light.cmd,
     path: 0x2b86a8,
     dock: 0x6a4fc0,
@@ -93,7 +103,8 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     goalDraft: 0x8adcf7,
     initialPose: SIGNAL.dark.caution,
     initialPoseDraft: 0xf6cd7e,
-    vertex: 0x2b5f77,
+    vertex: 0xff4fd2,
+    vertexHalo: 0xf2f7fa,
     vertexHover: SIGNAL.dark.cmd,
     path: 0x3aa8cc,
     dock: 0xa991f2,
