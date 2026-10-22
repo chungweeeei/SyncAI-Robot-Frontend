@@ -3,13 +3,11 @@
 import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 
-import { useConsoleActiveTasks } from "@/hooks/use-console-active-tasks";
 import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { ignore } from "@/lib/api/mutation-state";
 import { setMotionKey, type MotionKey } from "@/lib/api/robot";
 import type { Posture } from "@/lib/api/task";
-import { postureLock } from "@/lib/map/run-lock";
 
 const POSTURE_KEY: Record<Posture, MotionKey> = {
   STANDUP: "0",
@@ -29,8 +27,6 @@ export interface PostureControl {
   /** A sent posture the robot has not reported yet; shown as unconfirmed. */
   pending: Posture | null;
   busy: boolean;
-  /** Why the buttons are greyed by a running job, or null. */
-  lock: string | null;
   error: string | null;
 }
 
@@ -43,8 +39,9 @@ function reportedPosture(motion: string | null): Posture | null {
 /**
  * Stand up / lie down, sent as motion keys straight to the driver
  * (`set_motion_key`), not as posture tasks: a task is refused while any other
- * runs, and a speaking job must not keep the robot from standing. That moves
- * the drive interlock here — see `postureLock`.
+ * runs, and the operator must be able to stand or lie the robot down during
+ * any job. Deliberately not gated on running jobs, even one that drives; the
+ * stop is the only lock, here and on the driver.
  *
  * Epistemics as in use-locomotion.ts: the POST returns once a UDP datagram is
  * written, so the lit posture is the reported `motion`, and a request the
@@ -55,8 +52,6 @@ function reportedPosture(motion: string | null): Posture | null {
 export function usePosture(): PostureControl {
   const { engaged: stopped } = useConsoleEstop();
   const motion = useConsoleRobotState().state?.low_level_mode.motion ?? null;
-  const { tasks, status } = useConsoleActiveTasks();
-  const lock = postureLock({ tasks, status });
 
   const reported = reportedPosture(motion);
   const [requested, setRequested] = React.useState<Posture | null>(null);
@@ -68,7 +63,6 @@ export function usePosture(): PostureControl {
     mutationFn: async (posture: Posture) => {
       // Refused here as well as greyed at the button: see useGoalTask.
       if (stopped) throw new Error(ESTOP_REFUSAL);
-      if (lock.reason) throw new Error(lock.reason);
       const result = await setMotionKey(POSTURE_KEY[posture]);
       // Always sent for these keys; honoured so a refusal never looks applied.
       if (!result.sent) throw new Error(result.message);
@@ -91,7 +85,6 @@ export function usePosture(): PostureControl {
     posture: requested ?? reported,
     pending: requested,
     busy: submit.isPending,
-    lock: lock.reason,
     error: submit.error?.message ?? null,
   };
 }
