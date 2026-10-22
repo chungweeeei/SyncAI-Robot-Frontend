@@ -43,6 +43,14 @@ export interface Theme {
    */
   path: number;
   /**
+   * The rim each side of the route, and its chevrons, pale in
+   * both themes for the reason `vertexHalo` is: the 3D map's floor is the
+   * ramp's dark violet, and a light rim is what holds an edge there and
+   * against the bright walls alike, where the route's cyan alone sinks into
+   * the ramp's own cyan.
+   */
+  pathCasing: number;
+  /**
    * A dock's own leg: the staging point and the approach from it onto the
    * dock. Not a signal hue and not the route's cyan, so the last metre reads
    * as a different kind of driving from the route that brought the robot to
@@ -58,10 +66,25 @@ export interface Theme {
    */
   localCostmap: number;
   /**
+   * The costmap while the 3D map is shown. Amber is the ramp's own yellow,
+   * so over the map an obstacle the robot sees would read as one more wall
+   * a storey up; the only hues the ramp leaves free are magenta (the
+   * waypoints') and the neutrals, and the map's floor is its dark violet,
+   * so a pale wash it is. Over the floor plan alone the amber stays.
+   */
+  localCostmapOverMap: number;
+  /**
    * The next 2 s the robot means to drive: `signal-live`, measured and
    * happening now, apart from the route's cyan that it follows.
    */
   localPlan: number;
+  /**
+   * The trajectory's rim, the opposite of what it lies on: it runs down the
+   * middle of the route, and `signal-live` and the route's cyan are one
+   * lightness in each theme, so without it the thread dissolves into the
+   * band. Dark in dark, where both are bright; white in light.
+   */
+  localPlanCasing: number;
   /**
    * The floor plan's opacity while the 3D map is shown. The robot's floor
    * lies about half a metre under the plane the floor plan is drawn on (the
@@ -88,10 +111,13 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     vertexHalo: 0xffffff,
     vertexHover: SIGNAL.light.cmd,
     path: 0x2b86a8,
+    pathCasing: 0xffffff,
     dock: 0x6a4fc0,
     zone: SIGNAL.light.warn,
     localCostmap: SIGNAL.light.caution,
+    localCostmapOverMap: 0xffffff,
     localPlan: SIGNAL.light.live,
+    localPlanCasing: 0xffffff,
     groundOpacityUnderVoxels: 0.35,
   },
   dark: {
@@ -107,10 +133,13 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     vertexHalo: 0xf2f7fa,
     vertexHover: SIGNAL.dark.cmd,
     path: 0x3aa8cc,
+    pathCasing: 0xf2f7fa,
     dock: 0xa991f2,
     zone: SIGNAL.dark.warn,
     localCostmap: SIGNAL.dark.caution,
+    localCostmapOverMap: 0xf2f7fa,
     localPlan: SIGNAL.dark.live,
+    localPlanCasing: SIGNAL.dark.background,
     groundOpacityUnderVoxels: 0.3,
   },
 };
