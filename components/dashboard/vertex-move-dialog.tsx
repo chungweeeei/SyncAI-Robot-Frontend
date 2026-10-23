@@ -21,7 +21,8 @@ import type { MapVertex } from "@/lib/types/map";
  * Move dispatches at once: this question is the confirmation, and asking twice
  * teaches click-through. GoalControl reports the job after. Reposition is the
  * secondary action, for a stop that turns out to be in a wall. Delete asks
- * once more, since the write goes through with no undo.
+ * once more, since the write goes through with no undo; the editor's 3D
+ * view, which only stages it, says so in the question.
  *
  * Without `onConfirm` there is no Move: the editor's 3D view opens maps the robot
  * is not running on, where a goal would only be refused, and is an editor
@@ -35,6 +36,7 @@ export function VertexMoveDialog({
   dispatchLock = null,
   deleting,
   deleteError,
+  deleteQuestion = immediateDeleteQuestion,
   onConfirm,
   onReplace,
   onDelete,
@@ -54,6 +56,8 @@ export function VertexMoveDialog({
   deleting: boolean;
   /** The backend's refusal of the delete, or null. Rendered verbatim. */
   deleteError: string | null;
+  /** What Delete asks before `onDelete`; by default, that it cannot be undone. */
+  deleteQuestion?: (name: string) => string;
   /** Send the robot there; omitted, the dialog offers no Move. */
   onConfirm?: (vertex: MapVertex) => void;
   /** Hand the stop's pose to the pointer so it can be put somewhere else. */
@@ -142,7 +146,7 @@ export function VertexMoveDialog({
                 size="sm"
                 disabled={deleting || busy || editLock !== null}
                 onClick={() => {
-                  if (window.confirm(`Delete "${shown.name}"? This cannot be undone.`)) {
+                  if (window.confirm(deleteQuestion(shown.name))) {
                     onDelete(shown);
                   }
                 }}
@@ -166,4 +170,8 @@ export function VertexMoveDialog({
       </AlertDialogContent>
     </AlertDialog>
   );
+}
+
+function immediateDeleteQuestion(name: string): string {
+  return `Delete "${name}"? This cannot be undone.`;
 }

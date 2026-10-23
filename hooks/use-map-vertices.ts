@@ -33,8 +33,8 @@ export interface UseMapVertices {
 }
 
 /**
- * One map's vertices for the floor plan editor, which stages every change and
- * writes them on Save, so a layout reaches the robot as one decision.
+ * One map's vertices for the map editor, which stages every change in either
+ * view and writes them on Save, so a layout reaches the robot as one decision.
  *
  * A Save is sent in series — deletes (freeing names), then updates, then one
  * batch create — stopping at the first refusal, so the outcome is a clean

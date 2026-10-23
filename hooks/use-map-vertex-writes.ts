@@ -28,9 +28,10 @@ export interface UseMapVertexWrites {
 }
 
 /**
- * One map's vertices (useMapVertexList) plus the writes a 3D view may make:
- * place, re-place and delete, each written at once. The dashboard uses it for
- * the loaded map (useActiveMapVertices), the editor's 3D view for the map it opens.
+ * One map's vertices (useMapVertexList) plus the writes the dashboard's 3D
+ * view may make: place, re-place and delete, each written at once, for the
+ * loaded map (useActiveMapVertices). The editor's 3D view places on the 3D
+ * map too, but stages its changes for Save (useMapVertices).
  *
  * Placing writes live in 3D views because that is where *where* is visible: a
  * stop inside a wall is obvious over the scan or the 3D map and invisible on

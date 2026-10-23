@@ -465,7 +465,7 @@ test.describe("the editor's 3D view", () => {
       });
       await viewSwitch(page).getByRole("button", { name: "2D" }).click();
       await expect.poll(() => asked).toHaveLength(1);
-      expect(asked[0]).toMatch(/unsaved ground patches/);
+      expect(asked[0]).toMatch(/unsaved changes in the 3D view/);
       await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit\\?view=3d$`));
       await expect(patched(page)).toHaveAttribute("data-patched", "4");
 
@@ -947,7 +947,7 @@ test.describe("the editor's 3D view", () => {
       expect(errors, "the page logged errors").toEqual([]);
     });
 
-    test("places one with a press and a drag, and posts it at the ground floor's 0", async ({
+    test("places a run of stops, and sends them all on Save, at the ground floor's 0", async ({
       page,
     }) => {
       const errors: string[] = [];
@@ -966,44 +966,72 @@ test.describe("the editor's 3D view", () => {
       const tool = page.getByRole("button", { name: "Place" });
       await tool.click();
       await expect(tool).toHaveAttribute("aria-pressed", "true");
-      await page.mouse.move(centre.x, centre.y);
-      await page.mouse.down();
-      await page.mouse.move(centre.x + 40, centre.y, { steps: 4 });
-      await page.mouse.up();
 
-      await expect(dialog).toBeVisible();
-      // The release only asks the question.
-      expect(writes.filter((w) => w.path === verticesPath)).toEqual([]);
-      await dialog.getByLabel("Name").fill("lobby");
-      await dialog.getByRole("button", { name: "Create" }).click();
+      for (const stopName of ["lobby", "lift"]) {
+        await pressAndAim(page);
+        await expect(dialog).toBeVisible();
+        await dialog.getByLabel("Name").fill(stopName);
+        await dialog.getByRole("button", { name: "Create" }).click();
+        await expect(dialog).toHaveCount(0);
+        // Still armed for the next stop: a run is placed without re-arming.
+        await expect(tool).toHaveAttribute("aria-pressed", "true");
+      }
 
+      // Nothing has left the console: Create only staged them.
+      expect(writes.filter((w) => w.path.startsWith(verticesPath))).toEqual([]);
+      await expect(page.getByText("Unsaved: 2 added")).toBeVisible();
+
+      await page.getByRole("button", { name: "Save" }).click();
       await expect.poll(() => writes.filter((w) => w.path === verticesPath)).toHaveLength(1);
       const write = writes.find((w) => w.path === verticesPath)!;
       expect(write.method).toBe("POST");
-      const [body] = write.body as {
+      const body = write.body as {
         name: string;
         x: number;
         y: number;
         theta: number;
         z: number;
       }[];
-      expect(body.name).toBe("lobby");
-      // On the 3D map's box (0..0.4 m each way), not wherever the ray went.
-      for (const value of [body.x, body.y]) {
-        expect(value).toBeGreaterThanOrEqual(0);
-        expect(value).toBeLessThanOrEqual(0.4);
+      // One batch, in the order placed.
+      expect(body.map((stop) => stop.name)).toEqual(["lobby", "lift"]);
+      for (const stop of body) {
+        // On the 3D map's box (0..0.4 m each way), not wherever the ray went.
+        for (const value of [stop.x, stop.y]) {
+          expect(value).toBeGreaterThanOrEqual(0);
+          expect(value).toBeLessThanOrEqual(0.4);
+        }
+        expect(Number.isFinite(stop.theta)).toBe(true);
+        // No floors on this map: the ground floor, the wire's 0.
+        expect(stop.z).toBe(0);
       }
-      expect(Number.isFinite(body.theta)).toBe(true);
-      // No floors on this map: the ground floor, the wire's 0.
-      expect(body.z).toBe(0);
-
-      await expect(dialog).toHaveCount(0);
-      // Single-shot: the tool disarmed on release.
-      await expect(tool).toHaveAttribute("aria-pressed", "false");
+      await expect(
+        page.getByRole("status").filter({ hasText: "Waypoints saved: 2 added" }),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
       expect(errors, "the page logged errors").toEqual([]);
     });
 
-    test("opens a stop on a tap, offers no Move, and deletes it", async ({ page }) => {
+    test("asks before leaving with unsaved waypoints", async ({ page }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      await mockBackend(page, { maps: [treeOnly()], vertices: [] });
+      await page.goto(`${VIEW_3D}&tool=waypoint`);
+      await expect(page.getByRole("button", { name: "Place" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await pressAndAim(page);
+      const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
+      await dialog.getByLabel("Name").fill("lobby");
+      await dialog.getByRole("button", { name: "Create" }).click();
+
+      page.once("dialog", (confirm) => void confirm.dismiss());
+      await page.getByRole("button", { name: "Back to maps" }).click();
+      await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("opens a stop on a tap, offers no Move, and deletes it on Save", async ({ page }) => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
       const stop = vertex({ name: "lobby", type: "MOVE", x: 0.2, y: 0.2, theta: 0, z: 0 });
@@ -1018,15 +1046,27 @@ test.describe("the editor's 3D view", () => {
       // An editor, on a map the robot may not be on: nowhere to send it from.
       await expect(dialog.getByRole("button", { name: "Move" })).toHaveCount(0);
 
-      page.once("dialog", (confirm) => void confirm.accept());
+      const asked: string[] = [];
+      page.once("dialog", (confirm) => {
+        asked.push(confirm.message());
+        void confirm.accept();
+      });
       await dialog.getByRole("button", { name: "Delete" }).click();
       await expect(dialog).toHaveCount(0);
-      const deleted = writes.find((w) => w.method === "DELETE");
-      expect(deleted?.path).toBe(`${verticesPath}/${stop.id}`);
+      expect(asked).toEqual([`Delete "lobby"? It is removed from the robot when you save.`]);
+      // Gone from the screen, not yet from the robot.
+      expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
+
+      await page.getByRole("button", { name: "Save" }).click();
+      await expect
+        .poll(() => writes.filter((w) => w.method === "DELETE").map((w) => w.path))
+        .toEqual([`${verticesPath}/${stop.id}`]);
       expect(errors, "the page logged errors").toEqual([]);
     });
 
-    test("deletes a tapped stop with Remove, once the confirm is accepted", async ({ page }) => {
+    test("removes a tapped stop with Remove once the confirm is accepted, and deletes it on Save", async ({
+      page,
+    }) => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
       const stop = vertex({ name: "lobby", type: "MOVE", x: 0.2, y: 0.2, theta: 0, z: 0 });
@@ -1039,24 +1079,30 @@ test.describe("the editor's 3D view", () => {
       await expect(remove).toHaveAttribute("aria-pressed", "true");
       const centre = await centreOnScreen(page);
 
-      // Declined: nothing is sent, and the stop's dialog does not open either.
+      // Declined: the stop stays, and its dialog does not open either.
       const asked: string[] = [];
       page.once("dialog", (confirm) => {
         asked.push(confirm.message());
         void confirm.dismiss();
       });
       await page.mouse.click(centre.x, centre.y);
-      await expect.poll(() => asked).toEqual([`Delete "lobby"? This cannot be undone.`]);
+      await expect
+        .poll(() => asked)
+        .toEqual([`Delete "lobby"? It is removed from the robot when you save.`]);
       await expect(page.getByRole("alertdialog", { name: "lobby" })).toHaveCount(0);
-      expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
+      await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
 
-      // Accepted: the stop goes, and Remove stays armed for the next one.
+      // Accepted: the stop goes from the screen, and Remove stays armed.
       page.once("dialog", (confirm) => void confirm.accept());
       await page.mouse.click(centre.x, centre.y);
+      await expect(page.getByText("Unsaved: 1 deleted")).toBeVisible();
+      await expect(remove).toHaveAttribute("aria-pressed", "true");
+      expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
+
+      await page.getByRole("button", { name: "Save" }).click();
       await expect
         .poll(() => writes.filter((w) => w.method === "DELETE").map((w) => w.path))
         .toEqual([`${verticesPath}/${stop.id}`]);
-      await expect(remove).toHaveAttribute("aria-pressed", "true");
       expect(errors, "the page logged errors").toEqual([]);
     });
   });
