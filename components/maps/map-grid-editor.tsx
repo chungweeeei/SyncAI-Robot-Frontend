@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { ViewportBoundary } from "@/components/console/fault-boundary";
 import { ArmedHint } from "@/components/console/armed-hint";
 import { TONE_TEXT, overlayPanel } from "@/components/console/instrument";
 import {
@@ -945,40 +946,42 @@ function EditorSurface({
       data-zoom={Math.round(scale * 100)}
       data-zones={zones.length}
     >
-      <GridCanvas
-        session={session}
-        mode={mode}
-        tool={tool}
-        vertexTool={vertexTool}
-        value={value}
-        brush={brush}
-        spacePan={spacePan}
-        fitNonce={fitNonce}
-        zoomStep={zoomStep}
-        focus={focus}
-        onStrokeCommit={commitPatch}
-        onHover={setHover}
-        onScaleChange={setScale}
-        vertices={vertexList}
-        robotPose={robotPose}
-        draft={draft}
-        selectedIds={selectedIds}
-        onVertexPick={selectVertex}
-        onVertexToggle={toggleVertex}
-        onMarquee={selectMany}
-        onVertexGesture={handleVertexGesture}
-        zoneTool={zoneTool}
-        zones={zones}
-        zoneDraft={zoneDraft}
-        zoneDraftAnchor={zoneDraftAnchor}
-        onZonePoint={addZonePoint}
-        onZoneAnchor={anchorZoneDraft}
-        onZoneMerge={mergeZoneDraft}
-        onZoneClose={closeZone}
-        onZoneCornerMove={moveZoneCorner}
-        selectedZoneIds={selectedZoneIds}
-        onZonePick={pickZone}
-      />
+      <ViewportBoundary>
+        <GridCanvas
+          session={session}
+          mode={mode}
+          tool={tool}
+          vertexTool={vertexTool}
+          value={value}
+          brush={brush}
+          spacePan={spacePan}
+          fitNonce={fitNonce}
+          zoomStep={zoomStep}
+          focus={focus}
+          onStrokeCommit={commitPatch}
+          onHover={setHover}
+          onScaleChange={setScale}
+          vertices={vertexList}
+          robotPose={robotPose}
+          draft={draft}
+          selectedIds={selectedIds}
+          onVertexPick={selectVertex}
+          onVertexToggle={toggleVertex}
+          onMarquee={selectMany}
+          onVertexGesture={handleVertexGesture}
+          zoneTool={zoneTool}
+          zones={zones}
+          zoneDraft={zoneDraft}
+          zoneDraftAnchor={zoneDraftAnchor}
+          onZonePoint={addZonePoint}
+          onZoneAnchor={anchorZoneDraft}
+          onZoneMerge={mergeZoneDraft}
+          onZoneClose={closeZone}
+          onZoneCornerMove={moveZoneCorner}
+          selectedZoneIds={selectedZoneIds}
+          onZonePick={pickZone}
+        />
+      </ViewportBoundary>
 
       {/* The wash comes before the strips, so DOM order stacks them above it.
         * Pointer-transparent so the dimmed map still pans; grey because the

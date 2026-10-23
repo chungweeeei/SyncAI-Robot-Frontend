@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { ViewportBoundary } from "@/components/console/fault-boundary";
 import { FloorPicker } from "@/components/console/floor-picker";
 import { overlayPanel } from "@/components/console/instrument";
 import {
@@ -747,40 +748,42 @@ function Map3dSurface({
     // diagnostic: data-patched (columns patched) proves a stroke filled or
     // erased, now that the Patched readout is off the screen by request.
     <div className="relative h-full w-full" data-patched={count}>
-      <Map3dCanvas
-        session={session}
-        tool={tool}
-        radius={radius}
-        ring={ring}
-        clearance={clearance}
-        band={bandM}
-        editsVersion={editsVersion}
-        fitNonce={fitNonce}
-        zoomStep={zoomStep}
-        shading={shading}
-        onStrokeCommit={commit}
-        vertices={vertices}
-        vertexBand={vertexBand}
-        movingVertex={moving ?? savingVertex}
-        placeZ={placeZ}
-        onPlaceCommit={commitPlace}
-        onVertexActivate={setAskedVertex}
-        onVertexRemove={removeTapped}
-        zones={zones ?? NO_ZONES}
-        zoneFloor={zoneFloorBand ? vertexBand : null}
-        zonePlaneZ={zoneGroundZ}
-        zoneDraft={zoneDraft}
-        zoneAnchor={zoneAnchor}
-        onZoneCorner={(point) => {
-          setZoneNote({ kind: "idle" });
-          setZoneDraft((draft) => [...draft, point]);
-        }}
-        onZoneClose={closeZone}
-        onZoneAnchor={anchorZone}
-        onZoneMerge={mergeZone}
-        onZoneCornerDrag={dragZoneCorner}
-        onZoneRemove={removeZone}
-      />
+      <ViewportBoundary>
+        <Map3dCanvas
+          session={session}
+          tool={tool}
+          radius={radius}
+          ring={ring}
+          clearance={clearance}
+          band={bandM}
+          editsVersion={editsVersion}
+          fitNonce={fitNonce}
+          zoomStep={zoomStep}
+          shading={shading}
+          onStrokeCommit={commit}
+          vertices={vertices}
+          vertexBand={vertexBand}
+          movingVertex={moving ?? savingVertex}
+          placeZ={placeZ}
+          onPlaceCommit={commitPlace}
+          onVertexActivate={setAskedVertex}
+          onVertexRemove={removeTapped}
+          zones={zones ?? NO_ZONES}
+          zoneFloor={zoneFloorBand ? vertexBand : null}
+          zonePlaneZ={zoneGroundZ}
+          zoneDraft={zoneDraft}
+          zoneAnchor={zoneAnchor}
+          onZoneCorner={(point) => {
+            setZoneNote({ kind: "idle" });
+            setZoneDraft((draft) => [...draft, point]);
+          }}
+          onZoneClose={closeZone}
+          onZoneAnchor={anchorZone}
+          onZoneMerge={mergeZone}
+          onZoneCornerDrag={dragZoneCorner}
+          onZoneRemove={removeZone}
+        />
+      </ViewportBoundary>
 
       <VertexCreateDialog
         placement={placement}

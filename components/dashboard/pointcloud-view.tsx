@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { ViewportBoundary } from "@/components/console/fault-boundary";
 import { ArmedHint } from "@/components/console/armed-hint";
 import { FloorPicker } from "@/components/console/floor-picker";
 import { overlayPanel } from "@/components/console/instrument";
@@ -394,37 +395,39 @@ export function PointCloudView({
 
   return (
     <div className={cn("relative h-full w-full", className)}>
-      <PointCloudCanvas
-        meta={activeMap?.grid ?? undefined}
-        mapImageUrl={mapImageUrl}
-        telemetry={feed}
-        mapCloud={scan.cloud}
-        voxels={voxels}
-        voxelBand={voxelBand}
-        pickZ={pickZ}
-        path={path}
-        dock={dock}
-        dockPath={dockPath}
-        showPath={showPath}
-        vertices={vertices}
-        showVertices={showVertices}
-        zones={zones ?? undefined}
-        showZones={showZones}
-        onVertexActivate={setAskedVertex}
-        movingVertex={
-          pick?.mode === "vertex" ? pick.vertex : (savingVertex ?? null)
-        }
-        cameraMode={cameraMode}
-        goal={task.goal}
-        initialPose={estimate.pose}
-        initialPoseGround={initialPoseGround}
-        topDownNonce={topDownNonce}
-        frontNonce={frontNonce}
-        recenterNonce={recenterNonce}
-        zoomStep={zoomStep}
-        pickMode={pick?.mode ?? null}
-        onPickCommit={commitPick}
-      />
+      <ViewportBoundary>
+        <PointCloudCanvas
+          meta={activeMap?.grid ?? undefined}
+          mapImageUrl={mapImageUrl}
+          telemetry={feed}
+          mapCloud={scan.cloud}
+          voxels={voxels}
+          voxelBand={voxelBand}
+          pickZ={pickZ}
+          path={path}
+          dock={dock}
+          dockPath={dockPath}
+          showPath={showPath}
+          vertices={vertices}
+          showVertices={showVertices}
+          zones={zones ?? undefined}
+          showZones={showZones}
+          onVertexActivate={setAskedVertex}
+          movingVertex={
+            pick?.mode === "vertex" ? pick.vertex : (savingVertex ?? null)
+          }
+          cameraMode={cameraMode}
+          goal={task.goal}
+          initialPose={estimate.pose}
+          initialPoseGround={initialPoseGround}
+          topDownNonce={topDownNonce}
+          frontNonce={frontNonce}
+          recenterNonce={recenterNonce}
+          zoomStep={zoomStep}
+          pickMode={pick?.mode ?? null}
+          onPickCommit={commitPick}
+        />
+      </ViewportBoundary>
 
       <VertexCreateDialog
         placement={placement}
