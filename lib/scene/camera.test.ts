@@ -3,8 +3,11 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_SPAN_M,
+  MAX_DOLLY_SPANS,
   MIN_DOLLY_M,
   applyMap3dControls,
+  fitDollyRange,
   frameGround,
   dollyStep,
   frameMap,
@@ -46,6 +49,65 @@ describe("frameMap", () => {
 
     expect(camera.position.toArray()).toEqual(opening.toArray());
     expect(controls.target.toArray()).toEqual([0, 0, 0]);
+  });
+});
+
+describe("the wheel's range", () => {
+  /** One wheel notch on the controls' element: in toward the target, or out. */
+  const notch = (controls: OrbitControls, direction: "in" | "out", times = 1) => {
+    for (let i = 0; i < times; i++) {
+      controls.domElement!.dispatchEvent(
+        new WheelEvent("wheel", { deltaY: direction === "in" ? -100 : 100, cancelable: true }),
+      );
+    }
+  };
+  const distance = (camera: THREE.Camera, controls: OrbitControls) =>
+    camera.position.distanceTo(controls.target);
+
+  it("stops at the nearest, and the first notch back moves the camera", () => {
+    // Unbounded, the distance only approached 0: every notch past where the
+    // view stopped changing was one more to scroll back out of.
+    const { camera, controls } = rig();
+    frameMap(camera, controls, { cx: 0, cy: 0, widthM: 20, heightM: 20 });
+
+    notch(controls, "in", 300);
+    expect(distance(camera, controls)).toBeCloseTo(MIN_DOLLY_M);
+    notch(controls, "out");
+    expect(distance(camera, controls)).toBeGreaterThan(MIN_DOLLY_M + 0.01);
+  });
+
+  it("stops at the farthest, and the first notch back moves the camera", () => {
+    const { camera, controls } = rig();
+    frameMap(camera, controls, { cx: 0, cy: 0, widthM: 20, heightM: 20 });
+
+    notch(controls, "out", 300);
+    expect(distance(camera, controls)).toBeCloseTo(MAX_DOLLY_SPANS * 20);
+    notch(controls, "in");
+    expect(distance(camera, controls)).toBeLessThan(MAX_DOLLY_SPANS * 20 - 1);
+  });
+
+  it("leaves every framing inside the range", () => {
+    // A framing the range clamped would not show what it was asked to.
+    const frame = { cx: 0, cy: 0, widthM: 60, heightM: 30 };
+    for (const aspect of [16 / 9, 9 / 16]) {
+      const { camera, controls } = rig();
+      camera.aspect = aspect;
+      fitDollyRange(controls, frame);
+      expect(overheadDistance(camera, frame.widthM, frame.heightM)).toBeLessThan(
+        controls.maxDistance,
+      );
+      frameMap(camera, controls, frame);
+      expect(distance(camera, controls)).toBeLessThan(controls.maxDistance);
+      frontView(camera, controls, frame, { lo: -0.5, hi: 6 });
+      expect(distance(camera, controls)).toBeLessThan(controls.maxDistance);
+    }
+  });
+
+  it("lets a map smaller than its stop be framed, and a tiny one zoomed out of", () => {
+    const { controls } = rig();
+    fitDollyRange(controls, { cx: 0, cy: 0, widthM: 0.4, heightM: 0.4 });
+    expect(controls.minDistance).toBeCloseTo(0.1);
+    expect(controls.maxDistance).toBe(DEFAULT_SPAN_M);
   });
 });
 

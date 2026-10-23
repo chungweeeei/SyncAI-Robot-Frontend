@@ -17,6 +17,7 @@ import {
   TOP_DOWN_TILT,
   applyCameraMode,
   dollyStep,
+  fitDollyRange,
   frameMap,
   frontView,
   frontViewAround,
@@ -1221,7 +1222,12 @@ export function PointCloudCanvas({
     const localNav = localNavRef.current;
     localNav?.setOverMap(true);
     pathRibbonRef.current?.setOverMap(true);
-    if (!ctx.mapFrame) voxelFrameRef.current = layer.frame;
+    if (!ctx.mapFrame) {
+      voxelFrameRef.current = layer.frame;
+      // The wheel's range follows the box the views now frame, or a 3D map
+      // wider than the fallback could not be zoomed out to see whole.
+      fitDollyRange(ctx.controls, layer.frame);
+    }
     // Only the map is shaded, on its own layer, and the rest is drawn over
     // it. Built here rather than with the scene, so its offscreen target is
     // only held while there is a 3D map to shade.

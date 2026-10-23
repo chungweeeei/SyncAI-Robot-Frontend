@@ -64,6 +64,7 @@ export function frameMap(
   controls: OrbitControls,
   frame: MapFrame,
 ) {
+  fitDollyRange(controls, frame);
   const span = Math.max(frame.widthM, frame.heightM);
   camera.position.set(frame.cx, frame.cy - span * 0.6, span * 0.8);
   controls.target.set(frame.cx, frame.cy, 0);
@@ -75,6 +76,31 @@ export function frameMap(
  * near plane, where the next step would pass through the target and flip the view.
  */
 export const MIN_DOLLY_M = 0.5;
+
+/**
+ * How far out the wheel may take the camera, in map spans: past every
+ * framing (an overhead view of a map on a phone held upright is under two).
+ */
+export const MAX_DOLLY_SPANS = 4;
+
+/**
+ * Bound the wheel and the pinch to a map's scale. OrbitControls scales the
+ * distance to the target by a fixed ratio a notch and clamps it to
+ * `[minDistance, maxDistance]`, which default to 0 and Infinity: a distance
+ * that only approaches 0 never stops, so every notch past where the view
+ * stopped changing was one more to scroll back. Clamped, a notch at either
+ * end does nothing, and the first one the other way moves the camera.
+ *
+ * The nearest is `MIN_DOLLY_M`, the zoom buttons' own stop, or a quarter of
+ * a map smaller than two metres so its framing is not already the stop; the
+ * farthest is MAX_DOLLY_SPANS of the map, or of the fallback box. Every
+ * framing calls this with the box it frames, so no framing is clamped short.
+ */
+export function fitDollyRange(controls: OrbitControls, frame: MapFrame) {
+  const span = Math.max(frame.widthM, frame.heightM, 0);
+  controls.minDistance = Math.min(MIN_DOLLY_M, span / 4);
+  controls.maxDistance = Math.max(MAX_DOLLY_SPANS * span, DEFAULT_SPAN_M);
+}
 
 /**
  * Move the camera one zoom step along its line to the target (`factor` > 1
@@ -134,6 +160,7 @@ export function frontView(
   frame: MapFrame,
   z: { lo: number; hi: number },
 ) {
+  fitDollyRange(controls, frame);
   const cz = (z.lo + z.hi) / 2;
   const distance = overheadDistance(camera, frame.widthM, z.hi - z.lo);
   controls.target.set(frame.cx, frame.cy, cz);
@@ -184,6 +211,7 @@ export function frameGround(
   frame: MapFrame,
   floorZ: number,
 ) {
+  fitDollyRange(controls, frame);
   const span = Math.max(frame.widthM, frame.heightM);
   const place = () => {
     camera.position.set(frame.cx, frame.cy - span * 0.6, floorZ + span * 0.8);
