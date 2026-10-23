@@ -10,6 +10,43 @@ import type { ZonePoint, ZonePolygon } from "@/lib/types/map";
 export type { ZonePoint, ZonePolygon };
 
 /**
+ * How far over and under a floor's ground a zone drawn on it reaches, metres:
+ * the band the robot's 3D planner matches a surface's height against. Half a
+ * storey is far more than a floor's own rise (a ramp, a step between halls)
+ * and far less than the gap to the next floor, so the band picks that floor
+ * and no other.
+ */
+export const ZONE_BAND_HALF_M = 0.5;
+
+/** The band of a zone drawn on a floor whose ground is at `ground` (map frame). */
+export function zoneBandAround(ground: number): { z_min: number; z_max: number } {
+  return { z_min: ground - ZONE_BAND_HALF_M, z_max: ground + ZONE_BAND_HALF_M };
+}
+
+/**
+ * The ground a zone is on, map-frame metres: its band's middle, or null for a
+ * zone of every floor (no band, or one open on a side).
+ */
+export function zoneGround(zone: ZonePolygon): number | null {
+  const { z_min, z_max } = zone;
+  return z_min == null || z_max == null ? null : (z_min + z_max) / 2;
+}
+
+/**
+ * Whether a zone belongs on a floor shown as the ground heights `[lo, hi)`:
+ * a zone of every floor always does, a banded one when its ground is there.
+ * No floor (null) shows them all.
+ */
+export function zoneOnFloor(
+  zone: ZonePolygon,
+  floor: { lo: number; hi: number } | null,
+): boolean {
+  if (!floor) return true;
+  const ground = zoneGround(zone);
+  return ground === null || (ground >= floor.lo && ground < floor.hi);
+}
+
+/**
  * A corner the pointer can pick up: one of the shape in flight (`zoneId`
  * null) or of a finished zone. One drag serves both.
  */
@@ -241,9 +278,9 @@ export function newZoneId(taken: readonly ZonePolygon[]): string {
 }
 
 /**
- * Whether two zone lists would save the same (ids, order, corners). Compared
- * by value so a corner dragged away and back, or a mere selection, does not
- * mark the editor dirty.
+ * Whether two zone lists would save the same (ids, order, corners, name,
+ * band). Compared by value so a corner dragged away and back, or a mere
+ * selection, does not mark the editor dirty; absent and null are the same.
  */
 export function sameZones(a: readonly ZonePolygon[], b: readonly ZonePolygon[]): boolean {
   if (a === b) return true;
@@ -252,6 +289,9 @@ export function sameZones(a: readonly ZonePolygon[], b: readonly ZonePolygon[]):
     const other = b[i];
     return (
       zone.id === other.id &&
+      (zone.name ?? null) === (other.name ?? null) &&
+      (zone.z_min ?? null) === (other.z_min ?? null) &&
+      (zone.z_max ?? null) === (other.z_max ?? null) &&
       zone.points.length === other.points.length &&
       zone.points.every((point, j) => point.x === other.points[j].x && point.y === other.points[j].y)
     );

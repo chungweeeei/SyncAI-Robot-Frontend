@@ -1,16 +1,19 @@
 "use client";
 
 import {
+  BanIcon,
   EraserIcon,
   MapPinIcon,
   MapPinPlusIcon,
   MapPinXIcon,
   MaximizeIcon,
   PaintbrushIcon,
+  PentagonIcon,
   Redo2Icon,
   Rotate3dIcon,
   SaveIcon,
   SunMediumIcon,
+  Trash2Icon,
   Undo2Icon,
   ZoomInIcon,
   ZoomOutIcon,
@@ -39,18 +42,22 @@ import { BRUSH_RADII_M } from "@/lib/map/ground-fill";
  * same way: choose what to edit on the right, then the tool on the left.
  *
  * Right, **Draw**: what a press on the map works on — nothing, ground
- * patches or waypoints — beside the zoom. Left: fit and shading, history,
- * Save, then Orbit and the tools the Draw choice allows. History and Save
- * are the patches' only: a waypoint is written as it is placed or removed,
- * as on the dashboard.
+ * patches, waypoints or forbidden zones — beside the zoom. Left: fit and
+ * shading, history, Save, then Orbit and the tools the Draw choice allows.
+ * Save sends the patches and the forbidden zones drawn, merged or moved,
+ * as the floor plan's Save does; History is the patches' only. A waypoint is
+ * written as it is placed or removed, as on the dashboard, and a zone as it
+ * is removed, as on the floor plan.
  */
 
 /** What a press on the 3D map works on, once chosen in the Draw list. */
-export type Map3dDrawKind = "ground" | "waypoint";
+export type Map3dDrawKind = "ground" | "waypoint" | "zone";
 
 const DRAW_KINDS: readonly { value: Map3dDrawKind; label: string; icon: ToolIcon }[] = [
   { value: "ground", label: "Ground patch", icon: PaintbrushIcon },
   { value: "waypoint", label: "Waypoint", icon: MapPinIcon },
+  // The floor plan's sign for it: what the zone means, its shape is the operator's.
+  { value: "zone", label: "Forbidden zone", icon: BanIcon },
 ];
 
 /** "Nothing chosen": base-ui wants a string per item. */
@@ -85,6 +92,7 @@ export function Map3dToolBar({
   tool,
   onToolChange,
   placeLock = null,
+  zoneLock = null,
   radius,
   onRadiusChange,
   shading,
@@ -106,6 +114,8 @@ export function Map3dToolBar({
   onToolChange: (tool: Map3dTool) => void;
   /** Why no waypoint may be placed or removed (a job drives on the map), or null. */
   placeLock?: string | null;
+  /** Why no forbidden zone may be drawn or removed (a job, or the zones unread), or null. */
+  zoneLock?: string | null;
   /** Brush radius, metres; one of BRUSH_RADII_M. */
   radius: number;
   onRadiusChange: (radius: number) => void;
@@ -143,7 +153,7 @@ export function Map3dToolBar({
               : writeLock
                 ? writeLock
                 : dirty
-                  ? "unsaved patches — record them on the robot"
+                  ? "unsaved changes — record them on the robot"
                   : "nothing to save"
           }
           icon={SaveIcon}
@@ -210,6 +220,31 @@ export function Map3dToolBar({
               pressed={tool === "remove"}
               disabled={placeLock !== null}
               onClick={() => onToolChange("remove")}
+            />
+          </>
+        )}
+        {drawKind === "zone" && (
+          <>
+            {/* A pentagon, not a square, as on the floor plan: the shape is whatever the corners make. */}
+            <ToolButton
+              label="Shape"
+              hint={
+                zoneLock ??
+                "tap three or more corners on the floor shown, then the first one again to close; start on a zone's corner and end on another of its corners to grow or cut it; drag a corner to move it; Enter closes, Backspace takes the last corner back"
+              }
+              icon={PentagonIcon}
+              pressed={tool === "zone"}
+              disabled={zoneLock !== null}
+              onClick={() => onToolChange("zone")}
+            />
+            <ToolButton
+              label="Remove zone"
+              hint={zoneLock ?? "tap a forbidden zone to delete it from the robot"}
+              icon={Trash2Icon}
+              tone="caution"
+              pressed={tool === "zoneRemove"}
+              disabled={zoneLock !== null}
+              onClick={() => onToolChange("zoneRemove")}
             />
           </>
         )}

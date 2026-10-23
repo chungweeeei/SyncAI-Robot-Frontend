@@ -3,6 +3,7 @@
 import * as THREE from "three";
 
 import { GROUND_FLOOR_Z_M } from "@/lib/map/floors";
+import { zoneGround } from "@/lib/map/zone";
 import type { Theme } from "@/lib/scene/theme";
 import type { ZonePolygon } from "@/lib/types/map";
 
@@ -61,13 +62,23 @@ function zoneEdge(zone: ZonePolygon): THREE.BufferGeometry | null {
  * Every zone as a translucent wash with a solid edge in `warn`, rebuilt on any
  * change. Not pickable: a goal inside a zone is the planner's to refuse. A
  * zone under three corners (only possible by hand-editing) is skipped.
+ *
+ * A zone with a floor band (a 3D map's) lies on the ground of that floor, the
+ * band's middle; one without lies at `defaultZ` — the ground floor's, unless
+ * the caller shows another floor (a zone of every floor is on that one too).
+ * `visible` leaves out the zones of floors not shown.
  */
 export function createZoneLayer(
   zones: readonly ZonePolygon[],
   theme: Theme,
+  {
+    defaultZ = GROUND_FLOOR_Z_M,
+    visible = () => true,
+  }: { defaultZ?: number; visible?: (zone: ZonePolygon) => boolean } = {},
 ): { group: THREE.Group; dispose: () => void } {
   const group = new THREE.Group();
-  // A zone is drawn on the floor plan, which is the ground floor's.
+  // A zone is drawn on the floor plan, which is the ground floor's; another
+  // height is each mesh's offset from it.
   group.position.z = GROUND_FLOOR_Z_M + ZONE_Z_M;
   const geometries: THREE.BufferGeometry[] = [];
 
@@ -84,10 +95,12 @@ export function createZoneLayer(
   const edge = material(0.9);
 
   for (const zone of zones) {
-    if (zone.points.length < 3) continue;
+    if (zone.points.length < 3 || !visible(zone)) continue;
+    const offset = (zoneGround(zone) ?? defaultZ) - GROUND_FLOOR_Z_M;
     const fill = zoneFill(zone);
     geometries.push(fill);
     const washMesh = new THREE.Mesh(fill, wash);
+    washMesh.position.z = offset;
     // After the translucent ground plane, which otherwise sorts over the wash.
     washMesh.renderOrder = 1;
     group.add(washMesh);
@@ -95,6 +108,7 @@ export function createZoneLayer(
     if (outline) {
       geometries.push(outline);
       const mesh = new THREE.Mesh(outline, edge);
+      mesh.position.z = offset;
       // Over its coplanar wash, or the two trade places as the camera moves.
       mesh.renderOrder = 2;
       group.add(mesh);
