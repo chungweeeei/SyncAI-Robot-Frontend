@@ -1,3 +1,6 @@
+import { apiUrl } from "@/lib/api/config";
+import { errorDetail } from "@/lib/api/http";
+
 /**
  * What WHEP and WHIP share. The robot's worker is single-shot (one offer, one
  * complete answer), so both need a complete offer and the session URL.
@@ -49,4 +52,100 @@ export function resolveSessionUrl(response: Response, requestUrl: string): strin
   } catch {
     return null;
   }
+}
+
+export interface SessionHandlers {
+  onConnectionState?: (state: RTCPeerConnectionState) => void;
+  onIceState?: (state: RTCIceConnectionState) => void;
+}
+
+export interface SignalledSession {
+  /** From the Location header, for the DELETE. */
+  readonly sessionUrl: string | null;
+  /** Idempotent. */
+  close: () => Promise<void>;
+}
+
+/**
+ * Open one session against the robot's single-shot worker: offer, gather
+ * every candidate, POST the SDP, take the answer. The same handshake for
+ * WHEP, WHIP and the duplex endpoint; what differs is `setup` (the
+ * transceivers, whose order is each endpoint's contract) and `release`
+ * (a microphone to stop).
+ *
+ * A failure anywhere — `setup` included — closes the session before it
+ * rethrows, so a refused offer never leaves the microphone live or the
+ * robot's camera claimed.
+ */
+export async function openSession(
+  pc: RTCPeerConnection,
+  path: string,
+  {
+    handlers = {},
+    setup,
+    release,
+  }: { handlers?: SessionHandlers; setup?: () => void; release?: () => void },
+): Promise<SignalledSession> {
+  let sessionUrl: string | null = null;
+  let closed = false;
+
+  const close = async () => {
+    if (closed) return;
+    closed = true;
+    // DELETE first: a local close tells the robot nothing, and its camera or
+    // speaker stays claimed.
+    if (sessionUrl) {
+      try {
+        await fetch(sessionUrl, { method: "DELETE", keepalive: true });
+      } catch {
+        /* the robot went away, or the tab is unloading — nothing to do */
+      }
+    }
+    // Stopping a local track turns the browser's recording indicator off.
+    release?.();
+    pc.close();
+  };
+
+  try {
+    setup?.();
+
+    if (handlers.onConnectionState) {
+      pc.addEventListener("connectionstatechange", () =>
+        handlers.onConnectionState?.(pc.connectionState),
+      );
+    }
+    if (handlers.onIceState) {
+      pc.addEventListener("iceconnectionstatechange", () =>
+        handlers.onIceState?.(pc.iceConnectionState),
+      );
+    }
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await waitForIceGathering(pc);
+
+    const url = apiUrl(path);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/sdp" },
+      // localDescription, not `offer`: it carries the gathered candidates.
+      body: pc.localDescription?.sdp ?? offer.sdp ?? "",
+    });
+
+    if (!response.ok) throw new Error(await errorDetail(response));
+
+    sessionUrl = resolveSessionUrl(response, url);
+    const answer = await response.text();
+    await pc.setRemoteDescription({ type: "answer", sdp: answer });
+  } catch (error) {
+    await close();
+    throw error;
+  }
+
+  return {
+    get sessionUrl() {
+      return sessionUrl;
+    },
+    close,
+  };
 }

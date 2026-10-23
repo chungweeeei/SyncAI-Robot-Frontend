@@ -1,6 +1,4 @@
-import { apiUrl } from "@/lib/api/config";
-import { errorDetail } from "@/lib/api/http";
-import { resolveSessionUrl, waitForIceGathering } from "@/lib/video/signalling";
+import { openSession, type SessionHandlers } from "@/lib/video/signalling";
 import { INSECURE_CONTEXT_MESSAGE, microphoneAvailable } from "@/lib/video/whip";
 
 /**
@@ -28,10 +26,7 @@ export interface DuplexSession {
   close: () => Promise<void>;
 }
 
-export interface DuplexHandlers {
-  onConnectionState?: (state: RTCPeerConnectionState) => void;
-  onIceState?: (state: RTCIceConnectionState) => void;
-}
+export type DuplexHandlers = SessionHandlers;
 
 export async function startDuplexSession(
   handlers: DuplexHandlers = {},
@@ -47,74 +42,28 @@ export async function startDuplexSession(
   });
 
   const pc = new RTCPeerConnection({ iceServers: [] });
-
   const remote = new MediaStream();
-  pc.addEventListener("track", (event) => remote.addTrack(event.track));
 
-  let sessionUrl: string | null = null;
-  let closed = false;
-
-  const close = async () => {
-    if (closed) return;
-    closed = true;
-    // DELETE first, or the robot keeps the camera and speaker claimed.
-    if (sessionUrl) {
-      try {
-        await fetch(sessionUrl, { method: "DELETE", keepalive: true });
-      } catch {
-        /* the robot went away, or the tab is unloading — nothing to do */
-      }
-    }
-    local.getTracks().forEach((track) => track.stop());
-    pc.close();
-  };
-
-  try {
-    // Order is the contract (see the header).
-    pc.addTransceiver("video", { direction: "recvonly" });
-    const [micTrack] = local.getAudioTracks();
-    if (!micTrack) throw new Error("getUserMedia returned no audio track");
-    pc.addTransceiver(micTrack, { direction: "sendrecv", streams: [local] });
-
-    if (handlers.onConnectionState) {
-      pc.addEventListener("connectionstatechange", () =>
-        handlers.onConnectionState?.(pc.connectionState),
-      );
-    }
-    if (handlers.onIceState) {
-      pc.addEventListener("iceconnectionstatechange", () =>
-        handlers.onIceState?.(pc.iceConnectionState),
-      );
-    }
-
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    await waitForIceGathering(pc);
-
-    const url = apiUrl(path);
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/sdp" },
-      body: pc.localDescription?.sdp ?? offer.sdp ?? "",
-    });
-
-    if (!response.ok) throw new Error(await errorDetail(response));
-
-    sessionUrl = resolveSessionUrl(response, url);
-    const answer = await response.text();
-    await pc.setRemoteDescription({ type: "answer", sdp: answer });
-  } catch (error) {
-    await close();
-    throw error;
-  }
+  const session = await openSession(pc, path, {
+    handlers,
+    setup: () => {
+      pc.addEventListener("track", (event) => remote.addTrack(event.track));
+      // Order is the contract (see the header).
+      pc.addTransceiver("video", { direction: "recvonly" });
+      const [micTrack] = local.getAudioTracks();
+      if (!micTrack) throw new Error("getUserMedia returned no audio track");
+      pc.addTransceiver(micTrack, { direction: "sendrecv", streams: [local] });
+    },
+    release: () => local.getTracks().forEach((track) => track.stop()),
+  });
 
   return {
     remote,
     local,
     get sessionUrl() {
-      return sessionUrl;
+      return session.sessionUrl;
     },
     pc,
-    close,
+    close: session.close,
   };
 }
