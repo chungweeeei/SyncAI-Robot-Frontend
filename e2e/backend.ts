@@ -881,9 +881,28 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     if (path === "/api/v1/maps" && method === "POST") {
       // A save ends the run, so the next poll moves the rail back to Start.
       // The catch-all's `{ message }` would fail the save schema.
-      const body = parseBody(request.postData()) as { name?: string } | null;
+      const body = parseBody(request.postData()) as {
+        name?: string;
+        grid?: boolean;
+        octomap?: boolean;
+      } | null;
       const name = body?.name ?? "map";
       mappingStatus = { state: "idle", key_poses: 0, loop_closures: 0 };
+      // A save that asked for the 3D map lists at once as building it, as
+      // the robot's cleaning writes its sidecar before the save answers. A
+      // test that passed `maps` holds the array and can finish the build.
+      if (body?.octomap) {
+        maps.push(
+          mapSummary({
+            name,
+            active: false,
+            grid: null,
+            thumbnail: null,
+            grid_status: "none",
+            octomap_status: "converting",
+          }),
+        );
+      }
       return json(route, {
         name,
         has_pointcloud: true,

@@ -1,6 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { failOnConsoleErrors, mockBackend, robotState } from "./backend";
+import {
+  failOnConsoleErrors,
+  mapSummary,
+  mockBackend,
+  robotState,
+  withOctomap,
+} from "./backend";
 
 /**
  * The mapping run strip against the robot's run state. The strip offers only
@@ -90,7 +96,9 @@ test.describe("the mapping run", () => {
     await dialog(page).getByRole("button", { name: "Save", exact: true }).click();
 
     expect(writes.filter((w) => w.path === "/api/v1/maps")).toEqual([
-      { method: "POST", path: "/api/v1/maps", body: { name: "site_a" } },
+      // The floor plan alone unless the operator ticks the 3D map, and the
+      // unticked one is said, not left to the robot's own setting.
+      { method: "POST", path: "/api/v1/maps", body: { name: "site_a", grid: true, octomap: false } },
     ]);
     // The dialog stays and turns into the receipt: the form is gone, the
     // robot's sentence is there, and the only way out is Close.
@@ -105,6 +113,63 @@ test.describe("the mapping run", () => {
     await expect(startButton(page)).toBeEnabled();
     await expect(resetButton(page)).toHaveCount(0);
     await expect(page.getByText(/Mapping has stopped/)).toHaveCount(0);
+  });
+
+  test("a save of the 3D map alone shows it building, then ready", async ({ page }) => {
+    const maps = [mapSummary()];
+    const writes = await mockBackend(page, {
+      state: mapping(),
+      mappingStatus: { state: "mapping", key_poses: 12, loop_closures: 1 },
+      maps,
+    });
+    await page.goto("/mapping");
+
+    await saveButton(page).click();
+    await dialog(page).getByLabel("Map name").fill("site_b");
+    const floorPlan = dialog(page).getByRole("checkbox", { name: /Floor plan/ });
+    const threeD = dialog(page).getByRole("checkbox", { name: /3D map/ });
+    await expect(floorPlan).toBeChecked();
+    await expect(threeD).not.toBeChecked();
+    await threeD.click();
+    await floorPlan.click();
+    await dialog(page).getByRole("button", { name: "Save", exact: true }).click();
+
+    expect(writes.filter((w) => w.path === "/api/v1/maps")).toEqual([
+      { method: "POST", path: "/api/v1/maps", body: { name: "site_b", grid: false, octomap: true } },
+    ]);
+    // No floor plan was asked for, so the receipt follows the 3D map alone.
+    await expect(dialog(page)).toContainText("Building the 3D map…");
+    await expect(dialog(page)).not.toContainText(/floor plan/i);
+
+    // The robot's cleaning finishes; the catalogue poll carries it here.
+    Object.assign(maps[1], withOctomap());
+    await expect(dialog(page)).toContainText("3D map ready — this map is ready to use.", {
+      timeout: 10_000,
+    });
+  });
+
+  test("Save is held while nothing is ticked to build", async ({ page }) => {
+    const writes = await mockBackend(page, {
+      state: mapping(),
+      mappingStatus: { state: "mapping", key_poses: 12, loop_closures: 1 },
+    });
+    await page.goto("/mapping");
+
+    await saveButton(page).click();
+    await dialog(page).getByLabel("Map name").fill("site_a");
+    const submit = dialog(page).getByRole("button", { name: "Save", exact: true });
+    // Positive control: a named map with the default choice can be saved.
+    await expect(submit).toBeEnabled();
+
+    await dialog(page).getByRole("checkbox", { name: /Floor plan/ }).click();
+    await expect(submit).toBeDisabled();
+    await expect(dialog(page)).toContainText("Choose at least one to build.");
+    // Enter goes through the same guard as the button.
+    await dialog(page).getByLabel("Map name").press("Enter");
+    expect(writes.filter((w) => w.path === "/api/v1/maps")).toEqual([]);
+
+    await dialog(page).getByRole("checkbox", { name: /3D map/ }).click();
+    await expect(submit).toBeEnabled();
   });
 
   test("a refused save stays in the dialog and never reaches the strip", async ({
