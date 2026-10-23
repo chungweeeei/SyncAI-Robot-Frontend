@@ -36,10 +36,10 @@ import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useActiveMap } from "@/hooks/use-maps";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { useTelemetry } from "@/hooks/use-telemetry";
+import { useViewCommands } from "@/hooks/use-view-commands";
 import { apiUrl } from "@/lib/api/config";
 import { type FloorBand, floorBands } from "@/lib/map/floors";
 import { withGroundPatches } from "@/lib/map/ground-fill";
-import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
 import { dispatchMapLock } from "@/lib/map/run-lock";
 import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
 import { liveDock } from "@/lib/task/run";
@@ -177,8 +177,7 @@ export function PointCloudView({
   const [topDownNonce, setTopDownNonce] = React.useState(0);
   const [frontNonce, setFrontNonce] = React.useState(0);
   const [recenterNonce, setRecenterNonce] = React.useState(0);
-  /** A fresh object per press; the factor is the floor plan editor's. */
-  const [zoomStep, setZoomStep] = React.useState<{ factor: number } | null>(null);
+  const { zoomStep, zoomIn, zoomOut } = useViewCommands();
   /**
    * One value rather than a mode plus "which vertex", so a re-place with no
    * vertex cannot exist.
@@ -486,8 +485,8 @@ export function PointCloudView({
             onCameraMode={setCameraMode}
             onTopDown={() => setTopDownNonce((n) => n + 1)}
             onFront={voxels ? () => setFrontNonce((n) => n + 1) : undefined}
-            onZoomIn={() => setZoomStep({ factor: ZOOM_STEP_FACTOR })}
-            onZoomOut={() => setZoomStep({ factor: 1 / ZOOM_STEP_FACTOR })}
+            onZoomIn={zoomIn}
+            onZoomOut={zoomOut}
             layers={layers}
           />
         </div>

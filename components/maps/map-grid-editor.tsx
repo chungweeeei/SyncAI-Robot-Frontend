@@ -28,23 +28,19 @@ import {
 import { VertexPanel } from "@/components/maps/vertex-panel";
 import { useSaveMapGrid } from "@/hooks/use-map-actions";
 import { useMapGrid } from "@/hooks/use-map-grid";
+import { EditorNotice } from "@/components/maps/editor-notice";
+import { useLeaveGuard } from "@/hooks/use-leave-guard";
 import { useMapKeepout } from "@/hooks/use-map-keepout";
+import { useUndoHistory } from "@/hooks/use-undo-history";
+import { useViewCommands } from "@/hooks/use-view-commands";
 import { useZoneEditing } from "@/hooks/use-zone-editing";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useMapVertices, type UseMapVertices } from "@/hooks/use-map-vertices";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import type { VertexChanges } from "@/lib/api/vertex";
 import { isTypingTarget } from "@/lib/keyboard";
-import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
 import { FREE, type GridValue } from "@/lib/map/grid";
-import {
-  applyPatch,
-  createUndoStack,
-  popRedo,
-  popUndo,
-  pushPatch,
-  type GridPatch,
-} from "@/lib/map/patch";
+import { applyPatch, type GridPatch } from "@/lib/map/patch";
 import { editBytes, remapWaypointIds, type EditorEdit } from "@/lib/map/history";
 import type { GridSession } from "@/lib/map/session";
 import { DEFAULT_VERTEX_TYPE } from "@/lib/map/vertex";
@@ -124,14 +120,7 @@ export function MapGridEditor({
   const keepout = useMapKeepout(name);
 
   if (status === "error") {
-    return (
-      <div className="flex h-full items-center justify-center p-6">
-        <div className="max-w-md rounded-md border border-hairline bg-panel p-4">
-          <p className="instrument-label text-muted-foreground">Cannot edit</p>
-          <p className="mt-2 text-sm">{error ?? "The map could not be loaded."}</p>
-        </div>
-      </div>
-    );
+    return <EditorNotice title="Cannot edit">{error ?? "The map could not be loaded."}</EditorNotice>;
   }
 
   // Wait for zones and waypoints as well as the grid: an answer arriving after
@@ -208,8 +197,6 @@ function EditorSurface({
   const [value, setValue] = React.useState<GridValue>(FREE);
   const [brush, setBrush] = React.useState<number>(DEFAULT_BRUSH);
 
-  const [canUndo, setCanUndo] = React.useState(false);
-  const [canRedo, setCanRedo] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
   const [save, setSaveState] = React.useState<SaveState>({ kind: "idle" });
 
@@ -222,11 +209,12 @@ function EditorSurface({
 
   const [hover, setHover] = React.useState<CellProbe | null>(null);
   const [scale, setScale] = React.useState(1);
-  const [fitNonce, setFitNonce] = React.useState(0);
   const [spacePan, setSpacePan] = React.useState(false);
 
   /** Strokes and waypoint edits, in the order made; see lib/map/history.ts. */
-  const historyRef = React.useRef(createUndoStack<EditorEdit>(editBytes));
+  const history = useUndoHistory<EditorEdit>(editBytes);
+  const { stack: historyStack, canUndo, canRedo, push: pushHistory, pop: popHistory } = history;
+  const { fitNonce, zoomStep, fit, zoomIn, zoomOut } = useViewCommands();
 
   /*
    * Waypoints are staged like the zones: Create, Apply and Delete change
@@ -512,12 +500,10 @@ function EditorSurface({
    */
   const recordWaypoints = React.useCallback(
     (next: MapVertex[]) => {
-      pushPatch(historyRef.current, { kind: "waypoints", before: vertexList, after: next });
+      pushHistory({ kind: "waypoints", before: vertexList, after: next });
       setVertexList(next);
-      setCanUndo(true);
-      setCanRedo(false);
     },
-    [vertexList],
+    [vertexList, pushHistory],
   );
 
   /** Stage the draft as a waypoint; Save sends it. Stages even under a run lock. */
@@ -574,23 +560,18 @@ function EditorSurface({
   }, [anyDirty, onDirtyChange]);
 
   const commitPatch = React.useCallback((patch: GridPatch) => {
-    pushPatch(historyRef.current, { kind: "grid", patch });
-    setCanUndo(true);
-    setCanRedo(false);
+    pushHistory({ kind: "grid", patch });
     setDirty(true);
     revisionRef.current += 1;
     // The note described the buffer as saved; "Saved" beside a lit Unsaved is
     // the one confusing pair this can show.
     setSaveState({ kind: "idle" });
-  }, []);
+  }, [pushHistory]);
 
   const step = React.useCallback(
     (direction: "undo" | "redo") => {
-      const stack = historyRef.current;
-      const edit = direction === "undo" ? popUndo(stack) : popRedo(stack);
+      const edit = popHistory(direction);
       if (!edit) return;
-      setCanUndo(stack.undo.length > 0);
-      setCanRedo(stack.redo.length > 0);
 
       const side = direction === "undo" ? "before" : "after";
       if (edit.kind === "waypoints") {
@@ -608,15 +589,11 @@ function EditorSurface({
       revisionRef.current += 1;
       setSaveState({ kind: "idle" });
     },
-    [session, clearVertexEdit],
+    [session, clearVertexEdit, popHistory],
   );
 
   const undo = React.useCallback(() => step("undo"), [step]);
   const redo = React.useCallback(() => step("redo"), [step]);
-  const fit = React.useCallback(() => setFitNonce((n) => n + 1), []);
-  const [zoomStep, setZoomStep] = React.useState<{ factor: number } | null>(null);
-  const zoomIn = React.useCallback(() => setZoomStep({ factor: ZOOM_STEP_FACTOR }), []);
-  const zoomOut = React.useCallback(() => setZoomStep({ factor: 1 / ZOOM_STEP_FACTOR }), []);
 
   // `mutate` alone: bound once per observer, so `onSave` keeps its identity.
   const { mutate: saveGrid } = useSaveMapGrid();
@@ -641,7 +618,7 @@ function EditorSurface({
         setSavedVertices((current) => rebaseVertices(current, [], landed).saved);
         setVertexList((current) => rebaseVertices([], current, landed).working);
         setSelectedIds((current) => current.map((id) => ids.get(id) ?? id));
-        remapWaypointIds(historyRef.current, ids);
+        remapWaypointIds(historyStack, ids);
         setVertexSave(
           failure
             ? { kind: "failed", message: vertexSaveFailure(landed, failure) }
@@ -686,6 +663,7 @@ function EditorSurface({
     saveVertices,
     savedVertices,
     vertexList,
+    historyStack,
   ]);
 
   React.useEffect(() => {
@@ -779,12 +757,7 @@ function EditorSurface({
    * Reload and tab close only: the App Router can't block in-app navigation,
    * so the page's back button confirms itself.
    */
-  React.useEffect(() => {
-    if (!anyDirty) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [anyDirty]);
+  useLeaveGuard(anyDirty);
 
   /**
    * Forbidden zone chosen, no tool armed: the map dims and asks, since "Shape"

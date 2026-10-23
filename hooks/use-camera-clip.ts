@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { useLeaveGuard } from "@/hooks/use-leave-guard";
 import {
   pickClipFormat,
   startClipCapture,
@@ -104,12 +105,7 @@ export function useCameraClip(stream: MediaStream | null): CameraClip {
 
   // A flush on `pagehide` would hand its blob to a page that is gone, so ask
   // before unload while a capture is live.
-  React.useEffect(() => {
-    if (!capturing) return;
-    const guard = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", guard);
-    return () => window.removeEventListener("beforeunload", guard);
-  }, [capturing]);
+  useLeaveGuard(capturing);
 
   return {
     supported: format !== null,

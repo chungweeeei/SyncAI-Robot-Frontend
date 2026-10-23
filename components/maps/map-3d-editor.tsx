@@ -18,7 +18,11 @@ import {
   type Map3dDrawKind,
 } from "@/components/maps/map-3d-toolbar";
 import { useMapFloors } from "@/hooks/use-map-floors";
+import { EditorNotice } from "@/components/maps/editor-notice";
+import { useLeaveGuard } from "@/hooks/use-leave-guard";
 import { useMapKeepout } from "@/hooks/use-map-keepout";
+import { useUndoHistory } from "@/hooks/use-undo-history";
+import { useViewCommands } from "@/hooks/use-view-commands";
 import { useZoneEditing } from "@/hooks/use-zone-editing";
 import { useMapVertexWrites } from "@/hooks/use-map-vertex-writes";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
@@ -28,7 +32,6 @@ import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useMapEntry } from "@/hooks/use-maps";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { drawnGround, floorBands } from "@/lib/map/floors";
-import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
 import {
   bandForHeights,
   floorHeightIn,
@@ -51,7 +54,6 @@ import {
   type GroundEdits,
   type GroundPatch,
 } from "@/lib/map/ground-fill";
-import { createUndoStack, popRedo, popUndo, pushPatch } from "@/lib/map/patch";
 import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
 import {
   canCloseZone,
@@ -115,24 +117,24 @@ export function Map3dEditor({
 
   if (mounted && entry && entry.octomap_status !== "ok") {
     return (
-      <Guard title="Cannot open the 3D map">
+      <EditorNotice title="Cannot open the 3D map">
         {entry.octomap_status === "converting"
           ? "The robot is still building this map's 3D map. Come back once it has finished."
           : entry.octomap_status === "failed"
             ? (entry.octomap_error ?? "The robot could not build this map's 3D map.")
             : "This map has no 3D map. The robot builds one with the floor plan when it is set up to."}
-      </Guard>
+      </EditorNotice>
     );
   }
   if (tree.status === "error") {
-    return <Guard title="Cannot open the 3D map">{tree.error}</Guard>;
+    return <EditorNotice title="Cannot open the 3D map">{tree.error}</EditorNotice>;
   }
   if (edits.status === "error") {
     // Painting over an unread record would erase it on the first Save.
     return (
-      <Guard title="Cannot open the 3D map">
+      <EditorNotice title="Cannot open the 3D map">
         {edits.error ?? "The saved patches could not be read."}
-      </Guard>
+      </EditorNotice>
     );
   }
   if (!tree.voxels || edits.fillKey === null) {
@@ -152,17 +154,6 @@ export function Map3dEditor({
       openOnWaypoint={openOnWaypoint}
       onDirtyChange={onDirtyChange}
     />
-  );
-}
-
-function Guard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="flex h-full items-center justify-center p-6">
-      <div className="max-w-md rounded-md border border-hairline bg-panel p-4">
-        <p className="instrument-label text-muted-foreground">{title}</p>
-        <p className="mt-2 text-sm">{children}</p>
-      </div>
-    </div>
   );
 }
 
@@ -220,18 +211,20 @@ function Map3dSurface({
   const [editsVersion, setEditsVersion] = React.useState(0);
   const [radiusM, setRadiusM] = React.useState<number>(DEFAULT_BRUSH_RADIUS_M);
   const [band, setBand] = React.useState(() => fullBand(voxels));
-  const [fitNonce, setFitNonce] = React.useState(0);
-  const [zoomStep, setZoomStep] = React.useState<{ factor: number } | null>(null);
+  const { fitNonce, zoomStep, fit, zoomIn, zoomOut } = useViewCommands();
   // On by default: the outlines are what make walls and steps readable.
   const [shading, setShading] = React.useState(true);
-  const [canUndo, setCanUndo] = React.useState(false);
-  const [canRedo, setCanRedo] = React.useState(false);
   const [count, setCount] = React.useState(session.edits.size);
   const [dirty, setDirty] = React.useState(false);
   const [note, setNote] = React.useState<SaveNote>({ kind: "idle" });
   /** The patches as last saved, compared against the session's for `dirty`. */
   const savedRef = React.useRef<GroundEdits>(new Map(session.edits));
-  const historyRef = React.useRef(createUndoStack<GroundPatch>(groundPatchBytes));
+  const {
+    canUndo,
+    canRedo,
+    push: pushHistory,
+    pop: popHistory,
+  } = useUndoHistory<GroundPatch>(groundPatchBytes);
 
   const runLock = useMapRunLock(name);
   const { mutate: save } = useSaveMapOctomapEdits();
@@ -356,31 +349,23 @@ function Map3dSurface({
 
   const commit = React.useCallback(
     (patch: GroundPatch) => {
-      pushPatch(historyRef.current, patch);
-      setCanUndo(true);
-      setCanRedo(false);
+      pushHistory(patch);
       refresh();
     },
-    [refresh],
+    [refresh, pushHistory],
   );
 
   const step = React.useCallback(
     (direction: "undo" | "redo") => {
-      const stack = historyRef.current;
-      const patch = direction === "undo" ? popUndo(stack) : popRedo(stack);
+      const patch = popHistory(direction);
       if (!patch) return;
-      setCanUndo(stack.undo.length > 0);
-      setCanRedo(stack.redo.length > 0);
       applyGroundPatch(session.edits, patch, direction === "undo" ? "before" : "after");
       refresh();
     },
-    [session, refresh],
+    [session, refresh, popHistory],
   );
   const undo = React.useCallback(() => step("undo"), [step]);
   const redo = React.useCallback(() => step("redo"), [step]);
-  const fit = React.useCallback(() => setFitNonce((n) => n + 1), []);
-  const zoomIn = React.useCallback(() => setZoomStep({ factor: ZOOM_STEP_FACTOR }), []);
-  const zoomOut = React.useCallback(() => setZoomStep({ factor: 1 / ZOOM_STEP_FACTOR }), []);
 
   /** Move the height band; the floors are rebuilt, and the canvas re-aims at them. */
   const changeBand = React.useCallback(
@@ -439,12 +424,7 @@ function Map3dSurface({
   ]);
 
 
-  React.useEffect(() => {
-    if (!unsaved) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [unsaved]);
+  useLeaveGuard(unsaved);
 
   const bandLoM = kzToMetres(band.lo, voxels);
   const bandHiM = kzToMetres(band.hi, voxels);

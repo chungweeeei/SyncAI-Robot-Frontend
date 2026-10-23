@@ -25,6 +25,7 @@ import { useMaps } from "@/hooks/use-maps";
 import { useTaskTemplates } from "@/hooks/use-task-templates";
 import { useSchedules } from "@/hooks/use-schedules";
 import { useStepDrafts } from "@/hooks/use-step-drafts";
+import { useLeaveGuard } from "@/hooks/use-leave-guard";
 import { useTaskDraft } from "@/hooks/use-task-draft";
 import { waypointEditor } from "@/lib/map/links";
 import type { TaskStepState } from "@/lib/api/task";
@@ -86,12 +87,7 @@ export function TaskEditor() {
    * the browser cannot tell apart) is asked about, and only with work to lose.
    */
   const unsaved = draftIsUnsaved(draft, library.templates);
-  React.useEffect(() => {
-    if (!unsaved) return;
-    const guard = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", guard);
-    return () => window.removeEventListener("beforeunload", guard);
-  }, [unsaved]);
+  useLeaveGuard(unsaved);
 
   /**
    * `chosenMap` null follows the loaded map; a name is the operator's (or a
