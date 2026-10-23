@@ -13,6 +13,9 @@ import {
   sameZones,
   withoutZones,
   zoneAt,
+  zoneBandAround,
+  zoneGround,
+  zoneOnFloor,
   type ZonePoint,
   type ZonePressInput,
 } from "@/lib/map/zone";
@@ -307,6 +310,37 @@ describe("sameZones", () => {
     expect(sameZones([square("a")], [square("a", 0.05)])).toBe(false);
     expect(sameZones([square("a"), square("b")], [square("a")])).toBe(false);
     expect(sameZones([square("a"), square("b")], [square("b"), square("a")])).toBe(false);
+  });
+
+  it("counts the name and the floor band, with absent and null the same", () => {
+    expect(sameZones([{ ...square("a"), z_min: null }], [square("a")])).toBe(true);
+    expect(sameZones([{ ...square("a"), z_min: 4.5 }], [square("a")])).toBe(false);
+    expect(sameZones([{ ...square("a"), name: "rack" }], [square("a")])).toBe(false);
+  });
+});
+
+describe("a zone's floor band", () => {
+  const zone = { id: "z", points: points(3) };
+
+  it("reaches half a storey either side of the floor's ground", () => {
+    expect(zoneBandAround(4.6)).toEqual({ z_min: 4.1, z_max: 5.1 });
+  });
+
+  it("puts a banded zone on its ground and leaves one of every floor without", () => {
+    expect(zoneGround({ ...zone, z_min: 4, z_max: 5 })).toBe(4.5);
+    expect(zoneGround(zone)).toBeNull();
+    // Open on one side is every floor that way: no single ground to draw it at.
+    expect(zoneGround({ ...zone, z_min: 4, z_max: null })).toBeNull();
+  });
+
+  it("shows a zone on its own floor, and one of every floor on all of them", () => {
+    const upstairs = { ...zone, z_min: 4.1, z_max: 5.1 };
+    const twoF = { lo: 3.5, hi: 6.5 };
+    const oneF = { lo: -Infinity, hi: 3.5 };
+    expect(zoneOnFloor(upstairs, twoF)).toBe(true);
+    expect(zoneOnFloor(upstairs, oneF)).toBe(false);
+    expect(zoneOnFloor(zone, oneF)).toBe(true);
+    expect(zoneOnFloor(upstairs, null)).toBe(true);
   });
 });
 

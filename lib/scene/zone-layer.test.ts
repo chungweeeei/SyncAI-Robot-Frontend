@@ -48,4 +48,24 @@ describe("createZoneLayer", () => {
     const { group } = createZoneLayer([doubled], THEMES.light);
     expect(positionsOf(group).some(Number.isNaN)).toBe(false);
   });
+
+  it("lies a banded zone on its floor's ground and one of every floor at the floor shown", () => {
+    const upstairs = { ...triangle("u"), z_min: 4.1, z_max: 5.1 };
+    const { group } = createZoneLayer([upstairs, triangle("all")], THEMES.light, {
+      defaultZ: 2,
+    });
+    const heights = group.children.map((child) => group.position.z + child.position.z);
+    // Wash and edge of each, at the band's middle and at defaultZ, both lifted a hair.
+    expect(heights[0]).toBeCloseTo(4.6, 1);
+    expect(heights[1]).toBeCloseTo(4.6, 1);
+    expect(heights[2]).toBeCloseTo(2, 1);
+    expect(heights[0] - 4.6).toBeGreaterThan(0);
+  });
+
+  it("leaves out the zones the caller does not show", () => {
+    const { group } = createZoneLayer([triangle("a"), triangle("b")], THEMES.light, {
+      visible: (zone) => zone.id === "b",
+    });
+    expect(group.children).toHaveLength(2);
+  });
 });

@@ -17,16 +17,23 @@ import {
   type Map3dDrawKind,
 } from "@/components/maps/map-3d-toolbar";
 import { useMapFloors } from "@/hooks/use-map-floors";
+import { useMapKeepout } from "@/hooks/use-map-keepout";
 import { useMapVertexWrites } from "@/hooks/use-map-vertex-writes";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
 import { useMapOctomapEdits } from "@/hooks/use-map-octomap-edits";
-import { useSaveMapOctomapEdits } from "@/hooks/use-map-actions";
+import { useSaveMapKeepout, useSaveMapOctomapEdits } from "@/hooks/use-map-actions";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useMapEntry } from "@/hooks/use-maps";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
-import { floorBands } from "@/lib/map/floors";
+import { drawnGround, floorBands } from "@/lib/map/floors";
 import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
-import { bandForHeights, fullBand, kzToMetres, metresToKz } from "@/lib/map/ground";
+import {
+  bandForHeights,
+  floorHeightIn,
+  fullBand,
+  kzToMetres,
+  metresToKz,
+} from "@/lib/map/ground";
 import {
   DEFAULT_BRUSH_RADIUS_M,
   LOCAL_FLOOR_RING_M,
@@ -44,13 +51,17 @@ import {
 } from "@/lib/map/ground-fill";
 import { createUndoStack, popRedo, popUndo, pushPatch } from "@/lib/map/patch";
 import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
+import { canCloseZone, newZoneId, zoneBandAround } from "@/lib/map/zone";
 import { isTypingTarget } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
-import type { MapVertex, VertexType } from "@/lib/types/map";
+import type { MapVertex, VertexType, ZonePoint, ZonePolygon } from "@/lib/types/map";
 import type { OccupiedVoxels } from "@/lib/types/octree";
 import type { PlanarPose } from "@/lib/types/robot";
 
 const subscribeNoop = () => () => {};
+
+/** One empty list for every render before the zones are read, so the canvas does not rebuild. */
+const NO_ZONES: ZonePolygon[] = [];
 
 /**
  * The editor's 3D view: the 3D map in 3D, and a brush that paints floor
@@ -61,6 +72,13 @@ const subscribeNoop = () => () => {};
  * It is also where a map with no floor plan gets its waypoints, which the
  * floor plan editor cannot place without a raster to place them on. Those
  * are written as they are placed, the dashboard's flow, not on Save.
+ *
+ * And its forbidden zones (2026-10-23): the robot's 3D planner reads the same
+ * keepout.json the floor plan editor writes, each zone optionally banded to
+ * the floor it forbids. A zone drawn with a floor picked on a map of several
+ * storeys forbids that floor only; with none picked, or on a map of one, it
+ * forbids every floor, as a floor plan zone does. Written as it is closed or
+ * removed, like a waypoint: the list is short and a stray Save cannot carry it.
  *
  * Loads the tree (shared with the dashboard's layer) and the saved patches,
  * and mounts the surface only once both are in: a record arriving after
@@ -210,6 +228,11 @@ function Map3dSurface({
 
   const runLock = useMapRunLock(name);
   const { mutate: save } = useSaveMapOctomapEdits();
+  const keepout = useMapKeepout(name);
+  const { mutate: saveZones } = useSaveMapKeepout();
+  /** The corners of the forbidden zone being drawn. */
+  const [zoneDraft, setZoneDraft] = React.useState<ZonePoint[]>([]);
+  const [zoneNote, setZoneNote] = React.useState<SaveNote>({ kind: "idle" });
   const { floors } = useMapFloors(name);
   const stops = useMapVertexWrites(name);
   const { vertices, moveVertex, createVertex, removeVertex, clearWriteError } = stops;
@@ -241,11 +264,26 @@ function Map3dSurface({
     setMoving(null);
   }
 
-  /** Any tool change drops a re-place in hand. */
+  // Zones are written whole, so none may be until the list has been read:
+  // a write over an unread list would erase the map's zones.
+  const zoneLock =
+    runLock.reason ??
+    (keepout.status === "error"
+      ? `The forbidden zones could not be read: ${keepout.error ?? "unknown error"}`
+      : keepout.zones === null
+        ? "Reading the forbidden zones…"
+        : null);
+  if (zoneLock !== null && (tool === "zone" || tool === "zoneRemove")) {
+    setTool("orbit");
+    setZoneDraft([]);
+  }
+
+  /** Any tool change drops a re-place in hand, and a zone half drawn. */
   const changeTool = React.useCallback((next: Map3dTool) => {
     setTool(next);
     setWaypointAsked(false);
     if (next !== "waypoint") setMoving(null);
+    if (next !== "zone") setZoneDraft([]);
   }, []);
 
   /** A new Draw choice starts on Orbit, as the floor plan's starts on Pan. */
@@ -280,9 +318,11 @@ function Map3dSurface({
     setNote({ kind: "idle" });
   }, [session]);
 
+  // A zone half drawn is unsaved work too: it is lost on leaving.
+  const unsaved = dirty || zoneDraft.length > 0;
   React.useEffect(() => {
-    onDirtyChange?.(dirty);
-  }, [dirty, onDirtyChange]);
+    onDirtyChange?.(unsaved);
+  }, [unsaved, onDirtyChange]);
 
   const commit = React.useCallback(
     (patch: GroundPatch) => {
@@ -348,9 +388,125 @@ function Map3dSurface({
     );
   }, [runLock.locked, note.kind, session, save, name, voxels]);
 
+
+  React.useEffect(() => {
+    if (!unsaved) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [unsaved]);
+
+  const bandLoM = kzToMetres(band.lo, voxels);
+  const bandHiM = kzToMetres(band.hi, voxels);
+  const full = fullBand(voxels);
+  // The band's levels as the metres the 3D layer filters cell centres by.
+  const bandM = React.useMemo(
+    () => ({ lo: bandLoM - res / 2, hi: bandHiM + res / 2 }),
+    [bandLoM, bandHiM, res],
+  );
+  const pickedFloor =
+    floorOptions.find((floor) => floor.levels.lo === band.lo && floor.levels.hi === band.hi)
+      ?.name ?? (band.lo === full.lo && band.hi === full.hi ? null : undefined);
+  const minM = kzToMetres(full.lo, voxels);
+  const maxM = kzToMetres(full.hi, voxels);
+
+  // The floor picked, as the dashboard holds it: its stops alone are shown,
+  // and a stop placed on it stands at the ground under it. A hand-set band is
+  // no floor, so a new stop goes to the ground floor as with All.
+  const floorBand = React.useMemo(
+    () => floorBands(floors).find((floor) => floor.name === pickedFloor) ?? null,
+    [floors, pickedFloor],
+  );
+  const vertexLo = floorBand?.lo;
+  const vertexHi = floorBand?.hi;
+  const vertexBand = React.useMemo(
+    () => (vertexLo === undefined || vertexHi === undefined ? null : { lo: vertexLo, hi: vertexHi }),
+    [vertexLo, vertexHi],
+  );
+  // The plane a press is cast onto: the floor's one height (memoised, since
+  // the measure walks every cell), or a re-placed stop's own with none picked.
+  const floorZ = React.useMemo(() => floorGroundOf(voxels, floorBand), [voxels, floorBand]);
+  const placeZ = moving && !floorBand ? moving.z : floorZ;
+
+  // The floor a new forbidden zone forbids: the one picked, on a map of
+  // several storeys (a map of one has nothing to pick, and its zones cover
+  // every floor, as the floor plan's do). Its ground is where the 3D map
+  // shows it, at the top face of the floor's cells -- the height the robot's
+  // planner compares a zone's band with -- else a body height under its level.
+  const zoneFloorBand = floorOptions.length > 1 ? floorBand : null;
+  const zoneGroundZ = React.useMemo(() => {
+    if (!zoneFloorBand) return null;
+    const measured = floorHeightIn(voxels, zoneFloorBand.lo, zoneFloorBand.hi);
+    return measured === null ? drawnGround(floorZ) : measured + voxels.res / 2;
+  }, [voxels, zoneFloorBand, floorZ]);
+
+  /** Write the whole zone list; the note says how it went. */
+  const writeZones = React.useCallback(
+    (next: ZonePolygon[], onDone?: () => void) => {
+      setZoneNote({ kind: "saving" });
+      saveZones(
+        { name, zones: next },
+        {
+          onSuccess: (result) => {
+            setZoneNote({ kind: "saved", message: result.message });
+            onDone?.();
+          },
+          onError: (cause) => setZoneNote({ kind: "failed", message: cause.message }),
+        },
+      );
+    },
+    [saveZones, name],
+  );
+
+  /**
+   * Close the shape in flight into a zone and write it. The draft is kept
+   * until the robot has the zone, so a refused write can be retried.
+   */
+  const closeZone = React.useCallback(() => {
+    const zones = keepout.zones;
+    if (zoneLock !== null || zones === null || !canCloseZone(zoneDraft)) return;
+    if (zoneNote.kind === "saving") return;
+    const zone: ZonePolygon = {
+      id: newZoneId(zones),
+      points: zoneDraft,
+      ...(zoneGroundZ === null ? {} : zoneBandAround(zoneGroundZ)),
+    };
+    writeZones([...zones, zone], () => setZoneDraft([]));
+  }, [keepout.zones, zoneLock, zoneDraft, zoneNote.kind, zoneGroundZ, writeZones]);
+
+  // Asked once, as a waypoint's Remove asks: a finger's tap on the wrong zone
+  // must not open an area to the robot.
+  const removeZone = (zone: ZonePolygon) => {
+    const zones = keepout.zones;
+    if (zoneLock !== null || zones === null || zoneNote.kind === "saving") return;
+    if (!window.confirm(`Delete forbidden zone "${zone.name ?? zone.id}"? The robot may then drive there.`)) {
+      return;
+    }
+    writeZones(zones.filter((entry) => entry.id !== zone.id));
+  };
+
   const placeLocked = runLock.locked;
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // A shape in flight takes Escape, Enter and Backspace first, as on the
+      // floor plan: Escape drops it rather than the whole Draw choice.
+      if (zoneDraft.length > 0 && !isTypingTarget(event.target)) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setZoneDraft([]);
+          return;
+        }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          closeZone();
+          return;
+        }
+        if (event.key === "Backspace") {
+          event.preventDefault();
+          setZoneDraft((draft) => draft.slice(0, -1));
+          return;
+        }
+      }
       if (event.key === "Escape") {
         event.preventDefault();
         chooseDraw(null);
@@ -388,46 +544,7 @@ function Map3dSurface({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo, fit, changeTool, chooseDraw, placeLocked]);
-
-  React.useEffect(() => {
-    if (!dirty) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty]);
-
-  const bandLoM = kzToMetres(band.lo, voxels);
-  const bandHiM = kzToMetres(band.hi, voxels);
-  const full = fullBand(voxels);
-  // The band's levels as the metres the 3D layer filters cell centres by.
-  const bandM = React.useMemo(
-    () => ({ lo: bandLoM - res / 2, hi: bandHiM + res / 2 }),
-    [bandLoM, bandHiM, res],
-  );
-  const pickedFloor =
-    floorOptions.find((floor) => floor.levels.lo === band.lo && floor.levels.hi === band.hi)
-      ?.name ?? (band.lo === full.lo && band.hi === full.hi ? null : undefined);
-  const minM = kzToMetres(full.lo, voxels);
-  const maxM = kzToMetres(full.hi, voxels);
-
-  // The floor picked, as the dashboard holds it: its stops alone are shown,
-  // and a stop placed on it stands at the ground under it. A hand-set band is
-  // no floor, so a new stop goes to the ground floor as with All.
-  const floorBand = React.useMemo(
-    () => floorBands(floors).find((floor) => floor.name === pickedFloor) ?? null,
-    [floors, pickedFloor],
-  );
-  const vertexLo = floorBand?.lo;
-  const vertexHi = floorBand?.hi;
-  const vertexBand = React.useMemo(
-    () => (vertexLo === undefined || vertexHi === undefined ? null : { lo: vertexLo, hi: vertexHi }),
-    [vertexLo, vertexHi],
-  );
-  // The plane a press is cast onto: the floor's one height (memoised, since
-  // the measure walks every cell), or a re-placed stop's own with none picked.
-  const floorZ = React.useMemo(() => floorGroundOf(voxels, floorBand), [voxels, floorBand]);
-  const placeZ = moving && !floorBand ? moving.z : floorZ;
+  }, [undo, redo, fit, changeTool, chooseDraw, placeLocked, zoneDraft.length, closeZone]);
 
   // Single-shot, as on the dashboard: one press, one stop, then disarm.
   const commitPlace = (picked: PlanarPose) => {
@@ -510,6 +627,16 @@ function Map3dSurface({
         onPlaceCommit={commitPlace}
         onVertexActivate={setAskedVertex}
         onVertexRemove={removeTapped}
+        zones={keepout.zones ?? NO_ZONES}
+        zoneFloor={zoneFloorBand ? vertexBand : null}
+        zonePlaneZ={zoneGroundZ}
+        zoneDraft={zoneDraft}
+        onZoneCorner={(point) => {
+          setZoneNote({ kind: "idle" });
+          setZoneDraft((draft) => [...draft, point]);
+        }}
+        onZoneClose={closeZone}
+        onZoneRemove={removeZone}
       />
 
       <VertexCreateDialog
@@ -562,6 +689,7 @@ function Map3dSurface({
             tool={tool}
             onToolChange={changeTool}
             placeLock={runLock.reason}
+            zoneLock={zoneLock}
             radius={radiusM}
             onRadiusChange={setRadiusM}
             shading={shading}
@@ -642,6 +770,38 @@ function Map3dSurface({
               />
             </label>
           </div>
+
+          {drawKind === "zone" && (
+            <div
+              className={cn(
+                overlayPanel,
+                "pointer-events-auto space-y-1 px-2 py-1.5 text-[11px] leading-snug",
+              )}
+            >
+              <p className="instrument-label text-muted-foreground">Forbidden zones</p>
+              {/* Which floor a new zone forbids is the one fact the 3D view adds. */}
+              <p>
+                {zoneGroundZ === null
+                  ? "A new zone forbids every floor."
+                  : `A new zone forbids ${pickedFloor ?? "this floor"} only (ground ${zoneGroundZ.toFixed(1)} m).`}
+              </p>
+              {zoneDraft.length > 0 && (
+                <p className="text-muted-foreground">
+                  {zoneDraft.length} corner{zoneDraft.length === 1 ? "" : "s"}
+                  {canCloseZone(zoneDraft)
+                    ? " — tap the first to close, or press Enter."
+                    : " — at least 3 to close."}
+                </p>
+              )}
+              {zoneNote.kind === "saving" && <p className="text-muted-foreground">Saving…</p>}
+              {zoneNote.kind === "saved" && <p className="text-signal-live">{zoneNote.message}</p>}
+              {zoneNote.kind === "failed" && (
+                <p role="alert" className="break-words text-signal-warn">
+                  Not saved. {zoneNote.message}
+                </p>
+              )}
+            </div>
+          )}
 
           {skipped > 0 && (
             <p

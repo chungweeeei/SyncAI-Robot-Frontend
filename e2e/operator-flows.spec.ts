@@ -3369,7 +3369,9 @@ test.describe("the floor plan editor's forbidden zones on the robot", () => {
       zones: { id: string; points: { x: number; y: number }[] }[];
     };
     expect(body.zones).toHaveLength(2);
-    expect(body.zones[0]).toEqual(saved);
+    // Its name and floor band go back too, unset here: a zone sent without
+    // the band it was read with would widen to every storey of a 3D map.
+    expect(body.zones[0]).toEqual({ ...saved, name: null, z_min: null, z_max: null });
     expect(body.zones[1].id).not.toBe(saved.id);
     expect(body.zones[1].points).toHaveLength(3);
     // Nothing painted, so nothing of the floor plan went with it.

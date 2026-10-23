@@ -144,15 +144,29 @@ export interface ZonePoint {
 /**
  * A forbidden zone: points in drawing order, first not repeated. The id is the
  * console's own; the backend keeps whatever it is sent.
+ *
+ * `z_min` / `z_max` are the floor it forbids on a 3D map: the ground heights,
+ * map-frame metres, between which the robot's 3D planner applies it (the
+ * ground's z, not the body's). Unset (absent or null) is unbounded, so a zone
+ * with neither covers every floor, which is what a floor plan zone means. The
+ * floor plan's mask ignores them. `name` is a label. All three come back from
+ * the robot and must go back to it unchanged: a save is the whole list, and a
+ * zone sent without its band widens to every storey.
  */
 export interface ZonePolygon {
   id: string;
   points: ZonePoint[];
+  name?: string | null;
+  z_min?: number | null;
+  z_max?: number | null;
 }
 
 export const ZonePolygonSchema: z.ZodType<ZonePolygon> = z.object({
   id: z.string(),
   points: z.array(z.object({ x: z.number(), y: z.number() })),
+  name: z.string().nullish(),
+  z_min: z.number().nullish(),
+  z_max: z.number().nullish(),
 });
 
 /**

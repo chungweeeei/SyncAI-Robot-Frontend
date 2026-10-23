@@ -251,7 +251,11 @@ lib/
   map/          gridmap maths: view transforms, patches, session, vertex helpers,
                 name rule, the 2D drawing (draw.ts), the editor's vocabulary,
                 the forbidden zone rules (zone.ts: corner count, close-on-first,
-                point-in-polygon pick), the editor's staged waypoints
+                point-in-polygon pick, and a zone's floor band: zoneBandAround,
+                zoneGround, zoneOnFloor — `z_min` / `z_max` are the ground
+                heights the robot's 3D planner applies a zone between, unset
+                = every floor, and must go back on every save, since a zone
+                sent without them widens to every storey), the editor's staged waypoints
                 (vertex-stage.ts: local ids, the save plan, the rebase after
                 a partial save), the editor's one undo history over strokes
                 and waypoint edits (history.ts, on patch.ts's stack) and
@@ -299,7 +303,8 @@ lib/
                 it, or the robot stands half through the plan; the wire
                 keeps its 0)
   scene/        three.js scene building for the 3D viewport: theme, markers,
-                vertex layer, zone layer, path ribbon, the running dock's
+                vertex layer, zone layer (a banded zone on its floor's ground,
+                one of every floor at the floor shown), path ribbon, the running dock's
                 staging point and leg (dock-layer.ts), what the robot sees
                 and means to drive around it while it navigates
                 (local-nav-layer.ts: its costmap as one texture, each cost's

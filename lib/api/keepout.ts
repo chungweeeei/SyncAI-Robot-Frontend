@@ -68,8 +68,16 @@ export function saveKeepout(name: string, zones: readonly ZonePolygon[]): Promis
   return requestJson<SaveKeepoutResult>(keepoutPath(name), {
     method: "PUT",
     // Only the fields the backend models, so an editor-side field cannot 422.
+    // The name and the floor band go back as they came: dropping them would
+    // widen a 3D map's zone to every storey (see ZonePolygon).
     body: JSON.stringify({
-      zones: zones.map(({ id, points }) => ({ id, points: points.map(({ x, y }) => ({ x, y })) })),
+      zones: zones.map(({ id, points, name, z_min, z_max }) => ({
+        id,
+        points: points.map(({ x, y }) => ({ x, y })),
+        name: name ?? null,
+        z_min: z_min ?? null,
+        z_max: z_max ?? null,
+      })),
     }),
     schema: SaveKeepoutResultSchema,
   });

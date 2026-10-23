@@ -23,16 +23,36 @@ import { aimRaycaster } from "@/lib/scene/picking";
 import { THEMES } from "@/lib/scene/theme";
 import { createVertexLayer, type VertexLayer } from "@/lib/scene/vertex-layer";
 import { createVoxelLayer, type VoxelLayer } from "@/lib/scene/voxel-layer";
+import { createZoneLayer } from "@/lib/scene/zone-layer";
 import { SIGNAL } from "@/lib/theme/signal";
 import { cn } from "@/lib/utils";
-import type { MapVertex } from "@/lib/types/map";
+import { canCloseZone, cornerAt, zoneAt, zoneOnFloor } from "@/lib/map/zone";
+import type { MapVertex, ZonePoint, ZonePolygon } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
 /**
  * Orbit, the two brushes, Waypoint (put a stop down, or a re-placed one
- * back) and Remove (take a stored stop off the map).
+ * back), Remove (take a stored stop off the map), Zone (draw a forbidden
+ * zone's corners, one tap each) and Zone remove (tap a zone to delete it).
  */
-export type Map3dTool = "orbit" | "fill" | "erase" | "waypoint" | "remove";
+export type Map3dTool =
+  | "orbit"
+  | "fill"
+  | "erase"
+  | "waypoint"
+  | "remove"
+  | "zone"
+  | "zoneRemove";
+
+/** The tools a tap on a forbidden zone, or on bare floor, means something to. */
+const tapsZones = (tool: Map3dTool) => tool === "zone" || tool === "zoneRemove";
+
+/**
+ * How near the first corner a tap closes the shape, CSS pixels: the floor
+ * plan editor's corner targets (grid-canvas.tsx), mouse and finger.
+ */
+const CLOSE_RADIUS_PX = 12;
+const CLOSE_RADIUS_TOUCH_PX = 22;
 
 /** The tools a tap on a stored stop means something to. */
 const tapsStops = (tool: Map3dTool) => tool === "orbit" || tool === "remove";
@@ -85,6 +105,27 @@ export interface Map3dCanvasProps {
   onVertexActivate: (vertex: MapVertex) => void;
   /** A tap on a stored stop with Remove armed. */
   onVertexRemove: (vertex: MapVertex) => void;
+  /** The map's saved forbidden zones; drawn whatever the tool. */
+  zones: readonly ZonePolygon[];
+  /**
+   * The floor picked, by ground height `[lo, hi)`: the zones of other floors
+   * are hidden and untappable (a zone of every floor stays). Null shows all.
+   */
+  zoneFloor: { lo: number; hi: number } | null;
+  /**
+   * The ground a Zone tap is cast onto and a zone of every floor is drawn
+   * at, map-frame metres; null aims at the floor the shown heights mostly
+   * stand on, as the brush does.
+   */
+  zonePlaneZ: number | null;
+  /** The corners of the zone being drawn, in order. */
+  zoneDraft: readonly ZonePoint[];
+  /** A tap on bare floor with Zone armed: the next corner. */
+  onZoneCorner: (point: ZonePoint) => void;
+  /** A tap on the first corner once the shape can close. */
+  onZoneClose: () => void;
+  /** A tap inside a zone with Zone remove armed. */
+  onZoneRemove: (zone: ZonePolygon) => void;
   className?: string;
 }
 
@@ -130,6 +171,8 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     draft: THREE.Group;
     edl: EdlPass;
   } | null>(null);
+  /** A press with a zone tool armed that may still be a tap (resolved on release). */
+  const zoneTapRef = React.useRef<{ pointerId: number; cx: number; cy: number } | null>(null);
   const vertexLayerRef = React.useRef<VertexLayer | null>(null);
   /** A Waypoint press planted and not yet released: where, and where on screen. */
   const anchorRef = React.useRef<{
@@ -367,6 +410,64 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     invalidate();
   }, [movingVertex, invalidate]);
 
+  // ---- Forbidden zones ----------------------------------------------------
+  // Rebuilt on any change, as on the dashboard; a map has a handful. The
+  // band is a dependency because a zone of every floor is drawn at the
+  // ground the shown heights stand on, which the band moves.
+  const { zones, zoneFloor, zonePlaneZ, zoneDraft } = props;
+  const zoneLo = zoneFloor?.lo ?? -Infinity;
+  const zoneHi = zoneFloor?.hi ?? Infinity;
+  React.useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx || zones.length === 0) return;
+    const floor = zoneLo === -Infinity && zoneHi === Infinity ? null : { lo: zoneLo, hi: zoneHi };
+    const layer = createZoneLayer(zones, THEMES[theme], {
+      defaultZ: zonePlaneZ ?? planeZRef.current,
+      visible: (zone) => zoneOnFloor(zone, floor),
+    });
+    ctx.scene.add(layer.group);
+    invalidate();
+    return () => {
+      ctx.scene.remove(layer.group);
+      layer.dispose();
+      invalidate();
+    };
+  }, [zones, zoneLo, zoneHi, zonePlaneZ, props.band.lo, props.band.hi, session, theme, invalidate]);
+
+  // The shape in flight: its edges so far and a dot per corner, over
+  // everything like the brush, so the floor's cells cannot swallow it.
+  React.useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx || zoneDraft.length === 0) return;
+    const z = zonePlaneZ ?? planeZRef.current;
+    const positions = zoneDraft.flatMap(({ x, y }) => [x, y, z]);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    const color = THEMES[theme].zone;
+    const lineMaterial = new THREE.LineBasicMaterial({ color, depthTest: false });
+    const dotMaterial = new THREE.PointsMaterial({
+      color,
+      size: 8,
+      sizeAttenuation: false,
+      depthTest: false,
+    });
+    const group = new THREE.Group();
+    const line = new THREE.Line(geometry, lineMaterial);
+    const dots = new THREE.Points(geometry, dotMaterial);
+    line.renderOrder = 3;
+    dots.renderOrder = 3;
+    group.add(line, dots);
+    ctx.scene.add(group);
+    invalidate();
+    return () => {
+      ctx.scene.remove(group);
+      geometry.dispose();
+      lineMaterial.dispose();
+      dotMaterial.dispose();
+      invalidate();
+    };
+  }, [zoneDraft, zonePlaneZ, props.band.lo, props.band.hi, session, theme, invalidate]);
+
   // ---- Heights shown, and the floor the brush aims at -------------------
   const { lo: bandLo, hi: bandHi } = props.band;
   React.useEffect(() => {
@@ -427,6 +528,68 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     );
     // Off the tree's box is nowhere the robot has been.
     return hit && columnAt(session.voxels, hit.x, hit.y) ? hit : null;
+  };
+
+  /** The point on the zones' ground under a pointer position, metres, or null off the tree. */
+  const castZone = (event: { clientX: number; clientY: number }): ZonePoint | null => {
+    const ctx = sceneRef.current;
+    const container = containerRef.current;
+    if (!ctx || !container) return null;
+    const raycaster = raycasterRef.current;
+    aimRaycaster(
+      raycaster,
+      ctx.camera,
+      container.getBoundingClientRect(),
+      event.clientX,
+      event.clientY,
+    );
+    const z = propsRef.current.zonePlaneZ ?? planeZRef.current;
+    const hit = raycaster.ray.intersectPlane(
+      new THREE.Plane(new THREE.Vector3(0, 0, 1), -z),
+      new THREE.Vector3(),
+    );
+    // Off the tree's box is nowhere the robot can be kept out of.
+    return hit && columnAt(session.voxels, hit.x, hit.y) ? { x: hit.x, y: hit.y } : null;
+  };
+
+  /** The draft's corners on screen, CSS pixels from the canvas's corner. */
+  const draftOnScreen = () => {
+    const ctx = sceneRef.current;
+    const container = containerRef.current;
+    if (!ctx || !container) return [];
+    const rect = container.getBoundingClientRect();
+    const z = propsRef.current.zonePlaneZ ?? planeZRef.current;
+    ctx.camera.updateMatrixWorld();
+    return propsRef.current.zoneDraft.map(({ x, y }) => {
+      const v = new THREE.Vector3(x, y, z).project(ctx.camera);
+      return {
+        cx: rect.left + ((v.x + 1) / 2) * rect.width,
+        cy: rect.top + ((1 - v.y) / 2) * rect.height,
+      };
+    });
+  };
+
+  /** What a tap with a zone tool armed does. */
+  const tapZone = (event: React.PointerEvent<HTMLDivElement>) => {
+    const { tool, zones: shown, zoneFloor: floor, zoneDraft: draft } = propsRef.current;
+    if (tool === "zoneRemove") {
+      const at = castZone(event);
+      const zone = at && zoneAt(shown.filter((entry) => zoneOnFloor(entry, floor)), at);
+      if (zone) propsRef.current.onZoneRemove(zone);
+      return;
+    }
+    // The first corner closes the shape once it can, as on the floor plan.
+    if (canCloseZone(draft)) {
+      const radius = event.pointerType === "touch" ? CLOSE_RADIUS_TOUCH_PX : CLOSE_RADIUS_PX;
+      const corner = cornerAt(draftOnScreen(), { cx: event.clientX, cy: event.clientY }, radius);
+      if (corner === 0) {
+        propsRef.current.onZoneClose();
+        return;
+      }
+      if (corner !== null) return; // a later corner: never a duplicate dot
+    }
+    const at = castZone(event);
+    if (at) propsRef.current.onZoneCorner(at);
   };
 
   /** The stored stop under a pointer position, or null (also another floor's). */
@@ -528,6 +691,15 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     const { tool } = propsRef.current;
+    if (tapsZones(tool)) {
+      // Resolved on release, so a drag never drops a corner; a second finger
+      // (a pinch) abandons the tap.
+      zoneTapRef.current =
+        event.button === 0 && event.isPrimary
+          ? { pointerId: event.pointerId, cx: event.clientX, cy: event.clientY }
+          : null;
+      return;
+    }
     if (tapsStops(tool)) {
       // Maybe a tap on a stop, resolved on release so a drag starting on a
       // marker still orbits. Primary only: a second finger is a pinch.
@@ -580,6 +752,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const { tool } = propsRef.current;
+    if (tapsZones(tool)) return;
     if (tapsStops(tool)) {
       // Hover-test only with no button down; a button down is a camera drag.
       if (event.buttons === 0) hoverVertex(pickVertex(event));
@@ -618,6 +791,18 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   };
 
   const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const zoneTap = zoneTapRef.current;
+    if (zoneTap) {
+      zoneTapRef.current = null;
+      if (
+        tapsZones(propsRef.current.tool) &&
+        zoneTap.pointerId === event.pointerId &&
+        !isDrag(zoneTap.cx, zoneTap.cy, event.clientX, event.clientY)
+      ) {
+        tapZone(event);
+      }
+      return;
+    }
     const tap = tapRef.current;
     if (tap) {
       tapRef.current = null;
@@ -644,6 +829,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
 
   const handlePointerCancel = (event: React.PointerEvent<HTMLDivElement>) => {
     if (tapRef.current?.pointerId === event.pointerId) tapRef.current = null;
+    if (zoneTapRef.current?.pointerId === event.pointerId) zoneTapRef.current = null;
     // Only a deliberate release may put a stop down.
     if (anchorRef.current?.pointerId === event.pointerId) {
       anchorRef.current = null;
@@ -667,6 +853,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
 
   const handlePointerLeave = () => {
     tapRef.current = null;
+    zoneTapRef.current = null;
     hoverVertex(null);
     // A planted stop survives the pointer leaving; a carried one does not.
     if (!anchorRef.current) showDraft(null);
@@ -681,14 +868,14 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
       ref={containerRef}
       data-testid="map-3d-canvas"
       role="application"
-      aria-label="The 3D map. Drag to orbit; with Fill or Erase armed, drag to paint; with Place armed, press to place and drag to aim; with Remove armed, press a waypoint to delete it."
+      aria-label="The 3D map. Drag to orbit; with Fill or Erase armed, drag to paint; with Place armed, press to place and drag to aim; with Remove armed, press a waypoint to delete it; with Zone armed, tap each corner of a forbidden zone and its first corner to close it; with Zone remove armed, tap a zone to delete it."
       className={cn(
         "absolute inset-0 touch-none",
         tapsStops(props.tool) && hovering
           ? "cursor-pointer"
           : props.tool === "orbit"
             ? "cursor-grab active:cursor-grabbing"
-            : props.tool === "remove"
+            : props.tool === "remove" || props.tool === "zoneRemove"
               ? "cursor-default"
               : "cursor-crosshair",
         props.className,

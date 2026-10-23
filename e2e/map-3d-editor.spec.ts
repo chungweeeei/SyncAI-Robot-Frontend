@@ -33,7 +33,10 @@ const drawList = (page: Page) => page.getByRole("combobox", { name: "Draw" });
 const floorPlanTools = (page: Page) => page.getByRole("button", { name: "Pan", exact: true });
 
 /** Pick what a press works on in the 3D view's Draw list. */
-async function chooseDraw(page: Page, kind: "Ground patch" | "Waypoint" | "No type") {
+async function chooseDraw(
+  page: Page,
+  kind: "Ground patch" | "Waypoint" | "Forbidden zone" | "No type",
+) {
   await drawList(page).click();
   await page.getByRole("option", { name: kind, exact: true }).click();
 }
@@ -531,6 +534,142 @@ test.describe("the editor's 3D view", () => {
           "false",
         );
       }
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+  });
+
+  test.describe("forbidden zones", () => {
+    const keepoutPath = `/api/v1/maps/${MAP_NAME}/keepout`;
+    const keepoutPut = (page: Page) =>
+      page.waitForRequest(
+        (request) => request.method() === "PUT" && new URL(request.url()).pathname === keepoutPath,
+      );
+
+    /** The doormat's floor, and the same again a storey up (top face 5.1 m). */
+    function twoStoreys(): Buffer {
+      const occupied: Array<[number, number, number]> = [];
+      for (let y = 0; y < 4; y += 1) {
+        for (let x = 0; x < 4; x += 1) {
+          occupied.push([O + x, O + y, O - 5], [O + x, O + y, O + 50]);
+        }
+      }
+      return Buffer.from(encodeOctomapBt({ res: 0.1, occupied }));
+    }
+
+    /** Three corners round the canvas's centre, inside the doormat. */
+    async function threeCorners(page: Page) {
+      const box = (await page.getByTestId("map-3d-canvas").boundingBox())!;
+      const { x, y } = await centreOnScreen(page);
+      const d = Math.min(box.width, box.height) * 0.08;
+      const corners = [
+        { x: x - d, y: y - d },
+        { x: x + d, y: y - d },
+        { x: x + d, y: y + d },
+      ];
+      for (const corner of corners) await page.mouse.click(corner.x, corner.y);
+      return corners;
+    }
+
+    test("forbids every floor on a map of one, closing on the first corner", async ({ page }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      await mockBackend(page, { maps: [mapSummary(withOctomap())] });
+      await page.goto(VIEW_3D);
+      await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+      await chooseDraw(page, "Forbidden zone");
+      await expect(page.getByText("A new zone forbids every floor.")).toBeVisible();
+      await page.getByRole("button", { name: "Shape" }).click();
+
+      const corners = await threeCorners(page);
+      await expect(page.getByText("3 corners")).toBeVisible();
+      const put = keepoutPut(page);
+      await page.mouse.click(corners[0].x, corners[0].y);
+      const body = (await put).postDataJSON() as { zones: Record<string, unknown>[] };
+
+      expect(body.zones).toHaveLength(1);
+      expect(body.zones[0].points).toHaveLength(3);
+      // No band: every floor, as a floor plan zone means.
+      expect(body.zones[0].z_min).toBeNull();
+      expect(body.zones[0].z_max).toBeNull();
+      // The draft is gone once the robot has the zone.
+      await expect(page.getByText("3 corners")).toHaveCount(0);
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("forbids the floor picked only, on a map that spans storeys", async ({ page }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      await mockBackend(page, {
+        maps: [mapSummary(withOctomap())],
+        octomap: twoStoreys(),
+        floors: { [MAP_NAME]: { detected: TWO_FLOORS } },
+      });
+      await page.goto(VIEW_3D);
+      await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+      await page.getByRole("group", { name: "Floor" }).getByRole("button", { name: "2F" }).click();
+      // Look at 2F, so the taps land on its ground.
+      await page.getByRole("button", { name: "Fit to view" }).click();
+      await chooseDraw(page, "Forbidden zone");
+      await expect(page.getByText(/A new zone forbids 2F only \(ground 5\.1 m\)/)).toBeVisible();
+      await page.getByRole("button", { name: "Shape" }).click();
+
+      await threeCorners(page);
+      const put = keepoutPut(page);
+      await page.keyboard.press("Enter");
+      const body = (await put).postDataJSON() as { zones: Record<string, number>[] };
+
+      // Half a storey either side of 2F's ground: the robot's 3D planner
+      // keeps 2F out of it and leaves 1F under it alone.
+      expect(body.zones[0].z_min).toBeCloseTo(4.6, 5);
+      expect(body.zones[0].z_max).toBeCloseTo(5.6, 5);
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("removes a tapped zone after asking, keeping the others' bands", async ({ page }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const square = (half: number) => [
+        { x: 0.2 - half, y: 0.2 - half },
+        { x: 0.2 + half, y: 0.2 - half },
+        { x: 0.2 + half, y: 0.2 + half },
+        { x: 0.2 - half, y: 0.2 + half },
+      ];
+      await mockBackend(page, {
+        maps: [mapSummary(withOctomap())],
+        keepout: {
+          [MAP_NAME]: [
+            { id: "middle", points: square(0.1), name: null, z_min: null, z_max: null },
+            // Off to the side, and another floor's: it must go back unchanged.
+            {
+              id: "upstairs",
+              points: [{ x: 5, y: 5 }, { x: 6, y: 5 }, { x: 6, y: 6 }],
+              name: "rack",
+              z_min: 4.6,
+              z_max: 5.6,
+            },
+          ],
+        },
+      });
+      await page.goto(VIEW_3D);
+      await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+      await chooseDraw(page, "Forbidden zone");
+      await page.getByRole("button", { name: "Remove zone" }).click();
+
+      page.once("dialog", (dialog) => void dialog.accept());
+      const put = keepoutPut(page);
+      const centre = await centreOnScreen(page);
+      await page.mouse.click(centre.x, centre.y);
+      const body = (await put).postDataJSON() as { zones: Record<string, unknown>[] };
+
+      expect(body.zones).toEqual([
+        {
+          id: "upstairs",
+          points: [{ x: 5, y: 5 }, { x: 6, y: 5 }, { x: 6, y: 6 }],
+          name: "rack",
+          z_min: 4.6,
+          z_max: 5.6,
+        },
+      ]);
       expect(errors, "the page logged errors").toEqual([]);
     });
   });
