@@ -146,3 +146,23 @@ export const queryKeys = {
    */
   wifiConnections: ["wifi-connections"] as const,
 };
+
+/**
+ * Every key that belongs to one map, each by its name-only prefix so a
+ * versioned entry goes with it. A rename or delete drops them all: they
+ * will never be read under that name again, and one left behind would be
+ * served to a new map that takes the name. A key added above that takes a
+ * map name belongs here too; query-keys.test.ts holds the list to that.
+ */
+export function mapScopedKeys(name: string): readonly (readonly unknown[])[] {
+  return [
+    queryKeys.mapVertices(name),
+    queryKeys.mapKeepout(name),
+    queryKeys.mapImage(name),
+    queryKeys.mapPointCloud(name),
+    queryKeys.mapOctomap(name),
+    queryKeys.mapOctomapPreview(name),
+    queryKeys.mapOctomapEdits(name),
+    queryKeys.mapFloors(name),
+  ];
+}
