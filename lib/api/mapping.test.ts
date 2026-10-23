@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { fetchMappingStatus, startMapping } from "@/lib/api/mapping";
+import { fetchMappingStatus, saveMap, startMapping } from "@/lib/api/mapping";
 
 /**
  * Every run state the backend can answer parses, and an unpromised shape is
@@ -85,5 +85,38 @@ describe("startMapping", () => {
       ),
     );
     await expect(startMapping()).rejects.toThrow(/already building a map/);
+  });
+});
+
+describe("saveMap", () => {
+  const saved = {
+    name: "site_a",
+    has_pointcloud: true,
+    grid_pending: false,
+    message: "Saved 'site_a'.",
+  };
+
+  // An unticked 3D map is sent as false, never left out: the backend reads a
+  // missing one as "the robot's own setting", which may build it anyway.
+  it("posts both choices, a false one included", async () => {
+    fetchMock.mockResolvedValue(answer(saved));
+    await saveMap("site_a", { grid: false, octomap: true });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/api\/v1\/maps$/);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({
+      name: "site_a",
+      grid: false,
+      octomap: true,
+    });
+  });
+
+  it("sends an unticked 3D map as false", async () => {
+    fetchMock.mockResolvedValue(answer(saved));
+    await saveMap("site_a", { grid: true, octomap: false });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toHaveProperty("octomap", false);
   });
 });

@@ -34,7 +34,7 @@ import {
 import { useMapConversion } from "@/hooks/use-maps";
 import { useModeSwitch } from "@/hooks/use-mode-switch";
 import { useTelemetry } from "@/hooks/use-telemetry";
-import type { MappingRunState, SwitchableMode } from "@/lib/api/mapping";
+import type { MappingRunState, SaveMapOptions, SwitchableMode } from "@/lib/api/mapping";
 import { mappingRunFace } from "@/lib/map/run-face";
 import { cn } from "@/lib/utils";
 
@@ -170,10 +170,13 @@ export function MappingView() {
     status: runStatus.status,
   });
 
-  // The map this screen follows the conversion of, read off the last save —
-  // the catalogue can't say which map is "the one I just saved". Null unless
-  // a conversion started, which also spares this screen the catalogue fetch.
-  const watching = save.data?.grid_pending ? save.data.name : null;
+  // The map this screen follows the builds of, read off the last save — the
+  // catalogue can't say which map is "the one I just saved". Null unless a
+  // build started, which also spares this screen the catalogue fetch. The 3D
+  // map's is read off what was asked for: the save answers before the robot's
+  // cleaning has said anything, and the catalogue is where it says it.
+  const watching =
+    save.data && (save.data.grid_pending || save.variables?.octomap) ? save.data.name : null;
   const converting = useMapConversion(watching);
 
   // Every segment opens the dialog; the second tap is what commands. The mode
@@ -211,8 +214,8 @@ export function MappingView() {
     setSaving(true);
   };
 
-  const submitSave = (name: string) => {
-    save.mutate(name, { onSuccess: () => setSavedRun(true) });
+  const submitSave = (name: string, outputs: SaveMapOptions) => {
+    save.mutate({ name, ...outputs }, { onSuccess: () => setSavedRun(true) });
   };
 
   // A refusal backed out of is dropped, so the dialog reopens empty.

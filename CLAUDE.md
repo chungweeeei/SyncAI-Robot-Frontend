@@ -190,7 +190,10 @@ components/
                 this route; the parts both share are dashboard/drive-parts.tsx
   mapping/      the mode switch (the rail), the run strip over the viewport
                 (Start, then a recording-style indicator beside Save and New
-                map — its face is lib/map/run-face.ts), the save dialog, the
+                map — its face is lib/map/run-face.ts), the save dialog (the
+                name, and which of the floor plan and the 3D map to build —
+                lib/map/save-outputs.ts: the floor plan alone by default, at
+                least one), the
                 refusal panel under the strip and the save receipt's two
                 lines: the floor plan conversion and the 3D map build
   maps/         map library cards (each tile the map's 3D map when it has

@@ -8,6 +8,7 @@ import {
   saveMap,
   startMapping,
   type MappingStatus,
+  type SaveMapOptions,
 } from "@/lib/api/mapping";
 import { queryKeys } from "@/lib/api/query-keys";
 
@@ -61,8 +62,9 @@ export function useStartMapping() {
 export function useSaveMap() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) => saveMap(name),
-    onSuccess: (_result, name) => {
+    mutationFn: ({ name, ...options }: { name: string } & SaveMapOptions) =>
+      saveMap(name, options),
+    onSuccess: (_result, { name }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       // A save ends the run.
       void queryClient.invalidateQueries({ queryKey: queryKeys.mappingStatus });
