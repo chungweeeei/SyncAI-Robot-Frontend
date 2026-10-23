@@ -30,14 +30,25 @@ export interface PointCloudStreamHandlers {
 }
 
 /**
- * The live scan stream. Separate from telemetry on purpose; see
+ * The two scan streams: what the robot sees now, and on a mapping run the map
+ * built so far.
+ */
+export type PointCloudChannel = "live" | "map";
+
+const CHANNEL_PATHS: Record<PointCloudChannel, string> = {
+  live: "/api/v1/robot/pointcloud/stream",
+  map: "/api/v1/robot/pointcloud/map/stream",
+};
+
+/**
+ * A scan stream. Separate from telemetry on purpose; see
  * createReconnectingSocket.
  */
 export function createPointCloudStream(
   handlers: PointCloudStreamHandlers,
-  path = "/api/v1/robot/pointcloud/stream",
+  channel: PointCloudChannel = "live",
 ): ReconnectingSocket {
-  return createReconnectingSocket(path, {
+  return createReconnectingSocket(CHANNEL_PATHS[channel], {
     binaryType: "arraybuffer",
     onStatus: handlers.onStatus,
     onMessage: (data) => {

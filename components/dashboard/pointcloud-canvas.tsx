@@ -7,6 +7,7 @@ import { useTheme } from "next-themes";
 
 import { GpuLostNotice } from "@/components/console/fault-panel";
 import { useGpuContext } from "@/hooks/use-gpu-context";
+import { usePointCloudStream } from "@/hooks/use-point-cloud-stream";
 import type { TelemetryFeed } from "@/hooks/use-telemetry";
 import { cn } from "@/lib/utils";
 import { G23_JOINTS } from "@/lib/robot/g23-joints";
@@ -76,7 +77,6 @@ import type {
 } from "@/lib/types/robot";
 import type { PointCloudFrame } from "@/lib/types/pointcloud";
 import type { StreamStatus } from "@/lib/types/stream";
-import { createPointCloudStream } from "@/lib/ros/pointcloud-stream";
 
 // Height (metres) the robot floats at while carried on the pointer, so a held
 // robot does not read as a pose already set. Small enough to stay lined up with
@@ -829,72 +829,60 @@ export function PointCloudCanvas({
   // ---- Live body_cloud stream (independent of scene rebuilds) ----------
   // Opened once per mount and written into whatever geometry sceneRef holds,
   // so a scene rebuild never closes a still-connecting socket.
-  React.useEffect(() => {
-    const color = new THREE.Color();
-    const applyFrame = (frame: PointCloudFrame) => {
-      const ctx = sceneRef.current;
-      if (!ctx) return;
-      const posAttr = ctx.liveGeom.getAttribute(
-        "position",
-      ) as THREE.BufferAttribute;
-      const colAttr = ctx.liveGeom.getAttribute(
-        "color",
-      ) as THREE.BufferAttribute;
-      const n = Math.min(frame.count, MAX_LIVE_POINTS);
-      const src = frame.positions;
-      const dstPos = posAttr.array as Float32Array;
-      const dstCol = colAttr.array as Float32Array;
-      for (let i = 0; i < n; i++) {
-        const j = i * 3;
-        dstPos[j] = src[j];
-        dstPos[j + 1] = src[j + 1];
-        dstPos[j + 2] = src[j + 2];
-        heightColor(src[j + 2], color);
-        dstCol[j] = color.r;
-        dstCol[j + 1] = color.g;
-        dstCol[j + 2] = color.b;
-      }
-      posAttr.needsUpdate = true;
-      colAttr.needsUpdate = true;
-      ctx.liveGeom.setDrawRange(0, n);
-    };
-
-    const stream = createPointCloudStream({
-      onFrame: applyFrame,
-      onStatus: (s) => onStatusRef.current?.(s),
-    });
-    return () => stream.close();
+  const liveColorRef = React.useRef(new THREE.Color());
+  const applyLiveFrame = React.useCallback((frame: PointCloudFrame) => {
+    const ctx = sceneRef.current;
+    if (!ctx) return;
+    const color = liveColorRef.current;
+    const posAttr = ctx.liveGeom.getAttribute(
+      "position",
+    ) as THREE.BufferAttribute;
+    const colAttr = ctx.liveGeom.getAttribute(
+      "color",
+    ) as THREE.BufferAttribute;
+    const n = Math.min(frame.count, MAX_LIVE_POINTS);
+    const src = frame.positions;
+    const dstPos = posAttr.array as Float32Array;
+    const dstCol = colAttr.array as Float32Array;
+    for (let i = 0; i < n; i++) {
+      const j = i * 3;
+      dstPos[j] = src[j];
+      dstPos[j + 1] = src[j + 1];
+      dstPos[j + 2] = src[j + 2];
+      heightColor(src[j + 2], color);
+      dstCol[j] = color.r;
+      dstCol[j + 1] = color.g;
+      dstCol[j + 2] = color.b;
+    }
+    posAttr.needsUpdate = true;
+    colAttr.needsUpdate = true;
+    ctx.liveGeom.setDrawRange(0, n);
   }, []);
+  usePointCloudStream("live", applyLiveFrame, (s) => onStatusRef.current?.(s));
 
   // ---- Streamed "map so far" cloud (mapping runs) ------------------------
   // Outside the scene effect like the live stream; the applier is read through
   // its ref so a theme change never bounces the socket.
   React.useEffect(() => {
-    if (!mapCloudStream) {
-      // Drop the held frame too, or the next rebuild's re-apply resurrects it.
-      mapStreamFrameRef.current = null;
-      const ctx = sceneRef.current;
-      if (ctx?.streamedMapPoints) {
-        ctx.scene.remove(ctx.streamedMapPoints);
-        ctx.streamedMapPoints.geometry.dispose();
-        (ctx.streamedMapPoints.material as THREE.Material).dispose();
-        ctx.streamedMapPoints = null;
-      }
-      return;
+    if (mapCloudStream) return;
+    // Drop the held frame too, or the next rebuild's re-apply resurrects it.
+    mapStreamFrameRef.current = null;
+    const ctx = sceneRef.current;
+    if (ctx?.streamedMapPoints) {
+      ctx.scene.remove(ctx.streamedMapPoints);
+      ctx.streamedMapPoints.geometry.dispose();
+      (ctx.streamedMapPoints.material as THREE.Material).dispose();
+      ctx.streamedMapPoints = null;
     }
-
-    const stream = createPointCloudStream(
-      {
-        onFrame: (frame) => {
-          mapStreamFrameRef.current = frame;
-          applyMapStreamFrameRef.current(frame);
-        },
-        onStatus: (s) => onMapStatusRef.current?.(s),
-      },
-      "/api/v1/robot/pointcloud/map/stream",
-    );
-    return () => stream.close();
   }, [mapCloudStream]);
+  usePointCloudStream(
+    mapCloudStream ? "map" : null,
+    (frame) => {
+      mapStreamFrameRef.current = frame;
+      applyMapStreamFrameRef.current(frame);
+    },
+    (s) => onMapStatusRef.current?.(s),
+  );
 
   // ---- Camera mode (move / focus) --------------------------------------
   // Re-runs on a scene rebuild too, so the mode survives it.
