@@ -218,10 +218,11 @@ components/
                 picked in the column under the Draw strip; worked like the
                 floor plan — a Draw list on the right (Ground patch or
                 Waypoint) picks what the tools on the left are; a Fill or
-                Erase brush that patches the holes the lidar never saw — a
-                press is cast onto the height the shown floor mostly stands
-                on, since a hole has no cell to hit and a wall in front of
-                one must not take the stroke; its rules are
+                Erase brush that patches the holes the lidar never saw — it
+                aims at the surface under the pointer (a tread, a landing,
+                the rim of the hole it is over; never a wall's face), so a
+                stair is painted where it is seen with any floor picked,
+                and says so when there is no floor near to read; its rules are
                 lib/map/ground-fill.ts, its save a record the robot's own
                 tool applies, and its unsaved patches guard Back and the
                 2D / 3D switch as the floor plan's edits do; and Place and
@@ -291,10 +292,14 @@ lib/
                 ground (ground.ts: each column's floor inside a height
                 band, the floor a band mostly stands on, which the editor's
                 3D view frames itself on, the ground under a point and the
-                column under it) and the 3D view's brush rules on top of
-                it (ground-fill.ts: the median a patch is set at and the
-                samples it needs, the hole test — nothing occupied through
-                the clearance band — the dabs and their undo patches, and
+                column under it, and every column's cells as stacks, where
+                a surface is the top of a run) and the 3D view's brush rules
+                on top of it (ground-fill.ts: the surface a pointer aims at,
+                a patch's height — the median of the surfaces nearest the
+                hole within half a metre of the aim, so a hole in a tread
+                takes that tread and not the ground under the flight — the
+                hole test — nothing occupied from just under the patch up
+                through the clearance band — the dabs and their undo patches, and
                 the record's absolute keys and the tree with them drawn in
                 (withGroundPatches, a union, since an applied patch is in
                 both)), the z a placed waypoint is written with
