@@ -51,7 +51,17 @@ import {
 } from "@/lib/map/ground-fill";
 import { createUndoStack, popRedo, popUndo, pushPatch } from "@/lib/map/patch";
 import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
-import { canCloseZone, newZoneId, zoneBandAround } from "@/lib/map/zone";
+import {
+  canCloseZone,
+  mergeIntoZone,
+  newZoneId,
+  restoreZones,
+  sameZones,
+  withoutZones,
+  zoneBandAround,
+  type ZoneAnchor,
+  type ZoneCornerRef,
+} from "@/lib/map/zone";
 import { isTypingTarget } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
 import type { MapVertex, VertexType, ZonePoint, ZonePolygon } from "@/lib/types/map";
@@ -77,8 +87,9 @@ const NO_ZONES: ZonePolygon[] = [];
  * keepout.json the floor plan editor writes, each zone optionally banded to
  * the floor it forbids. A zone drawn with a floor picked on a map of several
  * storeys forbids that floor only; with none picked, or on a map of one, it
- * forbids every floor, as a floor plan zone does. Written as it is closed or
- * removed, like a waypoint: the list is short and a stray Save cannot carry it.
+ * forbids every floor, as a floor plan zone does. Drawn, merged and moved on
+ * screen and sent by Save, beside the patches, as the floor plan's zones are
+ * (Remove is sent at once there too, and here).
  *
  * Loads the tree (shared with the dashboard's layer) and the saved patches,
  * and mounts the surface only once both are in: a record arriving after
@@ -232,6 +243,21 @@ function Map3dSurface({
   const { mutate: saveZones } = useSaveMapKeepout();
   /** The corners of the forbidden zone being drawn. */
   const [zoneDraft, setZoneDraft] = React.useState<ZonePoint[]>([]);
+  /** Where the shape in flight joins a finished zone (the floor plan's anchor), or null. */
+  const [zoneAnchor, setZoneAnchor] = React.useState<ZoneAnchor | null>(null);
+  /**
+   * The zones as shown and edited, and as last saved: Save sends the first
+   * when it differs from the second (the floor plan's zones / savedZones).
+   * Null until the robot's list is read -- a save over an unread list would
+   * erase it -- then copied from it once.
+   */
+  const [zones, setZones] = React.useState<ZonePolygon[] | null>(null);
+  const [savedZones, setSavedZones] = React.useState<ZonePolygon[] | null>(null);
+  if (zones === null && keepout.zones !== null) {
+    setZones(keepout.zones);
+    setSavedZones(keepout.zones);
+  }
+  const zonesDirty = zones !== null && savedZones !== null && !sameZones(zones, savedZones);
   const [zoneNote, setZoneNote] = React.useState<SaveNote>({ kind: "idle" });
   const { floors } = useMapFloors(name);
   const stops = useMapVertexWrites(name);
@@ -270,12 +296,13 @@ function Map3dSurface({
     runLock.reason ??
     (keepout.status === "error"
       ? `The forbidden zones could not be read: ${keepout.error ?? "unknown error"}`
-      : keepout.zones === null
+      : zones === null
         ? "Reading the forbidden zones…"
         : null);
   if (zoneLock !== null && (tool === "zone" || tool === "zoneRemove")) {
     setTool("orbit");
     setZoneDraft([]);
+    setZoneAnchor(null);
   }
 
   /** Any tool change drops a re-place in hand, and a zone half drawn. */
@@ -283,8 +310,12 @@ function Map3dSurface({
     setTool(next);
     setWaypointAsked(false);
     if (next !== "waypoint") setMoving(null);
-    if (next !== "zone") setZoneDraft([]);
+    if (next !== "zone") {
+      setZoneDraft([]);
+      setZoneAnchor(null);
+    }
   }, []);
+
 
   /** A new Draw choice starts on Orbit, as the floor plan's starts on Pan. */
   const chooseDraw = React.useCallback(
@@ -318,8 +349,9 @@ function Map3dSurface({
     setNote({ kind: "idle" });
   }, [session]);
 
-  // A zone half drawn is unsaved work too: it is lost on leaving.
-  const unsaved = dirty || zoneDraft.length > 0;
+  // Unsaved zones are unsaved work, and so is a zone half drawn: both are
+  // lost on leaving.
+  const unsaved = dirty || zonesDirty || zoneDraft.length > 0;
   React.useEffect(() => {
     onDirtyChange?.(unsaved);
   }, [unsaved, onDirtyChange]);
@@ -371,22 +403,56 @@ function Map3dSurface({
     [floorOptions, changeBand, voxels],
   );
 
+  /**
+   * One Save for what changed: the ground patches and the forbidden zones,
+   * each written whole and reported apart (the floor plan's Save does the
+   * same with cells, zones and waypoints), so one refused leaves the other
+   * saved.
+   */
   const onSave = React.useCallback(() => {
-    if (runLock.locked || note.kind === "saving") return;
-    const sent = new Map(session.edits);
-    setNote({ kind: "saving" });
-    save(
-      { name, fillKey: toFillKeys(sent, voxels) },
-      {
-        onSuccess: (result) => {
-          savedRef.current = sent;
-          setDirty(!sameEdits(session.edits, sent));
-          setNote({ kind: "saved", message: result.message });
+    if (runLock.locked || note.kind === "saving" || zoneNote.kind === "saving") return;
+    if (dirty) {
+      const sent = new Map(session.edits);
+      setNote({ kind: "saving" });
+      save(
+        { name, fillKey: toFillKeys(sent, voxels) },
+        {
+          onSuccess: (result) => {
+            savedRef.current = sent;
+            setDirty(!sameEdits(session.edits, sent));
+            setNote({ kind: "saved", message: result.message });
+          },
+          onError: (cause) => setNote({ kind: "failed", message: cause.message }),
         },
-        onError: (cause) => setNote({ kind: "failed", message: cause.message }),
-      },
-    );
-  }, [runLock.locked, note.kind, session, save, name, voxels]);
+      );
+    }
+    if (zonesDirty && zones !== null) {
+      const sentZones = zones;
+      setZoneNote({ kind: "saving" });
+      saveZones(
+        { name, zones: sentZones },
+        {
+          onSuccess: (result) => {
+            setSavedZones(sentZones);
+            setZoneNote({ kind: "saved", message: result.message });
+          },
+          onError: (cause) => setZoneNote({ kind: "failed", message: cause.message }),
+        },
+      );
+    }
+  }, [
+    runLock.locked,
+    note.kind,
+    zoneNote.kind,
+    dirty,
+    session,
+    save,
+    name,
+    voxels,
+    zonesDirty,
+    zones,
+    saveZones,
+  ]);
 
 
   React.useEffect(() => {
@@ -440,49 +506,119 @@ function Map3dSurface({
     return measured === null ? drawnGround(floorZ) : measured + voxels.res / 2;
   }, [voxels, zoneFloorBand, floorZ]);
 
-  /** Write the whole zone list; the note says how it went. */
-  const writeZones = React.useCallback(
-    (next: ZonePolygon[], onDone?: () => void) => {
-      setZoneNote({ kind: "saving" });
-      saveZones(
-        { name, zones: next },
-        {
-          onSuccess: (result) => {
-            setZoneNote({ kind: "saved", message: result.message });
-            onDone?.();
-          },
-          onError: (cause) => setZoneNote({ kind: "failed", message: cause.message }),
-        },
-      );
-    },
-    [saveZones, name],
-  );
-
   /**
-   * Close the shape in flight into a zone and write it. The draft is kept
-   * until the robot has the zone, so a refused write can be retried.
+   * Close the shape in flight into a zone, on screen: Save sends it, as on
+   * the floor plan. An anchored shape does not close: it ends on its zone
+   * (mergeZone).
    */
   const closeZone = React.useCallback(() => {
-    const zones = keepout.zones;
-    if (zoneLock !== null || zones === null || !canCloseZone(zoneDraft)) return;
-    if (zoneNote.kind === "saving") return;
+    if (zoneLock !== null || zones === null || zoneAnchor || !canCloseZone(zoneDraft)) return;
     const zone: ZonePolygon = {
       id: newZoneId(zones),
       points: zoneDraft,
       ...(zoneGroundZ === null ? {} : zoneBandAround(zoneGroundZ)),
     };
-    writeZones([...zones, zone], () => setZoneDraft([]));
-  }, [keepout.zones, zoneLock, zoneDraft, zoneNote.kind, zoneGroundZ, writeZones]);
+    setZones([...zones, zone]);
+    setZoneDraft([]);
+    setZoneNote({ kind: "idle" });
+  }, [zones, zoneLock, zoneAnchor, zoneDraft, zoneGroundZ]);
 
-  // Asked once, as a waypoint's Remove asks: a finger's tap on the wrong zone
-  // must not open an area to the robot.
+  /**
+   * Attach the shape in flight to a finished zone's corner, as its start or
+   * its next corner: a copy of the corner joins the draft, and only another
+   * corner of that zone ends the shape now (the floor plan's anchorZoneDraft).
+   */
+  const anchorZone = React.useCallback(
+    ({ zoneId, index }: { zoneId: string; index: number }) => {
+      const point = zones?.find((zone) => zone.id === zoneId)?.points[index];
+      if (!point || zoneAnchor) return;
+      setZoneNote({ kind: "idle" });
+      setZoneAnchor({ zoneId, index, position: zoneDraft.length });
+      setZoneDraft([...zoneDraft, point]);
+    },
+    [zones, zoneAnchor, zoneDraft],
+  );
+
+  /**
+   * End an anchored shape on another corner of its zone: the corners drawn
+   * replace the zone's edge between the two (mergeIntoZone), on screen, under
+   * the zone's own id and floor band. Save sends it.
+   */
+  const mergeZone = React.useCallback(
+    (target: number) => {
+      const anchor = zoneAnchor;
+      if (zoneLock !== null || zones === null || !anchor) return;
+      const zone = zones.find((entry) => entry.id === anchor.zoneId);
+      const merged = zone && mergeIntoZone(zone.points, zoneDraft, anchor, target);
+      if (!zone || !merged) return;
+      setZones(zones.map((entry) => (entry.id === zone.id ? { ...entry, points: merged } : entry)));
+      setZoneDraft([]);
+      setZoneAnchor(null);
+      setZoneNote({ kind: "idle" });
+    },
+    [zones, zoneAnchor, zoneLock, zoneDraft],
+  );
+
+  /**
+   * A dragged corner, of the shape in flight (`zoneId` null) or a finished
+   * zone, moved on screen; Save sends a finished zone's. Out of range is a
+   * no-op, not an append (the floor plan's moveZoneCorner).
+   */
+  const dragZoneCorner = React.useCallback(
+    ({ zoneId, index }: ZoneCornerRef, point: ZonePoint) => {
+      const moved = (points: ZonePoint[]) =>
+        index < points.length ? points.map((corner, i) => (i === index ? point : corner)) : points;
+      if (zoneId === null) {
+        setZoneDraft(moved);
+        return;
+      }
+      if (zoneLock !== null) return;
+      setZones((current) =>
+        current?.map((zone) => (zone.id === zoneId ? { ...zone, points: moved(zone.points) } : zone)) ??
+        current,
+      );
+      setZoneNote({ kind: "idle" });
+    },
+    [zoneLock],
+  );
+
+  /**
+   * Remove a zone, on the robot at once, as the floor plan's Remove does:
+   * it sends the *last saved* list minus this zone, so unsaved zone edits
+   * stay for Save, and a zone never saved sends nothing. Taken off screen
+   * before the answer and put back on a refusal, so the map never hides a
+   * zone the planner keeps. Asked once: a finger's tap on the wrong zone must
+   * not open an area to the robot.
+   */
   const removeZone = (zone: ZonePolygon) => {
-    const zones = keepout.zones;
-    if (zoneLock !== null || zones === null || zoneNote.kind === "saving") return;
+    if (zoneLock !== null || zones === null || savedZones === null) return;
+    if (zoneNote.kind === "saving") return;
     if (!window.confirm(`Delete forbidden zone "${zone.name ?? zone.id}"? The robot may then drive there.`)) {
       return;
     }
-    writeZones(zones.filter((entry) => entry.id !== zone.id));
+    const ids = [zone.id];
+    const { removed } = withoutZones(zones, ids);
+    setZones((current) => (current ? withoutZones(current, ids).kept : current));
+    if (zoneAnchor?.zoneId === zone.id) {
+      setZoneDraft([]);
+      setZoneAnchor(null);
+    }
+    const remote = withoutZones(savedZones, ids);
+    if (remote.removed.length === 0) return;
+    setZoneNote({ kind: "saving" });
+    saveZones(
+      { name, zones: remote.kept },
+      {
+        onSuccess: (result) => {
+          setSavedZones((current) => (current ? withoutZones(current, ids).kept : current));
+          setZoneNote({ kind: "saved", message: result.message });
+        },
+        onError: (cause) => {
+          setZones((current) => (current ? restoreZones(current, removed) : current));
+          setZoneNote({ kind: "failed", message: cause.message });
+        },
+      },
+    );
   };
 
   const placeLocked = runLock.locked;
@@ -494,6 +630,7 @@ function Map3dSurface({
         if (event.key === "Escape") {
           event.preventDefault();
           setZoneDraft([]);
+          setZoneAnchor(null);
           return;
         }
         if (event.key === "Enter") {
@@ -503,6 +640,8 @@ function Map3dSurface({
         }
         if (event.key === "Backspace") {
           event.preventDefault();
+          // Taking back the anchor's own copy lets the shape go of its zone.
+          if (zoneAnchor && zoneAnchor.position === zoneDraft.length - 1) setZoneAnchor(null);
           setZoneDraft((draft) => draft.slice(0, -1));
           return;
         }
@@ -544,7 +683,7 @@ function Map3dSurface({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo, fit, changeTool, chooseDraw, placeLocked, zoneDraft.length, closeZone]);
+  }, [undo, redo, fit, changeTool, chooseDraw, placeLocked, zoneDraft.length, zoneAnchor, closeZone]);
 
   // Single-shot, as on the dashboard: one press, one stop, then disarm.
   const commitPlace = (picked: PlanarPose) => {
@@ -627,15 +766,19 @@ function Map3dSurface({
         onPlaceCommit={commitPlace}
         onVertexActivate={setAskedVertex}
         onVertexRemove={removeTapped}
-        zones={keepout.zones ?? NO_ZONES}
+        zones={zones ?? NO_ZONES}
         zoneFloor={zoneFloorBand ? vertexBand : null}
         zonePlaneZ={zoneGroundZ}
         zoneDraft={zoneDraft}
+        zoneAnchor={zoneAnchor}
         onZoneCorner={(point) => {
           setZoneNote({ kind: "idle" });
           setZoneDraft((draft) => [...draft, point]);
         }}
         onZoneClose={closeZone}
+        onZoneAnchor={anchorZone}
+        onZoneMerge={mergeZone}
+        onZoneCornerDrag={dragZoneCorner}
         onZoneRemove={removeZone}
       />
 
@@ -681,8 +824,8 @@ function Map3dSurface({
             canRedo={canRedo}
             onUndo={undo}
             onRedo={redo}
-            dirty={dirty}
-            saving={note.kind === "saving"}
+            dirty={dirty || zonesDirty}
+            saving={note.kind === "saving" || zoneNote.kind === "saving"}
             writeLock={runLock.reason}
             onSave={onSave}
             drawKind={drawKind}
@@ -788,9 +931,19 @@ function Map3dSurface({
               {zoneDraft.length > 0 && (
                 <p className="text-muted-foreground">
                   {zoneDraft.length} corner{zoneDraft.length === 1 ? "" : "s"}
-                  {canCloseZone(zoneDraft)
-                    ? " — tap the first to close, or press Enter."
-                    : " — at least 3 to close."}
+                  {zoneAnchor
+                    ? ` — joined to zone ${zoneAnchor.zoneId}: tap another of its corners to merge.`
+                    : canCloseZone(zoneDraft)
+                      ? " — tap the first to close, or press Enter."
+                      : " — at least 3 to close."}
+                </p>
+              )}
+              {zonesDirty && (
+                <p className="text-signal-caution">Unsaved — press Save to send the zones to the robot.</p>
+              )}
+              {zoneDraft.length === 0 && tool === "zone" && (zones?.length ?? 0) > 0 && (
+                <p className="text-muted-foreground">
+                  Start on a zone&apos;s corner to grow or cut it; drag a corner to move it.
                 </p>
               )}
               {zoneNote.kind === "saving" && <p className="text-muted-foreground">Saving…</p>}

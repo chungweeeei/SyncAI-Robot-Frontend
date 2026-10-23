@@ -44,9 +44,10 @@ import { BRUSH_RADII_M } from "@/lib/map/ground-fill";
  * Right, **Draw**: what a press on the map works on — nothing, ground
  * patches, waypoints or forbidden zones — beside the zoom. Left: fit and
  * shading, history, Save, then Orbit and the tools the Draw choice allows.
- * History and Save are the patches' only: a waypoint is written as it is
- * placed or removed, as on the dashboard, and so is a forbidden zone, as it
- * is closed or removed.
+ * Save sends the patches and the forbidden zones drawn, merged or moved,
+ * as the floor plan's Save does; History is the patches' only. A waypoint is
+ * written as it is placed or removed, as on the dashboard, and a zone as it
+ * is removed, as on the floor plan.
  */
 
 /** What a press on the 3D map works on, once chosen in the Draw list. */
@@ -152,7 +153,7 @@ export function Map3dToolBar({
               : writeLock
                 ? writeLock
                 : dirty
-                  ? "unsaved patches — record them on the robot"
+                  ? "unsaved changes — record them on the robot"
                   : "nothing to save"
           }
           icon={SaveIcon}
@@ -229,7 +230,7 @@ export function Map3dToolBar({
               label="Shape"
               hint={
                 zoneLock ??
-                "tap three or more corners on the floor shown, then the first one again to close; Enter closes, Backspace takes the last corner back"
+                "tap three or more corners on the floor shown, then the first one again to close; start on a zone's corner and end on another of its corners to grow or cut it; drag a corner to move it; Enter closes, Backspace takes the last corner back"
               }
               icon={PentagonIcon}
               pressed={tool === "zone"}
