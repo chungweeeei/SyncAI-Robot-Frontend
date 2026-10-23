@@ -2,9 +2,11 @@
 
 import * as React from "react";
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { useTheme } from "next-themes";
 
+import { GpuLostNotice } from "@/components/console/fault-panel";
+import { useGpuContext } from "@/hooks/use-gpu-context";
 import { drawnGround } from "@/lib/map/floors";
 import { headingDegrees, isDrag } from "@/lib/map/gesture";
 import { columnAt, kzToMetres, medianFloor } from "@/lib/map/ground";
@@ -21,6 +23,7 @@ import { createPatchLayer, type PatchLayer } from "@/lib/scene/ground-patch-laye
 import { createPoseMarker, placePoseMarker } from "@/lib/scene/markers";
 import { aimRaycaster } from "@/lib/scene/picking";
 import { THEMES } from "@/lib/scene/theme";
+import { createViewport } from "@/lib/scene/viewport";
 import { createVertexLayer, type VertexLayer } from "@/lib/scene/vertex-layer";
 import { createVoxelLayer, type VoxelLayer } from "@/lib/scene/voxel-layer";
 import { createZoneLayer } from "@/lib/scene/zone-layer";
@@ -180,6 +183,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
   const theme = resolvedTheme === "dark" ? "dark" : "light";
+  const gpu = useGpuContext();
 
   const propsRef = React.useRef(props);
   React.useLayoutEffect(() => {
@@ -261,20 +265,14 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     if (!container) return;
     const { voxels } = session;
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(THEMES[theme].background);
-    const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 2000);
-    camera.up.set(0, 0, 1);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.domElement.style.width = "100%";
-    renderer.domElement.style.height = "100%";
-    renderer.domElement.style.display = "block";
-    container.appendChild(renderer.domElement);
+    const viewport = createViewport(container, {
+      background: THEMES[theme].background,
+      near: 0.05,
+    });
+    const { scene, camera, renderer, controls } = viewport;
     const edl = createEdlPass(voxels.res);
     edl.enabled = propsRef.current.shading;
 
-    const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     // Any camera move the controls make themselves, beside what update() reports.
     controls.addEventListener("change", invalidate);
@@ -319,74 +317,49 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     patchesDirtyRef.current = true;
     frameDirtyRef.current = true;
 
-    const resize = () => {
-      const rect = container.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
-      renderer.setSize(rect.width, rect.height, false);
-      edl.setSize(rect.width, rect.height, renderer.getPixelRatio());
-      camera.aspect = rect.width / rect.height;
-      camera.updateProjectionMatrix();
-      // Draw now: setSize clears the canvas (see Realtime in CLAUDE.md).
-      edl.render(renderer, scene, camera);
-    };
-    resize();
-    const observer = new ResizeObserver(resize);
-    observer.observe(container);
-
-    let frame = 0;
     let distance = "";
-    const loop = () => {
-      frame = requestAnimationFrame(loop);
-      if (patchesDirtyRef.current) {
-        // Once per frame however many dabs landed in it.
-        patchesDirtyRef.current = false;
-        if (patches) {
-          scene.remove(patches.points);
-          patches.dispose();
+    viewport.start({
+      draw: () => edl.render(renderer, scene, camera),
+      onResize: (width, height, pixelRatio) => edl.setSize(width, height, pixelRatio),
+      onContextLost: gpu.onContextLost,
+      onContextRestored: gpu.onContextRestored,
+      frame: () => {
+        if (patchesDirtyRef.current) {
+          // Once per frame however many dabs landed in it.
+          patchesDirtyRef.current = false;
+          if (patches) {
+            scene.remove(patches.points);
+            patches.dispose();
+          }
+          patches = createPatchLayer(session.edits, voxels, SIGNAL[theme].cmd);
+          scene.add(patches.points);
+          frameDirtyRef.current = true;
         }
-        patches = createPatchLayer(session.edits, voxels, SIGNAL[theme].cmd);
-        scene.add(patches.points);
-        frameDirtyRef.current = true;
-      }
-      // True while the camera moves, damping's coast included.
-      if (controls.update()) frameDirtyRef.current = true;
-      if (!frameDirtyRef.current) return;
-      frameDirtyRef.current = false;
-      // What the phone test reads a pinch off: the camera's distance to its
-      // target, in centimetres, written only when it moves.
-      const next = String(Math.round(camera.position.distanceTo(controls.target) * 100));
-      if (next !== distance) {
-        distance = next;
-        container.dataset.distance = next;
-      }
-      edl.render(renderer, scene, camera);
-    };
-    frame = requestAnimationFrame(loop);
+        // True while the camera moves, damping's coast included.
+        if (controls.update()) frameDirtyRef.current = true;
+        if (!frameDirtyRef.current) return;
+        frameDirtyRef.current = false;
+        // What the phone test reads a pinch off: the camera's distance to its
+        // target, in centimetres, written only when it moves.
+        const next = String(Math.round(camera.position.distanceTo(controls.target) * 100));
+        if (next !== distance) {
+          distance = next;
+          container.dataset.distance = next;
+        }
+        edl.render(renderer, scene, camera);
+      },
+    });
 
     return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
       controls.removeEventListener("change", invalidate);
-      controls.dispose();
-      scene.remove(layer.points);
+      // Their own dispose, for what the sweep cannot reach (a layer's textures).
       layer.dispose();
-      if (patches) {
-        scene.remove(patches.points);
-        patches.dispose();
-      }
-      brush.geometry.dispose();
-      brush.material.dispose();
-      draft.traverse((object) => {
-        const mesh = object as THREE.Mesh;
-        mesh.geometry?.dispose();
-        (mesh.material as THREE.Material | undefined)?.dispose();
-      });
+      patches?.dispose();
       edl.dispose();
-      renderer.dispose();
-      renderer.domElement.remove();
+      viewport.dispose();
       sceneRef.current = null;
     };
-  }, [session, theme, aimAtFloor, invalidate]);
+  }, [session, theme, aimAtFloor, invalidate, gpu.onContextLost, gpu.onContextRestored]);
 
   // ---- Shading follows its toggle -----------------------------------------
   React.useEffect(() => {
@@ -1017,28 +990,31 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   };
 
   return (
-    <div
-      ref={containerRef}
-      data-testid="map-3d-canvas"
-      role="application"
-      aria-label="The 3D map. Drag to orbit; with Fill or Erase armed, drag to paint; with Place armed, press to place and drag to aim; with Remove armed, press a waypoint to delete it; with Zone armed, tap each corner of a forbidden zone and its first corner to close it, start on a zone's corner and end on another of its corners to merge into it, or drag a corner to move it; with Zone remove armed, tap a zone to delete it."
-      className={cn(
-        "absolute inset-0 touch-none",
-        tapsStops(props.tool) && hovering
-          ? "cursor-pointer"
-          : props.tool === "orbit"
-            ? "cursor-grab active:cursor-grabbing"
-            : props.tool === "remove" || props.tool === "zoneRemove"
-              ? "cursor-default"
-              : "cursor-crosshair",
-        props.className,
-      )}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerCancel}
-      onPointerLeave={handlePointerLeave}
-      onContextMenu={(event) => event.preventDefault()}
-    />
+    <>
+      <div
+        ref={containerRef}
+        data-testid="map-3d-canvas"
+        role="application"
+        aria-label="The 3D map. Drag to orbit; with Fill or Erase armed, drag to paint; with Place armed, press to place and drag to aim; with Remove armed, press a waypoint to delete it; with Zone armed, tap each corner of a forbidden zone and its first corner to close it, start on a zone's corner and end on another of its corners to merge into it, or drag a corner to move it; with Zone remove armed, tap a zone to delete it."
+        className={cn(
+          "absolute inset-0 touch-none",
+          tapsStops(props.tool) && hovering
+            ? "cursor-pointer"
+            : props.tool === "orbit"
+              ? "cursor-grab active:cursor-grabbing"
+              : props.tool === "remove" || props.tool === "zoneRemove"
+                ? "cursor-default"
+                : "cursor-crosshair",
+          props.className,
+        )}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onPointerLeave={handlePointerLeave}
+        onContextMenu={(event) => event.preventDefault()}
+      />
+      {gpu.lost && <GpuLostNotice />}
+    </>
   );
 }

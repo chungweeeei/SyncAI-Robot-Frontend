@@ -2,9 +2,11 @@
 
 import * as React from "react";
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { useTheme } from "next-themes";
 
+import { GpuLostNotice } from "@/components/console/fault-panel";
+import { useGpuContext } from "@/hooks/use-gpu-context";
 import type { TelemetryFeed } from "@/hooks/use-telemetry";
 import { cn } from "@/lib/utils";
 import { G23_JOINTS } from "@/lib/robot/g23-joints";
@@ -52,6 +54,7 @@ import {
   warnedUnknownJoints,
 } from "@/lib/scene/robot-model";
 import { THEMES } from "@/lib/scene/theme";
+import { createViewport } from "@/lib/scene/viewport";
 import {
   createVoxelLayer,
   thinGroundUnderVoxels,
@@ -276,6 +279,7 @@ export function PointCloudCanvas({
 }: PointCloudCanvasProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
+  const gpu = useGpuContext();
 
   // Pose being carried / dragged. State so the marker effect runs per pointer
   // move; that costs a marker transform, not a scene rebuild.
@@ -537,28 +541,15 @@ export function PointCloudCanvas({
     // scene was torn down, and each checks it first.
     let cancelled = false;
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(theme.background);
-
-    // z-up world so ROS map coordinates (x, y, z) map straight through.
-    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 2000);
-    camera.up.set(0, 0, 1);
+    const viewport = createViewport(container, {
+      background: theme.background,
+      near: 0.1,
+    });
+    const { scene, camera, renderer, controls } = viewport;
     // The 3D map's own layer, so it is drawn by any render that is not its
     // shading pass too.
     camera.layers.enable(EDL_LAYER);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    container.appendChild(renderer.domElement);
-    renderer.domElement.style.width = "100%";
-    renderer.domElement.style.height = "100%";
-    renderer.domElement.style.display = "block";
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    // OrbitControls writes touch-action: none inline, which stops a swipe
-    // scrolling the page below lg. Cleared so the container's class decides
-    // (pan-y on a phone, none from lg and while picking).
-    renderer.domElement.style.touchAction = "";
     // Shared with Recenter so the two agree on the opening view.
     frameMap(camera, controls, { cx: centerX, cy: centerY, widthM, heightM });
     controls.enableDamping = true;
@@ -706,21 +697,6 @@ export function PointCloudCanvas({
       else renderer.render(scene, camera);
     };
 
-    const resize = () => {
-      invalidateRect();
-      const rect = container.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
-      renderer.setSize(rect.width, rect.height, false);
-      edlRef.current?.setSize(rect.width, rect.height, renderer.getPixelRatio());
-      camera.aspect = rect.width / rect.height;
-      camera.updateProjectionMatrix();
-      // Draw now: setSize clears the canvas and the observer fires after this
-      // frame's render, so without it the cleared canvas is painted.
-      draw();
-    };
-    resize();
-    const observer = new ResizeObserver(resize);
-    observer.observe(container);
     // A scroll moves the canvas without resizing it (the page scrolls below
     // lg). Capture phase, since scroll does not bubble from an ancestor.
     window.addEventListener("scroll", invalidateRect, {
@@ -783,47 +759,35 @@ export function PointCloudCanvas({
       robotGroup.visible = true;
     };
 
-    let raf = 0;
-    let prevFrameMs = performance.now();
-    const animate = () => {
-      const now = performance.now();
-      const dt = (now - prevFrameMs) / 1000;
-      prevFrameMs = now;
-
-      // Before the ease, so this frame walks toward the newest pose.
-      pumpTelemetry();
-      stepPose(dt);
-      controls.update();
-      draw();
-      raf = requestAnimationFrame(animate);
-    };
-    raf = requestAnimationFrame(animate);
+    viewport.start({
+      draw,
+      onResize: (width, height, pixelRatio) => {
+        invalidateRect();
+        edlRef.current?.setSize(width, height, pixelRatio);
+      },
+      onContextLost: gpu.onContextLost,
+      onContextRestored: gpu.onContextRestored,
+      frame: (dt) => {
+        // Before the ease, so this frame walks toward the newest pose.
+        pumpTelemetry();
+        stepPose(dt);
+        controls.update();
+        draw();
+      },
+    });
 
     const dispose = () => {
       cancelled = true;
-      cancelAnimationFrame(raf);
-      observer.disconnect();
       window.removeEventListener("scroll", invalidateRect, { capture: true });
-      controls.dispose();
-      renderer.dispose();
       // Detach the cached robot model first, or the sweep would dispose it for
       // every later mount.
       robotGroup.clear();
       // Its texture is beyond the sweep's reach.
       localNav.dispose();
       if (localNavRef.current === localNav) localNavRef.current = null;
-      scene.traverse((obj) => {
-        const mesh = obj as THREE.Mesh;
-        if (mesh.geometry) mesh.geometry.dispose();
-        const mat = mesh.material as THREE.Material | THREE.Material[];
-        if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
-        else if (mat) mat.dispose();
-      });
-      // By hand: the traverse never reaches a material's texture.
+      // By hand: the sweep never reaches a material's texture.
       groundTexture?.dispose();
-      if (renderer.domElement.parentNode === container) {
-        container.removeChild(renderer.domElement);
-      }
+      viewport.dispose();
     };
 
     sceneRef.current = {
@@ -858,6 +822,8 @@ export function PointCloudCanvas({
     applyJoints,
     applyMapStreamFrame,
     pumpTelemetry,
+    gpu.onContextLost,
+    gpu.onContextRestored,
   ]);
 
   // ---- Live body_cloud stream (independent of scene rebuilds) ----------
@@ -1539,6 +1505,8 @@ export function PointCloudCanvas({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       onPointerLeave={handlePointerLeave}
-    />
+    >
+      {gpu.lost && <GpuLostNotice />}
+    </div>
   );
 }

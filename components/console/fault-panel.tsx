@@ -76,3 +76,20 @@ export function FaultPanel({
     </div>
   );
 }
+
+/**
+ * Laid over a 3D view while its GPU context is gone and the canvas is blank,
+ * so a black rectangle reads as a pause rather than an empty map.
+ */
+export function GpuLostNotice() {
+  return (
+    <div
+      role="status"
+      className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/60"
+    >
+      <span className="instrument-label text-signal-caution">
+        Redrawing the map view…
+      </span>
+    </div>
+  );
+}
