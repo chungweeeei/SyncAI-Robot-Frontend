@@ -12,8 +12,11 @@ import { headingDegrees, isDrag } from "@/lib/map/gesture";
 import { columnAt, kzToMetres, medianFloor } from "@/lib/map/ground";
 import {
   GroundStroke,
+  aimSurface,
   eraseDab,
   fillDab,
+  patchHeight,
+  type FillReach,
   type GroundPatch,
   type GroundSession,
 } from "@/lib/map/ground-fill";
@@ -80,14 +83,13 @@ export interface Map3dCanvasProps {
   tool: Map3dTool;
   /** Brush radius in cells. */
   radius: number;
-  /** How far past the brush the floor median reads, cells. */
-  ring: number;
-  /** The clearance band a hole must be empty through, cells. */
-  clearance: number;
+  /** The fill's distances at the tree's resolution (lib/map/ground-fill.ts). */
+  reach: FillReach;
   /**
    * The heights shown, `[lo, hi)` metres by cell centre. The session's
-   * floors follow the same band (setGroundBand), and the brush aims at the
-   * floor they mostly stand on, so a change here moves both.
+   * floors follow the same band (setGroundBand); the brush aims only at
+   * what is shown, and at the floor they mostly stand on when the pointer
+   * is over nothing.
    */
   band: { lo: number; hi: number };
   /** Moves whenever the patches change outside a stroke: an undo, a redo, a load. */
@@ -161,12 +163,15 @@ const RING_WIDTH = 0.12;
 
 /**
  * The 3D view's surface: the 3D map in 3D, orbited freely, and a
- * brush that paints floor into it. A press is cast onto the height the
- * shown floor mostly stands on (`medianFloor`) rather than onto the cells,
- * because a hole has no cell to hit and a wall in front of one would take
- * the stroke; the column under that point is then dabbed by the same fill
- * rule as ever (lib/map/ground-fill.ts), which sets each patch at the floor
- * around it, not at the aim's height.
+ * brush that paints floor into it. The brush aims at the surface under the
+ * pointer (`aimSurface`: a tread, a landing, the rim of the hole the pointer
+ * is over) and a press is cast onto that height, so a stair is painted
+ * where it is seen and not where a ray through it meets the floor picked —
+ * a plane at one height put a stroke metres off a flight seen at an angle.
+ * Over nothing, the brush keeps its last aim, and starts at the height the
+ * shown floor mostly stands on (`medianFloor`). The columns under the point
+ * are then dabbed by lib/map/ground-fill.ts, which sets each patch at the
+ * surface nearest it, not at the aim's height.
  *
  * One gesture at a time, gated on the pointer that started it. A stroke
  * turns the camera controls off for its length, so a second finger landing
@@ -226,8 +231,15 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   /** A press with no tool armed that may still be a tap on a stop. */
   const tapRef = React.useRef<{ pointerId: number; cx: number; cy: number } | null>(null);
   const [hovering, setHovering] = React.useState(false);
-  /** The brush's aim, metres: the shown floor's height. */
+  /**
+   * Set while the brush is over a place a fill has no surface to read a
+   * height from, which is otherwise a stroke that silently does nothing.
+   */
+  const [unreadable, setUnreadable] = React.useState(false);
+  /** The height the shown floor mostly stands on, metres: framing, zones. */
   const planeZRef = React.useRef(0);
+  /** The brush's aim, relative kz: the surface last under the pointer. */
+  const aimKzRef = React.useRef(0);
   /** Set when the patches changed and the marks are not yet rebuilt. */
   const patchesDirtyRef = React.useRef(true);
   /**
@@ -249,8 +261,9 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
 
   /** Recompute the brush's aim from the session's floors (which follow the band). */
   const aimAtFloor = React.useCallback(() => {
-    const f = medianFloor(session.floors);
-    planeZRef.current = kzToMetres(f ?? session.band.lo, session.voxels);
+    const f = medianFloor(session.floors) ?? session.band.lo;
+    planeZRef.current = kzToMetres(f, session.voxels);
+    aimKzRef.current = f;
   }, [session]);
 
   const fit = React.useCallback(() => {
@@ -535,7 +548,11 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     invalidate();
   }, [props.zoomStep, invalidate]);
 
-  /** The point on the brush's floor under the pointer, metres, or null. */
+  /**
+   * The point under the pointer on the surface the brush aims at, metres,
+   * or null; re-aims the brush on the way. The aim reaches a cell past the
+   * brush's edge, so a pointer over a hole the brush covers finds its rim.
+   */
   const cast = (event: React.PointerEvent): THREE.Vector3 | null => {
     const ctx = sceneRef.current;
     const container = containerRef.current;
@@ -548,7 +565,12 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
       event.clientX,
       event.clientY,
     );
-    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -planeZRef.current);
+    const { voxels, stacks, edits, band } = session;
+    const reach = (propsRef.current.radius + 1) * voxels.res;
+    const aim = aimSurface(voxels, stacks, edits, band, raycaster.ray, reach);
+    if (aim !== null) aimKzRef.current = aim;
+    const z = kzToMetres(aimKzRef.current, voxels);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -z);
     return raycaster.ray.intersectPlane(plane, new THREE.Vector3());
   };
 
@@ -728,18 +750,18 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     hit ? columnAt(session.voxels, hit.x, hit.y) : null;
 
   const dab = (column: Column, erase: boolean) => {
-    const { radius, ring, clearance } = propsRef.current;
+    const { radius, reach } = propsRef.current;
     const changed = erase
-      ? eraseDab(session.floors, session.edits, strokeRef.current, column.x, column.y, radius)
+      ? eraseDab(session.size, session.edits, strokeRef.current, column.x, column.y, radius)
       : fillDab(
-          session.floors,
+          session.stacks,
           session.edits,
           strokeRef.current,
           column.x,
           column.y,
           radius,
-          ring,
-          clearance,
+          aimKzRef.current,
+          reach,
         );
     if (changed.length > 0) patchesDirtyRef.current = true;
   };
@@ -767,18 +789,31 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     }
   };
 
-  /** Move the brush ring onto the column under the pointer. */
+  /**
+   * Move the brush ring onto the column under the pointer, at the height it
+   * aims at. A fill that would find no surface to read there turns the ring
+   * the caution hue and says so, rather than leaving a stroke to do nothing.
+   */
   const hover = (hit: THREE.Vector3 | null, erase: boolean) => {
     const ctx = sceneRef.current;
-    const { tool, radius } = propsRef.current;
+    const { tool, radius, reach } = propsRef.current;
     const column = columnOfHit(hit);
+    const lost =
+      !erase &&
+      column !== null &&
+      patchHeight(session.stacks, session.edits, column.x, column.y, aimKzRef.current, {
+        ...reach,
+        ring: reach.ring + radius,
+      }) === null;
+    setUnreadable(lost);
     if (ctx) {
       ctx.brush.visible = tool !== "orbit" && column !== null;
       if (hit && column) {
         const r = (radius + 0.5) * session.voxels.res;
-        ctx.brush.position.set(hit.x, hit.y, planeZRef.current);
+        ctx.brush.position.set(hit.x, hit.y, hit.z);
         ctx.brush.scale.set(r, r, 1);
-        ctx.brush.material.color.set(erase ? SIGNAL[theme].warn : SIGNAL[theme].cmd);
+        const signal = SIGNAL[theme];
+        ctx.brush.material.color.set(erase ? signal.warn : lost ? signal.caution : signal.cmd);
       }
       invalidate();
     }
@@ -984,6 +1019,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     // A planted stop survives the pointer leaving; a carried one does not.
     if (!anchorRef.current) showDraft(null);
     if (gestureRef.current) return;
+    setUnreadable(false);
     const ctx = sceneRef.current;
     if (ctx) ctx.brush.visible = false;
     invalidate();
@@ -1014,6 +1050,17 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
         onPointerLeave={handlePointerLeave}
         onContextMenu={(event) => event.preventDefault()}
       />
+      {/* Read off the tool too, so disarming Fill drops it without a render of its own. */}
+      {unreadable && props.tool === "fill" && (
+        <div
+          role="status"
+          className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-4"
+        >
+          <span className="instrument-label rounded-sm bg-background/85 px-2 py-1 text-signal-caution">
+            No floor near here to set a patch by
+          </span>
+        </div>
+      )}
       {gpu.lost && <GpuLostNotice />}
     </>
   );
