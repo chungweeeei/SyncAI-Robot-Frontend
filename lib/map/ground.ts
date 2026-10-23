@@ -37,6 +37,76 @@ export function columnFloors(voxels: OccupiedVoxels, band: Band): ColumnFloors {
   return { width, height, floor };
 }
 
+/**
+ * Every column's occupied cells, whatever the band: column `c`'s relative
+ * kz are `kz[start[c] .. start[c + 1])`, ascending. What a surface is read
+ * off where one column holds several — a flight of stairs over the ground,
+ * one flight over another — which `ColumnFloors`, one cell a column, cannot
+ * tell apart. Indexed as `ColumnFloors` is.
+ */
+export interface ColumnStacks extends GridSize {
+  start: Uint32Array;
+  kz: Int16Array;
+}
+
+export function columnStacks(voxels: OccupiedVoxels): ColumnStacks {
+  const [width, height] = voxels.size;
+  const columns = width * height;
+  const { keys, count } = voxels;
+  // A counting sort by column: two passes over the keys, no per-column arrays.
+  const start = new Uint32Array(columns + 1);
+  for (let i = 0; i < count * 3; i += 3) start[keys[i] + keys[i + 1] * width + 1] += 1;
+  for (let c = 0; c < columns; c += 1) start[c + 1] += start[c];
+  const at = start.slice(0, columns);
+  const kz = new Int16Array(count);
+  for (let i = 0; i < count * 3; i += 3) {
+    const c = keys[i] + keys[i + 1] * width;
+    kz[at[c]] = keys[i + 2];
+    at[c] += 1;
+  }
+  for (let c = 0; c < columns; c += 1) kz.subarray(start[c], start[c + 1]).sort();
+  return { width, height, start, kz };
+}
+
+/** Whether a column holds an occupied cell in `[lo, hi]`, relative kz. */
+export function occupiedIn(stacks: ColumnStacks, column: number, lo: number, hi: number): boolean {
+  let a = stacks.start[column];
+  let b = stacks.start[column + 1];
+  // The first cell at or over `lo`, by bisection: a column can be a wall's
+  // whole height.
+  while (a < b) {
+    const mid = (a + b) >> 1;
+    if (stacks.kz[mid] < lo) a = mid + 1;
+    else b = mid;
+  }
+  return a < stacks.start[column + 1] && stacks.kz[a] <= hi;
+}
+
+/**
+ * The surface of a column nearest the height `z` within `[lo, hi]`, relative
+ * kz, or NO_FLOOR: an occupied cell with the cell over it empty, the top of
+ * a run, which is where a foot lands. A wall's cells have a cell over them,
+ * so a wall is not read as floor at whatever height a window cuts it.
+ */
+export function surfaceNear(
+  stacks: ColumnStacks,
+  column: number,
+  z: number,
+  lo: number,
+  hi: number,
+): number {
+  let best = NO_FLOOR;
+  const end = stacks.start[column + 1];
+  for (let i = stacks.start[column]; i < end; i += 1) {
+    const kz = stacks.kz[i];
+    if (kz < lo) continue;
+    if (kz > hi) break;
+    if (i + 1 < end && stacks.kz[i + 1] === kz + 1) continue;
+    if (best === NO_FLOOR || Math.abs(kz - z) < Math.abs(best - z)) best = kz;
+  }
+  return best;
+}
+
 /** The whole tree's height range, relative kz. */
 export function fullBand(voxels: OccupiedVoxels): Band {
   return { lo: 0, hi: Math.max(voxels.size[2] - 1, 0) };

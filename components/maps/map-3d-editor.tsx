@@ -41,11 +41,10 @@ import {
 } from "@/lib/map/ground";
 import {
   DEFAULT_BRUSH_RADIUS_M,
-  LOCAL_FLOOR_RING_M,
   applyGroundPatch,
   cellsFor,
-  clearanceCells,
   createGroundSession,
+  fillReach,
   fromFillKeys,
   groundPatchBytes,
   sameEdits,
@@ -330,8 +329,7 @@ function Map3dSurface({
 
   const res = voxels.res;
   const radius = cellsFor(radiusM, res);
-  const ring = cellsFor(LOCAL_FLOOR_RING_M, res);
-  const clearance = clearanceCells(res);
+  const reach = React.useMemo(() => fillReach(res), [res]);
 
   const refresh = React.useCallback(() => {
     setEditsVersion((n) => n + 1);
@@ -638,8 +636,7 @@ function Map3dSurface({
           session={session}
           tool={tool}
           radius={radius}
-          ring={ring}
-          clearance={clearance}
+          reach={reach}
           band={bandM}
           editsVersion={editsVersion}
           fitNonce={fitNonce}

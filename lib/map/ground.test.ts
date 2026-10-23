@@ -5,12 +5,15 @@ import {
   bandForHeights,
   columnAt,
   columnFloors,
+  columnStacks,
   floorHeightIn,
   fullBand,
   groundAt,
   kzToMetres,
   medianFloor,
   metresToKz,
+  occupiedIn,
+  surfaceNear,
 } from "@/lib/map/ground";
 import { OCTREE_KEY_ORIGIN, type OccupiedVoxels } from "@/lib/types/octree";
 
@@ -43,6 +46,35 @@ function site(): OccupiedVoxels {
 }
 
 const index = (x: number, y: number) => x + y * 7;
+
+describe("columnStacks", () => {
+  it("holds every cell of each column, lowest first, whatever order the tree gave them in", () => {
+    const voxels = site();
+    const stacks = columnStacks(voxels);
+    const of = (c: number) => [...stacks.kz.subarray(stacks.start[c], stacks.start[c + 1])];
+    expect(of(index(0, 0))).toEqual([0, 1, 2]);
+    expect(of(index(6, 6))).toEqual([0, 30]);
+    expect(of(index(3, 3))).toEqual([]);
+    expect(stacks.kz.length).toBe(voxels.count);
+  });
+
+  it("answers whether a column holds a cell in a height range", () => {
+    const stacks = columnStacks(site());
+    expect(occupiedIn(stacks, index(6, 6), 1, 29)).toBe(false);
+    expect(occupiedIn(stacks, index(6, 6), 1, 30)).toBe(true);
+    expect(occupiedIn(stacks, index(3, 3), 0, 30)).toBe(false);
+  });
+
+  it("reads a surface as the top of a run, nearest the height asked", () => {
+    const stacks = columnStacks(site());
+    // The wall's top, not its face, wherever the window cuts it.
+    expect(surfaceNear(stacks, index(0, 0), 0, 0, 30)).toBe(2);
+    expect(surfaceNear(stacks, index(0, 0), 0, 0, 1)).toBe(NO_FLOOR);
+    // Two storeys: the one nearer the height asked.
+    expect(surfaceNear(stacks, index(6, 6), 4, 0, 30)).toBe(0);
+    expect(surfaceNear(stacks, index(6, 6), 20, 0, 30)).toBe(30);
+  });
+});
 
 describe("columnFloors", () => {
   it("takes the lowest cell in the band per column, and none for a hole", () => {
