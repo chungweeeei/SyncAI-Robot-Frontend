@@ -16,7 +16,7 @@ import {
   saveMapOctomapEdits,
 } from "@/lib/api/map";
 import { saveKeepout } from "@/lib/api/keepout";
-import { queryKeys } from "@/lib/api/query-keys";
+import { mapScopedKeys, queryKeys } from "@/lib/api/query-keys";
 import { downloadBlob } from "@/lib/download";
 import { exportFilename } from "@/lib/map/archive";
 import type { MapGrid } from "@/lib/map/grid";
@@ -40,14 +40,7 @@ export function useRenameMap() {
     mutationFn: ({ from, to }: { from: string; to: string }) => renameMap(from, to),
     onSuccess: (_result, { from }) => {
       // Per-map caches keyed by the old name will never be read again.
-      queryClient.removeQueries({ queryKey: queryKeys.mapVertices(from) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapImage(from) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(from) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(from) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(from) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapOctomapEdits(from) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapOctomapPreview(from) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapFloors(from) });
+      for (const queryKey of mapScopedKeys(from)) queryClient.removeQueries({ queryKey });
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       // `templates_moved`: every template bound to the old name now carries
       // the new one, and the task console scopes its library on `map_name`.
@@ -62,14 +55,7 @@ export function useDeleteMap() {
   return useMutation({
     mutationFn: (name: string) => deleteMap(name),
     onSuccess: (_result, name) => {
-      queryClient.removeQueries({ queryKey: queryKeys.mapVertices(name) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapImage(name) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(name) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(name) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(name) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapOctomapEdits(name) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapOctomapPreview(name) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapFloors(name) });
+      for (const queryKey of mapScopedKeys(name)) queryClient.removeQueries({ queryKey });
       // Templates need nothing: the backend refuses the delete while any
       // template is still bound (409 `template_bound`).
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });

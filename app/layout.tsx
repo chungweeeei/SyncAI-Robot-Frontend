@@ -4,6 +4,7 @@ import "./globals.css";
 
 import { ActiveTaskProvider } from "@/components/console/active-task-provider";
 import { EstopProvider } from "@/components/console/estop-provider";
+import { FaultBoundary } from "@/components/console/fault-boundary";
 import { NavRail } from "@/components/console/nav-rail";
 import { RobotStateProvider } from "@/components/console/robot-state-provider";
 import { StatusStrip } from "@/components/console/status-strip";
@@ -69,7 +70,11 @@ export default function RootLayout({
                   * first and the jobs to cancel from the second. */}
                 <EstopProvider>
                   <div className="flex h-dvh flex-col lg:flex-row">
-                    <NavRail />
+                    {/* The rail is chrome around the stop, not the stop:
+                      * a throw in it must not reach global-error. */}
+                    <FaultBoundary title="Menu unavailable" compact>
+                      <NavRail />
+                    </FaultBoundary>
                     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                       <StatusStrip />
                       {/* Pages own their scrolling. */}

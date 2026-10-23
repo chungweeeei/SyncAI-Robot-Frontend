@@ -10,6 +10,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 
+import { ViewportBoundary } from "@/components/console/fault-boundary";
 import { overlayPanel } from "@/components/console/instrument";
 import { PointCloudCanvas } from "@/components/dashboard/pointcloud-canvas";
 import { ModeControl } from "@/components/mapping/mode-control";
@@ -283,11 +284,13 @@ export function MappingView() {
         aria-label="Mapping viewport"
         className="relative h-[55svh] shrink-0 lg:h-full lg:flex-1"
       >
-        <PointCloudCanvas
-          telemetry={feed}
-          topDownNonce={topDownNonce}
-          mapCloudStream
-        />
+        <ViewportBoundary>
+          <PointCloudCanvas
+            telemetry={feed}
+            topDownNonce={topDownNonce}
+            mapCloudStream
+          />
+        </ViewportBoundary>
 
         {/* The run strip top right, a refused press under it. The overlay is
           * pointer-transparent so its empty stretches still pass a drag to

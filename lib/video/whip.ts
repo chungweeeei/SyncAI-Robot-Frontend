@@ -1,6 +1,4 @@
-import { apiUrl } from "@/lib/api/config";
-import { errorDetail } from "@/lib/api/http";
-import { resolveSessionUrl, waitForIceGathering } from "@/lib/video/signalling";
+import { openSession, type SessionHandlers } from "@/lib/video/signalling";
 
 /**
  * WHIP client: the operator's microphone out of the robot's speaker.
@@ -33,10 +31,7 @@ export interface WhipSession {
   close: () => Promise<void>;
 }
 
-export interface WhipHandlers {
-  onConnectionState?: (state: RTCPeerConnectionState) => void;
-  onIceState?: (state: RTCIceConnectionState) => void;
-}
+export type WhipHandlers = SessionHandlers;
 
 export async function startWhipSession(
   handlers: WhipHandlers = {},
@@ -53,71 +48,23 @@ export async function startWhipSession(
 
   const pc = new RTCPeerConnection({ iceServers: [] });
 
-  let sessionUrl: string | null = null;
-  let closed = false;
-
-  const close = async () => {
-    if (closed) return;
-    closed = true;
-    // DELETE first: a local close tells the robot nothing, and its speaker
-    // stays claimed.
-    if (sessionUrl) {
-      try {
-        await fetch(sessionUrl, { method: "DELETE", keepalive: true });
-      } catch {
-        /* the robot went away, or the tab is unloading — nothing to do */
-      }
-    }
-    // Stopping the tracks turns the browser's recording indicator off.
-    stream.getTracks().forEach((track) => track.stop());
-    pc.close();
-  };
-
-  try {
+  const session = await openSession(pc, path, {
+    handlers,
     // sendonly, one audio track: the worker receives and offers nothing back.
-    stream.getAudioTracks().forEach((track) => {
-      pc.addTransceiver(track, { direction: "sendonly", streams: [stream] });
-    });
-
-    if (handlers.onConnectionState) {
-      pc.addEventListener("connectionstatechange", () =>
-        handlers.onConnectionState?.(pc.connectionState),
-      );
-    }
-    if (handlers.onIceState) {
-      pc.addEventListener("iceconnectionstatechange", () =>
-        handlers.onIceState?.(pc.iceConnectionState),
-      );
-    }
-
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    await waitForIceGathering(pc);
-
-    const url = apiUrl(path);
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/sdp" },
-      body: pc.localDescription?.sdp ?? offer.sdp ?? "",
-    });
-
-    if (!response.ok) throw new Error(await errorDetail(response));
-
-    sessionUrl = resolveSessionUrl(response, url);
-    const answer = await response.text();
-    await pc.setRemoteDescription({ type: "answer", sdp: answer });
-  } catch (error) {
-    await close();
-    throw error;
-  }
+    setup: () =>
+      stream.getAudioTracks().forEach((track) => {
+        pc.addTransceiver(track, { direction: "sendonly", streams: [stream] });
+      }),
+    release: () => stream.getTracks().forEach((track) => track.stop()),
+  });
 
   return {
     stream,
     get sessionUrl() {
-      return sessionUrl;
+      return session.sessionUrl;
     },
     pc,
-    close,
+    close: session.close,
   };
 }
 

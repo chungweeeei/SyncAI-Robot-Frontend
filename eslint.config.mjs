@@ -8,8 +8,27 @@ import nextTs from "eslint-config-next/typescript";
  * Fix a break by moving the imported thing down, not by adding an exception.
  */
 const restrict = (patterns) => ({
-  "@typescript-eslint/no-restricted-imports": ["error", { patterns }],
+  "@typescript-eslint/no-restricted-imports": [
+    "error",
+    { patterns: [...patterns, ...noParentRelative] },
+  ],
 });
+
+/**
+ * Every rule below matches `@/…` paths, so `../../lib/api/map` would walk
+ * straight past them. A parent-relative import is refused outright instead —
+ * nothing in the source uses one — which keeps every cross-folder import in
+ * the one spelling the layering rules can see. Part of every block, since a
+ * later block's patterns replace an earlier one's rather than adding to them.
+ */
+const noParentRelative = [
+  {
+    group: ["../*", "../**"],
+    message:
+      "Import across folders through the `@/` alias, never a `../` path: the " +
+      "layering rules (see CLAUDE.md > Layering) only see `@/` imports.",
+  },
+];
 
 /**
  * The two lower hops restrict type imports too: a type `lib/` needs belongs in
@@ -31,6 +50,10 @@ const eslintConfig = defineConfig([
     "components/ui/**",
     "hooks/use-mobile.ts",
   ]),
+  {
+    files: ["{app,components,hooks,lib}/**/*.{ts,tsx}"],
+    rules: restrict([]),
+  },
   {
     files: ["hooks/**/*.{ts,tsx}"],
     rules: restrict(

@@ -7,6 +7,7 @@ import { ActiveRunControls } from "@/components/console/active-run-controls";
 import { CameraDisclosure } from "@/components/console/camera-disclosure";
 import { DriveDisclosure } from "@/components/console/drive-disclosure";
 import { EstopButton } from "@/components/console/estop-button";
+import { FaultBoundary } from "@/components/console/fault-boundary";
 import { SensorDisclosure } from "@/components/console/sensor-disclosure";
 import { useConsoleEstop } from "@/hooks/use-console-estop";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
@@ -118,7 +119,9 @@ export function StatusStrip() {
           * screen and ends flush against the health cluster. The row's only
           * auto margin — a second would halve the gap. */}
         <div className="order-last -mx-2.5 flex w-full min-w-0 items-center gap-2 border-t border-hairline px-2.5 py-1.5 sm:order-none sm:mx-0 sm:ml-auto sm:w-auto sm:basis-[32rem] sm:border-0 sm:px-0 sm:py-0">
-          <ActiveRunControls />
+          <FaultBoundary title="Job controls unavailable" compact>
+            <ActiveRunControls />
+          </FaultBoundary>
         </div>
 
         {/* Below `sm` it drops its rules and the battery meter (the figure
@@ -131,10 +134,19 @@ export function StatusStrip() {
             {/* The stop first, by request, in a cluster that never shrinks or
               * wraps, so it is in the same place at every width. Sensor next
               * to the drive panel it tells the operator to stop using. */}
+            {/* Outside every boundary: the stop shares a fate with nothing.
+              * Each panel beside it fails on its own, as an icon that retries,
+              * rather than climbing to global-error and taking the stop too. */}
             <EstopButton />
-            <SensorDisclosure />
-            <DriveDisclosure />
-            <CameraDisclosure />
+            <FaultBoundary title="Sensor alerts unavailable" compact>
+              <SensorDisclosure />
+            </FaultBoundary>
+            <FaultBoundary title="Drive panel unavailable" compact>
+              <DriveDisclosure />
+            </FaultBoundary>
+            <FaultBoundary title="Camera unavailable" compact>
+              <CameraDisclosure />
+            </FaultBoundary>
             {link && (
               // Framed on hover only, like the buttons beside it.
               <Chip

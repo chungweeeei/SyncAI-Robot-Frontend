@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { ViewportBoundary } from "@/components/console/fault-boundary";
 import { FloorPicker } from "@/components/console/floor-picker";
 import { overlayPanel } from "@/components/console/instrument";
 import {
@@ -17,16 +18,20 @@ import {
   type Map3dDrawKind,
 } from "@/components/maps/map-3d-toolbar";
 import { useMapFloors } from "@/hooks/use-map-floors";
+import { EditorNotice } from "@/components/maps/editor-notice";
+import { useLeaveGuard } from "@/hooks/use-leave-guard";
 import { useMapKeepout } from "@/hooks/use-map-keepout";
+import { useUndoHistory } from "@/hooks/use-undo-history";
+import { useViewCommands } from "@/hooks/use-view-commands";
+import { useZoneEditing } from "@/hooks/use-zone-editing";
 import { useMapVertexWrites } from "@/hooks/use-map-vertex-writes";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
 import { useMapOctomapEdits } from "@/hooks/use-map-octomap-edits";
-import { useSaveMapKeepout, useSaveMapOctomapEdits } from "@/hooks/use-map-actions";
+import { useSaveMapOctomapEdits } from "@/hooks/use-map-actions";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useMapEntry } from "@/hooks/use-maps";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { drawnGround, floorBands } from "@/lib/map/floors";
-import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
 import {
   bandForHeights,
   floorHeightIn,
@@ -49,17 +54,10 @@ import {
   type GroundEdits,
   type GroundPatch,
 } from "@/lib/map/ground-fill";
-import { createUndoStack, popRedo, popUndo, pushPatch } from "@/lib/map/patch";
 import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
 import {
   canCloseZone,
-  mergeIntoZone,
-  newZoneId,
-  restoreZones,
-  sameZones,
-  withoutZones,
   zoneBandAround,
-  type ZoneAnchor,
   type ZoneCornerRef,
 } from "@/lib/map/zone";
 import { isTypingTarget } from "@/lib/keyboard";
@@ -119,24 +117,24 @@ export function Map3dEditor({
 
   if (mounted && entry && entry.octomap_status !== "ok") {
     return (
-      <Guard title="Cannot open the 3D map">
+      <EditorNotice title="Cannot open the 3D map">
         {entry.octomap_status === "converting"
           ? "The robot is still building this map's 3D map. Come back once it has finished."
           : entry.octomap_status === "failed"
             ? (entry.octomap_error ?? "The robot could not build this map's 3D map.")
             : "This map has no 3D map. The robot builds one with the floor plan when it is set up to."}
-      </Guard>
+      </EditorNotice>
     );
   }
   if (tree.status === "error") {
-    return <Guard title="Cannot open the 3D map">{tree.error}</Guard>;
+    return <EditorNotice title="Cannot open the 3D map">{tree.error}</EditorNotice>;
   }
   if (edits.status === "error") {
     // Painting over an unread record would erase it on the first Save.
     return (
-      <Guard title="Cannot open the 3D map">
+      <EditorNotice title="Cannot open the 3D map">
         {edits.error ?? "The saved patches could not be read."}
-      </Guard>
+      </EditorNotice>
     );
   }
   if (!tree.voxels || edits.fillKey === null) {
@@ -156,17 +154,6 @@ export function Map3dEditor({
       openOnWaypoint={openOnWaypoint}
       onDirtyChange={onDirtyChange}
     />
-  );
-}
-
-function Guard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="flex h-full items-center justify-center p-6">
-      <div className="max-w-md rounded-md border border-hairline bg-panel p-4">
-        <p className="instrument-label text-muted-foreground">{title}</p>
-        <p className="mt-2 text-sm">{children}</p>
-      </div>
-    </div>
   );
 }
 
@@ -224,41 +211,46 @@ function Map3dSurface({
   const [editsVersion, setEditsVersion] = React.useState(0);
   const [radiusM, setRadiusM] = React.useState<number>(DEFAULT_BRUSH_RADIUS_M);
   const [band, setBand] = React.useState(() => fullBand(voxels));
-  const [fitNonce, setFitNonce] = React.useState(0);
-  const [zoomStep, setZoomStep] = React.useState<{ factor: number } | null>(null);
+  const { fitNonce, zoomStep, fit, zoomIn, zoomOut } = useViewCommands();
   // On by default: the outlines are what make walls and steps readable.
   const [shading, setShading] = React.useState(true);
-  const [canUndo, setCanUndo] = React.useState(false);
-  const [canRedo, setCanRedo] = React.useState(false);
   const [count, setCount] = React.useState(session.edits.size);
   const [dirty, setDirty] = React.useState(false);
   const [note, setNote] = React.useState<SaveNote>({ kind: "idle" });
   /** The patches as last saved, compared against the session's for `dirty`. */
   const savedRef = React.useRef<GroundEdits>(new Map(session.edits));
-  const historyRef = React.useRef(createUndoStack<GroundPatch>(groundPatchBytes));
+  const {
+    canUndo,
+    canRedo,
+    push: pushHistory,
+    pop: popHistory,
+  } = useUndoHistory<GroundPatch>(groundPatchBytes);
 
   const runLock = useMapRunLock(name);
   const { mutate: save } = useSaveMapOctomapEdits();
   const keepout = useMapKeepout(name);
-  const { mutate: saveZones } = useSaveMapKeepout();
-  /** The corners of the forbidden zone being drawn. */
-  const [zoneDraft, setZoneDraft] = React.useState<ZonePoint[]>([]);
-  /** Where the shape in flight joins a finished zone (the floor plan's anchor), or null. */
-  const [zoneAnchor, setZoneAnchor] = React.useState<ZoneAnchor | null>(null);
   /**
-   * The zones as shown and edited, and as last saved: Save sends the first
-   * when it differs from the second (the floor plan's zones / savedZones).
-   * Null until the robot's list is read -- a save over an unread list would
-   * erase it -- then copied from it once.
+   * The forbidden zones and the shape in flight, staged for Save as on the
+   * floor plan (hooks/use-zone-editing.ts). Null zones until the robot's list
+   * is read: a save over an unread list would erase it.
    */
-  const [zones, setZones] = React.useState<ZonePolygon[] | null>(null);
-  const [savedZones, setSavedZones] = React.useState<ZonePolygon[] | null>(null);
-  if (zones === null && keepout.zones !== null) {
-    setZones(keepout.zones);
-    setSavedZones(keepout.zones);
-  }
-  const zonesDirty = zones !== null && savedZones !== null && !sameZones(zones, savedZones);
-  const [zoneNote, setZoneNote] = React.useState<SaveNote>({ kind: "idle" });
+  const zoneEdit = useZoneEditing(name, keepout.zones, { clearNoteOnEdit: true });
+  const {
+    addCorner: addZoneCorner,
+    anchorOn: anchorZone,
+    mergeOn: mergeZoneOn,
+    moveCorner: moveZoneCorner,
+    closeShape: closeZoneShape,
+    dropShape: dropZoneShape,
+    popCorner: popZoneCorner,
+    remove: removeZones,
+    save: saveZoneEdits,
+  } = zoneEdit;
+  const zones = zoneEdit.zones;
+  const zonesDirty = zoneEdit.dirty;
+  const zoneDraft = zoneEdit.draft;
+  const zoneAnchor = zoneEdit.anchor;
+  const zoneNote = zoneEdit.note;
   const { floors } = useMapFloors(name);
   const stops = useMapVertexWrites(name);
   const { vertices, moveVertex, createVertex, removeVertex, clearWriteError } = stops;
@@ -301,20 +293,19 @@ function Map3dSurface({
         : null);
   if (zoneLock !== null && (tool === "zone" || tool === "zoneRemove")) {
     setTool("orbit");
-    setZoneDraft([]);
-    setZoneAnchor(null);
+    dropZoneShape();
   }
 
   /** Any tool change drops a re-place in hand, and a zone half drawn. */
-  const changeTool = React.useCallback((next: Map3dTool) => {
-    setTool(next);
-    setWaypointAsked(false);
-    if (next !== "waypoint") setMoving(null);
-    if (next !== "zone") {
-      setZoneDraft([]);
-      setZoneAnchor(null);
-    }
-  }, []);
+  const changeTool = React.useCallback(
+    (next: Map3dTool) => {
+      setTool(next);
+      setWaypointAsked(false);
+      if (next !== "waypoint") setMoving(null);
+      if (next !== "zone") dropZoneShape();
+    },
+    [dropZoneShape],
+  );
 
 
   /** A new Draw choice starts on Orbit, as the floor plan's starts on Pan. */
@@ -358,31 +349,23 @@ function Map3dSurface({
 
   const commit = React.useCallback(
     (patch: GroundPatch) => {
-      pushPatch(historyRef.current, patch);
-      setCanUndo(true);
-      setCanRedo(false);
+      pushHistory(patch);
       refresh();
     },
-    [refresh],
+    [refresh, pushHistory],
   );
 
   const step = React.useCallback(
     (direction: "undo" | "redo") => {
-      const stack = historyRef.current;
-      const patch = direction === "undo" ? popUndo(stack) : popRedo(stack);
+      const patch = popHistory(direction);
       if (!patch) return;
-      setCanUndo(stack.undo.length > 0);
-      setCanRedo(stack.redo.length > 0);
       applyGroundPatch(session.edits, patch, direction === "undo" ? "before" : "after");
       refresh();
     },
-    [session, refresh],
+    [session, refresh, popHistory],
   );
   const undo = React.useCallback(() => step("undo"), [step]);
   const redo = React.useCallback(() => step("redo"), [step]);
-  const fit = React.useCallback(() => setFitNonce((n) => n + 1), []);
-  const zoomIn = React.useCallback(() => setZoomStep({ factor: ZOOM_STEP_FACTOR }), []);
-  const zoomOut = React.useCallback(() => setZoomStep({ factor: 1 / ZOOM_STEP_FACTOR }), []);
 
   /** Move the height band; the floors are rebuilt, and the canvas re-aims at them. */
   const changeBand = React.useCallback(
@@ -426,20 +409,7 @@ function Map3dSurface({
         },
       );
     }
-    if (zonesDirty && zones !== null) {
-      const sentZones = zones;
-      setZoneNote({ kind: "saving" });
-      saveZones(
-        { name, zones: sentZones },
-        {
-          onSuccess: (result) => {
-            setSavedZones(sentZones);
-            setZoneNote({ kind: "saved", message: result.message });
-          },
-          onError: (cause) => setZoneNote({ kind: "failed", message: cause.message }),
-        },
-      );
-    }
+    if (zonesDirty) saveZoneEdits();
   }, [
     runLock.locked,
     note.kind,
@@ -450,17 +420,11 @@ function Map3dSurface({
     name,
     voxels,
     zonesDirty,
-    zones,
-    saveZones,
+    saveZoneEdits,
   ]);
 
 
-  React.useEffect(() => {
-    if (!unsaved) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [unsaved]);
+  useLeaveGuard(unsaved);
 
   const bandLoM = kzToMetres(band.lo, voxels);
   const bandHiM = kzToMetres(band.hi, voxels);
@@ -508,117 +472,42 @@ function Map3dSurface({
 
   /**
    * Close the shape in flight into a zone, on screen: Save sends it, as on
-   * the floor plan. An anchored shape does not close: it ends on its zone
-   * (mergeZone).
+   * the floor plan, banded to the floor picked on a map of several storeys.
+   * An anchored shape does not close: it ends on its zone (mergeZone).
    */
   const closeZone = React.useCallback(() => {
-    if (zoneLock !== null || zones === null || zoneAnchor || !canCloseZone(zoneDraft)) return;
-    const zone: ZonePolygon = {
-      id: newZoneId(zones),
-      points: zoneDraft,
-      ...(zoneGroundZ === null ? {} : zoneBandAround(zoneGroundZ)),
-    };
-    setZones([...zones, zone]);
-    setZoneDraft([]);
-    setZoneNote({ kind: "idle" });
-  }, [zones, zoneLock, zoneAnchor, zoneDraft, zoneGroundZ]);
+    if (zoneLock !== null) return;
+    closeZoneShape(zoneGroundZ === null ? undefined : zoneBandAround(zoneGroundZ));
+  }, [zoneLock, zoneGroundZ, closeZoneShape]);
 
-  /**
-   * Attach the shape in flight to a finished zone's corner, as its start or
-   * its next corner: a copy of the corner joins the draft, and only another
-   * corner of that zone ends the shape now (the floor plan's anchorZoneDraft).
-   */
-  const anchorZone = React.useCallback(
-    ({ zoneId, index }: { zoneId: string; index: number }) => {
-      const point = zones?.find((zone) => zone.id === zoneId)?.points[index];
-      if (!point || zoneAnchor) return;
-      setZoneNote({ kind: "idle" });
-      setZoneAnchor({ zoneId, index, position: zoneDraft.length });
-      setZoneDraft([...zoneDraft, point]);
-    },
-    [zones, zoneAnchor, zoneDraft],
-  );
-
-  /**
-   * End an anchored shape on another corner of its zone: the corners drawn
-   * replace the zone's edge between the two (mergeIntoZone), on screen, under
-   * the zone's own id and floor band. Save sends it.
-   */
+  /** End an anchored shape on another corner of its zone. */
   const mergeZone = React.useCallback(
     (target: number) => {
-      const anchor = zoneAnchor;
-      if (zoneLock !== null || zones === null || !anchor) return;
-      const zone = zones.find((entry) => entry.id === anchor.zoneId);
-      const merged = zone && mergeIntoZone(zone.points, zoneDraft, anchor, target);
-      if (!zone || !merged) return;
-      setZones(zones.map((entry) => (entry.id === zone.id ? { ...entry, points: merged } : entry)));
-      setZoneDraft([]);
-      setZoneAnchor(null);
-      setZoneNote({ kind: "idle" });
+      if (zoneLock === null) mergeZoneOn(target);
     },
-    [zones, zoneAnchor, zoneLock, zoneDraft],
+    [zoneLock, mergeZoneOn],
   );
 
-  /**
-   * A dragged corner, of the shape in flight (`zoneId` null) or a finished
-   * zone, moved on screen; Save sends a finished zone's. Out of range is a
-   * no-op, not an append (the floor plan's moveZoneCorner).
-   */
+  /** A dragged corner; a finished zone's only while the zones are writable. */
   const dragZoneCorner = React.useCallback(
-    ({ zoneId, index }: ZoneCornerRef, point: ZonePoint) => {
-      const moved = (points: ZonePoint[]) =>
-        index < points.length ? points.map((corner, i) => (i === index ? point : corner)) : points;
-      if (zoneId === null) {
-        setZoneDraft(moved);
-        return;
-      }
-      if (zoneLock !== null) return;
-      setZones((current) =>
-        current?.map((zone) => (zone.id === zoneId ? { ...zone, points: moved(zone.points) } : zone)) ??
-        current,
-      );
-      setZoneNote({ kind: "idle" });
+    (corner: ZoneCornerRef, point: ZonePoint) => {
+      if (corner.zoneId !== null && zoneLock !== null) return;
+      moveZoneCorner(corner, point);
     },
-    [zoneLock],
+    [zoneLock, moveZoneCorner],
   );
 
   /**
-   * Remove a zone, on the robot at once, as the floor plan's Remove does:
-   * it sends the *last saved* list minus this zone, so unsaved zone edits
-   * stay for Save, and a zone never saved sends nothing. Taken off screen
-   * before the answer and put back on a refusal, so the map never hides a
-   * zone the planner keeps. Asked once: a finger's tap on the wrong zone must
-   * not open an area to the robot.
+   * Remove a zone, on the robot at once, as the floor plan's Remove does.
+   * Asked once: a finger's tap on the wrong zone must not open an area to
+   * the robot.
    */
   const removeZone = (zone: ZonePolygon) => {
-    if (zoneLock !== null || zones === null || savedZones === null) return;
-    if (zoneNote.kind === "saving") return;
+    if (zoneLock !== null || zoneEdit.writing) return;
     if (!window.confirm(`Delete forbidden zone "${zone.name ?? zone.id}"? The robot may then drive there.`)) {
       return;
     }
-    const ids = [zone.id];
-    const { removed } = withoutZones(zones, ids);
-    setZones((current) => (current ? withoutZones(current, ids).kept : current));
-    if (zoneAnchor?.zoneId === zone.id) {
-      setZoneDraft([]);
-      setZoneAnchor(null);
-    }
-    const remote = withoutZones(savedZones, ids);
-    if (remote.removed.length === 0) return;
-    setZoneNote({ kind: "saving" });
-    saveZones(
-      { name, zones: remote.kept },
-      {
-        onSuccess: (result) => {
-          setSavedZones((current) => (current ? withoutZones(current, ids).kept : current));
-          setZoneNote({ kind: "saved", message: result.message });
-        },
-        onError: (cause) => {
-          setZones((current) => (current ? restoreZones(current, removed) : current));
-          setZoneNote({ kind: "failed", message: cause.message });
-        },
-      },
-    );
+    removeZones([zone.id]);
   };
 
   const placeLocked = runLock.locked;
@@ -629,8 +518,7 @@ function Map3dSurface({
       if (zoneDraft.length > 0 && !isTypingTarget(event.target)) {
         if (event.key === "Escape") {
           event.preventDefault();
-          setZoneDraft([]);
-          setZoneAnchor(null);
+          dropZoneShape();
           return;
         }
         if (event.key === "Enter") {
@@ -640,9 +528,7 @@ function Map3dSurface({
         }
         if (event.key === "Backspace") {
           event.preventDefault();
-          // Taking back the anchor's own copy lets the shape go of its zone.
-          if (zoneAnchor && zoneAnchor.position === zoneDraft.length - 1) setZoneAnchor(null);
-          setZoneDraft((draft) => draft.slice(0, -1));
+          popZoneCorner();
           return;
         }
       }
@@ -683,7 +569,7 @@ function Map3dSurface({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo, fit, changeTool, chooseDraw, placeLocked, zoneDraft.length, zoneAnchor, closeZone]);
+  }, [undo, redo, fit, changeTool, chooseDraw, placeLocked, zoneDraft.length, closeZone, dropZoneShape, popZoneCorner]);
 
   // Single-shot, as on the dashboard: one press, one stop, then disarm.
   const commitPlace = (picked: PlanarPose) => {
@@ -747,40 +633,39 @@ function Map3dSurface({
     // diagnostic: data-patched (columns patched) proves a stroke filled or
     // erased, now that the Patched readout is off the screen by request.
     <div className="relative h-full w-full" data-patched={count}>
-      <Map3dCanvas
-        session={session}
-        tool={tool}
-        radius={radius}
-        ring={ring}
-        clearance={clearance}
-        band={bandM}
-        editsVersion={editsVersion}
-        fitNonce={fitNonce}
-        zoomStep={zoomStep}
-        shading={shading}
-        onStrokeCommit={commit}
-        vertices={vertices}
-        vertexBand={vertexBand}
-        movingVertex={moving ?? savingVertex}
-        placeZ={placeZ}
-        onPlaceCommit={commitPlace}
-        onVertexActivate={setAskedVertex}
-        onVertexRemove={removeTapped}
-        zones={zones ?? NO_ZONES}
-        zoneFloor={zoneFloorBand ? vertexBand : null}
-        zonePlaneZ={zoneGroundZ}
-        zoneDraft={zoneDraft}
-        zoneAnchor={zoneAnchor}
-        onZoneCorner={(point) => {
-          setZoneNote({ kind: "idle" });
-          setZoneDraft((draft) => [...draft, point]);
-        }}
-        onZoneClose={closeZone}
-        onZoneAnchor={anchorZone}
-        onZoneMerge={mergeZone}
-        onZoneCornerDrag={dragZoneCorner}
-        onZoneRemove={removeZone}
-      />
+      <ViewportBoundary>
+        <Map3dCanvas
+          session={session}
+          tool={tool}
+          radius={radius}
+          ring={ring}
+          clearance={clearance}
+          band={bandM}
+          editsVersion={editsVersion}
+          fitNonce={fitNonce}
+          zoomStep={zoomStep}
+          shading={shading}
+          onStrokeCommit={commit}
+          vertices={vertices}
+          vertexBand={vertexBand}
+          movingVertex={moving ?? savingVertex}
+          placeZ={placeZ}
+          onPlaceCommit={commitPlace}
+          onVertexActivate={setAskedVertex}
+          onVertexRemove={removeTapped}
+          zones={zones ?? NO_ZONES}
+          zoneFloor={zoneFloorBand ? vertexBand : null}
+          zonePlaneZ={zoneGroundZ}
+          zoneDraft={zoneDraft}
+          zoneAnchor={zoneAnchor}
+          onZoneCorner={addZoneCorner}
+          onZoneClose={closeZone}
+          onZoneAnchor={anchorZone}
+          onZoneMerge={mergeZone}
+          onZoneCornerDrag={dragZoneCorner}
+          onZoneRemove={removeZone}
+        />
+      </ViewportBoundary>
 
       <VertexCreateDialog
         placement={placement}

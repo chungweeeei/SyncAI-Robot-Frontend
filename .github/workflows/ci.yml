@@ -48,8 +48,17 @@ jobs:
         run: npm run build
 
   e2e:
-    name: end-to-end
+    name: end-to-end (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
+    # Three machines rather than more workers on one: a runner renders every
+    # page's WebGL in software, so CPU is what a parallel run is short of, and
+    # another machine is the way to add it. `fullyParallel` lets a shard split
+    # by test, not by file, so the three come out even. Each shard builds the
+    # app itself, which costs less than handing one build between jobs.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v5
 
@@ -68,14 +77,14 @@ jobs:
       - name: End-to-end tests
         # Builds and starts the app itself; every test fakes its own backend,
         # so no service container is needed.
-        run: npm run test:e2e
+        run: npm run test:e2e -- --shard=${{ matrix.shard }}/3
 
       - uses: actions/upload-artifact@v4
         # Traces are written on retry, which on CI is exactly the run somebody
         # will want to look at.
         if: failure()
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/

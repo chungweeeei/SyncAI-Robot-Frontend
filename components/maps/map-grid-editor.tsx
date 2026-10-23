@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { ViewportBoundary } from "@/components/console/fault-boundary";
 import { ArmedHint } from "@/components/console/armed-hint";
 import { TONE_TEXT, overlayPanel } from "@/components/console/instrument";
 import {
@@ -25,24 +26,21 @@ import {
   type SaveState,
 } from "@/components/maps/grid-toolbar";
 import { VertexPanel } from "@/components/maps/vertex-panel";
-import { useSaveMapGrid, useSaveMapKeepout } from "@/hooks/use-map-actions";
+import { useSaveMapGrid } from "@/hooks/use-map-actions";
 import { useMapGrid } from "@/hooks/use-map-grid";
+import { EditorNotice } from "@/components/maps/editor-notice";
+import { useLeaveGuard } from "@/hooks/use-leave-guard";
 import { useMapKeepout } from "@/hooks/use-map-keepout";
+import { useUndoHistory } from "@/hooks/use-undo-history";
+import { useViewCommands } from "@/hooks/use-view-commands";
+import { useZoneEditing } from "@/hooks/use-zone-editing";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useMapVertices, type UseMapVertices } from "@/hooks/use-map-vertices";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import type { VertexChanges } from "@/lib/api/vertex";
 import { isTypingTarget } from "@/lib/keyboard";
-import { ZOOM_STEP_FACTOR } from "@/lib/map/gesture";
 import { FREE, type GridValue } from "@/lib/map/grid";
-import {
-  applyPatch,
-  createUndoStack,
-  popRedo,
-  popUndo,
-  pushPatch,
-  type GridPatch,
-} from "@/lib/map/patch";
+import { applyPatch, type GridPatch } from "@/lib/map/patch";
 import { editBytes, remapWaypointIds, type EditorEdit } from "@/lib/map/history";
 import type { GridSession } from "@/lib/map/session";
 import { DEFAULT_VERTEX_TYPE } from "@/lib/map/vertex";
@@ -55,13 +53,6 @@ import {
   vertexSaveSummary,
 } from "@/lib/map/vertex-stage";
 import {
-  canCloseZone,
-  mergeIntoZone,
-  newZoneId,
-  restoreZones,
-  sameZones,
-  withoutZones,
-  type ZoneAnchor,
   type ZoneCornerRef,
   type ZonePoint,
   type ZonePolygon,
@@ -93,6 +84,9 @@ const DEFAULT_VERTEX_TOOL: VertexTool = "pan";
  * zone tool is explained.
  */
 const DEFAULT_ZONE_TOOL: ZoneTool = "pan";
+
+/** The zones of a list that could not be read: one identity, since GridCanvas is memoized. */
+const NO_ZONES: ZonePolygon[] = [];
 
 /**
  * Loads the map and shows the guard states; EditorSurface does the editing.
@@ -126,14 +120,7 @@ export function MapGridEditor({
   const keepout = useMapKeepout(name);
 
   if (status === "error") {
-    return (
-      <div className="flex h-full items-center justify-center p-6">
-        <div className="max-w-md rounded-md border border-hairline bg-panel p-4">
-          <p className="instrument-label text-muted-foreground">Cannot edit</p>
-          <p className="mt-2 text-sm">{error ?? "The map could not be loaded."}</p>
-        </div>
-      </div>
-    );
+    return <EditorNotice title="Cannot edit">{error ?? "The map could not be loaded."}</EditorNotice>;
   }
 
   // Wait for zones and waypoints as well as the grid: an answer arriving after
@@ -210,8 +197,6 @@ function EditorSurface({
   const [value, setValue] = React.useState<GridValue>(FREE);
   const [brush, setBrush] = React.useState<number>(DEFAULT_BRUSH);
 
-  const [canUndo, setCanUndo] = React.useState(false);
-  const [canRedo, setCanRedo] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
   const [save, setSaveState] = React.useState<SaveState>({ kind: "idle" });
 
@@ -224,11 +209,12 @@ function EditorSurface({
 
   const [hover, setHover] = React.useState<CellProbe | null>(null);
   const [scale, setScale] = React.useState(1);
-  const [fitNonce, setFitNonce] = React.useState(0);
   const [spacePan, setSpacePan] = React.useState(false);
 
   /** Strokes and waypoint edits, in the order made; see lib/map/history.ts. */
-  const historyRef = React.useRef(createUndoStack<EditorEdit>(editBytes));
+  const history = useUndoHistory<EditorEdit>(editBytes);
+  const { stack: historyStack, canUndo, canRedo, push: pushHistory, pop: popHistory } = history;
+  const { fitNonce, zoomStep, fit, zoomIn, zoomOut } = useViewCommands();
 
   /*
    * Waypoints are staged like the zones: Create, Apply and Delete change
@@ -264,33 +250,31 @@ function EditorSurface({
   const [focus, setFocus] = React.useState<{ x: number; y: number } | null>(null);
 
   /*
-   * Zones wait for Save rather than writing through: the endpoint takes the
-   * whole list and the planner reloads on each write, so a PUT per dragged
-   * corner would reload it dozens of times. `zonesDirty` measures against
-   * `savedZones`. Only finished zones are saved; a shape in flight stays.
+   * The zones and the shape in flight, staged for Save
+   * (hooks/use-zone-editing.ts, shared with the 3D view). Null zones mean
+   * the list could not be read, which locks the layer; the floor plan stays
+   * editable. The selection stays here: only this editor has one.
    */
-  const zonesLocked = initialZones === null;
-  const [zones, setZones] = React.useState<ZonePolygon[]>(initialZones ?? []);
-  const [savedZones, setSavedZones] = React.useState<ZonePolygon[]>(initialZones ?? []);
-  const zonesDirty = !zonesLocked && !sameZones(zones, savedZones);
-  /** The last zone save — separate from the grid's, since either can fail alone. */
-  const [zoneSave, setZoneSave] = React.useState<SaveState>({ kind: "idle" });
-  /** Which press `zoneSave` reports on: Save, or a Remove, which writes at once. */
-  const [zoneAction, setZoneAction] = React.useState<"save" | "remove">("save");
-  /**
-   * One zone write at a time: Save and Remove each send a whole list the
-   * other didn't see, so the second to land would undo the first.
-   */
-  const zoneWriting = zoneSave.kind === "saving";
-  // `mutate` alone (see useSaveMapGrid below); up here because Remove writes too.
-  const { mutate: saveZones } = useSaveMapKeepout();
-  const [zoneDraft, setZoneDraft] = React.useState<ZonePoint[]>([]);
-  /**
-   * The finished zone's corner the shape in flight is attached to. Kept
-   * beside the draft, not in it: the draft holds a copy of the corner, which
-   * goes stale once that corner is dragged.
-   */
-  const [zoneDraftAnchor, setZoneDraftAnchor] = React.useState<ZoneAnchor | null>(null);
+  const zoneEdit = useZoneEditing(session.name, initialZones);
+  const {
+    addCorner: addZone,
+    anchorOn: anchorZone,
+    mergeOn: mergeZone,
+    moveCorner: moveZoneCorner,
+    closeShape: closeZoneEdit,
+    dropShape: dropZoneDraft,
+    remove: removeZones,
+    save: saveZoneEdits,
+  } = zoneEdit;
+  const zonesLocked = zoneEdit.zones === null;
+  const zones = zoneEdit.zones ?? NO_ZONES;
+  const zonesDirty = zoneEdit.dirty;
+  const zoneDraft = zoneEdit.draft;
+  const zoneDraftAnchor = zoneEdit.anchor;
+  const zoneSave = zoneEdit.note;
+  const zoneAction = zoneEdit.action;
+  const zoneWriting = zoneEdit.writing;
+  const canClose = zoneEdit.canClose;
   /** The zones Remove takes and whose corners drag; several by Shift-click or tap. */
   const [selectedZoneIds, setSelectedZoneIds] = React.useState<string[]>([]);
 
@@ -341,11 +325,10 @@ function EditorSurface({
       if (next === "grid") clearVertexEdit();
       // Likewise a shape in flight. Finished zones stay drawn, unselected,
       // since no other mode offers Remove.
-      setZoneDraft([]);
-      setZoneDraftAnchor(null);
+      dropZoneDraft();
       setSelectedZoneIds([]);
     },
-    [clearVertexEdit],
+    [clearVertexEdit, dropZoneDraft],
   );
 
   /**
@@ -361,14 +344,16 @@ function EditorSurface({
   );
 
   /** Arm a zone tool. Pan drops the shape in flight, as for waypoints. */
-  const chooseZoneTool = React.useCallback((next: ZoneTool) => {
-    setZoneTool(next);
-    if (next === "pan") {
-      setZoneDraft([]);
-      setZoneDraftAnchor(null);
-      setSelectedZoneIds([]);
-    }
-  }, []);
+  const chooseZoneTool = React.useCallback(
+    (next: ZoneTool) => {
+      setZoneTool(next);
+      if (next === "pan") {
+        dropZoneDraft();
+        setSelectedZoneIds([]);
+      }
+    },
+    [dropZoneDraft],
+  );
 
   /**
    * A corner on bare map drops the selection, so Remove can't target the
@@ -377,69 +362,33 @@ function EditorSurface({
   const addZonePoint = React.useCallback(
     (point: ZonePoint) => {
       if (!zoneDraftAnchor) setSelectedZoneIds([]);
-      setZoneDraft((draft) => [...draft, point]);
+      addZone(point);
     },
-    [zoneDraftAnchor],
+    [zoneDraftAnchor, addZone],
   );
 
-  /**
-   * Attach the shape in flight to a finished zone's corner (as its start, or
-   * its next corner). A copy joins the draft and the zone is selected to show
-   * which one it will join. Reads the draft from the closure (closeZone's
-   * reason).
-   */
+  /** Anchor the shape on a zone's corner, and select the zone it will join. */
   const anchorZoneDraft = React.useCallback(
     (corner: ZoneCornerRef) => {
-      if (corner.zoneId === null) return;
-      const zone = zones.find((entry) => entry.id === corner.zoneId);
-      const point = zone?.points[corner.index];
-      if (!point) return;
-      setZoneDraft([...zoneDraft, point]);
-      setZoneDraftAnchor({ zoneId: corner.zoneId, index: corner.index, position: zoneDraft.length });
-      setSelectedZoneIds([corner.zoneId]);
+      const { zoneId } = corner;
+      if (zoneId === null) return;
+      if (!zones.find((zone) => zone.id === zoneId)?.points[corner.index]) return;
+      anchorZone({ zoneId, index: corner.index });
+      setSelectedZoneIds([zoneId]);
     },
-    [zones, zoneDraft],
+    [zones, anchorZone],
   );
 
-  /**
-   * End an anchored shape on another corner of its zone, replacing the edge
-   * between them (mergeIntoZone). The zone stays selected. Reads the draft
-   * from the closure (closeZone's reason).
-   */
+  /** End an anchored shape on another corner of its zone, which stays selected. */
   const mergeZoneDraft = React.useCallback(
     (corner: ZoneCornerRef) => {
       const anchor = zoneDraftAnchor;
       if (!anchor || corner.zoneId !== anchor.zoneId) return;
-      const zone = zones.find((entry) => entry.id === anchor.zoneId);
-      if (!zone) return;
-      const merged = mergeIntoZone(zone.points, zoneDraft, anchor, corner.index);
-      if (!merged) return;
-      setZones((current) =>
-        current.map((entry) => (entry.id === anchor.zoneId ? { ...entry, points: merged } : entry)),
-      );
-      setZoneDraft([]);
-      setZoneDraftAnchor(null);
+      mergeZone(corner.index);
       setSelectedZoneIds([anchor.zoneId]);
     },
-    [zones, zoneDraft, zoneDraftAnchor],
+    [zoneDraftAnchor, mergeZone],
   );
-
-  /**
-   * A dragged corner, of the shape in flight (`zoneId` null) or a finished
-   * zone. Out of range is a no-op, not an append: a Done or Remove mid-drag
-   * may have removed it.
-   */
-  const moveZoneCorner = React.useCallback(({ zoneId, index }: ZoneCornerRef, point: ZonePoint) => {
-    const moved = (points: ZonePoint[]) =>
-      index < points.length ? points.map((corner, i) => (i === index ? point : corner)) : points;
-    if (zoneId === null) {
-      setZoneDraft(moved);
-      return;
-    }
-    setZones((current) =>
-      current.map((zone) => (zone.id === zoneId ? { ...zone, points: moved(zone.points) } : zone)),
-    );
-  }, []);
 
   /** A click inside a zone: select it, or toggle with Shift (a tap on a phone). */
   const pickZone = React.useCallback((id: string, additive: boolean) => {
@@ -449,68 +398,14 @@ function EditorSurface({
     });
   }, []);
 
-  /**
-   * Remove the selected zones, on the robot at once (no Save). An anchored
-   * shape on one goes too.
-   *
-   * Sends the *last saved* list minus these, not the screen's: a remove only
-   * deletes, so unsaved zone edits stay for Save. Never-saved zones send
-   * nothing. Taken off screen before the answer (a reload can take seconds)
-   * and put back on a refusal, so the map never hides a zone the planner keeps.
-   */
+  /** Remove the selected zones, on the robot at once (no Save). */
   const removeZone = React.useCallback(() => {
     if (selectedZoneIds.length === 0 || zoneWriting || writeLocked) return;
-    const ids = selectedZoneIds;
-    const { removed } = withoutZones(zones, ids);
-    setZones((current) => withoutZones(current, ids).kept);
+    removeZones(selectedZoneIds);
     setSelectedZoneIds([]);
-    if (zoneDraftAnchor && ids.includes(zoneDraftAnchor.zoneId)) {
-      setZoneDraft([]);
-      setZoneDraftAnchor(null);
-    }
+  }, [selectedZoneIds, zoneWriting, writeLocked, removeZones]);
 
-    const remote = withoutZones(savedZones, ids);
-    if (remote.removed.length === 0) return;
-    setZoneAction("remove");
-    setZoneSave({ kind: "saving" });
-    saveZones(
-      { name: session.name, zones: remote.kept },
-      {
-        onSuccess: (result) => {
-          setSavedZones((current) => withoutZones(current, ids).kept);
-          setZoneSave({
-            kind: "saved",
-            active: result.active,
-            reloaded: result.reloaded,
-            message: result.message,
-          });
-        },
-        onError: (cause) => {
-          setZones((current) => restoreZones(current, removed));
-          setZoneSave({ kind: "failed", message: cause.message });
-        },
-      },
-    );
-  }, [selectedZoneIds, zoneWriting, writeLocked, zones, zoneDraftAnchor, savedZones, saveZones, session.name]);
-
-  const dropZoneDraft = React.useCallback(() => {
-    setZoneDraft([]);
-    setZoneDraftAnchor(null);
-  }, []);
-
-  /** Done and Enter close only an unanchored shape; an anchored one ends on its zone. */
-  const canClose = zoneDraftAnchor === null && canCloseZone(zoneDraft);
-
-  /**
-   * Close the shape in flight into a zone. Reads `zoneDraft` from the closure
-   * rather than nesting `setZones` in a `setZoneDraft` updater: StrictMode runs
-   * updaters twice, which would add the zone twice.
-   */
-  const closeZone = React.useCallback(() => {
-    if (!canClose) return;
-    setZones((current) => [...current, { id: newZoneId(current), points: zoneDraft }]);
-    setZoneDraft([]);
-  }, [canClose, zoneDraft]);
+  const closeZone = React.useCallback(() => closeZoneEdit(), [closeZoneEdit]);
 
   /**
    * Put a Draw choice down, or pick it up (`null`). Lands on Pan in both tool
@@ -605,12 +500,10 @@ function EditorSurface({
    */
   const recordWaypoints = React.useCallback(
     (next: MapVertex[]) => {
-      pushPatch(historyRef.current, { kind: "waypoints", before: vertexList, after: next });
+      pushHistory({ kind: "waypoints", before: vertexList, after: next });
       setVertexList(next);
-      setCanUndo(true);
-      setCanRedo(false);
     },
-    [vertexList],
+    [vertexList, pushHistory],
   );
 
   /** Stage the draft as a waypoint; Save sends it. Stages even under a run lock. */
@@ -667,23 +560,18 @@ function EditorSurface({
   }, [anyDirty, onDirtyChange]);
 
   const commitPatch = React.useCallback((patch: GridPatch) => {
-    pushPatch(historyRef.current, { kind: "grid", patch });
-    setCanUndo(true);
-    setCanRedo(false);
+    pushHistory({ kind: "grid", patch });
     setDirty(true);
     revisionRef.current += 1;
     // The note described the buffer as saved; "Saved" beside a lit Unsaved is
     // the one confusing pair this can show.
     setSaveState({ kind: "idle" });
-  }, []);
+  }, [pushHistory]);
 
   const step = React.useCallback(
     (direction: "undo" | "redo") => {
-      const stack = historyRef.current;
-      const edit = direction === "undo" ? popUndo(stack) : popRedo(stack);
+      const edit = popHistory(direction);
       if (!edit) return;
-      setCanUndo(stack.undo.length > 0);
-      setCanRedo(stack.redo.length > 0);
 
       const side = direction === "undo" ? "before" : "after";
       if (edit.kind === "waypoints") {
@@ -701,15 +589,11 @@ function EditorSurface({
       revisionRef.current += 1;
       setSaveState({ kind: "idle" });
     },
-    [session, clearVertexEdit],
+    [session, clearVertexEdit, popHistory],
   );
 
   const undo = React.useCallback(() => step("undo"), [step]);
   const redo = React.useCallback(() => step("redo"), [step]);
-  const fit = React.useCallback(() => setFitNonce((n) => n + 1), []);
-  const [zoomStep, setZoomStep] = React.useState<{ factor: number } | null>(null);
-  const zoomIn = React.useCallback(() => setZoomStep({ factor: ZOOM_STEP_FACTOR }), []);
-  const zoomOut = React.useCallback(() => setZoomStep({ factor: 1 / ZOOM_STEP_FACTOR }), []);
 
   // `mutate` alone: bound once per observer, so `onSave` keeps its identity.
   const { mutate: saveGrid } = useSaveMapGrid();
@@ -724,28 +608,7 @@ function EditorSurface({
    */
   const onSave = React.useCallback(() => {
     if (writeLocked) return;
-    if (zonesDirty) {
-      // The list as of the press becomes `savedZones`, so a corner dragged
-      // mid-request is still unsaved after, by comparison.
-      const sent = zones;
-      setZoneAction("save");
-      setZoneSave({ kind: "saving" });
-      saveZones(
-        { name: session.name, zones: sent },
-        {
-          onSuccess: (result) => {
-            setSavedZones(sent);
-            setZoneSave({
-              kind: "saved",
-              active: result.active,
-              reloaded: result.reloaded,
-              message: result.message,
-            });
-          },
-          onError: (cause) => setZoneSave({ kind: "failed", message: cause.message }),
-        },
-      );
-    }
+    if (zonesDirty) saveZoneEdits();
     if (verticesDirty && !vertexWriting) {
       // The plan as of the press; rebaseVertices folds in what landed, so an
       // edit mid-request stays unsaved.
@@ -755,7 +618,7 @@ function EditorSurface({
         setSavedVertices((current) => rebaseVertices(current, [], landed).saved);
         setVertexList((current) => rebaseVertices([], current, landed).working);
         setSelectedIds((current) => current.map((id) => ids.get(id) ?? id));
-        remapWaypointIds(historyRef.current, ids);
+        remapWaypointIds(historyStack, ids);
         setVertexSave(
           failure
             ? { kind: "failed", message: vertexSaveFailure(landed, failure) }
@@ -791,9 +654,8 @@ function EditorSurface({
   }, [
     dirty,
     saveGrid,
-    saveZones,
+    saveZoneEdits,
     session,
-    zones,
     zonesDirty,
     writeLocked,
     verticesDirty,
@@ -801,6 +663,7 @@ function EditorSurface({
     saveVertices,
     savedVertices,
     vertexList,
+    historyStack,
   ]);
 
   React.useEffect(() => {
@@ -894,12 +757,7 @@ function EditorSurface({
    * Reload and tab close only: the App Router can't block in-app navigation,
    * so the page's back button confirms itself.
    */
-  React.useEffect(() => {
-    if (!anyDirty) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [anyDirty]);
+  useLeaveGuard(anyDirty);
 
   /**
    * Forbidden zone chosen, no tool armed: the map dims and asks, since "Shape"
@@ -945,40 +803,42 @@ function EditorSurface({
       data-zoom={Math.round(scale * 100)}
       data-zones={zones.length}
     >
-      <GridCanvas
-        session={session}
-        mode={mode}
-        tool={tool}
-        vertexTool={vertexTool}
-        value={value}
-        brush={brush}
-        spacePan={spacePan}
-        fitNonce={fitNonce}
-        zoomStep={zoomStep}
-        focus={focus}
-        onStrokeCommit={commitPatch}
-        onHover={setHover}
-        onScaleChange={setScale}
-        vertices={vertexList}
-        robotPose={robotPose}
-        draft={draft}
-        selectedIds={selectedIds}
-        onVertexPick={selectVertex}
-        onVertexToggle={toggleVertex}
-        onMarquee={selectMany}
-        onVertexGesture={handleVertexGesture}
-        zoneTool={zoneTool}
-        zones={zones}
-        zoneDraft={zoneDraft}
-        zoneDraftAnchor={zoneDraftAnchor}
-        onZonePoint={addZonePoint}
-        onZoneAnchor={anchorZoneDraft}
-        onZoneMerge={mergeZoneDraft}
-        onZoneClose={closeZone}
-        onZoneCornerMove={moveZoneCorner}
-        selectedZoneIds={selectedZoneIds}
-        onZonePick={pickZone}
-      />
+      <ViewportBoundary>
+        <GridCanvas
+          session={session}
+          mode={mode}
+          tool={tool}
+          vertexTool={vertexTool}
+          value={value}
+          brush={brush}
+          spacePan={spacePan}
+          fitNonce={fitNonce}
+          zoomStep={zoomStep}
+          focus={focus}
+          onStrokeCommit={commitPatch}
+          onHover={setHover}
+          onScaleChange={setScale}
+          vertices={vertexList}
+          robotPose={robotPose}
+          draft={draft}
+          selectedIds={selectedIds}
+          onVertexPick={selectVertex}
+          onVertexToggle={toggleVertex}
+          onMarquee={selectMany}
+          onVertexGesture={handleVertexGesture}
+          zoneTool={zoneTool}
+          zones={zones}
+          zoneDraft={zoneDraft}
+          zoneDraftAnchor={zoneDraftAnchor}
+          onZonePoint={addZonePoint}
+          onZoneAnchor={anchorZoneDraft}
+          onZoneMerge={mergeZoneDraft}
+          onZoneClose={closeZone}
+          onZoneCornerMove={moveZoneCorner}
+          selectedZoneIds={selectedZoneIds}
+          onZonePick={pickZone}
+        />
+      </ViewportBoundary>
 
       {/* The wash comes before the strips, so DOM order stacks them above it.
         * Pointer-transparent so the dimmed map still pans; grey because the

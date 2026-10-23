@@ -1,6 +1,4 @@
-import { apiUrl } from "@/lib/api/config";
-import { errorDetail } from "@/lib/api/http";
-import { resolveSessionUrl, waitForIceGathering } from "@/lib/video/signalling";
+import { openSession, type SessionHandlers } from "@/lib/video/signalling";
 
 /**
  * WHEP client for the robot camera: vanilla ICE, not trickle (see
@@ -16,10 +14,7 @@ export interface WhepSession {
   close: () => Promise<void>;
 }
 
-export interface WhepHandlers {
-  onConnectionState?: (state: RTCPeerConnectionState) => void;
-  onIceState?: (state: RTCIceConnectionState) => void;
-}
+export type WhepHandlers = SessionHandlers;
 
 export async function startWhepSession(
   handlers: WhepHandlers = {},
@@ -29,74 +24,26 @@ export async function startWhepSession(
     // Host candidates connect a console and robot on one LAN.
     iceServers: [],
   });
-
   const stream = new MediaStream();
-  pc.addEventListener("track", (event) => stream.addTrack(event.track));
 
-  // In this order: the worker sends exactly H264 video then Opus audio, and
-  // needs an m-line for each.
-  pc.addTransceiver("video", { direction: "recvonly" });
-  pc.addTransceiver("audio", { direction: "recvonly" });
-
-  if (handlers.onConnectionState) {
-    pc.addEventListener("connectionstatechange", () =>
-      handlers.onConnectionState?.(pc.connectionState),
-    );
-  }
-  if (handlers.onIceState) {
-    pc.addEventListener("iceconnectionstatechange", () =>
-      handlers.onIceState?.(pc.iceConnectionState),
-    );
-  }
-
-  let sessionUrl: string | null = null;
-  let closed = false;
-
-  const close = async () => {
-    if (closed) return;
-    closed = true;
-    // DELETE first: a local close tells the robot nothing, and its camera
-    // stays claimed.
-    if (sessionUrl) {
-      try {
-        await fetch(sessionUrl, { method: "DELETE", keepalive: true });
-      } catch {
-        /* the robot went away, or the tab is unloading — nothing to do */
-      }
-    }
-    pc.close();
-  };
-
-  try {
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    await waitForIceGathering(pc);
-
-    const url = apiUrl(path);
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/sdp" },
-      // localDescription, not `offer`: it carries the gathered candidates.
-      body: pc.localDescription?.sdp ?? offer.sdp ?? "",
-    });
-
-    if (!response.ok) throw new Error(await errorDetail(response));
-
-    sessionUrl = resolveSessionUrl(response, url);
-    const answer = await response.text();
-    await pc.setRemoteDescription({ type: "answer", sdp: answer });
-  } catch (error) {
-    await close();
-    throw error;
-  }
+  const session = await openSession(pc, path, {
+    handlers,
+    setup: () => {
+      pc.addEventListener("track", (event) => stream.addTrack(event.track));
+      // In this order: the worker sends exactly H264 video then Opus audio,
+      // and needs an m-line for each.
+      pc.addTransceiver("video", { direction: "recvonly" });
+      pc.addTransceiver("audio", { direction: "recvonly" });
+    },
+  });
 
   return {
     stream,
     get sessionUrl() {
-      return sessionUrl;
+      return session.sessionUrl;
     },
     pc,
-    close,
+    close: session.close,
   };
 }
 
