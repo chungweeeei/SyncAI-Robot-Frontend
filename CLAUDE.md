@@ -227,7 +227,9 @@ components/
                 tool applies, and its unsaved patches guard Back and the
                 2D / 3D switch as the floor plan's edits do; and Place and
                 Remove for waypoints — the dashboard's place, tap, re-place
-                and delete, written at once, Remove asking first — which is
+                and delete, but staged as the floor plan's are and sent by
+                Save (Place stays armed for a run of stops; Remove asks
+                first, since waypoints have no undo here) — which is
                 where a map with no floor plan gets its waypoints: the
                 card's pencil opens it there, and the task editor's links
                 with Waypoint chosen and Place armed)
@@ -245,9 +247,9 @@ components/
   webrtc/       WHIP/WHEP bench (unlisted developer route — see deviations)
   ui/           shadcn primitives (lint-ignored)
 hooks/          one hook per backend interaction; the only place components get data.
-                A map's waypoint writes from a 3D view are use-map-vertex-writes,
-                keyed by map name; use-active-map-vertices points it at the
-                loaded map for the dashboard.
+                The dashboard's waypoint writes are use-map-vertex-writes,
+                keyed by map name, written at once; use-active-map-vertices
+                points it at the loaded map.
                 A few talk to no backend at all (use-joystick, use-step-drafts,
                 use-task-draft, use-camera-clip, use-browser-time-zone,
                 use-history-filter, use-leave-guard, use-undo-history,
@@ -482,7 +484,8 @@ touch one, prefer moving it toward the rule.
   (`use-task-templates`, `use-schedules`) keep their
   `busy` / `error` / `create` / `remove` surface, folded from their mutations
   by `lib/api/mutation-state.ts`. `use-map-vertices` is the exception: the
-  floor plan editor stages waypoints beside its cells and zones, so the hook
+  map editor stages waypoints, in both its views, beside its cells or
+  patches and its zones, so the hook
   is one `save(plan)` mutation that sends deletes, updates and one batch
   create in series and resolves with what landed rather than rejecting. The
   diff and the rebase after a partial save are `lib/map/vertex-stage.ts`.
