@@ -59,6 +59,13 @@ describe("planVertexSave", () => {
     expect(plan.updates).toEqual([{ id: "a", changes: { type: "CHARGE" } }]);
   });
 
+  it("sends a waypoint re-placed onto another floor with its new height", () => {
+    // The 3D view's re-place: the floor a stop stands on is its z, and a
+    // move that dropped it would leave the stop on the floor it left.
+    const plan = planVertexSave([row("a")], [row("a", { x: 3, z: 2.6 })]);
+    expect(plan.updates).toEqual([{ id: "a", changes: { x: 3, z: 2.6 } }]);
+  });
+
   it("reads -180 and 180 as one heading, since the backend stores one", () => {
     const plan = planVertexSave([row("a", { theta: 180 })], [row("a", { theta: -180 })]);
     expect(plan.updates).toEqual([]);
@@ -68,7 +75,7 @@ describe("planVertexSave", () => {
     const local = row(localVertexId(1), { theta: 270 });
     const plan = planVertexSave([], [local]);
     expect(plan.creates).toEqual([
-      { localId: local.id, draft: { name: local.name, type: "MOVE", x: 1, y: 2, theta: -90 } },
+      { localId: local.id, draft: { name: local.name, type: "MOVE", x: 1, y: 2, theta: -90, z: 0 } },
     ]);
   });
 

@@ -1,5 +1,5 @@
-// The floor plan editor's staged waypoints: what Save would send, and what the
-// editor holds once some of it has landed.
+// The map editor's staged waypoints, in both its views: what Save would send,
+// and what the editor holds once some of it has landed.
 //
 // Two lists, as for zones: `saved` (the robot's rows) and `working` (the
 // screen); Save writes the difference. A new waypoint has a local id until its
@@ -29,6 +29,11 @@ export interface StagedDraft {
   x: number;
   y: number;
   theta: number;
+  /**
+   * The ground height of its floor. The 3D view places on any floor; the
+   * floor plan's stops are on the ground floor's 0, and a move there keeps z.
+   */
+  z: number;
 }
 
 export interface VertexSavePlan {
@@ -140,6 +145,7 @@ function draftOf(vertex: MapVertex): StagedDraft {
     x: vertex.x,
     y: vertex.y,
     theta: normalizeTheta(vertex.theta),
+    z: vertex.z,
   };
 }
 
@@ -152,5 +158,6 @@ function changedFields(before: MapVertex, after: MapVertex): Partial<StagedDraft
   if (after.y !== before.y) changes.y = after.y;
   const theta = normalizeTheta(after.theta);
   if (theta !== normalizeTheta(before.theta)) changes.theta = theta;
+  if (after.z !== before.z) changes.z = after.z;
   return Object.keys(changes).length ? changes : null;
 }
