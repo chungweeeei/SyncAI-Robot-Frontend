@@ -26,7 +26,7 @@ const subscribeNoop = () => () => {};
 
 const LEAVE_PROMPT = "Leave the editor? Your unsaved changes to this map will be lost.";
 const SWITCH_PROMPT: Record<MapEditorView, string> = {
-  "2d": "Switch to the floor plan? Your unsaved ground patches will be lost.",
+  "2d": "Switch to the floor plan? Your unsaved changes in the 3D view will be lost.",
   "3d": "Switch to the 3D view? Your unsaved changes to this map will be lost.",
 };
 

@@ -24,7 +24,7 @@ import { useMapKeepout } from "@/hooks/use-map-keepout";
 import { useUndoHistory } from "@/hooks/use-undo-history";
 import { useViewCommands } from "@/hooks/use-view-commands";
 import { useZoneEditing } from "@/hooks/use-zone-editing";
-import { useMapVertexWrites } from "@/hooks/use-map-vertex-writes";
+import { useMapVertices, type UseMapVertices } from "@/hooks/use-map-vertices";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
 import { useMapOctomapEdits } from "@/hooks/use-map-octomap-edits";
 import { useSaveMapOctomapEdits } from "@/hooks/use-map-actions";
@@ -53,6 +53,14 @@ import {
   type GroundEdits,
   type GroundPatch,
 } from "@/lib/map/ground-fill";
+import {
+  localVertexId,
+  planVertexSave,
+  rebaseVertices,
+  sameVertices,
+  vertexSaveFailure,
+  vertexSaveSummary,
+} from "@/lib/map/vertex-stage";
 import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
 import {
   canCloseZone,
@@ -77,8 +85,10 @@ const NO_ZONES: ZonePolygon[] = [];
  * a save says they wait to be applied.
  *
  * It is also where a map with no floor plan gets its waypoints, which the
- * floor plan editor cannot place without a raster to place them on. Those
- * are written as they are placed, the dashboard's flow, not on Save.
+ * floor plan editor cannot place without a raster to place them on. They are
+ * staged as the floor plan's are (lib/map/vertex-stage.ts): placed, moved and
+ * deleted on screen, a run of them, and sent by Save. Writing each as it was
+ * placed, the dashboard's flow, made laying out a site a save per stop.
  *
  * And its forbidden zones (2026-10-23): the robot's 3D planner reads the same
  * keepout.json the floor plan editor writes, each zone optionally banded to
@@ -105,6 +115,11 @@ export function Map3dEditor({
   const entry = useMapEntry(name);
   const tree = useMapOctomap(name);
   const edits = useMapOctomapEdits(name);
+  /**
+   * Read here, as the floor plan editor reads them: the surface remounts on
+   * a new tree, and its staged list starts from what the robot holds.
+   */
+  const vertices = useMapVertices(name);
   // The status strip reads the catalogue too, so the entry can be cached
   // before this boundary hydrates; a guard drawn from it then would not be
   // the "Loading" the server drew without one.
@@ -136,7 +151,9 @@ export function Map3dEditor({
       </EditorNotice>
     );
   }
-  if (!tree.voxels || edits.fillKey === null) {
+  // Wait for the waypoints too: a list arriving after placing began would
+  // have to be merged. A failed read does not wait; it locks them instead.
+  if (!tree.voxels || edits.fillKey === null || vertices.status === "loading") {
     return (
       <p className="instrument-label flex h-full items-center justify-center text-muted-foreground">
         Loading {name}…
@@ -150,6 +167,9 @@ export function Map3dEditor({
       name={name}
       voxels={tree.voxels}
       initialFillKey={edits.fillKey}
+      initialVertices={vertices.status === "ok" ? vertices.vertices : null}
+      verticesError={vertices.error}
+      saveVertices={vertices.save}
       openOnWaypoint={openOnWaypoint}
       onDirtyChange={onDirtyChange}
     />
@@ -171,12 +191,22 @@ function Map3dSurface({
   name,
   voxels,
   initialFillKey,
+  initialVertices,
+  verticesError,
+  saveVertices,
   openOnWaypoint,
   onDirtyChange,
 }: {
   name: string;
   voxels: OccupiedVoxels;
   initialFillKey: number[][];
+  /**
+   * The map's waypoints as saved, or null if unreadable, which locks them:
+   * Save sends a diff, and a diff from "unknown" means nothing.
+   */
+  initialVertices: MapVertex[] | null;
+  verticesError: string | null;
+  saveVertices: UseMapVertices["save"];
   openOnWaypoint: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -251,23 +281,37 @@ function Map3dSurface({
   const zoneAnchor = zoneEdit.anchor;
   const zoneNote = zoneEdit.note;
   const { floors } = useMapFloors(name);
-  const stops = useMapVertexWrites(name);
-  const { vertices, moveVertex, createVertex, removeVertex, clearWriteError } = stops;
   const { pose: robotPose, reason: robotPoseReason } = useRobotMapPose(name);
+
+  /*
+   * Waypoints are staged like the zones and the patches: Create, Reposition
+   * and Delete change `vertexList`, and Save writes its diff from
+   * `savedVertices` (lib/map/vertex-stage.ts).
+   */
+  const verticesLocked = initialVertices === null;
+  const [vertexList, setVertexList] = React.useState<MapVertex[]>(initialVertices ?? []);
+  const [savedVertices, setSavedVertices] = React.useState<MapVertex[]>(initialVertices ?? []);
+  const verticesDirty = !verticesLocked && !sameVertices(savedVertices, vertexList);
+  const [vertexNote, setVertexNote] = React.useState<SaveNote>({ kind: "idle" });
+  const vertexWriting = vertexNote.kind === "saving";
+  /** Numbers the local ids of waypoints placed here and not yet saved. */
+  const localSerialRef = React.useRef(0);
   /** The stop a re-place is carrying; Waypoint is armed while it is set. */
   const [moving, setMoving] = React.useState<MapVertex | null>(null);
-  /** A placed pose waiting for a name; written only on Create. */
+  /** A placed pose waiting for a name; staged only on Create. */
   const [placement, setPlacement] = React.useState<Placement | null>(null);
   const placementSeq = React.useRef(0);
   /** The stop a tap is asking about; null when the dialog is closed. */
   const [askedVertex, setAskedVertex] = React.useState<MapVertex | null>(null);
-  /**
-   * A stop whose new pose is being written. Keeps its marker hidden until the
-   * PUT lands, or the old mark would flash back as if the move were refused.
-   */
-  const [savingVertex, setSavingVertex] = React.useState<MapVertex | null>(null);
 
-  if (waypointAsked && !runLock.locked) {
+  /** Why the waypoints cannot be placed or removed, or null. */
+  const placeLock =
+    runLock.reason ??
+    (verticesLocked
+      ? `The waypoints could not be read: ${verticesError ?? "unknown error"}`
+      : null);
+
+  if (waypointAsked && placeLock === null) {
     setWaypointAsked(false);
     setTool("waypoint");
   }
@@ -276,7 +320,7 @@ function Map3dSurface({
   // rather than in an effect, so the next release cannot write onto a
   // read-only map. An open name dialog stays up instead: its Create greys and
   // the name survives.
-  if (runLock.locked && (tool === "waypoint" || tool === "remove")) {
+  if (placeLock !== null && (tool === "waypoint" || tool === "remove")) {
     setTool("orbit");
     setMoving(null);
   }
@@ -338,9 +382,9 @@ function Map3dSurface({
     setNote({ kind: "idle" });
   }, [session]);
 
-  // Unsaved zones are unsaved work, and so is a zone half drawn: both are
-  // lost on leaving.
-  const unsaved = dirty || zonesDirty || zoneDraft.length > 0;
+  // Unsaved zones and waypoints are unsaved work, and so is a zone half
+  // drawn: all are lost on leaving.
+  const unsaved = dirty || zonesDirty || verticesDirty || zoneDraft.length > 0;
   React.useEffect(() => {
     onDirtyChange?.(unsaved);
   }, [unsaved, onDirtyChange]);
@@ -385,13 +429,29 @@ function Map3dSurface({
   );
 
   /**
-   * One Save for what changed: the ground patches and the forbidden zones,
-   * each written whole and reported apart (the floor plan's Save does the
-   * same with cells, zones and waypoints), so one refused leaves the other
-   * saved.
+   * One Save for what changed: the ground patches, the forbidden zones and
+   * the waypoints, each written and reported apart (the floor plan's Save
+   * does the same with cells, zones and waypoints), so one refused leaves
+   * the others saved.
    */
   const onSave = React.useCallback(() => {
     if (runLock.locked || note.kind === "saving" || zoneNote.kind === "saving") return;
+    if (verticesDirty && !vertexWriting) {
+      // The plan as of the press; rebaseVertices folds in what landed, so a
+      // stop placed mid-request stays unsaved, and a refusal keeps the rest.
+      setVertexNote({ kind: "saving" });
+      void saveVertices(planVertexSave(savedVertices, vertexList)).then(({ landed, failure }) => {
+        const { ids } = rebaseVertices([], [], landed);
+        setSavedVertices((current) => rebaseVertices(current, [], landed).saved);
+        setVertexList((current) => rebaseVertices([], current, landed).working);
+        setMoving((current) => current && { ...current, id: ids.get(current.id) ?? current.id });
+        setVertexNote(
+          failure
+            ? { kind: "failed", message: vertexSaveFailure(landed, failure) }
+            : { kind: "saved", message: `Waypoints saved: ${vertexSaveSummary(landed)}` },
+        );
+      });
+    }
     if (dirty) {
       const sent = new Map(session.edits);
       setNote({ kind: "saving" });
@@ -419,6 +479,11 @@ function Map3dSurface({
     voxels,
     zonesDirty,
     saveZoneEdits,
+    verticesDirty,
+    vertexWriting,
+    saveVertices,
+    savedVertices,
+    vertexList,
   ]);
 
 
@@ -508,7 +573,7 @@ function Map3dSurface({
     removeZones([zone.id]);
   };
 
-  const placeLocked = runLock.locked;
+  const placeLocked = placeLock !== null;
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       // A shape in flight takes Escape, Enter and Backspace first, as on the
@@ -569,30 +634,51 @@ function Map3dSurface({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [undo, redo, fit, changeTool, chooseDraw, placeLocked, zoneDraft.length, closeZone, dropZoneShape, popZoneCorner]);
 
-  // Single-shot, as on the dashboard: one press, one stop, then disarm.
+  /**
+   * A release with Waypoint armed. A new stop asks for its name and leaves
+   * the tool armed, since placing a run of stops is the common case; a
+   * re-place is one stop's, so it disarms once the stop is put down.
+   */
   const commitPlace = (picked: PlanarPose) => {
     const placed = {
       ...picked,
       z: placedGround({ voxels, band: floorBand, x: picked.x, y: picked.y, moving: moving?.z }),
     };
     if (moving) {
-      const target = moving;
-      setSavingVertex(target);
-      // The echo patches the list in the same render that clears this.
-      void moveVertex(target.id, placed).finally(() => setSavingVertex(null));
+      const target = moving.id;
+      setVertexList((current) =>
+        current.map((vertex) => (vertex.id === target ? { ...vertex, ...placed } : vertex)),
+      );
+      setVertexNote({ kind: "idle" });
+      changeTool("orbit");
     } else {
       setPlacement({ key: ++placementSeq.current, pose: placed });
     }
-    changeTool("orbit");
   };
 
-  // Closes only once the row comes back; a refusal keeps the dialog up with
-  // the backend's sentence.
+  /** Stage the named stop; Save sends it. */
   const createPlaced = (stopName: string, type: VertexType) => {
     if (!placement) return;
-    void createVertex({ name: stopName, type, ...placement.pose }).then((created) => {
-      if (created) setPlacement(null);
-    });
+    localSerialRef.current += 1;
+    const staged: MapVertex = {
+      id: localVertexId(localSerialRef.current),
+      map_name: name,
+      name: stopName,
+      type,
+      ...placement.pose,
+    };
+    setVertexList((current) => [...current, staged]);
+    setVertexNote({ kind: "idle" });
+    setPlacement(null);
+  };
+
+  /**
+   * Take a stop off the screen. A stored one is deleted on Save; one placed
+   * here simply never gets sent.
+   */
+  const dropVertex = (vertex: MapVertex) => {
+    setVertexList((current) => current.filter((stop) => stop.id !== vertex.id));
+    setVertexNote({ kind: "idle" });
   };
 
   // A snapshot, not a live binding: a pose that crept while the name was typed
@@ -612,18 +698,16 @@ function Map3dSurface({
   };
 
   // Asked once, as the dialog's Delete asks: a finger's tap on the wrong
-  // marker must not take a stop off the robot. Remove stays armed for the
-  // next one; a refusal lands in the place control's error.
+  // marker must not stage a stop's deletion unseen, and there is no undo for
+  // waypoints here. Remove stays armed for the next one.
   const removeTapped = (vertex: MapVertex) => {
-    if (!window.confirm(`Delete "${vertex.name}"? This cannot be undone.`)) return;
-    void removeVertex(vertex.id);
+    if (!window.confirm(deleteQuestion(vertex.name))) return;
+    dropVertex(vertex);
   };
 
-  // A refusal leaves the dialog up with the sentence in it.
   const deleteAsked = (vertex: MapVertex) => {
-    void removeVertex(vertex.id).then((gone) => {
-      if (gone) setAskedVertex(null);
-    });
+    dropVertex(vertex);
+    setAskedVertex(null);
   };
 
   return (
@@ -643,9 +727,9 @@ function Map3dSurface({
           zoomStep={zoomStep}
           shading={shading}
           onStrokeCommit={commit}
-          vertices={vertices}
+          vertices={vertexList}
           vertexBand={vertexBand}
-          movingVertex={moving ?? savingVertex}
+          movingVertex={moving}
           placeZ={placeZ}
           onPlaceCommit={commitPlace}
           onVertexActivate={setAskedVertex}
@@ -666,33 +750,28 @@ function Map3dSurface({
 
       <VertexCreateDialog
         placement={placement}
-        lockedReason={runLock.reason}
+        lockedReason={placeLock}
         robotPose={robotPose}
         robotPoseReason={robotPoseReason}
-        busy={stops.busy}
-        error={stops.writeError}
+        // Nothing is written on Create, so there is nothing in flight or refused.
+        busy={false}
+        error={null}
         onUseRobotPose={takeRobotPose}
         onCreate={createPlaced}
-        onClose={() => {
-          setPlacement(null);
-          // A refusal belongs to the attempt it answered, not to the next one.
-          clearWriteError();
-        }}
+        onClose={() => setPlacement(null)}
       />
 
       {/* No Move: this page opens maps the robot is not on, and is not where
         * the robot is sent from (see VertexMoveDialog). */}
       <VertexMoveDialog
         vertex={askedVertex}
-        editLock={runLock.reason}
-        deleting={stops.busy}
-        deleteError={stops.writeError}
+        editLock={placeLock}
+        deleting={false}
+        deleteError={null}
+        deleteQuestion={deleteQuestion}
         onReplace={armReplace}
         onDelete={deleteAsked}
-        onClose={() => {
-          setAskedVertex(null);
-          clearWriteError();
-        }}
+        onClose={() => setAskedVertex(null)}
       />
 
       {/* One row across the top, the tools left and Draw right, wrapping on a
@@ -706,14 +785,14 @@ function Map3dSurface({
             canRedo={canRedo}
             onUndo={undo}
             onRedo={redo}
-            dirty={dirty || zonesDirty}
-            saving={note.kind === "saving" || zoneNote.kind === "saving"}
+            dirty={dirty || zonesDirty || verticesDirty}
+            saving={note.kind === "saving" || zoneNote.kind === "saving" || vertexWriting}
             writeLock={runLock.reason}
             onSave={onSave}
             drawKind={drawKind}
             tool={tool}
             onToolChange={changeTool}
-            placeLock={runLock.reason}
+            placeLock={placeLock}
             zoneLock={zoneLock}
             radius={radiusM}
             onRadiusChange={setRadiusM}
@@ -745,16 +824,15 @@ function Map3dSurface({
         {/* Narrower on a phone so the map's middle stays reachable beside it;
           * the long hint is desktop-only, since a finger has no room for prose. */}
         <div className="pointer-events-none flex min-h-0 w-44 flex-col gap-2 overflow-y-auto sm:w-60">
-          {/* Shown while a re-place is live, and after it when the write
-            * fails, so the sentence lands where the operator is looking. */}
+          {/* Shown while a re-place is live; it writes nothing, so it has
+            * nothing in flight to show or refused. */}
           <VertexPlaceControl
             className="pointer-events-auto"
             vertex={moving}
-            // One busy flag and error for every write; an open dialog owns them.
-            busy={placement || askedVertex ? false : stops.busy}
-            error={placement || askedVertex ? null : stops.writeError}
+            busy={false}
+            error={null}
             onCancel={() => changeTool("orbit")}
-            onDismissError={clearWriteError}
+            onDismissError={() => {}}
           />
           <div className={cn(overlayPanel, "pointer-events-auto space-y-2 p-2.5")}>
             <p className="instrument-label text-muted-foreground">Heights shown</p>
@@ -838,6 +916,33 @@ function Map3dSurface({
             </div>
           )}
 
+          {(verticesDirty || vertexNote.kind !== "idle") && (
+            <div
+              className={cn(
+                overlayPanel,
+                "pointer-events-auto space-y-1 px-2 py-1.5 text-[11px] leading-snug",
+              )}
+            >
+              <p className="instrument-label text-muted-foreground">Waypoints</p>
+              {verticesDirty && vertexNote.kind !== "saving" && (
+                <p className="text-signal-caution">
+                  {unsavedVertexLine(planVertexSave(savedVertices, vertexList))}
+                </p>
+              )}
+              {vertexNote.kind === "saving" && <p className="text-muted-foreground">Saving…</p>}
+              {vertexNote.kind === "saved" && !verticesDirty && (
+                <p role="status" className="text-signal-live">
+                  {vertexNote.message}
+                </p>
+              )}
+              {vertexNote.kind === "failed" && (
+                <p role="alert" className="break-words text-signal-warn">
+                  Not saved. {vertexNote.message}
+                </p>
+              )}
+            </div>
+          )}
+
           {skipped > 0 && (
             <p
               role="status"
@@ -889,4 +994,19 @@ function Map3dSurface({
       </div>
     </div>
   );
+}
+
+/** The question a stop's Delete asks: nothing leaves the robot until Save. */
+function deleteQuestion(stopName: string): string {
+  return `Delete "${stopName}"? It is removed from the robot when you save.`;
+}
+
+/** "2 added · 1 moved — press Save to send them to the robot." */
+function unsavedVertexLine(plan: ReturnType<typeof planVertexSave>): string {
+  const parts = [
+    plan.creates.length && `${plan.creates.length} added`,
+    plan.updates.length && `${plan.updates.length} moved`,
+    plan.deletes.length && `${plan.deletes.length} deleted`,
+  ].filter(Boolean);
+  return `Unsaved: ${parts.join(" · ")} — press Save to send them to the robot.`;
 }
