@@ -34,9 +34,10 @@ Run one unit file with `npx vitest run lib/map/view.test.ts`, one e2e test with
 interactive runner.
 
 `.github/workflows/ci.yml` runs all of it on every push and PR to `main` and
-`dev`, in two parallel jobs: `check` (lint, `tsc`, unit tests, build) and `e2e`
-(playwright, which produces its own production build). Node is pinned to 22.
-A failing e2e run uploads its traces as an artifact.
+`dev`, in parallel jobs: `check` (lint, `tsc`, unit tests, build) and `e2e`
+(playwright, which produces its own production build), the second as three
+`--shard`s on three runners. Node is pinned to 22. A failing e2e shard
+uploads its html report and traces as an artifact.
 
 `.github/workflows/release.yml` builds the container image on two native
 runners (arm64 for the Jetson, amd64) and publishes one multi-platform
@@ -76,6 +77,10 @@ in `e2e/`. The split is by what they can actually prove, not by size:
   keep — `normalizeTheta` never returns -180 because the backend rejects it,
   a stamp clips instead of wrapping to the next row, an added backend field
   must not break a schema — over one that restates the implementation.
+  A hook whose rule is its own — a write's cache consequences, an editor's
+  undo flags, a lost GPU context — is tested with `renderHook` beside it
+  (`hooks/use-map-actions.test.tsx`), the backend stood in for by mocking
+  the fetcher or the mutation hook it composes.
 - **Playwright** covers the flows where a button does something to a real
   machine. Every test installs its own fake backend (`e2e/backend.ts`), so a
   run needs no robot and can hold states a robot will not: unlocalized,
@@ -158,7 +163,9 @@ components/
                 panel and camera window every screen can open, and the
                 floor picker both 3D map surfaces share (floor-picker.tsx: a
                 pill-shaped column in the view's top-right, All then the top
-                floor first)
+                floor first), and the fault boundaries (fault-boundary.tsx,
+                fault-panel.tsx: what a part that threw shows instead — see
+                Conventions)
   dashboard/    3D viewport (pointcloud-canvas) with the pose laid over its
                 corner — its layers are the saved scan, the robot's 3D map
                 (the occupancy tree, off by default like the scan under a
@@ -242,8 +249,11 @@ hooks/          one hook per backend interaction; the only place components get 
                 loaded map for the dashboard.
                 A few talk to no backend at all (use-joystick, use-step-drafts,
                 use-task-draft, use-camera-clip, use-browser-time-zone,
-                use-history-filter): React glue over a lib/ module or a browser
-                API, never a second home for the logic itself
+                use-history-filter, use-leave-guard, use-undo-history,
+                use-view-commands, use-gpu-context): React glue over a lib/
+                module or a browser API, never a second home for the logic
+                itself. use-zone-editing is both map editors' forbidden zones:
+                lib/map/zone-session.ts's reducer and the keepout write
 lib/
   api/          typed fetchers per backend router, config.ts, http.ts, query-keys.ts
                 (requests only — mirrored validation rules live with their domain)
@@ -252,6 +262,8 @@ lib/
                 name rule, the 2D drawing (draw.ts), the editor's vocabulary,
                 the forbidden zone rules (zone.ts: corner count, close-on-first,
                 point-in-polygon pick, and a zone's floor band: zoneBandAround,
+                and what an editor does with a press's verdict, as a reducer
+                both editors share: zone-session.ts,
                 zoneGround, zoneOnFloor — `z_min` / `z_max` are the ground
                 heights the robot's 3D planner applies a zone between, unset
                 = every floor, and must go back on every save, since a zone
@@ -302,7 +314,10 @@ lib/
                 GROUND_FLOOR_Z_M (drawnGround), and the floor plan with
                 it, or the robot stands half through the plan; the wire
                 keeps its 0)
-  scene/        three.js scene building for the 3D viewport: theme, markers,
+  scene/        three.js scene building for the 3D viewport: the viewport
+                itself (viewport.ts: renderer, z-up camera, controls, the
+                resize-then-draw, the frame loop, a lost GPU context's
+                events and the teardown, for both 3D views), theme, markers,
                 vertex layer, zone layer (a banded zone on its floor's ground,
                 one of every floor at the floor shown), path ribbon, the running dock's
                 staging point and leg (dock-layer.ts), what the robot sees
@@ -384,7 +399,9 @@ Rules for new code:
   is only a type" is how the arrow gets bent.
 - **All three hops are enforced by eslint** (`no-restricted-imports` blocks in
   `eslint.config.mjs`), so a break fails `npm run lint` with a message naming
-  where the thing being imported should live instead.
+  where the thing being imported should live instead. Those rules match `@/`
+  paths, so a parent-relative `../` import is refused outright: it would
+  walk past every one of them.
 - A pure constant or helper that a component needs does **not** belong in a
   fetcher module just because the backend also enforces it. `lib/map/name.ts`,
   `lib/recording/name.ts`, `lib/task/template.ts` and `lib/angle.ts` were carved
@@ -416,10 +433,11 @@ touch one, prefer moving it toward the rule.
   owns a mutable `GridSession` holding a cell buffer and a canvas that must be
   disposed, which is not something a structurally-shared cache should hand
   around. Everything else that reads the backend is a query.
-- **The two canvases are still the biggest components** (~1350 and ~800
-  lines), but what is left is React: refs, effects, the frame loop and the
-  pointer state machines. The scene builders, the 2D drawing and the gesture
-  rules moved to `lib/scene/`, `lib/map/draw.ts` and `lib/map/gesture.ts`.
+- **The canvases are still the biggest components** (`pointcloud-canvas`
+  ~1500 lines, `grid-canvas` ~1100, `map-3d-canvas` ~1000), but what is
+  left is React: refs, effects and the pointer state machines. The scene
+  builders, the viewport, the 2D drawing and the gesture rules moved to
+  `lib/scene/`, `lib/map/draw.ts` and `lib/map/gesture.ts`.
   The rules are which gesture a press starts, the drag deadzone, the heading
   of a drag and what a rubber band selects. What stays in the handlers is
   acting on them: pointer capture, the cell stamps and the blits.
@@ -571,7 +589,9 @@ touch one, prefer moving it toward the rule.
   run state (`mappingStatus` — invalidated, never written, because the
   answer travels a latched ROS topic every console reads). Those are wired in the write
   hooks now — when adding a write, list every key its response affects in
-  its `onSuccess`, not only the key it was fetched under.
+  its `onSuccess`, not only the key it was fetched under. A rename or delete
+  drops every key that belongs to the map through `mapScopedKeys`, and a
+  rule test fails when a `map-…` key taken by name is missing from it.
 - **A file cache is versioned by the catalogue, not by this console's
   writes, where the catalogue can say which file changed.** `mapImage` never
   goes stale on its own, so its key carries the map's `modified_at` and
@@ -614,9 +634,10 @@ design; read the comment in `lib/ros/socket.ts` before merging them.
 
 As built:
 
-- **Point cloud** (~10 Hz, binary) is written straight into preallocated
-  three.js buffers via refs in `pointcloud-canvas.tsx`. This is the pattern to
-  copy for anything at frame rate.
+- **Point cloud** (~10 Hz, binary) is opened by `usePointCloudStream`, which
+  hands each frame to a callback and never to state, and written straight
+  into preallocated three.js buffers via refs in `pointcloud-canvas.tsx`.
+  This is the pattern to copy for anything at frame rate.
 - **Teleop** (10 Hz outbound) reads a ref on an interval; React is not involved.
 - **Telemetry** is split by rate in `hooks/use-telemetry.ts`, and the split is
   the rule to follow for anything added to that stream. Pose and joints are
@@ -644,12 +665,18 @@ As built:
   canvas's width and height, which clears it, and a `ResizeObserver` fires
   after the frame's render — so the viewport's resize callback renders a
   frame itself, or the browser paints the cleared canvas and the scene
-  blinks out. The 2D canvases are safe by construction: they reassign the
+  blinks out. `lib/scene/viewport.ts` does this for both 3D views; a view
+  hands it a `draw` and gets it called after every resize. The 2D canvases are safe by construction: they reassign the
   size inside the draw that repaints it. The same reason keeps the nav rail's
   fold unanimated: an eased width is a resize on every frame.
+- **A lost GPU context is a state, not a crash.** The viewport reports a
+  `webglcontextlost` and its restore; `useGpuContext` lays a notice over the
+  view meanwhile, and throws to the view's `ViewportBoundary` if the context
+  has not come back in 5 s, whose Try again remounts the view on a fresh
+  renderer.
 - **three.js teardown does not reach textures.** A material's `.map` is not
-  disposed by disposing the material, so anything that loads one holds it and
-  frees it by hand — see the ground texture in `pointcloud-canvas.tsx` and the
+  disposed by disposing the material (nor by `disposeTree`, the viewport's
+  sweep), so anything that loads one holds it and frees it by hand — see the ground texture in `pointcloud-canvas.tsx` and the
   vertex layer's badge textures. An async load also has to check the scene it
   was started for is still current before assigning.
 - **A layer effect lists the scene's rebuild deps** (`meta`, `mapImageUrl`,
@@ -818,6 +845,14 @@ it is run in, so it does not belong to any one of them.
   container's class decides: `touch-pan-y` below `lg` (a vertical swipe
   scrolls the page the viewport sits in), `touch-none` from `lg` and while a
   pick is armed.
+- **A throw never takes the emergency stop with it.** `app/error.tsx`
+  catches a failed screen inside the layout, so the rail and the strip stay
+  up; each map view sits in a `ViewportBoundary` and each of the strip's
+  panels in its own compact `FaultBoundary`, so a failure stays the size of
+  the part that threw. The stop itself is never wrapped, and nothing that
+  can fail goes between it and the layout: `app/global-error.tsx` replaces
+  the layout, stop included. Every boundary shows `FaultPanel`, which never
+  prints the thrown message — a render error is an engineer's sentence.
 - Backend addressing: never hardcode a host. Every REST and WebSocket path goes
   through `apiUrl()` / `wsUrl()` in `lib/api/config.ts`, which default to the
   page's own hostname on port 3000 and are overridable via
