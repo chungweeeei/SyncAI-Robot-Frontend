@@ -229,7 +229,12 @@ components/
                 Remove for waypoints — the dashboard's place, tap, re-place
                 and delete, but staged as the floor plan's are and sent by
                 Save (Place stays armed for a run of stops; Remove asks
-                first, since waypoints have no undo here) — which is
+                first, since waypoints have no undo here); Move drags a
+                stop to a new spot, its heading kept; and with Waypoint
+                chosen a list on the left names every stop on the map
+                (map-3d-waypoint-panel, the floor plan's list reused),
+                whose rows, and Select's taps on the map, make a set
+                that one Delete takes, asked once — which is
                 where a map with no floor plan gets its waypoints: the
                 card's pencil opens it there, and the task editor's links
                 with Waypoint chosen and Place armed)
