@@ -132,7 +132,7 @@ test.describe("the editor's 3D view", () => {
     await page.mouse.down();
     await page.mouse.move(x + 60, y, { steps: 4 });
     await page.mouse.up();
-    const save = page.getByRole("button", { name: "Save" });
+    const save = page.getByRole("button", { name: "Save", exact: true });
     await expect(save).toBeEnabled();
 
     // Declined: still the floor plan, the stroke still unsaved.
@@ -265,7 +265,7 @@ test.describe("the editor's 3D view", () => {
       // The floor round the hole is 0.45 m below the origin: what the fill reads,
       // proved by the saved keys' height below (HOLE's kz).
 
-      const save = page.getByRole("button", { name: "Save" });
+      const save = page.getByRole("button", { name: "Save", exact: true });
       await expect(save).toBeEnabled();
       await save.click();
       await expect(page.getByRole("status").filter({ hasText: "Saved 4 ground patches" })).toBeVisible();
@@ -290,22 +290,22 @@ test.describe("the editor's 3D view", () => {
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       // The saved record is what it opens on, and is not unsaved.
       await expect(patched(page)).toHaveAttribute("data-patched", "4");
-      await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
 
       await chooseDraw(page, "Ground patch");
       await page.getByRole("button", { name: "Erase" }).click();
       const hole = await holeOnScreen(page);
       await page.mouse.click(hole.x, hole.y);
       await expect(patched(page)).toHaveAttribute("data-patched", "0");
-      await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
+      await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
 
       await page.getByRole("button", { name: "Undo" }).click();
       await expect(patched(page)).toHaveAttribute("data-patched", "4");
-      await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
       await page.getByRole("button", { name: "Redo" }).click();
       await expect(patched(page)).toHaveAttribute("data-patched", "0");
 
-      await page.getByRole("button", { name: "Save" }).click();
+      await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect(page.getByRole("status").filter({ hasText: "Cleared" })).toBeVisible();
       const put = writes.find((write) => write.method === "PUT" && write.path === editsPath);
       expect((put!.body as { fill_key: number[][] }).fill_key).toEqual([]);
@@ -336,7 +336,7 @@ test.describe("the editor's 3D view", () => {
       const hole = await holeOnScreen(page);
       await page.mouse.click(hole.x, hole.y);
       await expect(patched(page)).toHaveAttribute("data-patched", "4");
-      const save = page.getByRole("button", { name: "Save" });
+      const save = page.getByRole("button", { name: "Save", exact: true });
       await expect(save).toBeDisabled();
 
       states[job.id as string] = taskState({ id: job.id, status: "COMPLETED" });
@@ -368,11 +368,11 @@ test.describe("the editor's 3D view", () => {
       await armFill(page);
       const hole = await holeOnScreen(page);
       await page.mouse.click(hole.x, hole.y);
-      await page.getByRole("button", { name: "Save" }).click();
+      await page.getByRole("button", { name: "Save", exact: true }).click();
       const alert = page.getByRole("alert").filter({ hasText: "running a job" });
       await expect(alert).toHaveText("Not saved. The robot is running a job on this map.");
       // Still unsaved, so the retry is a press away.
-      await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
+      await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
     });
 
     test("warns about a saved patch that lies outside this map's 3D map", async ({ page }) => {
@@ -981,7 +981,7 @@ test.describe("the editor's 3D view", () => {
       expect(writes.filter((w) => w.path.startsWith(verticesPath))).toEqual([]);
       await expect(page.getByText("Unsaved: 2 added")).toBeVisible();
 
-      await page.getByRole("button", { name: "Save" }).click();
+      await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect.poll(() => writes.filter((w) => w.path === verticesPath)).toHaveLength(1);
       const write = writes.find((w) => w.path === verticesPath)!;
       expect(write.method).toBe("POST");
@@ -1007,7 +1007,7 @@ test.describe("the editor's 3D view", () => {
       await expect(
         page.getByRole("status").filter({ hasText: "Waypoints saved: 2 added" }),
       ).toBeVisible();
-      await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
       expect(errors, "the page logged errors").toEqual([]);
     });
 
@@ -1057,7 +1057,7 @@ test.describe("the editor's 3D view", () => {
       // Gone from the screen, not yet from the robot.
       expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
 
-      await page.getByRole("button", { name: "Save" }).click();
+      await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect
         .poll(() => writes.filter((w) => w.method === "DELETE").map((w) => w.path))
         .toEqual([`${verticesPath}/${stop.id}`]);
@@ -1090,7 +1090,7 @@ test.describe("the editor's 3D view", () => {
         .poll(() => asked)
         .toEqual([`Delete "lobby"? It is removed from the robot when you save.`]);
       await expect(page.getByRole("alertdialog", { name: "lobby" })).toHaveCount(0);
-      await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
 
       // Accepted: the stop goes from the screen, and Remove stays armed.
       page.once("dialog", (confirm) => void confirm.accept());
@@ -1099,10 +1099,111 @@ test.describe("the editor's 3D view", () => {
       await expect(remove).toHaveAttribute("aria-pressed", "true");
       expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
 
-      await page.getByRole("button", { name: "Save" }).click();
+      await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect
         .poll(() => writes.filter((w) => w.method === "DELETE").map((w) => w.path))
         .toEqual([`${verticesPath}/${stop.id}`]);
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("drags a stop somewhere else with Move, keeping its heading, and sends it on Save", async ({
+      page,
+    }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const stop = vertex({ name: "lobby", type: "MOVE", x: 0.2, y: 0.2, theta: 45, z: 0 });
+      const writes = await mockBackend(page, { maps: [treeOnly()], vertices: [stop] });
+      await page.goto(VIEW_3D);
+      await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+      await chooseDraw(page, "Waypoint");
+      const move = page.getByRole("button", { name: "Move", exact: true });
+      await move.click();
+      await expect(move).toHaveAttribute("aria-pressed", "true");
+      const centre = await centreOnScreen(page);
+
+      // Positive control: a tap with Move armed opens the stop, moves nothing.
+      await page.mouse.click(centre.x, centre.y);
+      const dialog = page.getByRole("alertdialog", { name: "lobby" });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+
+      await page.mouse.move(centre.x, centre.y);
+      await page.mouse.down();
+      await page.mouse.move(centre.x + 40, centre.y + 20, { steps: 6 });
+      await page.mouse.up();
+      await expect(page.getByText("Unsaved: 1 moved")).toBeVisible();
+      // Staged, not written.
+      expect(writes.filter((w) => w.path.startsWith(verticesPath))).toEqual([]);
+
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect
+        .poll(() => writes.filter((w) => w.method === "PUT").map((w) => w.path))
+        .toEqual([`${verticesPath}/${stop.id}`]);
+      const body = writes.find((w) => w.method === "PUT")!.body as Record<string, number>;
+      // Somewhere else on the 3D map's box, its heading and floor untouched.
+      expect(body.x !== 0.2 || body.y !== 0.2).toBe(true);
+      for (const value of [body.x ?? 0.2, body.y ?? 0.2]) {
+        expect(value).toBeGreaterThanOrEqual(0);
+        expect(value).toBeLessThanOrEqual(0.4);
+      }
+      expect(body).not.toHaveProperty("theta");
+      expect(body).not.toHaveProperty("z");
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("lists every stop's name, and deletes a selection from the list and the map together on Save", async ({
+      page,
+    }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const stops = [
+        vertex({ id: "a", name: "lobby", type: "MOVE", x: 0.2, y: 0.2, theta: 0, z: 0 }),
+        vertex({ id: "b", name: "lift", type: "MOVE", x: 0.05, y: 0.05, theta: 0, z: 0 }),
+        vertex({ id: "c", name: "dock-a", type: "CHARGE", x: 0.35, y: 0.05, theta: 0, z: 0 }),
+      ];
+      const writes = await mockBackend(page, { maps: [treeOnly()], vertices: stops });
+      await page.goto(VIEW_3D);
+      await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+
+      // No list until Waypoint is chosen; then every name, for picking a new one.
+      const list = page.getByRole("button", { name: /lobby|lift|dock-a/ });
+      await expect(list).toHaveCount(0);
+      await chooseDraw(page, "Waypoint");
+      await expect(list).toHaveCount(3);
+
+      // One from the list, one tapped on the map with Select.
+      await page.getByRole("button", { name: /lift/ }).click();
+      await expect(page.getByRole("button", { name: /lift/ })).toHaveAttribute("aria-pressed", "true");
+      await page.getByRole("button", { name: "Select", exact: true }).click();
+      const centre = await centreOnScreen(page);
+      await page.mouse.click(centre.x, centre.y);
+      await expect(page.getByRole("button", { name: /lobby/ })).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByText("2 selected")).toBeVisible();
+
+      // Declined: nothing goes.
+      const asked: string[] = [];
+      page.once("dialog", (confirm) => {
+        asked.push(confirm.message());
+        void confirm.dismiss();
+      });
+      await page.getByRole("button", { name: "Delete 2" }).click();
+      await expect
+        .poll(() => asked)
+        .toEqual(["Delete 2 waypoints? They are removed from the robot when you save."]);
+      await expect(list).toHaveCount(3);
+
+      page.once("dialog", (confirm) => void confirm.accept());
+      await page.getByRole("button", { name: "Delete 2" }).click();
+      await expect(page.getByText("Unsaved: 2 deleted")).toBeVisible();
+      await expect(list).toHaveCount(1);
+      await expect(page.getByRole("button", { name: /dock-a/ })).toBeVisible();
+      expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
+
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect
+        .poll(() => writes.filter((w) => w.method === "DELETE").map((w) => w.path).sort())
+        .toEqual([`${verticesPath}/a`, `${verticesPath}/b`]);
       expect(errors, "the page logged errors").toEqual([]);
     });
   });
