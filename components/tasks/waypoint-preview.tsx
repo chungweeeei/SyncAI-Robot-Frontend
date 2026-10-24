@@ -51,7 +51,7 @@ interface Pan {
  * Under a row it is a view, not a control: it shows the whole job, so a click
  * on a stop would mean no one row. The dropdown sets a step (also the keyboard
  * and screen-reader path), hence `role="img"` with a description. The list's
- * Pick on map passes `onPick`, where a tap does mean one thing: the next step.
+ * Plan route passes `onPick`, where a tap does mean one thing: the next step.
  *
  * It zooms and pans, since two nearby stops are pixels apart at fit scale,
  * with the floor plan editor's view machinery so both feel the same. Draws on

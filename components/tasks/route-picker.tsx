@@ -48,7 +48,7 @@ export interface RoutePickerProps {
 }
 
 /**
- * Pick on map: the job's route built by tapping its stops in order, each tap
+ * Plan route: the job's route built by tapping its stops in order, each tap
  * one step at the end of the list. A ten-stop patrol was forty presses through
  * Add, unfold and a dropdown per row; here it is ten taps on the map the
  * operator was reading anyway.
@@ -138,7 +138,7 @@ export function RoutePicker({
       </div>
       {views.length > 1 && (
         <Segmented
-          label="Pick on"
+          label="Plan on"
           value={view}
           options={VIEW_OPTIONS}
           onChange={setChosenView}

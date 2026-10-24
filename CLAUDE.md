@@ -248,7 +248,7 @@ components/
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
                 and the /tasks/editor page (step composer, name, save, delete,
-                and Pick on map — route-picker: each tap on a waypoint
+                and Plan route — route-picker: each tap on a waypoint
                 appends a step, a Dock on a charger, and the route is drawn
                 joined in step order; on the floor plan preview with onPick,
                 or, for a map with a 3D map, route-canvas-3d: the tree in 3D

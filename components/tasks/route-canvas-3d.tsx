@@ -42,7 +42,7 @@ export interface RouteCanvas3dProps {
 }
 
 /**
- * Pick on map for a map whose only picture is its 3D map: the tree in 3D,
+ * Plan route for a map whose only picture is its 3D map: the tree in 3D,
  * and the waypoints and the route so far over it.
  *
  * The waypoints are not the 3D pins the dashboard and the editor's 3D view
