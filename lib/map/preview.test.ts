@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { PREVIEW_INSET, planCaptions, previewView, stepCaption } from "@/lib/map/preview";
-import { vertexScreen } from "@/lib/map/draw";
+import { VERTEX_HIT_RADIUS, vertexAt, vertexScreen } from "@/lib/map/draw";
 import type { MapVertex } from "@/lib/types/map";
 import type { MapMetadata } from "@/lib/types/robot";
 
@@ -99,5 +99,21 @@ describe("stepCaption", () => {
 
   it("is just the name for a stop the job does not visit", () => {
     expect(stepCaption("room-a", [])).toBe("room-a");
+  });
+});
+
+describe("vertexAt", () => {
+  const a = stop({ id: "a", x: 0, y: 0 });
+  const b = stop({ id: "b", x: 0.05, y: 0 });
+  const at = vertexScreen(view, meta, 0, 0);
+
+  it("finds a stop within the slop and nothing outside it", () => {
+    expect(vertexAt(view, meta, [a], at.cx + 5, at.cy, VERTEX_HIT_RADIUS)?.id).toBe("a");
+    expect(vertexAt(view, meta, [a], at.cx + VERTEX_HIT_RADIUS + 1, at.cy, VERTEX_HIT_RADIUS)).toBeNull();
+  });
+
+  it("picks the one drawn on top where two overlap", () => {
+    // Drawn in list order, so the last is the one the pointer sees.
+    expect(vertexAt(view, meta, [a, b], at.cx, at.cy, VERTEX_HIT_RADIUS)?.id).toBe("b");
   });
 });

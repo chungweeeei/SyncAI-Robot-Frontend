@@ -13,6 +13,8 @@ import {
 } from "@/lib/map/grid";
 import {
   PALETTES,
+  VERTEX_HIT_RADIUS,
+  VERTEX_HIT_RADIUS_TOUCH,
   drawBrushRing,
   drawCellGrid,
   drawMarquee,
@@ -21,6 +23,7 @@ import {
   drawVertices,
   drawZoneDraft,
   drawZones,
+  vertexAt,
   vertexScreen,
 } from "@/lib/map/draw";
 import type {
@@ -69,11 +72,6 @@ import {
 } from "@/lib/map/view";
 import type { MapVertex } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
-
-/** Click slop around a marker centre (and a zone's first corner, the same size of dot). */
-const VERTEX_HIT_RADIUS = 11;
-/** Under a finger, which covers ~22 px and can't see the dot. */
-const VERTEX_HIT_RADIUS_TOUCH = 22;
 
 export interface GridCanvasProps {
   session: GridSession;
@@ -499,16 +497,6 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
    * stays one size at every zoom (markers don't scale). Last-to-first: the one
    * painted on top wins.
    */
-  const vertexAt = (view: View, cx: number, cy: number, radius: number): MapVertex | null => {
-    const { vertices } = propsRef.current;
-    for (let i = vertices.length - 1; i >= 0; i -= 1) {
-      const vertex = vertices[i];
-      const at = vertexScreen(view, session.meta, vertex.x, vertex.y);
-      if (Math.hypot(at.cx - cx, at.cy - cy) <= radius) return vertex;
-    }
-    return null;
-  };
-
   const probeAt = (cell: Cell | null): CellProbe | null => {
     if (!cell) return null;
     return {
@@ -571,7 +559,14 @@ export const GridCanvas = React.memo(function GridCanvas(props: GridCanvasProps)
     const touch = event.pointerType === "touch";
     const hit =
       mode === "vertex"
-        ? vertexAt(view, cx, cy, touch ? VERTEX_HIT_RADIUS_TOUCH : VERTEX_HIT_RADIUS)
+        ? vertexAt(
+            view,
+            session.meta,
+            propsRef.current.vertices,
+            cx,
+            cy,
+            touch ? VERTEX_HIT_RADIUS_TOUCH : VERTEX_HIT_RADIUS,
+          )
         : null;
     const intent = classifyPress({
       button: event.button,
