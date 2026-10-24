@@ -5,14 +5,13 @@ import Link from "next/link";
 import { ArrowLeftIcon } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 type SettingsParent = { href: string; label: string };
 
 /**
  * The frame every Settings screen sits in, the landing included, so moving
  * between them never moves the title or the top-right controls: the frame is
- * one width on every screen and only the content column narrows.
+ * one width on every screen, header and content alike.
  *
  * `parents` is the way up, nearest last. A section shows them over its title
  * and a Go back to the nearest in the top-right corner, ahead of its own
@@ -21,23 +20,21 @@ type SettingsParent = { href: string; label: string };
  * behind it, and its label does not name the target — the line over the title
  * does, and its accessible name says it too.
  *
- * `wide` is for a grid page (Wi-Fi's saved networks, the landing's tiles);
- * every other section is one form, held to a reading width at the frame's
- * left edge, under its title, rather than centred away from it.
+ * The content takes the frame's whole width too, a form included: a column
+ * narrower than its header leaves the top-right controls hanging past the
+ * edge of what they act on.
  */
 export function SettingsPage({
   title,
   description,
   parents = [{ href: "/settings", label: "Settings" }],
   action,
-  wide = false,
   children,
 }: {
   title: string;
   description?: React.ReactNode;
   parents?: SettingsParent[];
   action?: React.ReactNode;
-  wide?: boolean;
   children: React.ReactNode;
 }) {
   const back = parents.at(-1);
@@ -78,7 +75,7 @@ export function SettingsPage({
             ) : null}
           </div>
         </header>
-        <div className={cn(!wide && "max-w-2xl")}>{children}</div>
+        {children}
       </div>
     </div>
   );

@@ -14,7 +14,6 @@ export default function WifiSettingsPage() {
   return (
     <SettingsPage
       title="Wi-Fi"
-      wide
       action={
         <Link href={ADD_NETWORK_HREF} className={buttonVariants({ size: "sm" })}>
           <PlusIcon data-icon="inline-start" />

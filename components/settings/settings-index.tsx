@@ -61,7 +61,6 @@ export function SettingsIndex() {
       }
       parents={[]}
       action={<RestartControl />}
-      wide
     >
     <nav aria-label="Settings sections">
       {/* Square tiles, more per row as the window widens, so a new
