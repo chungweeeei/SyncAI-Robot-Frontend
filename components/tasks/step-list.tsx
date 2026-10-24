@@ -51,6 +51,8 @@ export interface StepListProps {
   stepMarks: ReadonlyMap<string, readonly number[]>;
   /** The waypoints a Dock row is picked on; see stepDockVertices. */
   dockMarks: ReadonlySet<string>;
+  /** The waypoints in visiting order; see stepRoute. */
+  route: readonly string[];
   /** True while a dispatched task is running — see the note below. */
   disabled: boolean;
   /** Per-step state of the tracked task, keyed by the derived step id. */
@@ -81,6 +83,7 @@ export function StepList({
   waypointLink,
   stepMarks,
   dockMarks,
+  route,
   disabled,
   stepStates,
   onAdd,
@@ -245,6 +248,7 @@ export function StepList({
                     waypointLink={waypointLink}
                     stepMarks={stepMarks}
                     dockMarks={dockMarks}
+                    route={route}
                     disabled={disabled}
                     groupPlace={groupPlaces[index] ?? null}
                     groupWarn={warnSpans.has(span)}

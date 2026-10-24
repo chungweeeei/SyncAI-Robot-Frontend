@@ -242,6 +242,31 @@ export function vertexScreen(view: View, meta: MapMetadata, wx: number, wy: numb
   return gridToScreen(view, px, py);
 }
 
+/** Click slop around a marker centre (and a zone's first corner, the same size of dot). */
+export const VERTEX_HIT_RADIUS = 11;
+/** Under a finger, which covers ~22 px and can't see the dot. */
+export const VERTEX_HIT_RADIUS_TOUCH = 22;
+
+/**
+ * The vertex whose marker is within `radius` CSS px of a point, or null. Last
+ * first, because the last drawn is the one on top where two overlap.
+ */
+export function vertexAt<T extends { x: number; y: number }>(
+  view: View,
+  meta: MapMetadata,
+  vertices: readonly T[],
+  cx: number,
+  cy: number,
+  radius: number,
+): T | null {
+  for (let i = vertices.length - 1; i >= 0; i -= 1) {
+    const vertex = vertices[i]!;
+    const at = vertexScreen(view, meta, vertex.x, vertex.y);
+    if (Math.hypot(at.cx - cx, at.cy - cy) <= radius) return vertex;
+  }
+  return null;
+}
+
 /**
  * The vertex layer: stored vertices, the staged draft, and the one being aimed.
  * Drawn in every mode: a grid edit next to a waypoint needs to see it, and the

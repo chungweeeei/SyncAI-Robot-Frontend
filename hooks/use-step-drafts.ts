@@ -5,15 +5,20 @@ import * as React from "react";
 import {
   moveStepDraft,
   newStepDraft,
+  stepPatchFromVertex,
+  stepTypeForVertex,
   unlinkStep,
   type StepDraft,
 } from "@/lib/task/step";
 import type { StepType } from "@/lib/api/task";
+import type { MapVertex } from "@/lib/types/map";
 
 export interface StepDrafts {
   steps: StepDraft[];
   /** Returns the new row's key, so the list can unfold the row it just added. */
   add: (type: StepType) => number;
+  /** Append a row already set to a waypoint (see stepTypeForVertex); returns its key. */
+  addFromVertex: (vertex: MapVertex) => number;
   /** Take the row out; the rows it ran with stay linked (see unlinkStep). */
   remove: (key: number) => void;
   /**
@@ -50,6 +55,15 @@ export function useStepDrafts(
     (type: StepType) => {
       // Outside the updater, which may run twice in development and mint two keys.
       const draft = newStepDraft(type);
+      setSteps((current) => [...current, draft]);
+      return draft.key;
+    },
+    [setSteps],
+  );
+
+  const addFromVertex = React.useCallback(
+    (vertex: MapVertex) => {
+      const draft = { ...newStepDraft(stepTypeForVertex(vertex)), ...stepPatchFromVertex(vertex) };
       setSteps((current) => [...current, draft]);
       return draft.key;
     },
@@ -112,5 +126,5 @@ export function useStepDrafts(
 
   const clear = React.useCallback(() => setSteps(() => []), [setSteps]);
 
-  return { steps, add, remove, moveTo, patch, ungroup, replace, clear };
+  return { steps, add, addFromVertex, remove, moveTo, patch, ungroup, replace, clear };
 }
