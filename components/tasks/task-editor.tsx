@@ -128,7 +128,7 @@ export function TaskEditor() {
   const route = React.useMemo(() => stepRoute(drafts.steps), [drafts.steps]);
 
   /**
-   * Pick on map needs something to tap on, a floor plan or a 3D map, and
+   * Plan route needs something to tap on, a floor plan or a 3D map, and
    * stops to tap; without either it says why rather than opening onto nothing.
    */
   const [picking, setPicking] = React.useState(false);
@@ -451,7 +451,7 @@ export function TaskEditor() {
               <button
                 type="button"
                 aria-pressed={pickOpen}
-                aria-label="Pick on map"
+                aria-label="Plan route"
                 title={pickProblem ?? "Tap waypoints on the map to add steps in order"}
                 disabled={pickProblem !== null}
                 onClick={() => setPicking((open) => !open)}
@@ -463,7 +463,7 @@ export function TaskEditor() {
                 )}
               >
                 <RouteIcon className="size-3.5" aria-hidden />
-                <span className="max-sm:hidden">Pick on map</span>
+                <span className="max-sm:hidden">Plan route</span>
               </button>
               {/* Opens the map's floor plan editor in Waypoints mode, or its
                * 3D map with Waypoint armed; its back button returns here.

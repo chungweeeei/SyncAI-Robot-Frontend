@@ -669,11 +669,11 @@ test.describe("the console on a phone", () => {
   test("adds a step for a finger's tap on a waypoint, and none for a pinch begun on one", async ({
     page,
   }) => {
-    // Pick on map under a finger: the tap is the pick, and a second finger
+    // Plan route under a finger: the tap is the pick, and a second finger
     // turns the first into a pinch, which must not also be a pick.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
     await page.goto("/tasks/editor");
-    await page.getByRole("button", { name: "Pick on map" }).click();
+    await page.getByRole("button", { name: "Plan route" }).click();
     const plan = page.getByRole("img", { name: /^Floor plan of dp2f/ });
     await expect(plan).toBeVisible();
     await plan.evaluate((element) => element.scrollIntoView({ block: "center" }));

@@ -1489,7 +1489,7 @@ test.describe("the step editor", () => {
   });
 
   test("builds the route by tapping its waypoints on the map, in order", async ({ page }) => {
-    // Pick on map: each tap on a stop is the next step, a charger a Dock.
+    // Plan route: each tap on a stop is the next step, a charger a Dock.
     // Asserted on the rows and on the saved body, whose order is the route.
     const room = vertex({
       id: "44444444-4444-4444-4444-444444444444",
@@ -1516,7 +1516,7 @@ test.describe("the step editor", () => {
     await page.goto("/tasks/editor");
     await page.getByRole("textbox", { name: "Task name" }).fill("round");
 
-    const toggle = page.getByRole("button", { name: "Pick on map" });
+    const toggle = page.getByRole("button", { name: "Plan route" });
     await expect(toggle).toBeEnabled();
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
@@ -1570,7 +1570,7 @@ test.describe("the step editor", () => {
 
 
   test("builds the route by tapping waypoints on a map with only a 3D map", async ({ page }) => {
-    // No floor plan to tap, so Pick on map opens the 3D map. Both halves:
+    // No floor plan to tap, so Plan route opens the 3D map. Both halves:
     // the rows on screen and the saved body.
     // A 4 m tree rather than the doormat default: at a doormat's framing
     // the camera is so close that a mark's few centimetres over the ground
@@ -1597,13 +1597,13 @@ test.describe("the step editor", () => {
     await page.goto("/tasks/editor");
     await page.getByRole("textbox", { name: "Task name" }).fill("lap");
 
-    const toggle = page.getByRole("button", { name: "Pick on map" });
+    const toggle = page.getByRole("button", { name: "Plan route" });
     await expect(toggle).toBeEnabled();
     await toggle.click();
     const view = page.getByTestId("route-canvas-3d");
     await expect(view).toBeVisible();
     // Only the 3D map to pick on, so no switch.
-    await expect(page.getByRole("group", { name: "Pick on" })).toHaveCount(0);
+    await expect(page.getByRole("group", { name: "Plan on" })).toHaveCount(0);
 
     // The stop stands where the opening view looks: the tree's middle.
     const box = (await view.boundingBox())!;
@@ -1638,8 +1638,8 @@ test.describe("the step editor", () => {
     // The map editor's rule: the floor plan first, the 3D map a switch away.
     await mockBackend(page, { maps: [mapSummary({ ...withOctomap() })] });
     await page.goto("/tasks/editor");
-    await page.getByRole("button", { name: "Pick on map" }).click();
-    const views = page.getByRole("group", { name: "Pick on" });
+    await page.getByRole("button", { name: "Plan route" }).click();
+    const views = page.getByRole("group", { name: "Plan on" });
     await expect(views).toBeVisible();
     await expect(page.getByRole("img", { name: /^Floor plan of dp2f/ })).toBeVisible();
     await expect(page.getByTestId("route-canvas-3d")).toHaveCount(0);
