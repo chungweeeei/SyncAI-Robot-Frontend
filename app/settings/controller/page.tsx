@@ -1,12 +1,12 @@
 "use client";
 
-import { SettingsSubpage } from "@/components/settings/settings-subpage";
+import { SettingsPage } from "@/components/settings/settings-page";
 import { UnavailableSettings } from "@/components/settings/unavailable-settings";
 
 export default function ControllerSettingsPage() {
   return (
-    <SettingsSubpage title="Controller">
+    <SettingsPage title="Controller">
       <UnavailableSettings section="Controller" />
-    </SettingsSubpage>
+    </SettingsPage>
   );
 }

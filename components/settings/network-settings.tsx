@@ -10,10 +10,7 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
@@ -93,16 +90,6 @@ export function NetworkSettings() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <WifiIcon className="size-4 text-muted-foreground" />
-          Network
-        </CardTitle>
-        <CardDescription>
-          Choose a WiFi network the robot can see. The password is optional for
-          an open network. The robot saves the network once it joins.
-        </CardDescription>
-      </CardHeader>
       <form
         // A form so Enter in the password field connects.
         onSubmit={(event) => {

@@ -245,6 +245,40 @@ test.describe("settings sections", () => {
     await expect(page.getByRole("button", { name: "Restart", exact: true })).toHaveCount(0);
   });
 
+  test("puts Go back in the same top-right corner on every section", async ({ page }) => {
+    // One frame for every section: the way up is where Wi-Fi's has always
+    // been, beside the title and never over it, and it goes one level up.
+    await mockBackend(page);
+    let top: number | null = null;
+    for (const [path, parent] of [
+      ["/settings/planner", "/settings"],
+      ["/settings/controller", "/settings"],
+      ["/settings/wifi", "/settings"],
+      ["/settings/preferences", "/settings"],
+      ["/settings/wifi/new", "/settings/wifi"],
+    ]) {
+      await page.goto(path);
+      const header = page.locator("main header");
+      const back = header.getByRole("link", { name: /^Go back to / });
+      await expect(back, path).toHaveCount(1);
+      await expect(back, path).toHaveAttribute("href", parent);
+
+      const title = (await header.getByRole("heading", { level: 1 }).boundingBox())!;
+      const box = (await back.boundingBox())!;
+      expect(box.x, `${path}: Go back is not right of the title`).toBeGreaterThan(
+        title.x + title.width,
+      );
+      // The frame is one width and one header, so the row does not move
+      // between sections.
+      top ??= box.y;
+      expect(Math.abs(box.y - top), `${path}: Go back is not on the same row`).toBeLessThan(2);
+    }
+
+    // The landing has no way up, only its restart in that corner.
+    await page.goto("/settings");
+    await expect(page.locator("main header").getByRole("link", { name: /Go back/ })).toHaveCount(0);
+  });
+
   test("says Planner and Controller are not available yet", async ({ page }) => {
     await mockBackend(page);
     await page.goto("/settings");
@@ -396,7 +430,10 @@ test.describe("Wi-Fi saved networks", () => {
 
     // And the way back from Add network is Wi-Fi, not Settings.
     await page.goto("/settings/wifi/new");
-    await page.locator("main header").getByRole("link", { name: "Wi-Fi" }).click();
+    await page
+      .locator("main header")
+      .getByRole("link", { name: "Go back to Wi-Fi", exact: true })
+      .click();
     await expect(page).toHaveURL(/\/settings\/wifi$/);
   });
 });

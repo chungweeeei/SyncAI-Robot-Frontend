@@ -1,15 +1,19 @@
 "use client";
 
 import { NetworkSettings } from "@/components/settings/network-settings";
-import { SettingsSubpage } from "@/components/settings/settings-subpage";
+import { SettingsPage } from "@/components/settings/settings-page";
 
 export default function AddWifiNetworkPage() {
   return (
-    <SettingsSubpage
+    <SettingsPage
       title="Add network"
-      back={{ href: "/settings/wifi", label: "Wi-Fi" }}
+      description="Choose a Wi-Fi network the robot can see. The password is optional for an open network. The robot saves the network once it joins."
+      parents={[
+        { href: "/settings", label: "Settings" },
+        { href: "/settings/wifi", label: "Wi-Fi" },
+      ]}
     >
       <NetworkSettings />
-    </SettingsSubpage>
+    </SettingsPage>
   );
 }
