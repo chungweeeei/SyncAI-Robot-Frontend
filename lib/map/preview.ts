@@ -3,6 +3,7 @@
 // palette so it is recognisably the same map.
 
 import {
+  MARKER_HALO,
   VERTEX_DOT_RADIUS,
   drawMarker,
   vertexScreen,
@@ -37,7 +38,7 @@ export interface PreviewMarks {
 }
 
 /** The route's legs, thin enough to leave the markers and walls legible. */
-const ROUTE_LINE_PX = 1.5;
+const ROUTE_LINE_PX = 2;
 
 /** The approach point's ring, smaller than a stop's dot so it never reads as one. */
 const STAGING_RING_RADIUS = 3;
@@ -153,20 +154,61 @@ export function drawWaypointPreview(
   ctx.strokeStyle = palette.extent;
   ctx.strokeRect(view.ox - 0.5, view.oy - 0.5, w + 1, h + 1);
 
+  const placed = new Map(
+    vertices.map((vertex) => [
+      vertex.id,
+      { ...vertexScreen(view, meta, vertex.x, vertex.y), theta: vertex.theta },
+    ]),
+  );
+
+  // Under everything else: a leg is context, the stops are the answer.
+  if (marks.route && marks.route.length > 1) {
+    drawRoute(ctx, marks.route, placed, palette.cmd);
+  }
+
+  // Under the markers: the leg ends at the dot, which must stay on top.
+  for (const vertex of vertices) {
+    if (!marks.docks?.has(vertex.id)) continue;
+    drawApproach(ctx, view, meta, vertex, placed.get(vertex.id)!, palette.cmd);
+  }
+
+  drawStops(ctx, vertices, placed, marks.steps, palette);
+}
+
+/** Where a stop is drawn, CSS px, and its heading as the screen shows it. */
+export interface PlacedStop {
+  cx: number;
+  cy: number;
+  /** Degrees CCW from screen right, drawMarker's convention. */
+  theta: number;
+}
+
+/**
+ * The stops themselves, at wherever the caller put them on screen: the floor
+ * plan's transform, or the 3D view's projection (lib/scene/route-marks.ts),
+ * so both surfaces draw the same marks. A stop not in `placed` is not drawn.
+ * The job's stops are lit and drawn last, the earliest step on top, and
+ * named first where captions would collide (`planCaptions`).
+ */
+export function drawStops(
+  ctx: CanvasRenderingContext2D,
+  vertices: readonly MapVertex[],
+  placed: ReadonlyMap<string, PlacedStop>,
+  steps: ReadonlyMap<string, readonly number[]>,
+  palette: Palette,
+): void {
   ctx.save();
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
 
-  const ordinals = (vertex: MapVertex) => marks.steps.get(vertex.id) ?? [];
+  const shown = vertices.filter((vertex) => placed.has(vertex.id));
+  const ordinals = (vertex: MapVertex) => steps.get(vertex.id) ?? [];
   // Lit stops by the first step that reaches them, latest first, so that in
   // the draw order below (rest, then lit) step 1 lands on top of them all.
-  const lit = vertices
+  const lit = shown
     .filter((vertex) => ordinals(vertex).length > 0)
     .sort((a, b) => ordinals(b)[0] - ordinals(a)[0]);
-  const rest = vertices.filter((vertex) => ordinals(vertex).length === 0);
-  const placed = new Map(
-    vertices.map((vertex) => [vertex.id, vertexScreen(view, meta, vertex.x, vertex.y)]),
-  );
+  const rest = shown.filter((vertex) => ordinals(vertex).length === 0);
   const label = (vertex: MapVertex) => stepCaption(vertex.name, ordinals(vertex));
 
   ctx.font = CAPTION_FONT;
@@ -185,24 +227,13 @@ export function drawWaypointPreview(
     (text) => ctx.measureText(text).width,
   );
 
-  // Under everything else: a leg is context, the stops are the answer.
-  if (marks.route && marks.route.length > 1) {
-    drawRoute(ctx, marks.route, placed, palette.cmd);
-  }
-
-  // Under the markers: the leg ends at the dot, which must stay on top.
-  for (const vertex of vertices) {
-    if (!marks.docks?.has(vertex.id)) continue;
-    drawApproach(ctx, view, meta, vertex, placed.get(vertex.id)!, palette.cmd);
-  }
-
   for (const vertex of [...rest, ...lit]) {
     const at = placed.get(vertex.id)!;
     const emphasis = ordinals(vertex).length > 0;
     drawMarker(ctx, {
       cx: at.cx,
       cy: at.cy,
-      theta: vertex.theta,
+      theta: at.theta,
       colour: emphasis ? palette.cmd : palette.vertex,
       emphasis,
       glyph: vertexGlyph(vertex.type),
@@ -217,28 +248,36 @@ export function drawWaypointPreview(
 /**
  * The job's legs, stop to stop. Straight lines, not the planner's path: the
  * order is what this answers, and a line through a wall says nothing about
- * where the robot will really walk. An id with no stop (deleted) is skipped.
+ * where the robot will really walk. An id with no stop (deleted, or on a
+ * floor not shown) is skipped.
  */
-function drawRoute(
+export function drawRoute(
   ctx: CanvasRenderingContext2D,
   route: readonly string[],
   placed: ReadonlyMap<string, { cx: number; cy: number }>,
   colour: string,
 ): void {
-  ctx.save();
-  ctx.strokeStyle = colour;
-  ctx.globalAlpha = 0.6;
-  ctx.lineWidth = ROUTE_LINE_PX;
-  ctx.beginPath();
+  const path = new Path2D();
   let started = false;
   for (const id of route) {
     const at = placed.get(id);
     if (!at) continue;
-    if (started) ctx.lineTo(at.cx, at.cy);
-    else ctx.moveTo(at.cx, at.cy);
+    if (started) path.lineTo(at.cx, at.cy);
+    else path.moveTo(at.cx, at.cy);
     started = true;
   }
-  ctx.stroke();
+  ctx.save();
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  // Over a halo, as a marker is: a bare line vanished over the 3D map's
+  // height colours and over a floor plan's black walls alike.
+  ctx.strokeStyle = MARKER_HALO;
+  ctx.lineWidth = ROUTE_LINE_PX + 2;
+  ctx.stroke(path);
+  ctx.strokeStyle = colour;
+  ctx.globalAlpha = 0.85;
+  ctx.lineWidth = ROUTE_LINE_PX;
+  ctx.stroke(path);
   ctx.restore();
 }
 
