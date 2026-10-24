@@ -11,8 +11,10 @@ import {
   floorPlanPng,
   mapSummary,
   mockBackend,
+  octomapBt,
   taskTemplate,
   vertex,
+  withOctomap,
 } from "./backend";
 
 /** mapSummary()'s grid, in the shape the preview's view transform takes. */
@@ -1566,6 +1568,86 @@ test.describe("the step editor", () => {
     ]);
   });
 
+
+  test("builds the route by tapping waypoints on a map with only a 3D map", async ({ page }) => {
+    // No floor plan to tap, so Pick on map opens the 3D map. Both halves:
+    // the rows on screen and the saved body.
+    // A 4 m tree rather than the doormat default: at a doormat's framing
+    // the camera is so close that a mark's few centimetres over the ground
+    // are more than a tap's slop on screen. The stop stands at its middle.
+    const lobby = vertex({ id: "a", name: "lobby", type: "MOVE", x: 2, y: 2, theta: 0, z: 0 });
+    await mockBackend(page, {
+      maps: [mapSummary({ grid: null, thumbnail: null, grid_status: "none", ...withOctomap() })],
+      vertices: [lobby],
+      octomap: octomapBt(40),
+    });
+    const posted: { map_name?: string; steps: Record<string, unknown>[] }[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as (typeof posted)[number] & { name: string };
+      posted.push(body);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({ id: "77777777-7777-7777-7777-777777777777", name: body.name }),
+        ),
+      });
+    });
+    await page.goto("/tasks/editor");
+    await page.getByRole("textbox", { name: "Task name" }).fill("lap");
+
+    const toggle = page.getByRole("button", { name: "Pick on map" });
+    await expect(toggle).toBeEnabled();
+    await toggle.click();
+    const view = page.getByTestId("route-canvas-3d");
+    await expect(view).toBeVisible();
+    // Only the 3D map to pick on, so no switch.
+    await expect(page.getByRole("group", { name: "Pick on" })).toHaveCount(0);
+
+    // The stop stands where the opening view looks: the tree's middle.
+    const box = (await view.boundingBox())!;
+    const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const rows = page.getByRole("listitem");
+
+    // A drag from the stop orbits; it adds nothing.
+    await page.mouse.move(centre.x, centre.y);
+    await page.mouse.down();
+    await page.mouse.move(centre.x + 40, centre.y, { steps: 4 });
+    await page.mouse.up();
+    await expect(rows).toHaveCount(0);
+    await page.getByRole("button", { name: "Fit to view" }).click();
+
+    // Control: a tap on it does, and a second tap is the stop again.
+    await page.mouse.click(centre.x, centre.y);
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText("lobby");
+    await page.mouse.click(centre.x, centre.y);
+    await expect(rows).toHaveCount(2);
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => posted).toHaveLength(1);
+    expect(posted[0]!.map_name).toBe(MAP_NAME);
+    expect(posted[0]!.steps).toMatchObject([
+      { id: "1-move", type: "MOVE", vertex_id: "a" },
+      { id: "2-move", type: "MOVE", vertex_id: "a" },
+    ]);
+  });
+
+  test("offers the floor plan and the 3D map to pick on, for a map with both", async ({ page }) => {
+    // The map editor's rule: the floor plan first, the 3D map a switch away.
+    await mockBackend(page, { maps: [mapSummary({ ...withOctomap() })] });
+    await page.goto("/tasks/editor");
+    await page.getByRole("button", { name: "Pick on map" }).click();
+    const views = page.getByRole("group", { name: "Pick on" });
+    await expect(views).toBeVisible();
+    await expect(page.getByRole("img", { name: /^Floor plan of dp2f/ })).toBeVisible();
+    await expect(page.getByTestId("route-canvas-3d")).toHaveCount(0);
+
+    await views.getByRole("button", { name: "3D map" }).click();
+    await expect(page.getByTestId("route-canvas-3d")).toBeVisible();
+    await expect(page.getByRole("img", { name: /^Floor plan of dp2f/ })).toHaveCount(0);
+  });
 
   test("zooms the floor plan and comes back to fit", async ({ page }) => {
     // At fit scale two waypoints a body length apart are one smear, so the

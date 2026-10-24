@@ -35,7 +35,7 @@ import { useSchedules } from "@/hooks/use-schedules";
 import { useStepDrafts } from "@/hooks/use-step-drafts";
 import { useLeaveGuard } from "@/hooks/use-leave-guard";
 import { useTaskDraft } from "@/hooks/use-task-draft";
-import { waypointEditor } from "@/lib/map/links";
+import { editorViews, waypointEditor } from "@/lib/map/links";
 import type { TaskStepState } from "@/lib/api/task";
 import { draftIsUnsaved, type TaskDraft } from "@/lib/task/draft-store";
 import {
@@ -128,14 +128,14 @@ export function TaskEditor() {
   const route = React.useMemo(() => stepRoute(drafts.steps), [drafts.steps]);
 
   /**
-   * Pick on map needs a floor plan to tap and stops to tap on; without either
-   * it says why rather than opening onto nothing. A 3D-only map still has the
-   * Add row and the dropdown.
+   * Pick on map needs something to tap on, a floor plan or a 3D map, and
+   * stops to tap; without either it says why rather than opening onto nothing.
    */
   const [picking, setPicking] = React.useState(false);
+  const pickViews = React.useMemo(() => (editorMap ? editorViews(editorMap) : []), [editorMap]);
   const pickProblem =
-    mapGrid === null
-      ? "This map has no floor plan to pick waypoints on"
+    pickViews.length === 0
+      ? "This map has no floor plan or 3D map to pick waypoints on"
       : verticesStatus !== "ok" || vertices.length === 0
         ? "This map has no waypoints to pick yet"
         : null;
@@ -452,7 +452,7 @@ export function TaskEditor() {
                 type="button"
                 aria-pressed={pickOpen}
                 aria-label="Pick on map"
-                title={pickProblem ?? "Tap waypoints on the floor plan to add steps in order"}
+                title={pickProblem ?? "Tap waypoints on the map to add steps in order"}
                 disabled={pickProblem !== null}
                 onClick={() => setPicking((open) => !open)}
                 className={cn(
@@ -489,10 +489,13 @@ export function TaskEditor() {
           }
           caption={saveReason ?? mismatchReason ?? undefined}
         >
-          {pickOpen && mapName !== null && mapGrid !== null && (
+          {pickOpen && mapName !== null && (
             <RoutePicker
+              // A new map starts on its own first view and floor.
+              key={mapName}
               mapName={mapName}
               mapGrid={mapGrid}
+              views={pickViews}
               vertices={vertices}
               stepMarks={stepMarks}
               dockMarks={dockMarks}

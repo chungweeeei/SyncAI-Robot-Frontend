@@ -248,9 +248,13 @@ components/
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
                 and the /tasks/editor page (step composer, name, save, delete,
-                and Pick on map — route-picker: the floor plan preview with
-                onPick, where each tap on a waypoint appends a step, a Dock
-                on a charger, and the preview joins the route in step order)
+                and Pick on map — route-picker: each tap on a waypoint
+                appends a step, a Dock on a charger, and the route is drawn
+                joined in step order; on the floor plan preview with onPick,
+                or, for a map with a 3D map, route-canvas-3d: the tree in 3D
+                with the floor plan's marks projected over it at screen size,
+                since a metre-sized pin is two pixels over a building, and a
+                2D / 3D switch for a map with both, as editorViews offers)
   history/      finished-job dashboard and list: the filter toolbar (kept in
                 the URL), the counts and the outcome bar, cursor paging,
                 per-run step detail
@@ -356,7 +360,9 @@ lib/
                 lighting that outlines the 3D map by depth (edl.ts: the
                 editor's whole 3D view; on the dashboard only the
                 map's own layer, the rest drawn over it against its
-                depth, so a scan point is not ringed), camera policy (the
+                depth, so a scan point is not ringed), the task editor's
+                waypoints as screen marks over the 3D map (route-marks.ts:
+                projectStops, stopNear), camera policy (the
                 opening, overhead and front framings, and the editor's
                 3D view's: the primary button orbits until a brush or
                 Waypoint is armed, then paints or places while the right
