@@ -7,6 +7,8 @@ import {
   MapPinPlusIcon,
   MapPinXIcon,
   MaximizeIcon,
+  MousePointerClickIcon,
+  MoveIcon,
   PaintbrushIcon,
   PentagonIcon,
   Redo2Icon,
@@ -45,9 +47,9 @@ import { BRUSH_RADII_M } from "@/lib/map/ground-fill";
  * patches, waypoints or forbidden zones — beside the zoom. Left: fit and
  * shading, history, Save, then Orbit and the tools the Draw choice allows.
  * Save sends the patches and the forbidden zones drawn, merged or moved,
- * as the floor plan's Save does; History is the patches' only. A waypoint is
- * written as it is placed or removed, as on the dashboard, and a zone as it
- * is removed, as on the floor plan.
+ * as the floor plan's Save does, and the waypoints placed, moved or deleted;
+ * History is the patches' only. A zone is written as it is removed, as on
+ * the floor plan.
  */
 
 /** What a press on the 3D map works on, once chosen in the Draw list. */
@@ -211,6 +213,21 @@ export function Map3dToolBar({
               pressed={tool === "waypoint"}
               disabled={placeLock !== null}
               onClick={() => onToolChange("waypoint")}
+            />
+            <ToolButton
+              label="Move"
+              hint={placeLock ?? "drag a waypoint to put it somewhere else; it keeps its heading"}
+              icon={MoveIcon}
+              pressed={tool === "move"}
+              disabled={placeLock !== null}
+              onClick={() => onToolChange("move")}
+            />
+            <ToolButton
+              label="Select"
+              hint="press waypoints to select them, then delete them together from the list"
+              icon={MousePointerClickIcon}
+              pressed={tool === "select"}
+              onClick={() => onToolChange("select")}
             />
             <ToolButton
               label="Remove"

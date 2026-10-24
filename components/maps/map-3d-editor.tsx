@@ -12,6 +12,7 @@ import {
 import { VertexMoveDialog } from "@/components/dashboard/vertex-move-dialog";
 import { VertexPlaceControl } from "@/components/dashboard/vertex-place-control";
 import { Map3dCanvas, type Map3dTool } from "@/components/maps/map-3d-canvas";
+import { Map3dWaypointPanel } from "@/components/maps/map-3d-waypoint-panel";
 import {
   Map3dDrawBar,
   Map3dToolBar,
@@ -89,6 +90,9 @@ const NO_ZONES: ZonePolygon[] = [];
  * staged as the floor plan's are (lib/map/vertex-stage.ts): placed, moved and
  * deleted on screen, a run of them, and sent by Save. Writing each as it was
  * placed, the dashboard's flow, made laying out a site a save per stop.
+ * With Waypoint chosen, a list names every stop (2026-10-24, by request: an
+ * operator naming the next one could not tell which names were taken), and
+ * its rows and Select's taps make a set one Delete takes.
  *
  * And its forbidden zones (2026-10-23): the robot's 3D planner reads the same
  * keepout.json the floor plan editor writes, each zone optionally banded to
@@ -303,6 +307,25 @@ function Map3dSurface({
   const placementSeq = React.useRef(0);
   /** The stop a tap is asking about; null when the dialog is closed. */
   const [askedVertex, setAskedVertex] = React.useState<MapVertex | null>(null);
+  /**
+   * The stops a Delete takes, picked in the list or with Select. Held as ids
+   * and read through the list, so a stop deleted another way drops out.
+   */
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const selectedVertexIds = React.useMemo(() => {
+    const kept = new Set(vertexList.map((vertex) => vertex.id));
+    return selectedIds.filter((id) => kept.has(id));
+  }, [selectedIds, vertexList]);
+
+  /** The rows Save would write; the list marks them, since the map draws staged and stored alike. */
+  const pendingVertexIds = React.useMemo(() => {
+    if (verticesLocked) return new Set<string>();
+    const plan = planVertexSave(savedVertices, vertexList);
+    return new Set([
+      ...plan.creates.map(({ localId }) => localId),
+      ...plan.updates.map(({ id }) => id),
+    ]);
+  }, [savedVertices, vertexList, verticesLocked]);
 
   /** Why the waypoints cannot be placed or removed, or null. */
   const placeLock =
@@ -320,7 +343,7 @@ function Map3dSurface({
   // rather than in an effect, so the next release cannot write onto a
   // read-only map. An open name dialog stays up instead: its Create greys and
   // the name survives.
-  if (placeLock !== null && (tool === "waypoint" || tool === "remove")) {
+  if (placeLock !== null && (tool === "waypoint" || tool === "move" || tool === "remove")) {
     setTool("orbit");
     setMoving(null);
   }
@@ -351,11 +374,15 @@ function Map3dSurface({
   );
 
 
-  /** A new Draw choice starts on Orbit, as the floor plan's starts on Pan. */
+  /**
+   * A new Draw choice starts on Orbit, as the floor plan's starts on Pan, and
+   * puts the selection down: off Waypoint there is no list to show it in.
+   */
   const chooseDraw = React.useCallback(
     (kind: Map3dDrawKind | null) => {
       setDrawKind(kind);
       changeTool("orbit");
+      setSelectedIds([]);
     },
     [changeTool],
   );
@@ -445,6 +472,7 @@ function Map3dSurface({
         setSavedVertices((current) => rebaseVertices(current, [], landed).saved);
         setVertexList((current) => rebaseVertices([], current, landed).working);
         setMoving((current) => current && { ...current, id: ids.get(current.id) ?? current.id });
+        setSelectedIds((current) => current.map((id) => ids.get(id) ?? id));
         setVertexNote(
           failure
             ? { kind: "failed", message: vertexSaveFailure(landed, failure) }
@@ -710,6 +738,57 @@ function Map3dSurface({
     setAskedVertex(null);
   };
 
+  /**
+   * A stop dragged with Move, put down where it was let go. Its height follows
+   * placedGround as a re-place's does: the ground under it on the floor
+   * picked, its own with none, so a 2F stop dragged with All up stays on 2F.
+   */
+  const moveVertex = (vertex: MapVertex, pose: PlanarPose) => {
+    if (placeLock !== null) return;
+    const z = placedGround({ voxels, band: floorBand, x: pose.x, y: pose.y, moving: vertex.z });
+    setVertexList((current) =>
+      current.map((stop) =>
+        stop.id === vertex.id ? { ...stop, x: pose.x, y: pose.y, theta: pose.theta, z } : stop,
+      ),
+    );
+    setVertexNote({ kind: "idle" });
+  };
+
+  const toggleSelected = React.useCallback((id: string) => {
+    setSelectedIds((current) =>
+      current.includes(id) ? current.filter((other) => other !== id) : [...current, id],
+    );
+  }, []);
+
+  // Asked once, as Remove asks: there is no undo for waypoints here.
+  const deleteSelected = React.useCallback(() => {
+    if (placeLock !== null || selectedVertexIds.length === 0) return;
+    const gone = new Set(selectedVertexIds);
+    const question =
+      selectedVertexIds.length === 1
+        ? deleteQuestion(vertexList.find((vertex) => gone.has(vertex.id))?.name ?? "")
+        : `Delete ${selectedVertexIds.length} waypoints? They are removed from the robot when you save.`;
+    if (!window.confirm(question)) return;
+    setVertexList((current) => current.filter((vertex) => !gone.has(vertex.id)));
+    setSelectedIds([]);
+    setVertexNote({ kind: "idle" });
+  }, [placeLock, selectedVertexIds, vertexList]);
+
+  // Delete or Backspace takes the selection, as on the floor plan; a zone
+  // shape in flight has Backspace first.
+  const hasSelection = selectedVertexIds.length > 0;
+  React.useEffect(() => {
+    if (!hasSelection) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      if (isTypingTarget(event.target) || zoneDraft.length > 0) return;
+      event.preventDefault();
+      deleteSelected();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [hasSelection, deleteSelected, zoneDraft.length]);
+
   return (
     // For the e2e suite only, as an attribute so it can't become an on-screen
     // diagnostic: data-patched (columns patched) proves a stroke filled or
@@ -734,6 +813,9 @@ function Map3dSurface({
           onPlaceCommit={commitPlace}
           onVertexActivate={setAskedVertex}
           onVertexRemove={removeTapped}
+          selectedVertexIds={selectedVertexIds}
+          onVertexSelect={(vertex) => toggleSelected(vertex.id)}
+          onVertexMove={moveVertex}
           zones={zones ?? NO_ZONES}
           zoneFloor={zoneFloorBand ? vertexBand : null}
           zonePlaneZ={zoneGroundZ}
@@ -873,6 +955,19 @@ function Map3dSurface({
               />
             </label>
           </div>
+
+          {drawKind === "waypoint" && !verticesLocked && (
+            <Map3dWaypointPanel
+              className="pointer-events-auto"
+              vertices={vertexList}
+              selectedIds={selectedVertexIds}
+              pendingIds={pendingVertexIds}
+              lockReason={placeLock}
+              onToggle={toggleSelected}
+              onClear={() => setSelectedIds([])}
+              onDelete={deleteSelected}
+            />
+          )}
 
           {drawKind === "zone" && (
             <div

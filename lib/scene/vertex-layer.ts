@@ -132,6 +132,8 @@ export interface VertexLayer {
   byId: Map<string, MapVertex>;
   /** Light up one marker, or none. Cheap enough to call per pointer move. */
   setHovered: (id: string | null) => void;
+  /** Light up a set of markers in the hover hue: the editor's selection. Unknown ids are skipped. */
+  setSelected: (ids: readonly string[]) => void;
   /** Take one marker off the map while its pose is in the operator's hands. */
   setMoving: (id: string | null) => void;
   /** Show only the stops whose ground height is in [lo, hi); ±Infinity is every floor. */
@@ -276,10 +278,13 @@ export function createVertexLayer(
   }
 
   let hovered: string | null = null;
+  let selected = new Set<string>();
 
-  const paint = (id: string | null, on: boolean) => {
+  /** Lit while hovered or selected, so un-hovering a selected stop leaves it lit. */
+  const paint = (id: string | null) => {
     const handle = id ? handles.get(id) : undefined;
-    if (!handle) return;
+    if (!handle || !id) return;
+    const on = id === hovered || selected.has(id);
     const set = on ? hover : base;
     for (const mesh of handle.fill) mesh.material = set.fill;
     for (const mesh of handle.line) mesh.material = set.line;
@@ -298,9 +303,16 @@ export function createVertexLayer(
     // a retired id would leave a highlight nothing can clear.
     const next = id && handles.has(id) ? id : null;
     if (next === hovered) return;
-    paint(hovered, false);
-    paint(next, true);
+    const previous = hovered;
     hovered = next;
+    paint(previous);
+    paint(next);
+  };
+
+  const setSelected = (ids: readonly string[]) => {
+    const previous = selected;
+    selected = new Set(ids.filter((id) => handles.has(id)));
+    for (const id of new Set([...previous, ...selected])) paint(id);
   };
 
   let moving: string | null = null;
@@ -368,5 +380,5 @@ export function createVertexLayer(
     for (const handle of handles.values()) handle.badge.material.dispose();
   };
 
-  return { group, pickables, byId, setHovered, setMoving, setBand, dispose };
+  return { group, pickables, byId, setHovered, setSelected, setMoving, setBand, dispose };
 }

@@ -46,14 +46,18 @@ import type { PlanarPose } from "@/lib/types/robot";
 
 /**
  * Orbit, the two brushes, Waypoint (put a stop down, or a re-placed one
- * back), Remove (take a stored stop off the map), Zone (draw a forbidden
- * zone's corners, one tap each) and Zone remove (tap a zone to delete it).
+ * back), Move (drag a stop somewhere else), Select (tap stops into the set a
+ * Delete takes), Remove (take a stored stop off the map), Zone (draw a
+ * forbidden zone's corners, one tap each) and Zone remove (tap a zone to
+ * delete it).
  */
 export type Map3dTool =
   | "orbit"
   | "fill"
   | "erase"
   | "waypoint"
+  | "move"
+  | "select"
   | "remove"
   | "zone"
   | "zoneRemove";
@@ -71,7 +75,7 @@ const CORNER_RADIUS_PX = 12;
 const CORNER_RADIUS_TOUCH_PX = 22;
 
 /** The tools a tap on a stored stop means something to. */
-const tapsStops = (tool: Map3dTool) => tool === "orbit" || tool === "remove";
+const tapsStops = (tool: Map3dTool) => tool === "orbit" || tool === "select" || tool === "remove";
 
 interface Column {
   x: number;
@@ -120,6 +124,15 @@ export interface Map3dCanvasProps {
   onVertexActivate: (vertex: MapVertex) => void;
   /** A tap on a stored stop with Remove armed. */
   onVertexRemove: (vertex: MapVertex) => void;
+  /** The stops lit as selected, whatever the tool. */
+  selectedVertexIds: readonly string[];
+  /** A tap on a stored stop with Select armed: in or out of the selection. */
+  onVertexSelect: (vertex: MapVertex) => void;
+  /**
+   * A stop dragged with Move armed and let go: where it now stands, its
+   * heading kept. Only a deliberate release past the deadzone; a tap opens it.
+   */
+  onVertexMove: (vertex: MapVertex, pose: PlanarPose) => void;
   /** The map's saved forbidden zones; drawn whatever the tool. */
   zones: readonly ZonePolygon[];
   /**
@@ -181,7 +194,10 @@ const RING_WIDTH = 0.12;
  * Waypoint is the dashboard's placing gesture (pointcloud-canvas.tsx): a
  * press plants the stop, a drag past the deadzone aims it, and only a
  * deliberate release commits — a second finger or a cancel abandons it. With
- * no tool armed, a tap on a stop opens it; with Remove armed, it removes it.
+ * no tool armed, a tap on a stop opens it; with Select armed, it toggles it
+ * in the selection; with Remove armed, it removes it. Move carries a stop
+ * under the pointer from where it was grabbed, on its own ground, so a stop
+ * picked by its badge does not jump; the same release rule commits it.
  */
 export function Map3dCanvas(props: Map3dCanvasProps) {
   const { session } = props;
@@ -230,6 +246,19 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   const draftRef = React.useRef<PlanarPose | null>(null);
   /** A press with no tool armed that may still be a tap on a stop. */
   const tapRef = React.useRef<{ pointerId: number; cx: number; cy: number } | null>(null);
+  /**
+   * A stop grabbed with Move armed: a tap until it passes the deadzone, then
+   * a drag. `dx`/`dy` is the stop's offset from the grab point on its ground.
+   */
+  const dragRef = React.useRef<{
+    pointerId: number;
+    vertex: MapVertex;
+    cx: number;
+    cy: number;
+    dx: number;
+    dy: number;
+    dragging: boolean;
+  } | null>(null);
   const [hovering, setHovering] = React.useState(false);
   /**
    * Set while the brush is over a place a fill has no surface to read a
@@ -387,10 +416,15 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     if (ctx) applyMap3dControls(ctx.controls, props.tool !== "orbit");
     if (ctx && props.tool !== "fill" && props.tool !== "erase") ctx.brush.visible = false;
     // Disarming mid-press must not strand a planted stop.
-    if (props.tool !== "waypoint") {
+    if (props.tool !== "waypoint" && props.tool !== "move") {
       anchorRef.current = null;
       draftRef.current = null;
       if (ctx) ctx.draft.visible = false;
+    }
+    // Nor a stop half dragged: it goes back where it was.
+    if (props.tool !== "move" && dragRef.current) {
+      dragRef.current = null;
+      vertexLayerRef.current?.setMoving(propsRef.current.movingVertex?.id ?? null);
     }
     invalidate();
   }, [props.tool, invalidate]);
@@ -405,9 +439,10 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     const layer = createVertexLayer(vertices, THEMES[theme]);
     ctx.scene.add(layer.group);
     vertexLayerRef.current = layer;
-    const { vertexBand: band, movingVertex: moving } = propsRef.current;
+    const { vertexBand: band, movingVertex: moving, selectedVertexIds } = propsRef.current;
     layer.setBand(band?.lo ?? -Infinity, band?.hi ?? Infinity);
     layer.setMoving(moving?.id ?? null);
+    layer.setSelected(selectedVertexIds);
     invalidate();
     return () => {
       ctx.scene.remove(layer.group);
@@ -430,6 +465,12 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     vertexLayerRef.current?.setMoving(movingVertex?.id ?? null);
     invalidate();
   }, [movingVertex, invalidate]);
+
+  const { selectedVertexIds } = props;
+  React.useEffect(() => {
+    vertexLayerRef.current?.setSelected(selectedVertexIds);
+    invalidate();
+  }, [selectedVertexIds, invalidate]);
 
   // ---- Forbidden zones ----------------------------------------------------
   // Rebuilt on any change, as on the dashboard; a map has a handful. The
@@ -728,13 +769,20 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     return id ? (layer.byId.get(id) ?? null) : null;
   };
 
-  /** Show the draft marker at a pose, or hide it. */
-  const showDraft = (pose: PlanarPose | null) => {
+  /** Show the draft marker at a pose, on `z` (the place plane by default), or hide it. */
+  const showDraft = (pose: PlanarPose | null, z = propsRef.current.placeZ) => {
     draftRef.current = pose;
     const ctx = sceneRef.current;
     if (!ctx) return;
-    placePoseMarker(ctx.draft, pose && { ...pose, z: propsRef.current.placeZ });
+    placePoseMarker(ctx.draft, pose && { ...pose, z });
     invalidate();
+  };
+
+  /** Put a grabbed stop back where it was, with nothing committed. */
+  const dropDrag = () => {
+    dragRef.current = null;
+    showDraft(null);
+    vertexLayerRef.current?.setMoving(propsRef.current.movingVertex?.id ?? null);
   };
 
   /** A re-place keeps the stop's own heading until a drag aims it; a new one faces +x. */
@@ -852,6 +900,27 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
       };
       return;
     }
+    if (tool === "move") {
+      // A second finger abandons the drag, as it abandons a planted stop.
+      if (dragRef.current || event.button !== 0 || !event.isPrimary) {
+        if (dragRef.current) dropDrag();
+        return;
+      }
+      const vertex = pickVertex(event);
+      if (!vertex) return;
+      event.preventDefault();
+      const grab = castAt(event, drawnGround(vertex.z));
+      dragRef.current = {
+        pointerId: event.pointerId,
+        vertex,
+        cx: event.clientX,
+        cy: event.clientY,
+        dx: grab ? vertex.x - grab.x : 0,
+        dy: grab ? vertex.y - grab.y : 0,
+        dragging: false,
+      };
+      return;
+    }
     if (tapsStops(tool)) {
       // Maybe a tap on a stop, resolved on release so a drag starting on a
       // marker still orbits. Primary only: a second finger is a pinch.
@@ -913,6 +982,29 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
       if (at) propsRef.current.onZoneCornerDrag(press.grab, at);
       return;
     }
+    if (tool === "move") {
+      const drag = dragRef.current;
+      if (!drag) {
+        if (event.buttons === 0) hoverVertex(pickVertex(event));
+        return;
+      }
+      if (drag.pointerId !== event.pointerId) return;
+      if (!drag.dragging) {
+        if (!isDrag(drag.cx, drag.cy, event.clientX, event.clientY)) return;
+        // Off the map while it is in hand, the draft marker standing in.
+        drag.dragging = true;
+        hoverVertex(null);
+        vertexLayerRef.current?.setMoving(drag.vertex.id);
+      }
+      const at = castAt(event, drawnGround(drag.vertex.z));
+      if (at) {
+        showDraft(
+          { x: at.x + drag.dx, y: at.y + drag.dy, theta: drag.vertex.theta },
+          drag.vertex.z,
+        );
+      }
+      return;
+    }
     if (tapsStops(tool)) {
       // Hover-test only with no button down; a button down is a camera drag.
       if (event.buttons === 0) hoverVertex(pickVertex(event));
@@ -961,17 +1053,31 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
       }
       return;
     }
+    const drag = dragRef.current;
+    if (drag) {
+      if (drag.pointerId !== event.pointerId) return;
+      const pose = drag.dragging ? draftRef.current : null;
+      dropDrag();
+      // A drag lands its stop; a tap on it opens it, as with no tool armed.
+      if (pose) propsRef.current.onVertexMove(drag.vertex, pose);
+      else if (!drag.dragging) propsRef.current.onVertexActivate(drag.vertex);
+      return;
+    }
     const tap = tapRef.current;
     if (tap) {
       tapRef.current = null;
-      const { tool, onVertexActivate, onVertexRemove } = propsRef.current;
+      const { tool, onVertexActivate, onVertexRemove, onVertexSelect } = propsRef.current;
       if (
         tapsStops(tool) &&
         tap.pointerId === event.pointerId &&
         !isDrag(tap.cx, tap.cy, event.clientX, event.clientY)
       ) {
         const vertex = pickVertex(event);
-        if (vertex) (tool === "remove" ? onVertexRemove : onVertexActivate)(vertex);
+        if (vertex) {
+          (tool === "remove" ? onVertexRemove : tool === "select" ? onVertexSelect : onVertexActivate)(
+            vertex,
+          );
+        }
       }
     }
     const anchor = anchorRef.current;
@@ -987,6 +1093,11 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
 
   const handlePointerCancel = (event: React.PointerEvent<HTMLDivElement>) => {
     if (tapRef.current?.pointerId === event.pointerId) tapRef.current = null;
+    // Only a deliberate release may land a dragged stop; a cancel puts it back.
+    if (dragRef.current?.pointerId === event.pointerId) {
+      dropDrag();
+      return;
+    }
     // A cancelled corner drag stays where it was let go, as a cancelled
     // stroke stays painted: it is already on screen there, and unsaved.
     if (zonePressRef.current?.pointerId === event.pointerId) zonePressRef.current = null;
@@ -1016,8 +1127,8 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     // A corner dragged off the canvas stays where it last was.
     zonePressRef.current = null;
     hoverVertex(null);
-    // A planted stop survives the pointer leaving; a carried one does not.
-    if (!anchorRef.current) showDraft(null);
+    // A planted or dragged stop survives the pointer leaving; a carried one does not.
+    if (!anchorRef.current && !dragRef.current) showDraft(null);
     if (gestureRef.current) return;
     setUnreadable(false);
     const ctx = sceneRef.current;
@@ -1031,10 +1142,14 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
         ref={containerRef}
         data-testid="map-3d-canvas"
         role="application"
-        aria-label="The 3D map. Drag to orbit; with Fill or Erase armed, drag to paint; with Place armed, press to place and drag to aim; with Remove armed, press a waypoint to delete it; with Zone armed, tap each corner of a forbidden zone and its first corner to close it, start on a zone's corner and end on another of its corners to merge into it, or drag a corner to move it; with Zone remove armed, tap a zone to delete it."
+        aria-label="The 3D map. Drag to orbit; with Fill or Erase armed, drag to paint; with Place armed, press to place and drag to aim; with Move armed, drag a waypoint to put it somewhere else; with Select armed, press waypoints to select them; with Remove armed, press a waypoint to delete it; with Zone armed, tap each corner of a forbidden zone and its first corner to close it, start on a zone's corner and end on another of its corners to merge into it, or drag a corner to move it; with Zone remove armed, tap a zone to delete it."
         className={cn(
           "absolute inset-0 touch-none",
-          tapsStops(props.tool) && hovering
+          props.tool === "move"
+            ? hovering
+              ? "cursor-grab"
+              : "cursor-default"
+            : tapsStops(props.tool) && hovering
             ? "cursor-pointer"
             : props.tool === "orbit"
               ? "cursor-grab active:cursor-grabbing"

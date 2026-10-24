@@ -337,7 +337,8 @@ function BandBlock({
   );
 }
 
-function VertexList({
+/** Also the 3D view's list (map-3d-waypoint-panel.tsx), where a row toggles rather than narrows. */
+export function VertexList({
   vertices,
   selectedIds,
   pendingIds,
@@ -349,7 +350,7 @@ function VertexList({
   selectedIds: readonly string[];
   /** Rows Save would write, marked with the toolbar Save's caution dot. */
   pendingIds: ReadonlySet<string>;
-  /** Picking a row always narrows to that one vertex, band or not. */
+  /** A row picked: the floor plan narrows to that one vertex, the 3D view toggles it. */
   onSelect: (id: string) => void;
   empty: string | null;
 }) {
@@ -394,6 +395,7 @@ function VertexList({
             <li key={vertex.id}>
               <button
                 type="button"
+                aria-pressed={selectedIds.includes(vertex.id)}
                 onClick={() => onSelect(vertex.id)}
                 className={cn(
                   "flex w-full items-center gap-1.5 rounded-sm px-1 py-0.5 text-left transition-colors",
