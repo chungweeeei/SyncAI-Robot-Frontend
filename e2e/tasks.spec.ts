@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
 
+import { vertexScreen } from "@/lib/map/draw";
+import { previewView } from "@/lib/map/preview";
+import type { MapMetadata } from "@/lib/types/robot";
+
 import {
   MAP_NAME,
   activeTask,
@@ -10,6 +14,14 @@ import {
   taskTemplate,
   vertex,
 } from "./backend";
+
+/** mapSummary()'s grid, in the shape the preview's view transform takes. */
+const PREVIEW_META: MapMetadata = {
+  resolution: 0.05,
+  origin: [-12.3, -7.8, 0],
+  width: 400,
+  height: 300,
+};
 
 /**
  * The task console and the step editor, and the jobs they dispatch.
@@ -1471,6 +1483,86 @@ test.describe("the step editor", () => {
     expect(posted[0]!.map_name).toBe(MAP_NAME);
     expect(posted[0]!.steps).toEqual([
       { id: "1-dock", type: "DOCK", params: { x: 2.5, y: 1.25, theta: 90 }, vertex_id: vertex().id },
+    ]);
+  });
+
+  test("builds the route by tapping its waypoints on the map, in order", async ({ page }) => {
+    // Pick on map: each tap on a stop is the next step, a charger a Dock.
+    // Asserted on the rows and on the saved body, whose order is the route.
+    const room = vertex({
+      id: "44444444-4444-4444-4444-444444444444",
+      name: "room-a",
+      type: "MOVE",
+      x: -3,
+      y: 4,
+      theta: 0,
+    });
+    await mockBackend(page, { vertices: [vertex(), room] });
+    const posted: { steps: Record<string, unknown>[] }[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as (typeof posted)[number] & { name: string };
+      posted.push(body);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({ id: "77777777-7777-7777-7777-777777777777", name: body.name }),
+        ),
+      });
+    });
+    await page.goto("/tasks/editor");
+    await page.getByRole("textbox", { name: "Task name" }).fill("round");
+
+    const toggle = page.getByRole("button", { name: "Pick on map" });
+    await expect(toggle).toBeEnabled();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    const plan = page.getByRole("img", { name: /^Floor plan of dp2f/ });
+    await expect(plan).toBeVisible();
+
+    // Where each stop is drawn, by the preview's own view transform.
+    const box = (await plan.boundingBox())!;
+    const view = previewView({ width: box.width, height: box.height }, PREVIEW_META);
+    const screenOf = (stop: { x: number; y: number }) => {
+      const at = vertexScreen(view, PREVIEW_META, stop.x, stop.y);
+      return { x: box.x + at.cx, y: box.y + at.cy };
+    };
+    const roomAt = screenOf(room);
+    const dockAt = screenOf(vertex());
+
+    // A drag that starts on a stop pans; it adds nothing.
+    await page.mouse.move(roomAt.x, roomAt.y);
+    await page.mouse.down();
+    await page.mouse.move(roomAt.x + 40, roomAt.y + 20, { steps: 4 });
+    await page.mouse.up();
+    await expect(page.getByRole("listitem")).toHaveCount(0);
+    await page.getByRole("button", { name: "Fit to view" }).click();
+
+    await page.mouse.click(roomAt.x, roomAt.y);
+    await page.mouse.click(dockAt.x, dockAt.y);
+    const rows = page.getByRole("listitem");
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0)).toContainText("Move");
+    await expect(rows.nth(0)).toContainText("room-a");
+    await expect(rows.nth(1)).toContainText("Dock");
+    await expect(rows.nth(1)).toContainText("dock");
+    await expect(plan).toHaveAccessibleName(/; room-a is step 1, dock is step 2\.$/);
+
+    // Undo last takes the newest tap back; a tap puts it back.
+    await page.getByRole("button", { name: "Undo last" }).click();
+    await expect(rows).toHaveCount(1);
+    await page.mouse.click(dockAt.x, dockAt.y);
+    await expect(rows).toHaveCount(2);
+
+    await page.getByRole("button", { name: "Done" }).click();
+    await expect(plan).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => posted).toHaveLength(1);
+    expect(posted[0]!.steps).toMatchObject([
+      { id: "1-move", type: "MOVE", vertex_id: room.id },
+      { id: "2-dock", type: "DOCK", vertex_id: vertex().id },
     ]);
   });
 

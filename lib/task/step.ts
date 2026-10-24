@@ -2,6 +2,7 @@
 // conversion to wire shape. One copy, because a dispatch and a schedule
 // registration send the same list; lib/api/task.ts never sees a half-typed field.
 
+import { normalizeTheta } from "@/lib/angle";
 import type { TemplateStep, TemplateStepRequest } from "@/lib/api/task-template";
 import { moveParams as wireMoveParams } from "@/lib/api/task";
 import type {
@@ -11,6 +12,7 @@ import type {
   TaskStepRequest,
   WaitStepParams,
 } from "@/lib/api/task";
+import type { MapVertex } from "@/lib/types/map";
 
 export interface StepTypeSpec {
   value: StepType;
@@ -154,6 +156,33 @@ export function reissueStepKeys(drafts: readonly StepDraft[]): StepDraft[] {
 }
 
 /**
+ * The fields a waypoint sets on a Move or Dock row, as one patch so no frame
+ * shows the new numbers under the old label. normalizeTheta on the way in: the
+ * vertex table has no range constraint and can hold exactly -180, which the
+ * task endpoint rejects.
+ */
+export function stepPatchFromVertex(
+  vertex: MapVertex,
+): Pick<StepDraft, "x" | "y" | "theta" | "z" | "vertexId" | "vertexMissing"> {
+  return {
+    x: formatDraftPosition(vertex.x),
+    y: formatDraftPosition(vertex.y),
+    theta: formatDraftAngle(normalizeTheta(vertex.theta)),
+    z: vertex.z,
+    vertexId: vertex.id,
+    vertexMissing: false,
+  };
+}
+
+/**
+ * The step a tap on a waypoint adds: a Dock on a charger, since walking onto
+ * it is the only reason a job goes there, and a Move anywhere else.
+ */
+export function stepTypeForVertex(vertex: MapVertex): NavStepType {
+  return vertex.type === "CHARGE" ? "DOCK" : "MOVE";
+}
+
+/**
  * Render a stored number into a draft field.
  *
  * Wire doubles (`6.8344510000000005`) are unreadable in a narrow input. Rounding
@@ -222,6 +251,20 @@ export function stepWaypointOrdinals(
     marks.set(draft.vertexId, ordinals);
   });
   return marks;
+}
+
+/**
+ * The waypoints the job goes to, in step order, for the floor plan's route
+ * line. A row with no waypoint is passed over rather than breaking the line,
+ * and a stop picked twice running is one point, not a zero-length leg.
+ */
+export function stepRoute(drafts: readonly StepDraft[]): string[] {
+  const route: string[] = [];
+  for (const draft of drafts) {
+    if (!isNavStep(draft) || draft.vertexId === null) continue;
+    if (route[route.length - 1] !== draft.vertexId) route.push(draft.vertexId);
+  }
+  return route;
 }
 
 /**

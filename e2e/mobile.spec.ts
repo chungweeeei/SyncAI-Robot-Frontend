@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { vertexScreen } from "@/lib/map/draw";
+import { previewView } from "@/lib/map/preview";
+
 import {
   MAP_NAME,
   activeTask,
@@ -10,6 +13,7 @@ import {
   octomapBt,
   robotState,
   taskState,
+  vertex,
   withOctomap,
 } from "./backend";
 
@@ -661,5 +665,43 @@ test.describe("the console on a phone", () => {
     await touch("touchEnd", [finger(cx - 80, cy, 1)]);
     await touch("touchEnd", []);
     await expect.poll(readZoom).toBeGreaterThan(fitted);
+  });
+  test("adds a step for a finger's tap on a waypoint, and none for a pinch begun on one", async ({
+    page,
+  }) => {
+    // Pick on map under a finger: the tap is the pick, and a second finger
+    // turns the first into a pinch, which must not also be a pick.
+    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
+    await page.goto("/tasks/editor");
+    await page.getByRole("button", { name: "Pick on map" }).click();
+    const plan = page.getByRole("img", { name: /^Floor plan of dp2f/ });
+    await expect(plan).toBeVisible();
+    await plan.evaluate((element) => element.scrollIntoView({ block: "center" }));
+    const box = (await plan.boundingBox())!;
+    const meta = { resolution: 0.05, origin: [-12.3, -7.8, 0] as [number, number, number], width: 400, height: 300 };
+    const at = vertexScreen(previewView({ width: box.width, height: box.height }, meta), meta, vertex().x, vertex().y);
+    const sx = box.x + at.cx;
+    const sy = box.y + at.cy;
+    const cdp = await page.context().newCDPSession(page);
+    const finger = (x: number, y: number, id: number) => ({ x, y, id });
+    const touch = (
+      type: "touchStart" | "touchMove" | "touchEnd",
+      touchPoints: { x: number; y: number; id: number }[],
+    ) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
+    const rows = page.getByRole("listitem");
+
+    // A pinch whose first finger is on the stop, ending where it began.
+    await touch("touchStart", [finger(sx, sy, 1)]);
+    await touch("touchStart", [finger(sx, sy, 1), finger(sx + 60, sy, 2)]);
+    await touch("touchEnd", [finger(sx, sy, 1)]);
+    await touch("touchEnd", []);
+    await page.getByRole("button", { name: "Fit to view" }).click();
+    await expect(rows).toHaveCount(0);
+
+    // Control: one finger's tap on the same stop does add it.
+    await touch("touchStart", [finger(sx, sy, 1)]);
+    await touch("touchEnd", []);
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText("dock");
   });
 });

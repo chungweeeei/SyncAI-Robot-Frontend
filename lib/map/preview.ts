@@ -28,7 +28,16 @@ export interface PreviewMarks {
    * row says so.
    */
   docks?: ReadonlySet<string>;
+  /**
+   * The waypoint ids in the order the job visits them (stepRoute), joined
+   * leg by leg, so the map reads as a route and a stop added by a tap shows
+   * where it falls in it.
+   */
+  route?: readonly string[];
 }
+
+/** The route's legs, thin enough to leave the markers and walls legible. */
+const ROUTE_LINE_PX = 1.5;
 
 /** The approach point's ring, smaller than a stop's dot so it never reads as one. */
 const STAGING_RING_RADIUS = 3;
@@ -176,6 +185,11 @@ export function drawWaypointPreview(
     (text) => ctx.measureText(text).width,
   );
 
+  // Under everything else: a leg is context, the stops are the answer.
+  if (marks.route && marks.route.length > 1) {
+    drawRoute(ctx, marks.route, placed, palette.cmd);
+  }
+
   // Under the markers: the leg ends at the dot, which must stay on top.
   for (const vertex of vertices) {
     if (!marks.docks?.has(vertex.id)) continue;
@@ -197,6 +211,34 @@ export function drawWaypointPreview(
     });
   }
 
+  ctx.restore();
+}
+
+/**
+ * The job's legs, stop to stop. Straight lines, not the planner's path: the
+ * order is what this answers, and a line through a wall says nothing about
+ * where the robot will really walk. An id with no stop (deleted) is skipped.
+ */
+function drawRoute(
+  ctx: CanvasRenderingContext2D,
+  route: readonly string[],
+  placed: ReadonlyMap<string, { cx: number; cy: number }>,
+  colour: string,
+): void {
+  ctx.save();
+  ctx.strokeStyle = colour;
+  ctx.globalAlpha = 0.6;
+  ctx.lineWidth = ROUTE_LINE_PX;
+  ctx.beginPath();
+  let started = false;
+  for (const id of route) {
+    const at = placed.get(id);
+    if (!at) continue;
+    if (started) ctx.lineTo(at.cx, at.cy);
+    else ctx.moveTo(at.cx, at.cy);
+    started = true;
+  }
+  ctx.stroke();
   ctx.restore();
 }
 

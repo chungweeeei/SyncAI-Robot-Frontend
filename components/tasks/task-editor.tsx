@@ -3,11 +3,19 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeftIcon, CheckIcon, MapPinPlusIcon, SaveIcon, Trash2Icon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  CheckIcon,
+  MapPinPlusIcon,
+  RouteIcon,
+  SaveIcon,
+  Trash2Icon,
+} from "lucide-react";
 
 import { Chip, InstrumentGroup } from "@/components/console/instrument";
 import { ActiveRunBanner } from "@/components/tasks/active-run-banner";
 import { MapPicker } from "@/components/tasks/map-picker";
+import { RoutePicker } from "@/components/tasks/route-picker";
 import { SavedNotice, type SavedNoticeValue } from "@/components/tasks/saved-notice";
 import { StepList } from "@/components/tasks/step-list";
 import { TaskTitle } from "@/components/tasks/task-title";
@@ -35,10 +43,12 @@ import {
   stepDockVertices,
   stepDraftsSubmittable,
   stepIdFor,
+  stepRoute,
   stepWaypointOrdinals,
   toTemplateSteps,
 } from "@/lib/task/step";
 import { taskTemplateNameOk } from "@/lib/task/template";
+import { cn } from "@/lib/utils";
 
 /** This page dispatches nothing, so no row has run state. Shared, not per render. */
 const NO_STEP_STATES: ReadonlyMap<string, TaskStepState> = new Map();
@@ -115,6 +125,25 @@ export function TaskEditor() {
   /** The whole route, so each row's floor plan reads the same. */
   const stepMarks = React.useMemo(() => stepWaypointOrdinals(drafts.steps), [drafts.steps]);
   const dockMarks = React.useMemo(() => stepDockVertices(drafts.steps), [drafts.steps]);
+  const route = React.useMemo(() => stepRoute(drafts.steps), [drafts.steps]);
+
+  /**
+   * Pick on map needs a floor plan to tap and stops to tap on; without either
+   * it says why rather than opening onto nothing. A 3D-only map still has the
+   * Add row and the dropdown.
+   */
+  const [picking, setPicking] = React.useState(false);
+  const pickProblem =
+    mapGrid === null
+      ? "This map has no floor plan to pick waypoints on"
+      : verticesStatus !== "ok" || vertices.length === 0
+        ? "This map has no waypoints to pick yet"
+        : null;
+  const pickOpen = picking && pickProblem === null;
+  const stepKeys = React.useMemo(
+    () => new Set(drafts.steps.map((step) => step.key)),
+    [drafts.steps],
+  );
 
   /**
    * Set when Save is pressed without a usable name, so Save points at the
@@ -417,6 +446,25 @@ export function TaskEditor() {
                 disabled={false}
                 onPick={selectMap}
               />
+              {/* Words beside the icon from sm up: a bare route glyph did not
+                * say that the map takes taps. */}
+              <button
+                type="button"
+                aria-pressed={pickOpen}
+                aria-label="Pick on map"
+                title={pickProblem ?? "Tap waypoints on the floor plan to add steps in order"}
+                disabled={pickProblem !== null}
+                onClick={() => setPicking((open) => !open)}
+                className={cn(
+                  "instrument-label flex h-6 items-center gap-1 rounded-sm border px-1.5 transition-colors disabled:opacity-40 disabled:hover:bg-transparent max-sm:w-6 max-sm:justify-center max-sm:px-0",
+                  pickOpen
+                    ? "border-signal-cmd/40 bg-signal-cmd/8 text-signal-cmd hover:bg-signal-cmd/16"
+                    : "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground",
+                )}
+              >
+                <RouteIcon className="size-3.5" aria-hidden />
+                <span className="max-sm:hidden">Pick on map</span>
+              </button>
               {/* Opens the map's floor plan editor in Waypoints mode, or its
                * 3D map with Waypoint armed; its back button returns here.
                * Neither means nothing to place on, so a disabled span. */}
@@ -441,6 +489,21 @@ export function TaskEditor() {
           }
           caption={saveReason ?? mismatchReason ?? undefined}
         >
+          {pickOpen && mapName !== null && mapGrid !== null && (
+            <RoutePicker
+              mapName={mapName}
+              mapGrid={mapGrid}
+              vertices={vertices}
+              stepMarks={stepMarks}
+              dockMarks={dockMarks}
+              route={route}
+              stepCount={drafts.steps.length}
+              onPick={drafts.addFromVertex}
+              onUndo={drafts.remove}
+              hasStep={(key) => stepKeys.has(key)}
+              onDone={() => setPicking(false)}
+            />
+          )}
           <StepList
             steps={drafts.steps}
             vertices={vertices}
@@ -450,6 +513,7 @@ export function TaskEditor() {
             waypointLink={waypointLink}
             stepMarks={stepMarks}
             dockMarks={dockMarks}
+            route={route}
             disabled={false}
             stepStates={NO_STEP_STATES}
             onAdd={drafts.add}

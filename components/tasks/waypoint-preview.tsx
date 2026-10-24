@@ -6,8 +6,8 @@ import { useTheme } from "next-themes";
 
 import { IconButton } from "@/components/tasks/icon-button";
 import { useMapImage } from "@/hooks/use-map-image";
-import { PALETTES } from "@/lib/map/draw";
-import { ZOOM_STEP_FACTOR, wheelZoomFactor } from "@/lib/map/gesture";
+import { PALETTES, VERTEX_HIT_RADIUS, VERTEX_HIT_RADIUS_TOUCH, vertexAt } from "@/lib/map/draw";
+import { ZOOM_STEP_FACTOR, isDrag, wheelZoomFactor } from "@/lib/map/gesture";
 import { drawWaypointPreview, previewView } from "@/lib/map/preview";
 import { panBy, reanchorView, zoomAt, type View } from "@/lib/map/view";
 import type { MapVertex } from "@/lib/types/map";
@@ -21,6 +21,13 @@ export interface WaypointPreviewProps {
   steps: ReadonlyMap<string, readonly number[]>;
   /** The waypoints a Dock row is picked on; see stepDockVertices. */
   docks: ReadonlySet<string>;
+  /** The waypoint ids in visiting order, joined as the route; see stepRoute. */
+  route?: readonly string[];
+  /**
+   * Makes a tap on a stop pick it. A drag still pans and a second finger still
+   * pinches; only a press that lifts where it went down, on a stop, picks.
+   */
+  onPick?: (vertex: MapVertex) => void;
 }
 
 /** The one pointer dragging the map, in container-local px at its last move. */
@@ -28,6 +35,11 @@ interface Pan {
   pointerId: number;
   cx: number;
   cy: number;
+  /** Where the press went down, for telling a tap from a drag. */
+  startX: number;
+  startY: number;
+  /** Once past the deadzone it stays a drag, even if it comes back. */
+  dragged: boolean;
 }
 
 /**
@@ -36,9 +48,10 @@ interface Pan {
  * Move stops are lit with their step numbers, so the map reads as the route.
  * Mounted only while open, so the raster is fetched only when asked for.
  *
- * A view, not a control: it shows the whole job, so a click on a stop would
- * mean no one row. The dropdown sets a step (also the keyboard and
- * screen-reader path), hence `role="img"` with a description.
+ * Under a row it is a view, not a control: it shows the whole job, so a click
+ * on a stop would mean no one row. The dropdown sets a step (also the keyboard
+ * and screen-reader path), hence `role="img"` with a description. The list's
+ * Pick on map passes `onPick`, where a tap does mean one thing: the next step.
  *
  * It zooms and pans, since two nearby stops are pixels apart at fit scale,
  * with the floor plan editor's view machinery so both feel the same. Draws on
@@ -50,6 +63,8 @@ export function WaypointPreview({
   vertices,
   steps,
   docks,
+  route,
+  onPick,
 }: WaypointPreviewProps) {
   const { image } = useMapImage(mapName);
   const { resolvedTheme } = useTheme();
@@ -88,7 +103,7 @@ export function WaypointPreview({
 
   // Read at draw time so `draw` stays stable and a prop change does not
   // rebuild the listener effect below.
-  const frameRef = React.useRef({ image, meta, vertices, steps, docks, theme });
+  const frameRef = React.useRef({ image, meta, vertices, steps, docks, route, theme });
 
   const draw = React.useCallback(() => {
     const container = containerRef.current;
@@ -123,7 +138,7 @@ export function WaypointPreview({
       frame.image,
       frame.meta,
       frame.vertices,
-      { steps: frame.steps, docks: frame.docks },
+      { steps: frame.steps, docks: frame.docks, route: frame.route },
       PALETTES[frame.theme],
     );
     setZoomPercent(Math.round(view.scale * 100));
@@ -138,9 +153,9 @@ export function WaypointPreview({
   }, [draw]);
 
   React.useEffect(() => {
-    frameRef.current = { image, meta, vertices, steps, docks, theme };
+    frameRef.current = { image, meta, vertices, steps, docks, route, theme };
     requestDraw();
-  }, [requestDraw, image, meta, vertices, steps, docks, theme]);
+  }, [requestDraw, image, meta, vertices, steps, docks, route, theme]);
 
   // A different map refits.
   React.useEffect(() => {
@@ -177,8 +192,11 @@ export function WaypointPreview({
     zoomBy(factor, rect.width / 2, rect.height / 2);
   };
 
+  // Built now rather than nulled for the next frame: a press before that
+  // frame found no view and was dropped, which loses a pick.
   const fit = () => {
-    viewRef.current = null;
+    const rect = rectRef.current;
+    viewRef.current = rect ? previewView(rect, frameRef.current.meta) : null;
     requestDraw();
   };
 
@@ -249,6 +267,21 @@ export function WaypointPreview({
     if (container) container.style.cursor = grabbing ? "grabbing" : "";
   };
 
+  /** The stop under a point, with a finger's wider slop; null when not picking. */
+  const stopAt = (cx: number, cy: number, touch: boolean) => {
+    const view = viewRef.current;
+    if (!onPick || !view) return null;
+    const { meta, vertices } = frameRef.current;
+    return vertexAt(
+      view,
+      meta,
+      vertices,
+      cx,
+      cy,
+      touch ? VERTEX_HIT_RADIUS_TOUCH : VERTEX_HIT_RADIUS,
+    );
+  };
+
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!viewRef.current) return;
     // Any button pans, as a right-drag does in the editor.
@@ -281,8 +314,9 @@ export function WaypointPreview({
 
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    panRef.current = { pointerId: event.pointerId, cx, cy };
-    setGrabbing(true);
+    panRef.current = { pointerId: event.pointerId, cx, cy, startX: cx, startY: cy, dragged: false };
+    // A press on a stop may yet be a pick, so it does not grab until it drags.
+    if (!stopAt(cx, cy, event.pointerType === "touch")) setGrabbing(true);
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -326,7 +360,18 @@ export function WaypointPreview({
     }
 
     const pan = panRef.current;
-    if (!pan || pan.pointerId !== event.pointerId) return;
+    if (!pan) {
+      // Hover only: says a stop takes a click before one is pressed.
+      if (onPick && event.pointerType === "mouse" && containerRef.current) {
+        containerRef.current.style.cursor = stopAt(cx, cy, false) ? "pointer" : "";
+      }
+      return;
+    }
+    if (pan.pointerId !== event.pointerId) return;
+    if (!pan.dragged && isDrag(pan.startX, pan.startY, cx, cy)) {
+      pan.dragged = true;
+      setGrabbing(true);
+    }
     viewRef.current = panBy(view, cx - pan.cx, cy - pan.cy, rect, gridSize());
     pan.cx = cx;
     pan.cy = cy;
@@ -351,6 +396,12 @@ export function WaypointPreview({
     if (event.currentTarget.hasPointerCapture(pan.pointerId)) {
       event.currentTarget.releasePointerCapture(pan.pointerId);
     }
+    // Only a deliberate lift picks: a cancel, a drag, or a press a pinch took
+    // over (which cleared the pan above) never does.
+    if (event.type !== "pointerup" || event.button !== 0 || pan.dragged || !onPick) return;
+    const { cx, cy } = localPoint(event);
+    const stop = stopAt(cx, cy, event.pointerType === "touch");
+    if (stop) onPick(stop);
   };
 
   const visited = vertices

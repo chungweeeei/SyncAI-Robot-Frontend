@@ -21,9 +21,12 @@ import {
   stepIdFor,
   stepLinkProblem,
   stepMoveProblem,
+  stepPatchFromVertex,
+  stepRoute,
   stepShape,
   stepSpans,
   stepSummary,
+  stepTypeForVertex,
   stepWaypointOrdinals,
   toDispatchSteps,
   toStepRequests,
@@ -32,6 +35,7 @@ import {
   wireLinked,
   type StepDraft,
 } from "@/lib/task/step";
+import type { MapVertex } from "@/lib/types/map";
 
 /**
  * The composer's draft model. Everything here guards the same boundary: a row
@@ -240,6 +244,57 @@ describe("stepWaypointOrdinals", () => {
     ]);
     expect([...marks.keys()]).toEqual(["dock", "room"]);
     expect(marks.get("room")).toEqual([4]);
+  });
+});
+
+describe("stepRoute", () => {
+  it("visits the picked stops in step order, past rows with no stop", () => {
+    // A Speak and a hand-edited Move are not on the map; the line goes from
+    // the dock straight on to the room rather than breaking.
+    expect(
+      stepRoute([
+        move({ vertexId: "dock" }),
+        speak("hi"),
+        move({ vertexId: null }),
+        move({ vertexId: "room" }),
+        move({ vertexId: "dock" }),
+      ]),
+    ).toEqual(["dock", "room", "dock"]);
+  });
+
+  it("draws a stop picked twice running as one point", () => {
+    expect(stepRoute([move({ vertexId: "a" }), move({ vertexId: "a" })])).toEqual(["a"]);
+  });
+});
+
+describe("a step from a waypoint", () => {
+  const vertex = (over: Partial<MapVertex>): MapVertex => ({
+    id: "v1",
+    name: "lobby",
+    type: "MOVE",
+    map_name: "dp2f",
+    x: 6.8344510000000005,
+    y: -2,
+    theta: 0,
+    z: 3.1,
+    ...over,
+  });
+
+  it("never sends -180, which the task endpoint rejects", () => {
+    // The vertex table holds -180 as it was saved; a tap on the map and the
+    // row's dropdown both go through this one patch.
+    expect(stepPatchFromVertex(vertex({ theta: -180 })).theta).toBe("180");
+  });
+
+  it("keeps the floor and the vertex it came from, so a saved job follows it", () => {
+    const patch = stepPatchFromVertex(vertex({}));
+    expect(patch).toMatchObject({ x: "6.834", y: "-2", z: 3.1, vertexId: "v1", vertexMissing: false });
+    expect(stepDraftError({ ...newStepDraft("MOVE"), ...patch })).toBeNull();
+  });
+
+  it("docks on a charger and moves anywhere else", () => {
+    expect(stepTypeForVertex(vertex({ type: "CHARGE" }))).toBe("DOCK");
+    expect(stepTypeForVertex(vertex({ type: "MOVE" }))).toBe("MOVE");
   });
 });
 

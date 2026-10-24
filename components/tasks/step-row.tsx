@@ -31,17 +31,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import type { ActiveVerticesStatus } from "@/hooks/use-active-map-vertices";
-import { normalizeTheta } from "@/lib/angle";
 import type { TaskStepState } from "@/lib/api/task";
 import {
   SPEAK_REPEAT_MAX,
   SPEAK_TEXT_MAX,
   STEP_TYPES,
   WAIT_SECONDS_MAX,
-  formatDraftAngle,
-  formatDraftPosition,
   isNavStep,
   stepDraftError,
+  stepPatchFromVertex,
   stepSummary,
   type GroupPlace,
   type StepDraft,
@@ -68,6 +66,8 @@ export interface StepRowProps {
   /** Vertex id → the job's step numbers that go there, lit on the floor plan. */
   stepMarks: ReadonlyMap<string, readonly number[]>;
   dockMarks: ReadonlySet<string>;
+  /** The waypoints in visiting order; see stepRoute. */
+  route: readonly string[];
   disabled: boolean;
   /** Where the row sits in the group it starts together with; see stepGroupPlaces. */
   groupPlace: GroupPlace;
@@ -106,6 +106,7 @@ export function StepRow({
   waypointLink,
   stepMarks,
   dockMarks,
+  route,
   disabled,
   groupPlace,
   groupWarn,
@@ -145,18 +146,7 @@ export function StepRow({
   const linked = !first && step.withPrevious;
   const joined = groupPlace === "middle" || groupPlace === "end";
 
-  // One patch, so no frame shows the new numbers under the old label.
-  // normalizeTheta on the way in: the vertex table has no range constraint and
-  // can hold exactly -180, which the task endpoint rejects.
-  const pickWaypoint = (vertex: MapVertex) =>
-    onPatch({
-      x: formatDraftPosition(vertex.x),
-      y: formatDraftPosition(vertex.y),
-      theta: formatDraftAngle(normalizeTheta(vertex.theta)),
-      z: vertex.z,
-      vertexId: vertex.id,
-      vertexMissing: false,
-    });
+  const pickWaypoint = (vertex: MapVertex) => onPatch(stepPatchFromVertex(vertex));
   // Closed by default; the choice lives with the row, so folding keeps it.
   const canPreview = mapName !== null && mapGrid !== null;
   const [previewOpen, setPreviewOpen] = React.useState(false);
@@ -432,6 +422,7 @@ export function StepRow({
                         vertices={vertices}
                         steps={stepMarks}
                         docks={dockMarks}
+                        route={route}
                       />
                     </div>
                   )}
