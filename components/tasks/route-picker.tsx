@@ -116,23 +116,27 @@ export function RoutePicker({
           Tap waypoints in the order to visit them. Each adds a step at the end; a
           charger adds a Dock.
         </p>
+        {/* Icons only, so the hint keeps the row; the name is the label and
+          * the tooltip, as an icon-only control needs both. */}
         <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
+            aria-label="Undo last"
+            title="Undo last"
             onClick={undo}
             disabled={undoable.length === 0}
-            className="instrument-label flex h-7 items-center gap-1 rounded-sm border border-hairline px-2 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent pointer-coarse:h-10"
+            className="flex size-7 items-center justify-center rounded-sm border border-hairline text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent pointer-coarse:size-10"
           >
-            <Undo2Icon className="size-3" aria-hidden />
-            Undo last
+            <Undo2Icon className="size-3.5" aria-hidden />
           </button>
           <button
             type="button"
+            aria-label="Done"
+            title="Done"
             onClick={onDone}
-            className="instrument-label flex h-7 items-center gap-1 rounded-sm border border-signal-cmd/40 px-2 text-signal-cmd transition-colors hover:bg-signal-cmd/12 pointer-coarse:h-10"
+            className="flex size-7 items-center justify-center rounded-sm border border-signal-cmd/40 text-signal-cmd transition-colors hover:bg-signal-cmd/12 pointer-coarse:size-10"
           >
-            <CheckIcon className="size-3" aria-hidden />
-            Done
+            <CheckIcon className="size-3.5" aria-hidden />
           </button>
         </div>
       </div>
