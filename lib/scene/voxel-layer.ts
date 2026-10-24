@@ -10,6 +10,13 @@ import { OCTREE_KEY_ORIGIN, type OccupiedVoxels } from "@/lib/types/octree";
 
 export interface VoxelLayer {
   points: THREE.Points;
+  /**
+   * Every cell under the band, faint and in one neutral hue: the floors
+   * below the one on show, for where it stands over them. Empty while the
+   * whole map is drawn. Its own object, so a view that wants no context
+   * (the editor's 3D view) simply does not add it.
+   */
+  ghost: THREE.Points;
   /** The xy box the voxels cover, for framing a map that has no floor plan. */
   frame: MapFrame;
   /**
@@ -49,6 +56,9 @@ export function voxelFrame(voxels: OccupiedVoxels): MapFrame {
   return { cx: x0 + widthM / 2, cy: y0 + heightM / 2, widthM, heightM };
 }
 
+/** How strongly the floors under the one on show come through. */
+const GHOST_OPACITY = 0.14;
+
 /**
  * One `THREE.Points` with a world-sized sprite of exactly one cell, so the
  * floor tiles without gaps from above and a wall reads as a wall from the
@@ -65,7 +75,10 @@ export function voxelFrame(voxels: OccupiedVoxels): MapFrame {
  * change of map; `dispose` frees what it built, and the decoded keys stay
  * with the query cache.
  */
-export function createVoxelLayer(voxels: OccupiedVoxels): VoxelLayer {
+export function createVoxelLayer(
+  voxels: OccupiedVoxels,
+  { ghostColor = 0x808080 }: { ghostColor?: number } = {},
+): VoxelLayer {
   const { order, levelStart } = sortByHeight(voxels);
   const unsorted = voxelPositions(voxels);
   const positions = new Float32Array(unsorted.length);
@@ -104,6 +117,25 @@ export function createVoxelLayer(voxels: OccupiedVoxels): VoxelLayer {
   // culling it could only ever be wrong.
   points.frustumCulled = false;
 
+  // The same positions, a second geometry for its own draw range. Translucent
+  // and writing no depth, so it never hides what stands on it and is drawn
+  // after the opaque floor on show.
+  const ghostGeometry = new THREE.BufferGeometry();
+  ghostGeometry.setAttribute("position", geometry.getAttribute("position"));
+  ghostGeometry.setDrawRange(0, 0);
+  const ghost = new THREE.Points(
+    ghostGeometry,
+    new THREE.PointsMaterial({
+      size: voxels.res,
+      sizeAttenuation: true,
+      color: ghostColor,
+      transparent: true,
+      opacity: GHOST_OPACITY,
+      depthWrite: false,
+    }),
+  );
+  ghost.frustumCulled = false;
+
   /** The height levels (relative kz) whose centres lie in `[lo, hi)` metres. */
   function levels(lo: number, hi: number): [number, number] {
     const depth = voxels.size[2];
@@ -121,12 +153,14 @@ export function createVoxelLayer(voxels: OccupiedVoxels): VoxelLayer {
 
   return {
     points,
+    ghost,
     frame: voxelFrame(voxels),
     setBand: (lo, hi) => {
       const [a, b] = levels(lo, hi);
       const start = levelStart[a];
       const end = levelStart[b];
       geometry.setDrawRange(start, end - start);
+      ghostGeometry.setDrawRange(0, start);
       paint(start, end);
       colorAttribute.needsUpdate = true;
     },
@@ -143,6 +177,8 @@ export function createVoxelLayer(voxels: OccupiedVoxels): VoxelLayer {
     dispose: () => {
       geometry.dispose();
       points.material.dispose();
+      ghostGeometry.dispose();
+      ghost.material.dispose();
     },
   };
 }
