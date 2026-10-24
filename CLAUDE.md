@@ -247,7 +247,10 @@ components/
                 with Waypoint chosen and Place armed)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
-                and the /tasks/editor page (step composer, name, save, delete)
+                and the /tasks/editor page (step composer, name, save, delete,
+                and Pick on map — route-picker: the floor plan preview with
+                onPick, where each tap on a waypoint appends a step, a Dock
+                on a charger, and the preview joins the route in step order)
   history/      finished-job dashboard and list: the filter toolbar (kept in
                 the URL), the counts and the outcome bar, cursor paging,
                 per-run step detail
