@@ -61,6 +61,12 @@ export interface Theme {
   pathOverMap: number;
   pathCasingOverMap: number;
   /**
+   * The floors under the one picked on the dashboard's 3D map, drawn faint
+   * for context: a neutral, since the height ramp is the floor on show's,
+   * and a second ramp underneath would read as more of the same storey.
+   */
+  voxelGhost: number;
+  /**
    * A dock's own leg: the staging point and the approach from it onto the
    * dock. Not a signal hue and not the route's cyan, so the last metre reads
    * as a different kind of driving from the route that brought the robot to
@@ -124,6 +130,7 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     pathCasing: 0xffffff,
     pathOverMap: 0xffffff,
     pathCasingOverMap: SIGNAL.dark.elevated,
+    voxelGhost: 0x7d8a94,
     dock: 0x6a4fc0,
     zone: SIGNAL.light.warn,
     localCostmap: SIGNAL.light.caution,
@@ -148,6 +155,7 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     pathCasing: 0xf2f7fa,
     pathOverMap: 0xf2f7fa,
     pathCasingOverMap: SIGNAL.dark.background,
+    voxelGhost: 0x8796a2,
     dock: 0xa991f2,
     zone: SIGNAL.dark.warn,
     localCostmap: SIGNAL.dark.caution,

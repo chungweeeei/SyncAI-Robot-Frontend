@@ -13,14 +13,17 @@ import { cn } from "@/lib/utils";
 import { G23_JOINTS } from "@/lib/robot/g23-joints";
 import {
   DEFAULT_SPAN_M,
+  FLOOR_LIFT_MS,
   FRONT_DEFAULT_Z,
   TOP_DOWN_TILT,
   applyCameraMode,
   dollyStep,
+  easeInOut,
   fitDollyRange,
   frameMap,
   frontView,
   frontViewAround,
+  liftView,
   overheadDistance,
   type MapFrame,
 } from "@/lib/scene/camera";
@@ -133,6 +136,12 @@ interface PointCloudCanvasProps {
    * the floor plan need not reach over an upper storey.
    */
   pickZ?: number;
+  /**
+   * The ground of the floor on show, metres as the wire writes it (0 is the
+   * ground floor, and the whole map shows from there). A switch carries the
+   * view to it (see liftView), so 2F lands where 1F was on screen.
+   */
+  viewGround?: number;
   /**
    * The planner's remaining route, drawn as a band on the ground it crosses so
    * an operator can catch a route that hugs a wall before the robot is against
@@ -253,6 +262,7 @@ export function PointCloudCanvas({
   voxels = null,
   voxelBand = null,
   pickZ = 0,
+  viewGround = 0,
   path,
   dock = null,
   dockPath,
@@ -336,6 +346,23 @@ export function PointCloudCanvas({
   const voxelLayerRef = React.useRef<VoxelLayer | null>(null);
   /** The band as last asked for, which a rebuilt layer starts from. */
   const voxelBandRef = React.useRef(voxelBand);
+  /**
+   * How far the view is lifted off the ground floor, metres: what a floor
+   * switch has carried it, part way while one is under way. The framings
+   * look at this height, so Recenter on 2F stays on 2F.
+   */
+  const liftRef = React.useRef(0);
+  const liftFrameRef = React.useRef<number | null>(null);
+  /** The lift the floor on show asks for, read by the framings. */
+  const liftFor = (ground: number) => drawnGround(ground) - drawnGround(0);
+  const viewLiftRef = React.useRef(liftFor(viewGround));
+  /** Stop a lift under way and say the view now stands at the floor's lift. */
+  const settleLift = () => {
+    if (liftFrameRef.current !== null) cancelAnimationFrame(liftFrameRef.current);
+    liftFrameRef.current = null;
+    liftRef.current = viewLiftRef.current;
+    return liftRef.current;
+  };
   /** The 3D map's shading while its layer is up, which every draw goes through. */
   const edlRef = React.useRef<EdlPass | null>(null);
   /** The route's band while it is drawn, so a floor switch can cut it without a rebuild. */
@@ -551,8 +578,13 @@ export function PointCloudCanvas({
     // shading pass too.
     camera.layers.enable(EDL_LAYER);
 
-    // Shared with Recenter so the two agree on the opening view.
+    // Shared with Recenter so the two agree on the opening view. At the
+    // ground floor: the lift effect, after this one, carries it to the floor
+    // on show.
     frameMap(camera, controls, { cx: centerX, cy: centerY, widthM, heightM });
+    if (liftFrameRef.current !== null) cancelAnimationFrame(liftFrameRef.current);
+    liftFrameRef.current = null;
+    liftRef.current = 0;
     controls.enableDamping = true;
     // Seeded here so a scene rebuild keeps the camera mode.
     applyCameraMode(
@@ -894,12 +926,48 @@ export function PointCloudCanvas({
     applyCameraMode(ctx.controls, cameraMode, pickModeRef.current !== null);
     // Entering focus: frame the robot from a fixed offset behind and above it.
     if (cameraMode === "focus" && renderedPoseRef.current) {
+      settleLift();
       const p = renderedPoseRef.current;
       ctx.controls.target.set(p.x, p.y, p.z);
       ctx.camera.position.set(p.x, p.y - 8, p.z + 6);
     }
     ctx.controls.update();
   }, [cameraMode, meta, mapImageUrl, resolvedTheme]);
+
+  // ---- Floor switch: carry the view (see liftView) ----------------------
+  // Lists the scene's rebuild deps: a rebuilt scene opens at the ground
+  // floor, and this carries it back up to the floor on show. Eased, unless
+  // the operator's system asks for less motion; a switch mid-lift starts
+  // from wherever the last one had got to.
+  React.useEffect(() => {
+    const to = drawnGround(viewGround) - drawnGround(0);
+    viewLiftRef.current = to;
+    const from = liftRef.current;
+    // In focus the robot is the target and carries the view itself.
+    if (!sceneRef.current || from === to || cameraModeRef.current === "focus") {
+      liftRef.current = to;
+      return;
+    }
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const start = performance.now();
+    const step = (now: number) => {
+      const ctx = sceneRef.current;
+      if (!ctx) {
+        liftFrameRef.current = null;
+        return;
+      }
+      const t = reduced ? 1 : (now - start) / FLOOR_LIFT_MS;
+      const at = from + (to - from) * easeInOut(t);
+      liftView(ctx.camera, ctx.controls, at - liftRef.current);
+      liftRef.current = at;
+      liftFrameRef.current = t < 1 ? requestAnimationFrame(step) : null;
+    };
+    liftFrameRef.current = requestAnimationFrame(step);
+    return () => {
+      if (liftFrameRef.current !== null) cancelAnimationFrame(liftFrameRef.current);
+      liftFrameRef.current = null;
+    };
+  }, [viewGround, meta, mapImageUrl, resolvedTheme]);
 
   // ---- Top-down view (one-shot) ----------------------------------------
   // Nonce-only deps: a map load or theme toggle must not re-frame a view the
@@ -915,7 +983,8 @@ export function PointCloudCanvas({
     // With no floor plan the 3D map's box stands in, when its layer is up.
     const framing =
       cameraModeRef.current !== "focus" ? (mapFrame ?? voxelFrameRef.current) : null;
-    if (framing) controls.target.set(framing.cx, framing.cy, 0);
+    const lift = settleLift();
+    if (framing) controls.target.set(framing.cx, framing.cy, lift);
 
     const height = framing
       ? overheadDistance(camera, framing.widthM, framing.heightM)
@@ -938,6 +1007,8 @@ export function PointCloudCanvas({
     if (!frontNonce) return;
     const ctx = sceneRef.current;
     if (!ctx) return;
+    // It frames the floor's own heights; a lift under way would carry it off them.
+    settleLift();
     if (cameraModeRef.current === "focus") {
       frontViewAround(ctx.camera, ctx.controls);
       return;
@@ -980,6 +1051,8 @@ export function PointCloudCanvas({
           widthM: DEFAULT_SPAN_M,
           heightM: DEFAULT_SPAN_M,
         },
+      // At the floor on show, not back down on the ground floor.
+      settleLift(),
     );
   }, [recenterNonce]);
 
@@ -1211,10 +1284,14 @@ export function PointCloudCanvas({
     if (!ctx || !voxels) return;
 
     const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
-    const layer = createVoxelLayer(voxels);
+    const layer = createVoxelLayer(voxels, { ghostColor: theme.voxelGhost });
     const band = voxelBandRef.current;
     if (band) layer.setBand(band.lo, band.hi);
     ctx.scene.add(layer.points);
+    // The floors under the one on show, faint. Off the shading's layer: it is
+    // context, drawn over the map against its depth, and an outline would
+    // make it read as more of the floor on show.
+    ctx.scene.add(layer.ghost);
     voxelLayerRef.current = layer;
     const restoreGround = thinGroundUnderVoxels(ctx.ground, theme);
     // The costmap's amber is the ramp's yellow and the route's cyan the
@@ -1242,6 +1319,7 @@ export function PointCloudCanvas({
       edl.dispose();
       if (voxelLayerRef.current === layer) voxelLayerRef.current = null;
       ctx.scene.remove(layer.points);
+      ctx.scene.remove(layer.ghost);
       layer.dispose();
       restoreGround();
       localNav?.setOverMap(false);

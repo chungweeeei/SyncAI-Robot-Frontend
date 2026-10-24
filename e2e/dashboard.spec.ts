@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { GROUND_FLOOR_Z_M } from "@/lib/map/floors";
 import { encodeOctomapBt } from "@/lib/map/octree";
 import { OCTREE_KEY_ORIGIN } from "@/lib/types/octree";
 
@@ -9,6 +10,7 @@ import {
   failOnConsoleErrors,
   mapSummary,
   mockBackend,
+  robotState,
   taskState,
   TWO_FLOORS,
   vertex,
@@ -801,17 +803,28 @@ test.describe("waypoints on an upper floor", () => {
   };
 
   /**
-   * Where a stop stands on screen from Top down (see tapStop above for the
-   * framing), lifted by its height: a stop nearer the camera stands further
-   * from the centre, by the camera's height over the height it is still to go.
+   * How far the view is lifted on 2F: Top down looks at the floor on show,
+   * from 2F's ground as the 3D map shows it to the ground floor's drawn one.
    */
-  const onScreen = async (page: Page, stop: { x: number; y: number; z?: number }) => {
+  const LIFT_2F_M = UPSTAIRS_M - GROUND_FLOOR_Z_M;
+
+  /**
+   * Where a stop stands on screen from Top down (see tapStop above for the
+   * framing), lifted by its height over the floor looked at (`viewZ`): a stop
+   * nearer the camera stands further from the centre, by the camera's height
+   * over the height it is still to go.
+   */
+  const onScreen = async (
+    page: Page,
+    stop: { x: number; y: number; z?: number },
+    viewZ = 0,
+  ) => {
     const region = page.getByRole("region", { name: "Map viewport" });
     const box = (await region.boundingBox())!;
     const tanHalfFov = Math.tan(Math.PI / 6);
     const height =
       Math.max(7.5 / tanHalfFov, 10 / (tanHalfFov * (box.width / box.height))) * 1.08;
-    const lift = height / (height - (stop.z ?? 0));
+    const lift = height / (height - ((stop.z ?? 0) - viewZ));
     const pxPerM = (box.height / (2 * height * tanHalfFov)) * lift;
     return {
       x: box.x + box.width / 2 + (stop.x - -2.3) * pxPerM,
@@ -875,7 +888,7 @@ test.describe("waypoints on an upper floor", () => {
     await page.getByRole("button", { name: "Top down" }).click();
 
     // The 2F stop opens: the positive control for the tap below.
-    const up = await onScreen(page, landing);
+    const up = await onScreen(page, landing, LIFT_2F_M);
     await expect(async () => {
       await page.mouse.click(up.x, up.y);
       await expect(
@@ -899,10 +912,93 @@ test.describe("waypoints on an upper floor", () => {
 
     // The ground floor's stop is not on 2F: hidden, and a tap where it
     // stands opens nothing.
-    const down = await onScreen(page, dock);
+    const down = await onScreen(page, dock, LIFT_2F_M);
     await page.mouse.click(down.x, down.y);
     await page.waitForTimeout(300);
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("carries the view up with a floor switch, so 2F stands where the ground floor did", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    await mockBackend(page, {
+      maps: [mapSummary(withOctomap())],
+      octomap: storeys(),
+      floors: { [MAP_NAME]: { detected: TWO_FLOORS } },
+      vertices: [dock, landing],
+    });
+    await page.goto("/");
+    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
+    // Framed at the ground floor first; the switch alone must lift it.
+    await page.getByRole("button", { name: /^3D map/ }).click();
+    await page.getByRole("button", { name: "Top down" }).click();
+    const floors = page.getByRole("group", { name: "Floor" });
+    await floors.getByRole("button", { name: "2F" }).click();
+
+    // Where the stop stands with the view lifted to 2F, not where it would
+    // float over a view left looking at the ground floor.
+    const up = await onScreen(page, landing, LIFT_2F_M);
+    const unlifted = await onScreen(page, landing);
+    expect(Math.hypot(up.x - unlifted.x, up.y - unlifted.y)).toBeGreaterThan(40);
+    await expect(async () => {
+      await page.mouse.click(up.x, up.y);
+      await expect(
+        page.getByRole("alertdialog", { name: `Move to ${landing.name}` }),
+      ).toBeVisible({ timeout: 500 });
+    }).toPass();
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("follows the robot's floor, holds it on the stair, and stops at a floor pressed", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const state = robotState({
+      localization_status: { position: { x: -4, y: 2, z: 5.5, theta: 0 }, velocity: 0 },
+    });
+    const position = (state.localization_status as { position: { z: number } }).position;
+    await mockBackend(page, {
+      maps: [mapSummary(withOctomap())],
+      octomap: storeys(),
+      floors: { [MAP_NAME]: { detected: TWO_FLOORS } },
+      state,
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: /^3D map/ }).click();
+    const floors = page.getByRole("group", { name: "Floor" });
+    const follow = floors.getByRole("button", { name: "Follow robot" });
+    // Off by default: the whole map, as before.
+    await expect(follow).toHaveAttribute("aria-pressed", "false");
+    await expect(floors.getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
+
+    await follow.click();
+    await expect(follow).toHaveAttribute("aria-pressed", "true");
+    // The robot's floor is on show, marked rather than pressed: Follow is the choice.
+    const twoF = floors.getByRole("button", { name: "2F" });
+    await expect(twoF).toHaveAttribute("aria-current", "true");
+    await expect(twoF).toHaveAttribute("aria-pressed", "false");
+
+    // On the stair, between the two floors' bands: still 2F, not All.
+    position.z = 3;
+    await page.waitForTimeout(2500);
+    await expect(twoF).toHaveAttribute("aria-current", "true");
+
+    // Down on the ground floor: the view follows.
+    position.z = 0;
+    await expect(floors.getByRole("button", { name: "1F" })).toHaveAttribute("aria-current", "true");
+
+    // A floor pressed ends it.
+    await twoF.click();
+    await expect(follow).toHaveAttribute("aria-pressed", "false");
+    await expect(twoF).toHaveAttribute("aria-pressed", "true");
+    position.z = 5.5;
+    await page.waitForTimeout(1500);
+    await expect(floors.getByRole("button", { name: "1F" })).not.toHaveAttribute("aria-current", "true");
+    await expect(twoF).toHaveAttribute("aria-pressed", "true");
     expect(errors, "the page logged errors").toEqual([]);
   });
 });

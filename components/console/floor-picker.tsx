@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { LocateFixedIcon } from "lucide-react";
 
 import { overlayPanel } from "@/components/console/instrument";
 import { rampColor } from "@/lib/theme/height-ramp";
@@ -35,12 +36,18 @@ function swatchColor(level: number, lo: number, hi: number): string {
  * key to the map's colours: the ground floor cool, the floors above warmer.
  * Pressed buttons in a named group rather than a radio group: each is one
  * press that changes the view, and a screen reader hears "Floor, 2F, pressed".
+ *
+ * Where the robot can be followed (the dashboard), a Follow button heads the
+ * column: pressed, the pill sits on it and the floor the robot is on wears a
+ * ring, so the column still says which storey is on show.
  */
 export function FloorPicker({
   floors,
   value,
   onChange,
   allLabel = "All",
+  following = false,
+  onFollow,
   className,
 }: {
   floors: readonly MapFloor[];
@@ -52,6 +59,10 @@ export function FloorPicker({
   onChange: (name: string | null) => void;
   /** What the whole map is called here. */
   allLabel?: string;
+  /** Whether the floor on show is the robot's; `value` is then that floor. */
+  following?: boolean;
+  /** Offer Follow, which shows the robot's floor until a floor is pressed. */
+  onFollow?: () => void;
   className?: string;
 }) {
   const levels = floors.map((floor) => floor.level);
@@ -67,7 +78,9 @@ export function FloorPicker({
         swatch: swatchColor(floor.level, lo, hi),
       })),
   ];
-  const index = options.findIndex((option) => option.key === value);
+  // Follow is a button of its own, above All; the pill counts it in.
+  const found = options.findIndex((option) => option.key === value);
+  const index = following && onFollow ? 0 : found < 0 ? -1 : found + (onFollow ? 1 : 0);
 
   return (
     <div
@@ -89,13 +102,34 @@ export function FloorPicker({
           style={{ transform: `translateY(calc(${index} * (100% + 0.25rem)))` }}
         />
       )}
+      {onFollow && (
+        <button
+          type="button"
+          aria-pressed={following}
+          aria-label="Follow robot"
+          title="Show the floor the robot is on, and keep up as it changes floors"
+          onClick={onFollow}
+          className={cn(
+            "relative flex h-8 w-full items-center justify-center rounded-full transition-colors pointer-coarse:h-10",
+            "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+            following
+              ? "text-primary-foreground"
+              : "text-muted-foreground hover:bg-elevated hover:text-foreground",
+          )}
+        >
+          <LocateFixedIcon className="size-3.5" aria-hidden />
+        </button>
+      )}
       {options.map((option) => {
-        const pressed = option.key === value;
+        const pressed = !following && option.key === value;
+        // The floor Follow is showing: ringed, not pressed, since Follow is the choice.
+        const followed = following && option.key !== null && option.key === value;
         return (
           <button
             key={option.key ?? "\u0000all"}
             type="button"
             aria-pressed={pressed}
+            aria-current={followed || undefined}
             title={option.key === null ? "Show every floor" : `Show ${option.label}`}
             onClick={() => onChange(option.key)}
             className={cn(
@@ -104,6 +138,7 @@ export function FloorPicker({
               pressed
                 ? "font-semibold text-primary-foreground"
                 : "text-muted-foreground hover:bg-elevated hover:text-foreground",
+              followed && "font-semibold text-foreground ring-1 ring-signal-cmd ring-inset",
             )}
           >
             {option.swatch && (

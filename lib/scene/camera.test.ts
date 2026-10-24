@@ -10,9 +10,11 @@ import {
   fitDollyRange,
   frameGround,
   dollyStep,
+  easeInOut,
   frameMap,
   frontView,
   frontViewAround,
+  liftView,
   overheadDistance,
 } from "@/lib/scene/camera";
 
@@ -22,6 +24,41 @@ function rig() {
   const controls = new OrbitControls(camera, document.createElement("div"));
   return { camera, controls };
 }
+
+describe("liftView", () => {
+  it("carries the camera and its target together, so the angle and zoom survive", () => {
+    const { camera, controls } = rig();
+    frameMap(camera, controls, { cx: 4, cy: -2, widthM: 30, heightM: 10 });
+    const offset = camera.position.clone().sub(controls.target);
+    const target = controls.target.clone();
+
+    liftView(camera, controls, 3.5);
+    expect(controls.target.z).toBeCloseTo(target.z + 3.5);
+    // Same spot looked at from the same place relative to it.
+    expect([controls.target.x, controls.target.y]).toEqual([target.x, target.y]);
+    expect(camera.position.clone().sub(controls.target).distanceTo(offset)).toBeCloseTo(0);
+  });
+
+  it("frames a map at the floor on show when told its height", () => {
+    const { camera, controls } = rig();
+    frameMap(camera, controls, { cx: 0, cy: 0, widthM: 10, heightM: 10 });
+    const ground = camera.position.clone().sub(controls.target);
+    frameMap(camera, controls, { cx: 0, cy: 0, widthM: 10, heightM: 10 }, 3);
+    expect(controls.target.z).toBe(3);
+    expect(camera.position.clone().sub(controls.target).distanceTo(ground)).toBeCloseTo(0);
+  });
+});
+
+describe("easeInOut", () => {
+  it("starts and ends where it should and passes the middle at half way", () => {
+    expect(easeInOut(0)).toBe(0);
+    expect(easeInOut(1)).toBe(1);
+    expect(easeInOut(0.5)).toBeCloseTo(0.5);
+    // Clamped: a frame late past the end does not overshoot the floor.
+    expect(easeInOut(1.3)).toBe(1);
+    expect(easeInOut(-0.2)).toBe(0);
+  });
+});
 
 describe("frameMap", () => {
   it("aims at the map's centre from south of it and above", () => {

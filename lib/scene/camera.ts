@@ -63,12 +63,35 @@ export function frameMap(
   camera: THREE.PerspectiveCamera,
   controls: OrbitControls,
   frame: MapFrame,
+  /** The height the view looks at: the floor on show's lift (see liftView). */
+  z = 0,
 ) {
   fitDollyRange(controls, frame);
   const span = Math.max(frame.widthM, frame.heightM);
-  camera.position.set(frame.cx, frame.cy - span * 0.6, span * 0.8);
-  controls.target.set(frame.cx, frame.cy, 0);
+  camera.position.set(frame.cx, frame.cy - span * 0.6, z + span * 0.8);
+  controls.target.set(frame.cx, frame.cy, z);
   controls.update();
+}
+
+/** How long a floor switch takes to carry the view to the new floor, ms. */
+export const FLOOR_LIFT_MS = 400;
+
+/**
+ * Carry the whole view up or down by `dz` metres: the camera and what it
+ * orbits about together, so the angle, the zoom and the spot looked at stay
+ * as the operator left them. A floor switch done this way puts the new
+ * floor where the old one was on screen, as a lift does, where moving only
+ * the band left 2F floating three metres over a pivot on the ground floor.
+ */
+export function liftView(camera: THREE.PerspectiveCamera, controls: OrbitControls, dz: number) {
+  camera.position.z += dz;
+  controls.target.z += dz;
+}
+
+/** Ease in and out over `[0, 1]`, cubic: a lift that starts and stops gently. */
+export function easeInOut(t: number): number {
+  const c = Math.min(1, Math.max(0, t));
+  return c < 0.5 ? 4 * c * c * c : 1 - (-2 * c + 2) ** 3 / 2;
 }
 
 /**

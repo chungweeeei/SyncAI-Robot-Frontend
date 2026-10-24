@@ -128,6 +128,29 @@ describe("the layer's height band", () => {
     layer.dispose();
   });
 
+  it("draws faint every cell under the band, and nothing above it or with no band", () => {
+    const layer = createVoxelLayer(storeys());
+    const ghost = () => layer.ghost.geometry.drawRange;
+
+    // Nothing under the whole map, nor under the lowest floor.
+    expect(ghost().count).toBe(0);
+    layer.setBand(-Infinity, 4.5);
+    expect(ghost().count).toBe(0);
+    // Upstairs: the three cells below it, never the one on show.
+    layer.setBand(4.5, Infinity);
+    expect([ghost().start, ghost().count]).toEqual([0, 3]);
+    // A middle floor: the ground floor under it, not the storey over it.
+    layer.setBand(2.55, 5.55);
+    expect([ghost().start, ghost().count]).toEqual([0, 2]);
+    layer.setBand(-Infinity, Infinity);
+    expect(ghost().count).toBe(0);
+    // Faint, and never hiding what stands on it.
+    const material = layer.ghost.material as THREE.PointsMaterial;
+    expect(material.transparent).toBe(true);
+    expect(material.depthWrite).toBe(false);
+    layer.dispose();
+  });
+
   it("recolours a band over its own heights", () => {
     const layer = createVoxelLayer(storeys());
     const colors = () => layer.points.geometry.getAttribute("color").array as Float32Array;

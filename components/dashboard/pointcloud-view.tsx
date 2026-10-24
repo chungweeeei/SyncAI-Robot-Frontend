@@ -38,7 +38,7 @@ import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import { useViewCommands } from "@/hooks/use-view-commands";
 import { apiUrl } from "@/lib/api/config";
-import { type FloorBand, floorBands } from "@/lib/map/floors";
+import { type FloorBand, floorBands, floorOfHeight } from "@/lib/map/floors";
 import { withGroundPatches } from "@/lib/map/ground-fill";
 import { dispatchMapLock } from "@/lib/map/run-lock";
 import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
@@ -151,9 +151,26 @@ export function PointCloudView({
   // the floor is what that layer is showing.
   const { floors } = useMapFloors(hasVoxels && activeMap ? activeMap.name : null);
   const [floorName, setFloorName] = React.useState<string | null>(null);
+  /**
+   * Whether the floor on show is the robot's, which the picker's Follow
+   * offers: an operator watching it climb a stair would otherwise switch
+   * floors by hand at the landing. Any floor pressed ends it.
+   */
+  const [following, setFollowing] = React.useState(false);
   const bands = React.useMemo(() => floorBands(floors), [floors]);
+  const { pose: robotPose, reason: robotPoseReason } = useRobotMapPose(
+    activeMap?.name ?? "",
+  );
+  // The robot's floor by its body height, from the 1 Hz poll. Held through
+  // the stair: between two floors' bands it is on neither, and a view that
+  // fell back to All there would flick the whole building up mid-flight.
+  // So would a lost fix, which says nothing about where it went.
+  const robotFloor = robotPose ? floorOfHeight(robotPose.z, floors) : null;
+  const [heldRobotFloor, setHeldRobotFloor] = React.useState<string | null>(null);
+  if (robotFloor !== null && robotFloor !== heldRobotFloor) setHeldRobotFloor(robotFloor);
+  const shownFloor = following ? (robotFloor ?? heldRobotFloor) : floorName;
   const floorBand = voxels
-    ? (bands.find((band) => band.name === floorName) ?? null)
+    ? (bands.find((band) => band.name === shownFloor) ?? null)
     : null;
   /** A floor's ground (lib/map/waypoint-ground.ts). */
   const groundOf = React.useCallback(
@@ -196,9 +213,6 @@ export function PointCloudView({
    */
   const [placement, setPlacement] = React.useState<Placement | null>(null);
   const placementSeq = React.useRef(0);
-  const { pose: robotPose, reason: robotPoseReason } = useRobotMapPose(
-    activeMap?.name ?? "",
-  );
   /**
    * A stop whose new pose is being written. Keeps its marker hidden until the
    * PUT lands, or the old mark would flash back as if the move were refused.
@@ -403,6 +417,8 @@ export function PointCloudView({
           voxels={voxels}
           voxelBand={voxelBand}
           pickZ={pickZ}
+          // The ground floor with every floor up: the view lifts to a floor picked.
+          viewGround={floorBand ? floorZ : 0}
           path={path}
           dock={dock}
           dockPath={dockPath}
@@ -553,7 +569,12 @@ export function PointCloudView({
               className="pointer-events-auto ml-auto shrink-0"
               floors={bands}
               value={floorBand?.name ?? null}
-              onChange={setFloorName}
+              onChange={(name) => {
+                setFollowing(false);
+                setFloorName(name);
+              }}
+              following={following}
+              onFollow={() => setFollowing(true)}
             />
           )}
         </div>

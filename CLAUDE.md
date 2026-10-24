@@ -163,7 +163,10 @@ components/
                 panel and camera window every screen can open, and the
                 floor picker both 3D map surfaces share (floor-picker.tsx: a
                 pill-shaped column in the view's top-right, All then the top
-                floor first), and the fault boundaries (fault-boundary.tsx,
+                floor first; on the dashboard a Follow button heads it, which
+                shows the robot's floor by its body height, holds it on a
+                stair, and rings that floor rather than pressing it), and the
+                fault boundaries (fault-boundary.tsx,
                 fault-panel.tsx: what a part that threw shows instead — see
                 Conventions)
   dashboard/    3D viewport (pointcloud-canvas) with the pose laid over its
@@ -171,7 +174,11 @@ components/
                 (the occupancy tree, off by default like the scan under a
                 floor plan and on by default without one, drawn whether or
                 not the map has a floor plan, one floor at a time
-                on a map that spans storeys, with its saved ground patches
+                on a map that spans storeys — the floors under it faint
+                in one neutral (VoxelLayer.ghost), and a switch carrying
+                the camera to the new floor's ground (liftView), so 2F
+                lands where 1F was on screen and the framings look at
+                the floor on show — with its saved ground patches
                 drawn in before the robot has applied them), waypoints (each at
                 the ground under it; with a floor picked, only that floor's
                 are shown or tappable, and a goal, a new waypoint or an
