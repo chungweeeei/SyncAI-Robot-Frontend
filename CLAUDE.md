@@ -255,7 +255,10 @@ components/
                 its sections, each its own route: Planner and Controller
                 (placeholders until the backend has them), Wi-Fi (the robot's
                 saved networks as cards that rejoin or forget, and Add network
-                one page in: the scan and password form) and Preferences
+                one page in: the scan and password form) and Preferences;
+                every one of them, the landing included, sits in one frame
+                (settings-page: one width, the way up over the title, and
+                Go back then the page's own action in the top-right)
   webrtc/       WHIP/WHEP bench (unlisted developer route — see deviations)
   ui/           shadcn primitives (lint-ignored)
 hooks/          one hook per backend interaction; the only place components get data.

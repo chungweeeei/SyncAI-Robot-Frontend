@@ -107,6 +107,12 @@ test.describe("the console on a phone", () => {
     const addBox = await add.boundingBox();
     await expectOnScreen(page, "Add network", addBox);
     expect(addBox!.height).toBeGreaterThanOrEqual(TARGET);
+    // Go back shares the title's row with it, and both still fit beside "Wi-Fi".
+    const back = page.locator("main header").getByRole("link", { name: "Go back to Settings" });
+    const backBox = await back.boundingBox();
+    await expectOnScreen(page, "Go back", backBox);
+    expect(backBox!.height).toBeGreaterThanOrEqual(TARGET);
+    expect(Math.abs(backBox!.y - addBox!.y)).toBeLessThan(2);
 
     const cards = page.getByRole("region", { name: "Saved networks" }).getByRole("listitem");
     await expect(cards).toHaveCount(2);

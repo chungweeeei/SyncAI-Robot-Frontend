@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { PlusIcon } from "lucide-react";
 
-import { SettingsSubpage } from "@/components/settings/settings-subpage";
+import { SettingsPage } from "@/components/settings/settings-page";
 import {
   ADD_NETWORK_HREF,
   WifiConnections,
@@ -12,7 +12,7 @@ import { buttonVariants } from "@/components/ui/button";
 
 export default function WifiSettingsPage() {
   return (
-    <SettingsSubpage
+    <SettingsPage
       title="Wi-Fi"
       wide
       action={
@@ -25,6 +25,6 @@ export default function WifiSettingsPage() {
       {/* Not gated on a state frame: a console that never heard from the
           robot is the one that needs to fix its Wi-Fi. */}
       <WifiConnections />
-    </SettingsSubpage>
+    </SettingsPage>
   );
 }

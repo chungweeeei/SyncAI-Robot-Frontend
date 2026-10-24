@@ -1,16 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { PaletteIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -40,15 +33,6 @@ export function AppearanceSettings() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <PaletteIcon className="size-4 text-muted-foreground" />
-          Preferences
-        </CardTitle>
-        <CardDescription>
-          Customize how the console looks and behaves.
-        </CardDescription>
-      </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between gap-4">
           <div className="space-y-0.5">
