@@ -130,6 +130,13 @@ interface PointCloudCanvasProps {
    */
   voxelBand?: { lo: number; hi: number } | null;
   /**
+   * Follow's heights, `[lo, hi)` metres, cut around the robot (see
+   * followWindow): drawn in place of `voxelBand` for the 3D map's own cells
+   * only, coloured over the whole map so a slide does not recolour it. The
+   * waypoints, zones and route stay on `voxelBand`, the floor they belong to.
+   */
+  voxelWindow?: { lo: number; hi: number } | null;
+  /**
    * The ground height a pick lands at, metres: the floor shown, so a goal or
    * a waypoint placed with 2F up is on 2F. 0 is the ground floor, bounded by
    * the floor plan; any other height is bounded by the 3D map's box, since
@@ -261,6 +268,7 @@ export function PointCloudCanvas({
   mapCloud = null,
   voxels = null,
   voxelBand = null,
+  voxelWindow = null,
   pickZ = 0,
   viewGround = 0,
   path,
@@ -346,6 +354,8 @@ export function PointCloudCanvas({
   const voxelLayerRef = React.useRef<VoxelLayer | null>(null);
   /** The band as last asked for, which a rebuilt layer starts from. */
   const voxelBandRef = React.useRef(voxelBand);
+  /** Follow's window as last asked for, which a rebuilt layer starts from. */
+  const voxelWindowRef = React.useRef(voxelWindow);
   /**
    * How far the view is lifted off the ground floor, metres: what a floor
    * switch has carried it, part way while one is under way. The framings
@@ -1285,8 +1295,7 @@ export function PointCloudCanvas({
 
     const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const layer = createVoxelLayer(voxels, { ghostColor: theme.voxelGhost });
-    const band = voxelBandRef.current;
-    if (band) layer.setBand(band.lo, band.hi);
+    applyVoxelBand(layer, voxelBandRef.current, voxelWindowRef.current);
     ctx.scene.add(layer.points);
     // The floors under the one on show, faint. Off the shading's layer: it is
     // context, drawn over the map against its depth, and an outline would
@@ -1336,11 +1345,15 @@ export function PointCloudCanvas({
   // reads the ref for the same reason, should it rebuild on its own.
   React.useEffect(() => {
     voxelBandRef.current = voxelBand;
-    voxelLayerRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
     // The waypoints and the route follow the floor shown, by their own ground height.
     vertexLayerRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
     pathRibbonRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
   }, [voxelBand]);
+  // Apart from the marks: Follow slides the cells' window without moving them.
+  React.useEffect(() => {
+    voxelWindowRef.current = voxelWindow;
+    if (voxelLayerRef.current) applyVoxelBand(voxelLayerRef.current, voxelBand, voxelWindow);
+  }, [voxelBand, voxelWindow]);
 
   // ---- Pose picking -----------------------------------------------------
   // The anchor keeps the raw pointer position beside the ground point so the
@@ -1581,4 +1594,14 @@ export function PointCloudCanvas({
       {gpu.lost && <GpuLostNotice />}
     </div>
   );
+}
+
+/** The 3D map's cells on Follow's window when there is one, else on the floor's band. */
+function applyVoxelBand(
+  layer: VoxelLayer,
+  band: { lo: number; hi: number } | null,
+  follow: { lo: number; hi: number } | null,
+) {
+  if (follow) layer.setBand(follow.lo, follow.hi, { ramp: "map" });
+  else layer.setBand(band?.lo ?? -Infinity, band?.hi ?? Infinity);
 }

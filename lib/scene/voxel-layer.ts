@@ -24,8 +24,10 @@ export interface VoxelLayer {
    * over that band; `(-Infinity, Infinity)` is the whole map. A draw range
    * over the height-sorted buffer, so a floor switch moves two numbers and
    * repaints the band's colours rather than rebuilding the layer.
+   * `ramp: "map"` colours over the whole map's heights instead: a band that
+   * slides with the robot would otherwise recolour every cell on each move.
    */
-  setBand: (lo: number, hi: number) => void;
+  setBand: (lo: number, hi: number, options?: { ramp?: "band" | "map" }) => void;
   /**
    * The z the cells drawn in `[lo, hi)` span, cell edge to cell edge, or
    * null when the band holds none: what a side-on view frames.
@@ -91,10 +93,14 @@ export function createVoxelLayer(
   const colors = new Float32Array(positions.length);
   const rgb: [number, number, number] = [0, 0, 0];
 
-  /** Colour the marks `[start, end)` over their own 1st-99th percentile. */
-  function paint(start: number, end: number) {
-    const slice = positions.subarray(start * 3, end * 3);
-    const { lo, hi } = heightRange(slice, 2, 3);
+  const whole = heightRange(positions, 2, 3);
+
+  /**
+   * Colour the marks `[start, end)` over `range`, by default their own
+   * 1st-99th percentile.
+   */
+  function paint(start: number, end: number, range?: { lo: number; hi: number }) {
+    const { lo, hi } = range ?? heightRange(positions.subarray(start * 3, end * 3), 2, 3);
     const span = hi > lo ? hi - lo : 1;
     for (let i = start * 3; i < end * 3; i += 3) {
       rampColor((positions[i + 2] - lo) / span, rgb);
@@ -103,7 +109,7 @@ export function createVoxelLayer(
       colors[i + 2] = rgb[2];
     }
   }
-  paint(0, voxels.count);
+  paint(0, voxels.count, whole);
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -155,13 +161,13 @@ export function createVoxelLayer(
     points,
     ghost,
     frame: voxelFrame(voxels),
-    setBand: (lo, hi) => {
+    setBand: (lo, hi, { ramp = "band" } = {}) => {
       const [a, b] = levels(lo, hi);
       const start = levelStart[a];
       const end = levelStart[b];
       geometry.setDrawRange(start, end - start);
       ghostGeometry.setDrawRange(0, start);
-      paint(start, end);
+      paint(start, end, ramp === "map" ? whole : undefined);
       colorAttribute.needsUpdate = true;
     },
     zExtent: (lo, hi) => {

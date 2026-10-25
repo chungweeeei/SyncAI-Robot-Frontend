@@ -165,7 +165,11 @@ components/
                 pill-shaped column in the view's top-right, All then the top
                 floor first; on the dashboard a Follow button heads it, which
                 shows the robot's floor by its body height, holds it on a
-                stair, and rings that floor rather than pressing it), and the
+                stair, and rings that floor rather than pressing it — though
+                the 3D map it draws is a window cut around the robot's
+                height, coloured over the whole map, that slides up the
+                stair while the floor holds: lib/map/floors.ts's
+                followWindow), and the
                 fault boundaries (fault-boundary.tsx,
                 fault-panel.tsx: what a part that threw shows instead — see
                 Conventions)
