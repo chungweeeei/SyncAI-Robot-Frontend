@@ -4,12 +4,13 @@ import * as React from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
+import { isWifiBusy, useWifiChanging } from "@/hooks/use-wifi-connections";
 import {
   activateWifiConnection,
   connectWifi,
   type WifiConnection,
 } from "@/lib/api/network";
-import { queryKeys } from "@/lib/api/query-keys";
+import { mutationKeys, queryKeys } from "@/lib/api/query-keys";
 import type { RobotNetworkStatus } from "@/lib/types/robot";
 
 /** How a connect attempt ended. */
@@ -36,14 +37,24 @@ export interface WifiConnect {
   /** The POST is in flight (up to ~70 s). */
   busy: boolean;
   /**
+   * Any Wi-Fi join or forget from this console is in flight, this hook's or
+   * not: the robot refuses a second one, so every such button greys on it.
+   */
+  changing: boolean;
+  /**
    * The uuid of the saved network the latest join rejoined, null for a join by
    * SSID: a card checks it before showing busy, message or error as its own.
    */
   savedTarget: string | null;
   /** The backend's success sentence, or the dropped-connection notice. */
   message: string | null;
-  /** The backend's 400/502 sentence. */
+  /** The backend's 400/409/502 sentence. */
   error: string | null;
+  /**
+   * The error is 409 `wifi_busy`: another change (perhaps another console's)
+   * was still running, so this one was not tried. A "wait", not a failure.
+   */
+  errorBusy: boolean;
   connect: (ssid: string, password: string) => Promise<WifiConnectOutcome>;
   /** Rejoin a saved network, with the password the robot kept. */
   activate: (connection: WifiConnection) => Promise<WifiConnectOutcome>;
@@ -74,7 +85,10 @@ export function useWifiConnect(): WifiConnect {
   // Derived, so it also settles however the robot got there.
   const pending = requested && requested !== current?.ssid ? requested : null;
 
+  const changing = useWifiChanging();
+
   const request = useMutation({
+    mutationKey: mutationKeys.wifiChange,
     mutationFn: (join: JoinRequest) =>
       join.kind === "connect"
         ? connectWifi(join.ssid, join.password)
@@ -88,7 +102,7 @@ export function useWifiConnect(): WifiConnect {
       // A dropped connection is expected; keep `pending` and let the poll
       // report the landing.
       if (cause instanceof TypeError) return;
-      // An HTTP refusal (400 / 502): the join did not happen.
+      // An HTTP refusal (400 / 409 / 502): the join did not happen.
       setRequested(null);
     },
     onSettled: () => {
@@ -125,11 +139,13 @@ export function useWifiConnect(): WifiConnect {
     stateStatus: status,
     pending,
     busy: request.isPending,
+    changing,
     savedTarget:
       request.variables?.kind === "activate" ? request.variables.uuid : null,
     // A drop is not reported as a failure, but as what to do next.
     message: request.data?.message ?? (dropped ? droppedNotice(request.variables?.ssid) : null),
     error: dropped ? null : (request.error?.message ?? null),
+    errorBusy: isWifiBusy(request.error),
     connect,
     activate,
   };

@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useImportMap } from "@/hooks/use-map-actions";
-import { importNameFromFilename } from "@/lib/map/archive";
+import { importNameFromFilename, importSizeProblem } from "@/lib/map/archive";
 import { MAP_NAME_RE } from "@/lib/map/name";
 import type { MapSummary } from "@/lib/types/map";
 
@@ -43,6 +43,11 @@ const ACCEPT =
  * A success's sentence goes up through `onResult` to MapLibrary's line, since
  * the card it is about doesn't exist yet.
  *
+ * An archive past the robot's size limit is refused here, before a byte is
+ * sent, in the backend's own 413 sentence: the dialog still opens (it is
+ * where a refusal is read), with Import greyed. The backend's 413 is still
+ * rendered if one comes back.
+ *
  * While uploading, Cancel stays live ("Cancel upload") — a wrong file over a
  * weak link is minutes otherwise — and reports "Import canceled." on the same
  * line. Escape stays swallowed so a stray key can't drop the upload. Whether
@@ -63,7 +68,8 @@ export function MapImportControl({
   const [name, setName] = React.useState("");
 
   const busy = importing.isPending;
-  const error = importing.error?.message ?? null;
+  const tooLarge = archive ? importSizeProblem(archive.size) : null;
+  const error = tooLarge ?? importing.error?.message ?? null;
 
   const trimmed = name.trim();
   const valid = trimmed.length === 0 || MAP_NAME_RE.test(trimmed);
@@ -93,7 +99,7 @@ export function MapImportControl({
   };
 
   const submit = () => {
-    if (!archive || !valid || busy) return;
+    if (!archive || !valid || busy || tooLarge) return;
     importing.mutate(
       { archive, name: trimmed.length > 0 ? trimmed : undefined },
       {
@@ -212,7 +218,7 @@ export function MapImportControl({
                 type="submit"
                 variant={replaces ? "destructive" : "default"}
                 size="sm"
-                disabled={!valid || busy}
+                disabled={!valid || busy || tooLarge !== null}
               >
                 <UploadIcon data-icon="inline-start" />
                 {busy ? "Importing…" : replaces ? "Replace" : "Import"}

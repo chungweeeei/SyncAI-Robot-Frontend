@@ -222,12 +222,24 @@ export function useSaveMapFloors() {
  * A mutation, not a query: the archive is built per click and never cached,
  * and the control wants `isPending` and the 409 sentence. The download is the
  * hook-level consequence so a card that unmounted mid-transfer still delivers.
+ *
+ * `progress` is the transfer's share arrived, in whole percent: null while
+ * the robot is still building the archive (no total yet) and when no export
+ * is running. Whole percent so a few-hundred-MB download re-renders the card
+ * a hundred times, not once per chunk.
  */
 export function useExportMap() {
-  return useMutation({
-    mutationFn: ({ name }: { name: string }) => exportMap(name),
+  const [progress, setProgress] = React.useState<number | null>(null);
+  const mutation = useMutation({
+    mutationFn: ({ name }: { name: string }) =>
+      exportMap(name, "zip", (fraction) =>
+        setProgress(Math.floor(fraction * 100)),
+      ),
+    onMutate: () => setProgress(null),
     onSuccess: (archive, { name }) => downloadBlob(archive, exportFilename(name)),
+    onSettled: () => setProgress(null),
   });
+  return { ...mutation, progress: mutation.isPending ? progress : null };
 }
 
 export interface ImportMapVariables {

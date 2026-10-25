@@ -146,3 +146,33 @@ export async function requestRaw(
   if (!res.ok) throw new Error(await errorDetail(res));
   return res;
 }
+
+/**
+ * A success body as a Blob, reporting how much of it has arrived as a
+ * fraction 0–1 — when the answer declares a `Content-Length` (CORS-safelisted,
+ * so readable cross-origin, unlike `Content-Disposition`). Without one, or
+ * without a readable stream, it is `res.blob()` and `onProgress` is never
+ * called: an unknown total has no fraction, and a guessed one would lie.
+ */
+export async function readBlob(
+  res: Response,
+  onProgress?: (fraction: number) => void,
+): Promise<Blob> {
+  const total = Number(res.headers.get("Content-Length"));
+  if (!onProgress || !res.body || !Number.isFinite(total) || total <= 0) {
+    return res.blob();
+  }
+
+  const reader = res.body.getReader();
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  let received = 0;
+  onProgress(0);
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.byteLength;
+    onProgress(Math.min(received / total, 1));
+  }
+  return new Blob(chunks, { type: res.headers.get("Content-Type") ?? "" });
+}

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { apiUrl } from "@/lib/api/config";
-import { requestJson } from "@/lib/api/http";
+import { requestJson, type ErrorBody } from "@/lib/api/http";
 
 export interface WifiNetwork {
   /** Access-point MAC; the strongest AP when several serve one SSID. */
@@ -24,13 +24,35 @@ const WifiNetworkSchema: z.ZodType<WifiNetwork> = z.object({
  * whether a network is open, so the password stays optional.
  *
  * No AbortSignal: aborting would not stop the robot's scan, only discard an
- * answer the query cache could keep for the next visit.
+ * answer the query cache could keep for the next visit. A scan already running
+ * (another console's) is joined by the backend, not run twice, so asking while
+ * one runs costs no extra radio time.
  */
 export function scanWifiNetworks(): Promise<WifiNetwork[]> {
   return requestJson<{ networks: WifiNetwork[] }>(
     apiUrl("/api/v1/network/wifi/scan"),
     { schema: z.object({ networks: z.array(WifiNetworkSchema) }) },
   ).then((body) => body.networks);
+}
+
+/**
+ * 409 `wifi_busy`: connect, rejoin and forget run one at a time on the robot
+ * (each takes up to 70 s, and two would race inside its network manager), and
+ * another one — from this console or any other — is still running. Typed so
+ * the UI can read it as "wait", not as the network refusing the join; the
+ * sentence is still the backend's.
+ */
+export class WifiBusyError extends Error {
+  readonly code = "wifi_busy";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "WifiBusyError";
+  }
+}
+
+function wifiBusy({ detail, code }: ErrorBody, res: Response): Error | undefined {
+  return res.status === 409 && code === "wifi_busy" ? new WifiBusyError(detail) : undefined;
 }
 
 export interface ConnectWifiResult {
@@ -44,8 +66,8 @@ const ConnectWifiResultSchema: z.ZodType<ConnectWifiResult> = z.object({
 
 /**
  * Join a network. Blocks up to ~60 s and answers 200 only once joined; a 400
- * carries the robot's sentence (wrong password, no such SSID). An empty
- * password means an open network.
+ * carries the robot's sentence (wrong password, no such SSID), a 409 is a
+ * WifiBusyError. An empty password means an open network.
  *
  * A fetch TypeError is expected when the console reached the robot over the
  * network it is leaving: that is the connect *working*. Read it as "in
@@ -59,6 +81,7 @@ export function connectWifi(
     method: "POST",
     body: JSON.stringify({ ssid, password }),
     schema: ConnectWifiResultSchema,
+    mapError: wifiBusy,
   });
 }
 
@@ -97,14 +120,17 @@ export function listWifiConnections(signal?: AbortSignal): Promise<WifiConnectio
 export function activateWifiConnection(uuid: string): Promise<ConnectWifiResult> {
   return requestJson<ConnectWifiResult>(
     apiUrl(`/api/v1/network/wifi/connections/${encodeURIComponent(uuid)}/activate`),
-    { method: "POST", schema: ConnectWifiResultSchema },
+    { method: "POST", schema: ConnectWifiResultSchema, mapError: wifiBusy },
   );
 }
 
-/** Forget a saved network. Refused (400) for the one the robot is on. */
+/**
+ * Forget a saved network. Refused (400) for the one the robot is on, and a
+ * WifiBusyError while a join is still running.
+ */
 export function forgetWifiConnection(uuid: string): Promise<void> {
   return requestJson<void>(
     apiUrl(`/api/v1/network/wifi/connections/${encodeURIComponent(uuid)}`),
-    { method: "DELETE", parse: false },
+    { method: "DELETE", parse: false, mapError: wifiBusy },
   );
 }
