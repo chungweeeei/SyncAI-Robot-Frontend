@@ -401,6 +401,39 @@ test.describe("Wi-Fi saved networks", () => {
     ]);
   });
 
+  test("greys every other Wi-Fi change while one is in flight", async ({ page }) => {
+    await mockBackend(page, {
+      wifiConnections: [
+        wifiConnection(),
+        wifiConnection({ uuid: "9a1e-lab", name: "lab-5g", ssid: "lab-5g", active: false }),
+        wifiConnection({ uuid: "77b0-dock", name: "dock", ssid: "dock", active: false }),
+      ],
+    });
+    // The rejoin hangs until released, as a real one does for up to a minute.
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route("**/api/v1/network/wifi/connections/9a1e-lab/activate", async (route) => {
+      await held;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "Successfully connected to lab-5g" }),
+      });
+    });
+    await page.goto("/settings/wifi");
+
+    await page.getByRole("button", { name: "Connect to lab-5g" }).click();
+
+    // The robot takes one change at a time, so the other card's buttons wait.
+    await expect(page.getByRole("button", { name: "Connect to dock" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Forget dock" })).toBeDisabled();
+
+    release();
+    await expect(page.getByText("Successfully connected to lab-5g")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Connect to dock" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Forget dock" })).toBeEnabled();
+  });
+
   test("says so when nothing is saved", async ({ page }) => {
     await mockBackend(page, { wifiConnections: [] });
     await page.goto("/settings/wifi");
@@ -435,5 +468,51 @@ test.describe("Wi-Fi saved networks", () => {
       .getByRole("link", { name: "Go back to Wi-Fi", exact: true })
       .click();
     await expect(page).toHaveURL(/\/settings\/wifi$/);
+  });
+});
+
+/**
+ * A Wi-Fi change refused because another is still running on the robot —
+ * another console's, since this one greys its own. The refusal logs "Failed
+ * to load resource"; that 409 is the behaviour under test.
+ */
+test.describe("Wi-Fi changes another console is making", () => {
+  let errors: string[];
+
+  test.beforeEach(async ({ page }) => {
+    errors = [];
+    failOnConsoleErrors(page, errors);
+  });
+
+  test.afterEach(() => {
+    expect(
+      errors.filter((text) => !/Failed to load resource/.test(text)),
+      "the page logged errors",
+    ).toEqual([]);
+  });
+
+  test("shows the robot's busy sentence on the card that asked", async ({ page }) => {
+    const sentence =
+      "The robot is already changing its WiFi connection; wait for that to finish.";
+    await mockBackend(page);
+    await page.route("**/api/v1/network/wifi/connections/9a1e-lab/activate", (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: sentence, code: "wifi_busy" }),
+      }),
+    );
+    await page.goto("/settings/wifi");
+
+    await page.getByRole("button", { name: "Connect to lab-5g" }).click();
+
+    const card = page
+      .getByRole("region", { name: "Saved networks" })
+      .getByRole("listitem")
+      .filter({ hasText: "lab-5g" });
+    await expect(card.getByRole("alert")).toHaveText(sentence);
+    // Nothing is heading anywhere, and the press can be made again.
+    await expect(card).not.toContainText("Connecting to");
+    await expect(page.getByRole("button", { name: "Connect to lab-5g" })).toBeEnabled();
   });
 });

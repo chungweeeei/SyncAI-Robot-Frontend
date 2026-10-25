@@ -26,6 +26,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useWifiConnect, type WifiConnect } from "@/hooks/use-wifi-connect";
 import {
+  isWifiBusy,
   useForgetWifiConnection,
   useWifiConnections,
 } from "@/hooks/use-wifi-connections";
@@ -130,7 +131,11 @@ export function WifiConnections() {
  * and the robot refuses to forget the network it is on.
  *
  * The join hook is shared by every card (one join at a time), so a card shows
- * its lines only when the join was a rejoin of this network.
+ * its lines only when the join was a rejoin of this network. Connect and
+ * Forget grey on any Wi-Fi change in flight, a forget included: the robot
+ * takes one at a time and would refuse the second (409 `wifi_busy`). That
+ * refusal still reaches a card when the change in flight is another
+ * console's, and reads as a caution — wait — not as a failure.
  */
 function SavedNetworkCard({
   connection,
@@ -200,7 +205,10 @@ function SavedNetworkCard({
         )}
         {mine && wifi.message && <Hint className="text-signal-live">{wifi.message}</Hint>}
         {mine && wifi.error && (
-          <Hint role="alert" className="text-signal-warn">
+          <Hint
+            role="alert"
+            className={wifi.errorBusy ? "text-signal-caution" : "text-signal-warn"}
+          >
             {wifi.error}
           </Hint>
         )}
@@ -211,7 +219,7 @@ function SavedNetworkCard({
           <Button
             variant="ghost"
             size="sm"
-            disabled={joining}
+            disabled={wifi.changing}
             onClick={() => {
               forget.reset();
               setConfirming(true);
@@ -223,7 +231,7 @@ function SavedNetworkCard({
           </Button>
           <Button
             size="sm"
-            disabled={wifi.busy}
+            disabled={wifi.changing}
             onClick={() => void wifi.activate(connection)}
             aria-label={`Connect to ${connection.ssid}`}
           >
@@ -249,7 +257,13 @@ function SavedNetworkCard({
           </AlertDialogHeader>
 
           {forget.error && (
-            <p role="alert" className="text-[11px] leading-tight text-signal-warn">
+            <p
+              role="alert"
+              className={cn(
+                "text-[11px] leading-tight",
+                isWifiBusy(forget.error) ? "text-signal-caution" : "text-signal-warn",
+              )}
+            >
               {forget.error.message}
             </p>
           )}

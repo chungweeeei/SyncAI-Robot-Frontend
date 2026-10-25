@@ -71,7 +71,9 @@ export function NetworkSettings() {
   }, [scan.networks, current, currentSsid]);
 
   const isCurrent = ssid !== null && ssid === currentSsid;
-  const canConnect = ssid !== null && !wifi.busy && !isCurrent;
+  // `changing`, not `busy`: a forget still running from the Wi-Fi page would
+  // have the robot refuse this join too (409 `wifi_busy`).
+  const canConnect = ssid !== null && !wifi.changing && !isCurrent;
 
   const submit = async () => {
     if (!canConnect || ssid === null) return;
@@ -174,7 +176,12 @@ export function NetworkSettings() {
             <Hint className="text-signal-live">{wifi.message}</Hint>
           )}
           {wifi.error && (
-            <Hint role="alert" className="text-signal-warn">
+            // A busy refusal (another console's change still running) is a
+            // wait, not a wrong password.
+            <Hint
+              role="alert"
+              className={wifi.errorBusy ? "text-signal-caution" : "text-signal-warn"}
+            >
               {wifi.error}
             </Hint>
           )}

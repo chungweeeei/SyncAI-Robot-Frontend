@@ -166,3 +166,17 @@ export function mapScopedKeys(name: string): readonly (readonly unknown[])[] {
     queryKeys.mapFloors(name),
   ];
 }
+
+/**
+ * Mutation keys: the few writes another part of the console has to see in
+ * flight (`useIsMutating`), kept beside the query keys for the same reason —
+ * the sharing is decided here, not inlined in each hook.
+ */
+export const mutationKeys = {
+  /**
+   * A Wi-Fi join (by SSID or a saved network) or forget. The robot runs one
+   * at a time and refuses the rest (409 `wifi_busy`), so every such button
+   * greys while any of them is in flight from this console.
+   */
+  wifiChange: ["wifi-change"] as const,
+};
