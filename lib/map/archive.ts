@@ -22,3 +22,24 @@ export function importNameFromFilename(filename: string): string {
   const stem = filename.replace(ARCHIVE_SUFFIX_RE, "");
   return MAP_NAME_RE.test(stem) ? stem : "";
 }
+
+/**
+ * The largest archive the robot takes (`MAP_IMPORT_MAX_BYTES` in the backend's
+ * maps router): a map export is a few hundred MB, so anything past this is the
+ * wrong file. Mirrored so the console refuses before a minutes-long upload the
+ * robot would only refuse with 413 `archive_too_large` — and the refusal may
+ * not even arrive as one, since the robot answers before reading the body and
+ * a browser still sending can see that as a dropped connection instead.
+ */
+export const MAP_IMPORT_MAX_BYTES = 4 * 1024 ** 3;
+
+/**
+ * Why an archive of `bytes` cannot be imported, in the backend's own words for
+ * its 413, or null when its size is fine.
+ */
+export function importSizeProblem(bytes: number): string | null {
+  return bytes > MAP_IMPORT_MAX_BYTES
+    ? `The archive is larger than ${MAP_IMPORT_MAX_BYTES / 1024 ** 3} GiB; a map ` +
+        "export is far smaller. Is this the right file?"
+    : null;
+}
