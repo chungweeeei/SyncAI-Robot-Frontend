@@ -162,6 +162,18 @@ describe("the layer's height band", () => {
     layer.dispose();
   });
 
+  it("keeps the whole map's colours on a band that asks for them, wherever it slides", () => {
+    const layer = createVoxelLayer(storeys());
+    const colors = () => layer.points.geometry.getAttribute("color").array as Float32Array;
+    const before = Array.from(colors());
+
+    layer.setBand(-Infinity, 4.5, { ramp: "map" });
+    expect(Array.from(colors())).toEqual(before);
+    layer.setBand(1, 6, { ramp: "map" });
+    expect(Array.from(colors())).toEqual(before);
+    layer.dispose();
+  });
+
   it("reports the z the band's cells span, edge to edge, and null for an empty band", () => {
     const layer = createVoxelLayer(storeys());
     const lower = layer.zExtent(-Infinity, 4.5)!;

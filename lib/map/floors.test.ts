@@ -4,12 +4,15 @@ import {
   FLOOR_BAND_ABOVE_M,
   FLOOR_BAND_BELOW_M,
   FLOOR_GROUND_BELOW_LEVEL_M,
+  FOLLOW_STEP_M,
   GROUND_FLOOR_Z_M,
   drawnGround,
   floorBands,
   floorGround,
   floorOfHeight,
   floorsProblem,
+  followHeight,
+  followWindow,
   nextFloor,
   sameFloors,
 } from "@/lib/map/floors";
@@ -51,6 +54,31 @@ describe("floorBands", () => {
     expect(floorBands([{ name: "1F", level: 0 }])).toEqual([
       { name: "1F", level: 0, lo: -Infinity, hi: Infinity },
     ]);
+  });
+});
+
+describe("followWindow", () => {
+  it("is a floor's band cut around the robot, wherever on a stair it is", () => {
+    const [, top] = floorBands(TWO);
+    // Standing on 2F, the window is 2F's band.
+    expect(followWindow(top.level)).toEqual({ lo: top.lo, hi: top.hi });
+    // Half way up, it is half way between the two, not either floor.
+    const mid = followWindow(2.65);
+    expect(mid.lo).toBeCloseTo(2.65 - FLOOR_BAND_BELOW_M);
+    expect(mid.hi).toBeCloseTo(2.65 + FLOOR_BAND_ABOVE_M);
+  });
+});
+
+describe("followHeight", () => {
+  it("takes the first height it is given", () => {
+    expect(followHeight(null, 1.23)).toBe(1.23);
+  });
+
+  it("holds through a standing robot's noise and moves by the step", () => {
+    expect(followHeight(1, 1 + FOLLOW_STEP_M / 2)).toBe(1);
+    expect(followHeight(1, 1 - FOLLOW_STEP_M / 2)).toBe(1);
+    expect(followHeight(1, 1 + FOLLOW_STEP_M)).toBe(1 + FOLLOW_STEP_M);
+    expect(followHeight(1, 0.8)).toBe(0.8);
   });
 });
 

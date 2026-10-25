@@ -111,6 +111,35 @@ export function floorOfHeight(z: number, floors: readonly MapFloor[]): string | 
 }
 
 /**
+ * How far the robot's body height has to move before Follow's window moves
+ * with it, metres: a step of a stair, give or take. Smaller and the noise
+ * in a standing robot's height would slide the window, recolouring and
+ * lifting the view, once a second for nothing.
+ */
+export const FOLLOW_STEP_M = 0.1;
+
+/**
+ * The body height Follow's window is cut around, given the one it is cut
+ * around now (null before the first) and the robot's latest: held until the
+ * robot has moved `FOLLOW_STEP_M`, so the window moves by the stair and not
+ * by the noise.
+ */
+export function followHeight(held: number | null, z: number): number {
+  return held === null || Math.abs(z - held) >= FOLLOW_STEP_M ? z : held;
+}
+
+/**
+ * The heights Follow draws, `[lo, hi)` metres: a floor's band, but cut
+ * around the robot's body height rather than a saved level, so it slides up
+ * a stair with the robot instead of holding one floor and jumping to the
+ * next at the landing. Standing on a floor it is that floor's band, less
+ * the cut at the next floor's start.
+ */
+export function followWindow(z: number): { lo: number; hi: number } {
+  return { lo: z - FLOOR_BAND_BELOW_M, hi: z + FLOOR_BAND_ABOVE_M };
+}
+
+/**
  * What is wrong with a list the operator is about to save, in the backend's
  * own words, or null. Checked here so Save is greyed with the reason rather
  * than refused, and kept in step with `_validate_floors`.
