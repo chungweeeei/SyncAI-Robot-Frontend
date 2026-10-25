@@ -570,7 +570,10 @@ touch one, prefer moving it toward the rule.
   read by both the gridmap editor and the dashboard so a vertex moved on one is
   current on the other — at once from the dashboard, which writes through, and
   on Save from the editor, which stages its edits and seeds itself from the
-  key once. Never inline a key.
+  key once. Never inline a key. The few mutations another part of the console must see
+  in flight (`useIsMutating`) take a key from `mutationKeys` in the same
+  file: `wifiChange`, because the robot makes one Wi-Fi join or forget at a
+  time (409 `wifi_busy`) and every such button greys while one runs.
 - **Polling policy**: poll only while the server is changing something on its
   own, and let the status that triggered the poll switch it off (`useMaps`
   while `grid_status === "converting"`, at 5 s instead of 2 s while only an
