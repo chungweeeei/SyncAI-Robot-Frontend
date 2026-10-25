@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { fetchMapOctomap, fetchMaps } from "@/lib/api/map";
+import { exportMap, fetchMapOctomap, fetchMaps, importMap } from "@/lib/api/map";
 import { encodeOctomapBt } from "@/lib/map/octree";
 import { OCTREE_KEY_ORIGIN } from "@/lib/types/octree";
 
@@ -117,5 +117,31 @@ describe("fetchMapOctomap", () => {
       }),
     );
     await expect(fetchMapOctomap("dp2f")).rejects.toThrow(/not in a form this console can read/);
+  });
+});
+
+describe("importMap", () => {
+  it("renders the size refusal as the backend's own sentence", async () => {
+    const sentence =
+      "The archive is larger than 4 GiB; a map export is far smaller. Is this the right file?";
+    fetchMock.mockResolvedValue(answer({ detail: sentence, code: "archive_too_large" }, 413));
+
+    await expect(importMap(new Blob([new Uint8Array(4)]))).rejects.toThrow(sentence);
+  });
+});
+
+describe("exportMap", () => {
+  it("counts the download against the archive's declared length", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(new Uint8Array(8), {
+        headers: { "Content-Type": "application/zip", "Content-Length": "8" },
+      }),
+    );
+    const seen: number[] = [];
+
+    const archive = await exportMap("dp2f", "zip", (fraction) => seen.push(fraction));
+
+    expect(archive.size).toBe(8);
+    expect(seen.at(-1)).toBe(1);
   });
 });

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { errorBody, errorDetail, requestJson, requestRaw } from "@/lib/api/http";
+import { errorBody, errorDetail, readBlob, requestJson, requestRaw } from "@/lib/api/http";
 
 /**
  * Three contracts the type checker cannot see: a refusal is the backend's own
@@ -265,5 +265,38 @@ describe("requestRaw", () => {
     await requestRaw(URL_);
     const init = fetchMock.mock.calls[0][1] as RequestInit | undefined;
     expect(new Headers(init?.headers).get("Content-Type")).toBeNull();
+  });
+});
+
+describe("readBlob", () => {
+  /** A body that arrives in the given pieces, as a slow download does. */
+  function streamed(pieces: number[], headers: Record<string, string>) {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const size of pieces) controller.enqueue(new Uint8Array(size));
+        controller.close();
+      },
+    });
+    return new Response(body, { headers });
+  }
+
+  it("reports the share arrived against the declared length, ending at 1", async () => {
+    const seen: number[] = [];
+    const blob = await readBlob(
+      streamed([25, 25, 50], { "Content-Length": "100", "Content-Type": "application/zip" }),
+      (fraction) => seen.push(fraction),
+    );
+
+    expect(seen).toEqual([0, 0.25, 0.5, 1]);
+    expect(blob.size).toBe(100);
+    expect(blob.type).toBe("application/zip");
+  });
+
+  it("reports nothing without a declared length, rather than a guessed fraction", async () => {
+    const onProgress = vi.fn();
+    const blob = await readBlob(streamed([10, 10], {}), onProgress);
+
+    expect(onProgress).not.toHaveBeenCalled();
+    expect(blob.size).toBe(20);
   });
 });

@@ -11,14 +11,31 @@ import { mapScopedKeys, queryKeys } from "@/lib/api/query-keys";
  * reload — so the list each write touches is held to here.
  */
 
+let finishExport: () => void = () => {};
+
 vi.mock("@/lib/api/map", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api/map")>()),
   renameMap: vi.fn(async () => ({})),
   deleteMap: vi.fn(async () => ({})),
   activateMap: vi.fn(async () => ({ previous: "old" })),
+  // Half the archive arrives, then the rest when the test says so.
+  exportMap: vi.fn(
+    (_name: string, _format: string, onProgress?: (fraction: number) => void) =>
+      new Promise<Blob>((resolve) => {
+        onProgress?.(0.426);
+        finishExport = () => {
+          onProgress?.(1);
+          resolve(new Blob());
+        };
+      }),
+  ),
 }));
 
-const { useActivateMap, useDeleteMap, useRenameMap } = await import("@/hooks/use-map-actions");
+vi.mock("@/lib/download", () => ({ downloadBlob: vi.fn() }));
+
+const { useActivateMap, useDeleteMap, useExportMap, useRenameMap } = await import(
+  "@/hooks/use-map-actions"
+);
 
 function setup() {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
@@ -75,5 +92,20 @@ describe("map writes", () => {
         ]),
       ),
     );
+  });
+});
+
+describe("map export", () => {
+  it("reports the download in whole percent while it runs, and nothing once it ends", async () => {
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useExportMap(), { wrapper });
+    expect(result.current.progress).toBeNull();
+
+    act(() => result.current.mutate({ name: "lab" }));
+    await waitFor(() => expect(result.current.progress).toBe(42));
+
+    act(() => finishExport());
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.progress).toBeNull();
   });
 });

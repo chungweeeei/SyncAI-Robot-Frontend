@@ -9,7 +9,7 @@
 import { apiUrl } from "@/lib/api/config";
 import { z } from "zod";
 
-import { requestJson, requestRaw } from "@/lib/api/http";
+import { readBlob, requestJson, requestRaw } from "@/lib/api/http";
 import type { MapGrid } from "@/lib/map/grid";
 import { decodeOctomapBt } from "@/lib/map/octree";
 import { decodePointCloud } from "@/lib/ros/pointcloud-stream";
@@ -611,15 +611,21 @@ export type MapArchiveFormat = "zip" | "tar.gz";
  *
  * 409 `conversion_running` (the archive would be torn). The active map can be
  * exported.
+ *
+ * The robot builds the whole archive before it answers, then streams it with
+ * its `Content-Length`, so `onProgress` (a fraction, 0–1) covers the transfer
+ * only: it is first called once the archive is built, and the wait before
+ * that has no total to measure against.
  */
 export async function exportMap(
   name: string,
   format: MapArchiveFormat = "zip",
+  onProgress?: (fraction: number) => void,
 ): Promise<Blob> {
   const res = await requestRaw(
     apiUrl(`/api/v1/maps/${encodeURIComponent(name)}/export?format=${format}`),
   );
-  return res.blob();
+  return readBlob(res, onProgress);
 }
 
 export interface ImportMapResult {
