@@ -38,7 +38,14 @@ import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import { useViewCommands } from "@/hooks/use-view-commands";
 import { apiUrl } from "@/lib/api/config";
-import { type FloorBand, floorBands, floorOfHeight } from "@/lib/map/floors";
+import {
+  FLOOR_GROUND_BELOW_LEVEL_M,
+  type FloorBand,
+  floorBands,
+  floorOfHeight,
+  followHeight,
+  followWindow,
+} from "@/lib/map/floors";
 import { withGroundPatches } from "@/lib/map/ground-fill";
 import { dispatchMapLock } from "@/lib/map/run-lock";
 import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
@@ -169,6 +176,19 @@ export function PointCloudView({
   const [heldRobotFloor, setHeldRobotFloor] = React.useState<string | null>(null);
   if (robotFloor !== null && robotFloor !== heldRobotFloor) setHeldRobotFloor(robotFloor);
   const shownFloor = following ? (robotFloor ?? heldRobotFloor) : floorName;
+  // What Follow draws is not that floor, though: a window cut around the
+  // robot's body height, which slides up a stair with it where the floor
+  // holds and then jumps. The floor stays what a pick, a waypoint, a zone and
+  // the route are on, since those belong to a storey and not to a height.
+  // Held by the step, and through a lost fix, for the floor's reasons.
+  const [followZ, setFollowZ] = React.useState<number | null>(null);
+  const nextFollowZ = robotPose ? followHeight(followZ, robotPose.z) : followZ;
+  if (nextFollowZ !== followZ) setFollowZ(nextFollowZ);
+  const followingZ = following && voxels ? followZ : null;
+  const voxelWindow = React.useMemo(
+    () => (followingZ === null ? null : followWindow(followingZ)),
+    [followingZ],
+  );
   const floorBand = voxels
     ? (bands.find((band) => band.name === shownFloor) ?? null)
     : null;
@@ -416,9 +436,17 @@ export function PointCloudView({
           mapCloud={scan.cloud}
           voxels={voxels}
           voxelBand={voxelBand}
+          voxelWindow={voxelWindow}
           pickZ={pickZ}
-          // The ground floor with every floor up: the view lifts to a floor picked.
-          viewGround={floorBand ? floorZ : 0}
+          // The ground floor with every floor up: the view lifts to a floor
+          // picked, and in Follow rides up with the robot's ground.
+          viewGround={
+            followingZ !== null
+              ? followingZ - FLOOR_GROUND_BELOW_LEVEL_M
+              : floorBand
+                ? floorZ
+                : 0
+          }
           path={path}
           dock={dock}
           dockPath={dockPath}
