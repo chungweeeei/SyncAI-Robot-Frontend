@@ -32,7 +32,7 @@ export interface StepTypeSpec {
  * authors one. A template stored with an UNDOCK step no longer loads.
  */
 export const STEP_TYPES: readonly StepTypeSpec[] = [
-  { value: "MOVE", label: "Move", glyph: "M", hint: "Drive to a pose in the map frame." },
+  { value: "MOVE", label: "Move", glyph: "M", hint: "Walk to a waypoint." },
   // Named for what the operator asks of the robot. The drive to the approach
   // point in front of the waypoint is part of it, and the hint says so.
   {
@@ -42,11 +42,12 @@ export const STEP_TYPES: readonly StepTypeSpec[] = [
     hint: "Go to a waypoint, then walk straight onto the charger there and stay standing on it.",
   },
   // "T" (for TTS) because STANDUP already owns "S".
-  { value: "SPEAK", label: "Speak", glyph: "T", hint: "Say a line on the robot speaker (TTS)." },
+  { value: "SPEAK", label: "Speak", glyph: "T", hint: "Say a line on the robot\u2019s speaker." },
   // "Stay put", not "pause": Pause is the masthead's hold on a running job.
   { value: "WAIT", label: "Wait", glyph: "W", hint: "Stay put for a set time, then go on." },
   { value: "STANDUP", label: "Stand", glyph: "S", hint: "Stand up. Nothing to set." },
-  { value: "LIEDOWN", label: "Lie", glyph: "L", hint: "Lie down. Nothing to set." },
+  // "Lie down", as the history names the kind: the masthead reads this label.
+  { value: "LIEDOWN", label: "Lie down", glyph: "L", hint: "Lie down. Nothing to set." },
 ];
 
 /** Mirrors `SpeakParams.text`'s `max_length` — the backend 422s past this. */
@@ -57,6 +58,24 @@ export const SPEAK_REPEAT_MAX = 50;
 
 /** Mirrors `WaitParams.seconds`' `le`: a typo must not park the robot for days. */
 export const WAIT_SECONDS_MAX = 3600;
+
+/**
+ * The bounds a draft is checked against before it is sent. The robot says
+ * them in its step catalogue (lib/task/catalogue.ts stepLimits); these
+ * constants are what a robot without one is held to, and the default
+ * everywhere one is not passed.
+ */
+export interface StepLimits {
+  speakTextMax: number;
+  speakRepeatMax: number;
+  waitSecondsMax: number;
+}
+
+export const DEFAULT_STEP_LIMITS: StepLimits = {
+  speakTextMax: SPEAK_TEXT_MAX,
+  speakRepeatMax: SPEAK_REPEAT_MAX,
+  waitSecondsMax: WAIT_SECONDS_MAX,
+};
 
 const GLYPHS: Record<StepType, string> = STEP_TYPES.reduce(
   (all, spec) => ({ ...all, [spec.value]: spec.glyph }),
@@ -398,7 +417,12 @@ const BODY_STEP_TYPES: ReadonlySet<StepType> = new Set([
   "LIEDOWN",
 ]);
 
-const ONE_BODY_STEP = "The robot does one Move, Dock, Stand or Lie at a time";
+/** Whether a step occupies the body; the catalogue's `occupies_body` must agree. */
+export function stepOccupiesBody(type: StepType): boolean {
+  return BODY_STEP_TYPES.has(type);
+}
+
+const ONE_BODY_STEP = "The robot does one Move, Dock, Stand or Lie down at a time";
 
 function spanMoves(drafts: readonly StepDraft[], span: StepSpan | undefined): boolean {
   if (!span) return false;
@@ -532,12 +556,12 @@ function moveParams(draft: StepDraft): MoveStepParams | null {
   return wireMoveParams(x, y, theta, draft.z);
 }
 
-/** A SPEAK row's count, or null when what is typed is not a whole 1–50. */
-function speakRepeat(draft: StepDraft): number | null {
+/** A SPEAK row's count, or null when what is typed is not a whole 1 to the limit. */
+function speakRepeat(draft: StepDraft, limits: StepLimits = DEFAULT_STEP_LIMITS): number | null {
   const text = draft.repeat.trim();
   if (!/^\d+$/.test(text)) return null;
   const repeat = Number(text);
-  return repeat >= 1 && repeat <= SPEAK_REPEAT_MAX ? repeat : null;
+  return repeat >= 1 && repeat <= limits.speakRepeatMax ? repeat : null;
 }
 
 /** What follows a quoted line said more than once: ` ×3`, or nothing for once. */
@@ -545,24 +569,40 @@ export function repeatSuffix(repeat: number | undefined): string {
   return repeat !== undefined && repeat > 1 ? ` ×${repeat}` : "";
 }
 
-function waitParams(draft: StepDraft): WaitStepParams | null {
+function waitParams(
+  draft: StepDraft,
+  limits: StepLimits = DEFAULT_STEP_LIMITS,
+): WaitStepParams | null {
   const seconds = parseCoordinate(draft.seconds);
-  if (seconds === null || seconds <= 0 || seconds > WAIT_SECONDS_MAX) return null;
+  if (seconds === null || seconds <= 0 || seconds > limits.waitSecondsMax) return null;
   return { seconds };
 }
 
+/** A Wait's ceiling as an operator reads it: "3600 seconds (1 hour)". */
+function waitCeiling(seconds: number): string {
+  if (seconds % 3600 === 0) {
+    const hours = seconds / 3600;
+    return `${seconds} seconds (${hours} ${hours === 1 ? "hour" : "hours"})`;
+  }
+  if (seconds % 60 === 0) return `${seconds} seconds (${seconds / 60} min)`;
+  return `${seconds} seconds`;
+}
+
 /** The operator-facing reason this row cannot be sent, or null. */
-export function stepDraftError(draft: StepDraft): string | null {
+export function stepDraftError(
+  draft: StepDraft,
+  limits: StepLimits = DEFAULT_STEP_LIMITS,
+): string | null {
   if (draft.type === "SPEAK") {
     const text = draft.text.trim();
     if (!text) return "Needs something to say.";
     // Checked here: the backend's 422 detail would be a validation array, not
     // a sentence. Likewise the bounds below.
-    if (text.length > SPEAK_TEXT_MAX) {
-      return `Too long — ${text.length} of ${SPEAK_TEXT_MAX} characters.`;
+    if (text.length > limits.speakTextMax) {
+      return `Too long — ${text.length} of ${limits.speakTextMax} characters.`;
     }
-    if (speakRepeat(draft) === null) {
-      return `Say it 1 to ${SPEAK_REPEAT_MAX} times.`;
+    if (speakRepeat(draft, limits) === null) {
+      return `Say it 1 to ${limits.speakRepeatMax} times.`;
     }
     return null;
   }
@@ -570,8 +610,8 @@ export function stepDraftError(draft: StepDraft): string | null {
     const seconds = parseCoordinate(draft.seconds);
     if (seconds === null) return "Needs a duration in seconds.";
     if (seconds <= 0) return "Needs a duration longer than 0 seconds.";
-    if (seconds > WAIT_SECONDS_MAX) {
-      return `At most ${WAIT_SECONDS_MAX} seconds (1 hour).`;
+    if (seconds > limits.waitSecondsMax) {
+      return `At most ${waitCeiling(limits.waitSecondsMax)}.`;
     }
     return null;
   }
@@ -584,27 +624,36 @@ export function stepDraftError(draft: StepDraft): string | null {
  * True when the whole list can be dispatched. The empty list is refused: the
  * backend accepts `steps: []` and reports COMPLETED having moved nothing.
  */
-export function stepDraftsSubmittable(drafts: readonly StepDraft[]): boolean {
+export function stepDraftsSubmittable(
+  drafts: readonly StepDraft[],
+  limits: StepLimits = DEFAULT_STEP_LIMITS,
+): boolean {
   return (
     drafts.length > 0 &&
-    drafts.every((draft, index) => !stepDraftError(draft) && !stepGroupError(drafts, index))
+    drafts.every(
+      (draft, index) => !stepDraftError(draft, limits) && !stepGroupError(drafts, index),
+    )
   );
 }
 
-function toStepRequest(draft: StepDraft, index: number): TaskStepRequest {
+function toStepRequest(
+  draft: StepDraft,
+  index: number,
+  limits: StepLimits,
+): TaskStepRequest {
   const id = stepIdFor(index, draft.type);
   if (draft.type === "SPEAK") {
     const text = draft.text.trim();
     // Callers gate on stepDraftsSubmittable, so these throws are programming errors.
     if (!text) throw new Error(`Step ${id} has nothing to say.`);
-    const repeat = speakRepeat(draft);
+    const repeat = speakRepeat(draft, limits);
     if (repeat === null) throw new Error(`Step ${id} has no usable count.`);
     // No voice / speed keys: sending them would freeze today's defaults into
     // saved templates. `repeat` only above once.
     return { id, type: "SPEAK", params: repeat > 1 ? { text, repeat } : { text } };
   }
   if (draft.type === "WAIT") {
-    const params = waitParams(draft);
+    const params = waitParams(draft, limits);
     if (!params) throw new Error(`Step ${id} has no usable duration.`);
     return { id, type: "WAIT", params };
   }
@@ -621,10 +670,11 @@ function toStepRequest(draft: StepDraft, index: number): TaskStepRequest {
 /** The list in wire shape. A row on its own carries no `group` key at all. */
 export function toStepRequests(
   drafts: readonly StepDraft[],
+  limits: StepLimits = DEFAULT_STEP_LIMITS,
 ): TaskStepRequest[] {
   const groups = stepGroupNames(drafts);
   return drafts.map((draft, index) => {
-    const request = toStepRequest(draft, index);
+    const request = toStepRequest(draft, index, limits);
     const group = groups[index];
     return group ? { ...request, group } : request;
   });
@@ -636,8 +686,9 @@ export function toStepRequests(
  */
 export function toTemplateSteps(
   drafts: readonly StepDraft[],
+  limits: StepLimits = DEFAULT_STEP_LIMITS,
 ): TemplateStepRequest[] {
-  return toStepRequests(drafts).map((request, index) => {
+  return toStepRequests(drafts, limits).map((request, index) => {
     const draft = drafts[index]!;
     if (!isNavStep(request)) return request;
     // Waypoint steps only: the backend 422s any other step that carries one.

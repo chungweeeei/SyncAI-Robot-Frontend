@@ -251,14 +251,28 @@ components/
                 with Waypoint chosen and Place armed)
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
-                and the /tasks/editor page (step composer, name, save, delete,
-                and Plan route — route-picker: each tap on a waypoint
-                appends a step, a Dock on a charger, and the route is drawn
-                joined in step order; on the floor plan preview with onPick,
-                or, for a map with a 3D map, route-canvas-3d: the tree in 3D
-                with the floor plan's marks projected over it at screen size,
-                since a metre-sized pin is two pixels over a building, and a
-                2D / 3D switch for a map with both, as editorViews offers)
+                and the /tasks/editor page, built for commissioning on a
+                laptop: the name, Save (Save as copy and Delete in its
+                menu; running and scheduling stay on /tasks), and two
+                columns from lg — the
+                map (route-map: a click on a waypoint adds a stop, a Dock on
+                a charger, after the stop selected, else at the end; on the
+                floor plan preview, or, for a map with a 3D map,
+                route-canvas-3d: the tree in 3D with the floor plan's marks
+                projected over it at screen size, since a metre-sized pin is
+                two pixels over a building, and a 2D / 3D switch for a map
+                with both, as editorViews offers; the card under the pointer
+                is ringed on it and the waypoint under the pointer lights its
+                cards) beside the stops, under a Route strip of the job's
+                summary and Undo / Redo (stop-list: what is done before
+                setting off, then a card per stop — its waypoint by search
+                (waypoint-combobox, grouped by floor), then in the order it
+                happens what is done on the way there and at it, each
+                headed with the waypoint's name, and one Add for both
+                (action-section: drag within a run, boxes
+                that start together, Move up / down across stops); every
+                action's fields drawn from the step catalogue
+                (param-fields), not written per type)
   history/      finished-job dashboard and list: the filter toolbar (kept in
                 the URL), the counts and the outcome bar, cursor paging,
                 per-run step detail
@@ -276,8 +290,9 @@ hooks/          one hook per backend interaction; the only place components get 
                 The dashboard's waypoint writes are use-map-vertex-writes,
                 keyed by map name, written at once; use-active-map-vertices
                 points it at the loaded map.
-                A few talk to no backend at all (use-joystick, use-step-drafts,
-                use-task-draft, use-camera-clip, use-browser-time-zone,
+                A few talk to no backend at all (use-joystick, use-step-catalogue,
+                use-task-draft, use-task-draft-history, use-camera-clip,
+                use-browser-time-zone,
                 use-history-filter, use-leave-guard, use-undo-history,
                 use-view-commands, use-gpu-context): React glue over a lib/
                 module or a browser API, never a second home for the logic
@@ -381,8 +396,18 @@ lib/
                 with stepGroupError as the backstop for a list handed in),
                 the masthead's rules for the running job (run.ts: which step is
                 live, what to call it, whether a hold is offered, and the state
-                the bar ends in) and the editor's unsaved draft (draft-store.ts
-                — the one place that touches browser storage)
+                the bar ends in), the editor's unsaved draft (draft-store.ts
+                — the one place that touches browser storage) and its undo
+                history (draft-history.ts: snapshots, a burst of typing as one
+                entry), the step list read as stops (stops.ts: before setting
+                off, each stop's walk and arrival, and every edit in those
+                terms — a stop never lands inside another's actions, a walk
+                never takes a body step, a group holding a stop starts with
+                it; the wire keeps its flat shape) and the step catalogue
+                (catalogue.ts: each step's label, hint, body rule and fields
+                as four kinds — waypoint, text, integer, number — the
+                contract a backend endpoint is to serve; local until then,
+                read only through use-step-catalogue)
   network/      the Wi-Fi page's saved networks: their order (the live one
                 by the state poll, then most recently joined), the
                 "Last joined …" line, measured from the list's read time,

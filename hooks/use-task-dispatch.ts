@@ -52,7 +52,7 @@ export interface TaskDispatch {
  * sibling of useGoalTask, with the same error order.
  *
  * `send` takes the steps as an argument so this hook is not a second owner of
- * the list (useStepDrafts is).
+ * the list (the task draft is).
  *
  * `robotId` is nullable: robot state 404s until localization is valid, and
  * authoring and schedules (whose ids need no robot id) must keep working.

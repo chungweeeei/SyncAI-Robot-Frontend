@@ -86,8 +86,8 @@ export function TaskTitle({
       ) : (
         duplicate && (
           <p id={hintId} className="text-[11px] leading-tight text-signal-caution">
-            Another task already has this name. That is allowed — the two are told
-            apart by id, not by name.
+            Another task already has this name. It can still be saved, but the
+            two will be hard to tell apart in the list.
           </p>
         )
       )}

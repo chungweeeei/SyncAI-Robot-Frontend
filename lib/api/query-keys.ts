@@ -121,6 +121,12 @@ export const queryKeys = {
    * walk.
    */
   mapFloors: (name: string) => ["map-floors", name] as const,
+  /**
+   * GET /api/v1/task_steps — the steps the robot can take, which the task
+   * editor builds its menus and forms from. Nothing this console does changes
+   * it, so nothing invalidates it; it is read once a session.
+   */
+  taskSteps: ["task-steps"] as const,
   /** GET /api/v1/task_templates — the operator's template library. */
   taskTemplates: ["task-templates"] as const,
   /** GET /api/v1/schedules */

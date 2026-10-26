@@ -13,6 +13,7 @@ import { z } from "zod";
 
 import type { TaskTemplate } from "@/lib/api/task-template";
 import { fromTemplateSteps, reissueStepKeys, type StepDraft } from "@/lib/task/step";
+import { normalizeStops } from "@/lib/task/stops";
 
 /** Everything the editor holds that is not yet on the robot. */
 export interface TaskDraft {
@@ -73,12 +74,13 @@ const TaskDraftSchema: z.ZodType<TaskDraft> = z.object({
 
 /**
  * A template opened in the editor, as a whole draft. Steps come from
- * resolved_params (a moved vertex shows its *current* pose) with fresh keys.
- * A template with no Move names no map and leaves the current choice alone.
+ * resolved_params (a moved vertex shows its *current* pose) with fresh keys,
+ * read as stops (normalizeStops). A template with no Move names no map and
+ * leaves the current choice alone.
  */
 export function draftFromTemplate(current: TaskDraft, template: TaskTemplate): TaskDraft {
   return {
-    steps: fromTemplateSteps(template.steps),
+    steps: normalizeStops(fromTemplateSteps(template.steps)),
     editing: { id: template.id, name: template.name },
     chosenMap: template.map_name ?? current.chosenMap,
     name: template.name,
@@ -138,7 +140,9 @@ export function draftIsUnsaved(
   if (!saved) return true;
   if (draft.name.trim() !== saved.name) return true;
   if (saved.map_name !== null && draft.chosenMap !== saved.map_name) return true;
-  const savedSteps = fromTemplateSteps(saved.steps);
+  // As the editor holds it: a job saved with its stop second in a group
+  // opens reordered, which runs alike and is not the operator's edit.
+  const savedSteps = normalizeStops(fromTemplateSteps(saved.steps));
   return (
     draft.steps.length !== savedSteps.length ||
     draft.steps.some(
@@ -178,7 +182,7 @@ export function decodeTaskDraft(raw: string | null): TaskDraft {
   }
   const result = TaskDraftSchema.safeParse(parsed);
   if (!result.success) return EMPTY_TASK_DRAFT;
-  return { ...result.data, steps: reissueStepKeys(result.data.steps) };
+  return { ...result.data, steps: normalizeStops(reissueStepKeys(result.data.steps)) };
 }
 
 /** The subset of the Storage API this store needs, so a test can pass a Map. */

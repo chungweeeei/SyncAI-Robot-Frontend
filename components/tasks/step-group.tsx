@@ -4,7 +4,7 @@ import { Link2Icon, ScissorsIcon, Unlink2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * The control in the gap between two steps: outside a box it starts them
+ * The control in the gap between two actions: outside a box it starts them
  * together, inside one it splits the box there. In the gap because that is
  * where the link is, so there is no "together with which?". An icon until
  * pointed at or focused, so words on every gap do not drown the steps.
@@ -21,7 +21,7 @@ export function StepSeam({
 }: {
   ref?: React.Ref<HTMLButtonElement>;
   kind: "join" | "split";
-  /** The ordinal of the step above the gap; the one below is the next. */
+  /** The ordinal of the action above the gap, in its section; the one below is the next. */
   upper: number;
   /**
    * Why the two may not start together (stepLinkProblem), for a join only.
@@ -41,10 +41,10 @@ export function StepSeam({
         // Starts with the visible words, so voice control finds it.
         aria-label={
           refused
-            ? `Can't start together: step ${upper} and step ${lower}. ${blocked}`
+            ? `Can't start together: action ${upper} and action ${lower}. ${blocked}`
             : join
-              ? `Start together: step ${upper} and step ${lower}`
-              : `Split here: run step ${lower} after step ${upper}`
+              ? `Start together: action ${upper} and action ${lower}`
+              : `Split here: run action ${lower} after action ${upper}`
         }
         // aria-disabled: a disabled button takes no focus and shows no title.
         aria-disabled={refused || undefined}
@@ -80,7 +80,7 @@ export function StepGroupHeader({
   disabled,
   onUngroup,
 }: {
-  /** Ordinals of the box's first and last steps. */
+  /** Ordinals of the box's first and last actions, in its section. */
   first: number;
   last: number;
   disabled: boolean;
@@ -91,16 +91,16 @@ export function StepGroupHeader({
       <Link2Icon className="size-3 shrink-0 text-signal-cmd" aria-hidden />
       <span className="instrument-label shrink-0 text-signal-cmd">
         Start together
-        <span className="sr-only">: steps {first} to {last}</span>
+        <span className="sr-only">: actions {first} to {last}</span>
       </span>
       <span className="hidden min-w-0 truncate text-[11px] text-muted-foreground sm:inline">
-        The next step waits for all of them.
+        What follows waits for all of them.
       </span>
       <button
         type="button"
         disabled={disabled}
         onClick={onUngroup}
-        aria-label={`Ungroup steps ${first} to ${last}`}
+        aria-label={`Ungroup actions ${first} to ${last}`}
         className="instrument-label ml-auto flex h-6 shrink-0 items-center gap-1 rounded-sm px-1.5 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent pointer-coarse:h-10"
       >
         <Unlink2Icon className="size-3" aria-hidden />

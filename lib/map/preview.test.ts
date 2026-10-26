@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PREVIEW_INSET, planCaptions, previewView, stepCaption } from "@/lib/map/preview";
+import { PREVIEW_INSET, planCaptions, previewView } from "@/lib/map/preview";
 import { VERTEX_HIT_RADIUS, vertexAt, vertexScreen } from "@/lib/map/draw";
 import type { MapVertex } from "@/lib/types/map";
 import type { MapMetadata } from "@/lib/types/robot";
@@ -87,18 +87,6 @@ describe("planCaptions", () => {
       measure,
     );
     expect([...kept]).toEqual(["lit", "next"]);
-  });
-});
-
-describe("stepCaption", () => {
-  it("names the step, or the steps, that go to a stop", () => {
-    expect(stepCaption("dock", [2])).toBe("dock · step 2");
-    // A patrol that returns: one marker, every visit, in job order.
-    expect(stepCaption("dock", [1, 4])).toBe("dock · steps 1, 4");
-  });
-
-  it("is just the name for a stop the job does not visit", () => {
-    expect(stepCaption("room-a", [])).toBe("room-a");
   });
 });
 

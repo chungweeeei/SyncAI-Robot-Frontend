@@ -552,7 +552,7 @@ describe("step groups", () => {
     const drafts = [move(), linked(speak("hi")), linked(newStepDraft("STANDUP"))];
     expect(stepGroupError(drafts, 0)).toBeNull();
     expect(stepGroupError(drafts, 1)).toBeNull();
-    expect(stepGroupError(drafts, 2)).toMatch(/one Move, Dock, Stand or Lie at a time/);
+    expect(stepGroupError(drafts, 2)).toMatch(/one Move, Dock, Stand or Lie down at a time/);
     expect(stepDraftsSubmittable(drafts)).toBe(false);
   });
 
@@ -664,7 +664,7 @@ describe("step groups", () => {
       // Move with Stand, Move with Lie, Move with Move: the robot has one body.
       for (const type of ["MOVE", "DOCK", "STANDUP", "LIEDOWN"] as const) {
         expect(stepLinkProblem([move(), newStepDraft(type)], 1)).toMatch(
-          /one Move, Dock, Stand or Lie at a time/,
+          /one Move, Dock, Stand or Lie down at a time/,
         );
       }
     });
