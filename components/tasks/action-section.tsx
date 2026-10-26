@@ -46,6 +46,7 @@ import type { TaskStepState } from "@/lib/api/task";
 import {
   stepLimits,
   stepSpec,
+  transitSpecs,
   type StepCatalogue,
   type StepSpec,
 } from "@/lib/task/catalogue";
@@ -278,7 +279,7 @@ export function ActionSection({
                           ? null
                           : onWalk
                             ? { onWalk: true, toggle: () => edit((current) => setTransit(current, step.key, false)) }
-                            : spec(catalogue, step).occupies_body
+                            : !transitSpecs(catalogue).some((each) => each.type === step.type)
                               ? null
                               : { onWalk: false, toggle: () => edit((current) => setTransit(current, step.key, true)) },
                       link:
@@ -371,6 +372,7 @@ function spec(catalogue: StepCatalogue, step: StepDraft): StepSpec {
       label: step.type,
       hint: "",
       occupies_body: true,
+      while_walking: false,
       params: [],
     }
   );

@@ -226,19 +226,19 @@ export function taskSteps(): { steps: Record<string, unknown>[] } {
   });
   return {
     steps: [
-      { type: "MOVE", label: "Move", hint: "Walk to a waypoint.", occupies_body: true, params: [waypoint("Waypoint")] },
+      { type: "MOVE", label: "Move", hint: "Walk to a waypoint.", occupies_body: true, while_walking: false, params: [waypoint("Waypoint")] },
       {
         type: "DOCK",
         label: "Dock",
         hint: "Go to a waypoint, then walk straight onto the charger there and stay standing on it.",
-        occupies_body: true,
+        occupies_body: true, while_walking: false,
         params: [waypoint("Charger", "charger")],
       },
       {
         type: "SPEAK",
         label: "Speak",
         hint: "Say a line on the robot\u2019s speaker.",
-        occupies_body: false,
+        occupies_body: false, while_walking: true,
         params: [
           { kind: "text", key: "text", label: "Say", max_length: 1000, placeholder: "Delivery arrived \u2014 please take your items." },
           { kind: "integer", key: "repeat", label: "Times", min: 1, max: 50, default: 1, unit: null },
@@ -248,13 +248,13 @@ export function taskSteps(): { steps: Record<string, unknown>[] } {
         type: "WAIT",
         label: "Wait",
         hint: "Stay put for a set time, then go on.",
-        occupies_body: false,
+        occupies_body: false, while_walking: false,
         params: [
           { kind: "number", key: "seconds", label: "Duration", min: 0, min_exclusive: true, max: 3600, unit: "seconds", placeholder: "10" },
         ],
       },
-      { type: "STANDUP", label: "Stand", hint: "Stand up. Nothing to set.", occupies_body: true, params: [] },
-      { type: "LIEDOWN", label: "Lie down", hint: "Lie down. Nothing to set.", occupies_body: true, params: [] },
+      { type: "STANDUP", label: "Stand", hint: "Stand up. Nothing to set.", occupies_body: true, while_walking: false, params: [] },
+      { type: "LIEDOWN", label: "Lie down", hint: "Lie down. Nothing to set.", occupies_body: true, while_walking: false, params: [] },
     ],
   };
 }

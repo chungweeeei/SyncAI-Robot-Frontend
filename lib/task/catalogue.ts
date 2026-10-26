@@ -82,6 +82,11 @@ export interface StepSpec {
    * which is how the editor decides what may start together.
    */
   occupies_body: boolean;
+  /**
+   * Offered on the walk to a stop, started with it. Never a body step, and
+   * not a Wait either: in the walk's group it only stretches the walk.
+   */
+  while_walking: boolean;
   params: StepParamField[];
 }
 
@@ -130,6 +135,7 @@ const StepSpecSchema: z.ZodType<StepSpec> = z.object({
   label: z.string(),
   hint: z.string(),
   occupies_body: z.boolean(),
+  while_walking: z.boolean(),
   params: z.array(
     z.union([WaypointFieldSchema, TextFieldSchema, IntegerFieldSchema, NumberFieldSchema]),
   ),
@@ -151,13 +157,19 @@ export const StepCatalogueSchema: z.ZodType<StepCatalogue> = z
     }),
   }));
 
-function spec(type: StepType, occupiesBody: boolean, params: StepParamField[]): StepSpec {
+function spec(
+  type: StepType,
+  occupiesBody: boolean,
+  params: StepParamField[],
+  whileWalking = false,
+): StepSpec {
   const words = STEP_TYPES.find((each) => each.value === type);
   return {
     type,
     label: words?.label ?? type,
     hint: words?.hint ?? "",
     occupies_body: occupiesBody,
+    while_walking: whileWalking,
     params,
   };
 }
@@ -189,7 +201,7 @@ export const LOCAL_STEP_CATALOGUE: StepCatalogue = {
         max: SPEAK_REPEAT_MAX,
         default: 1,
       },
-    ]),
+    ], true),
     spec("WAIT", false, [
       {
         kind: "number",
@@ -227,11 +239,11 @@ export function stopSpecs(catalogue: StepCatalogue): StepSpec[] {
 }
 
 /**
- * What may be done while walking to a stop: anything that leaves the body
- * free, since the walk already occupies it.
+ * What may be done while walking to a stop, as the robot says: never a body
+ * step, which the walk already occupies, whatever an answer claims.
  */
 export function transitSpecs(catalogue: StepCatalogue): StepSpec[] {
-  return actionSpecs(catalogue).filter((each) => !each.occupies_body);
+  return actionSpecs(catalogue).filter((each) => each.while_walking && !each.occupies_body);
 }
 
 /**

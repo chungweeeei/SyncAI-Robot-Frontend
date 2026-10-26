@@ -36,11 +36,16 @@ describe("the local step catalogue", () => {
     }
   });
 
-  it("offers nothing that moves the body for the walk to a stop", () => {
-    expect(transitSpecs(LOCAL_STEP_CATALOGUE).map((spec) => spec.type)).toEqual([
-      "SPEAK",
-      "WAIT",
-    ]);
+  // A Wait in the walk's group only makes the walk last at least that long.
+  it("offers speech alone for the walk, never a body step or a Wait", () => {
+    expect(transitSpecs(LOCAL_STEP_CATALOGUE).map((spec) => spec.type)).toEqual(["SPEAK"]);
+  });
+
+  it("keeps a body step off the walk even when an answer offers it there", () => {
+    const claims = {
+      steps: LOCAL_STEP_CATALOGUE.steps.map((spec) => ({ ...spec, while_walking: true })),
+    };
+    expect(transitSpecs(claims).map((spec) => spec.type)).toEqual(["SPEAK", "WAIT"]);
   });
 
   it("splits the steps into stops and what is done at them", () => {

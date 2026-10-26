@@ -1381,8 +1381,19 @@ test.describe("the step editor", () => {
       await page.keyboard.press("Escape");
       await expect(page.getByRole("menu")).toHaveCount(0, { timeout: 1_000 });
     }).toPass({ timeout: 10_000 });
+    // Nor a Wait, which in the walk's group would only stretch the walk.
+    await page.getByRole("button", { name: "Add an action at stop 1" }).click();
+    const walk = page.getByRole("group", { name: /^On the way to / });
+    await expect(walk.getByRole("menuitem", { name: /^Speak/ })).toBeVisible();
+    await expect(walk.getByRole("menuitem", { name: /^Wait/ })).toHaveCount(0);
+    await expect(async () => {
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("menu")).toHaveCount(0, { timeout: 1_000 });
+    }).toPass({ timeout: 10_000 });
+
     // Up from the top of the stop's arrival is before setting off.
     await page.getByRole("button", { name: "More actions for Wait on arrival at stop 1" }).click();
+    await expect(page.getByRole("menuitem", { name: "Do on the way instead" })).toHaveCount(0);
     await page.getByRole("menuitem", { name: "Move up" }).click();
     await expect(page.getByRole("textbox", { name: "Duration, before setting off" })).toHaveValue("5");
 
