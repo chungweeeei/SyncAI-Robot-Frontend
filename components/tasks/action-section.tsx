@@ -365,19 +365,6 @@ export function AddActionMenu({
   );
 }
 
-function spec(catalogue: StepCatalogue, step: StepDraft): StepSpec {
-  return (
-    stepSpec(catalogue, step.type) ?? {
-      type: step.type,
-      label: step.type,
-      hint: "",
-      occupies_body: true,
-      while_walking: false,
-      params: [],
-    }
-  );
-}
-
 interface ActionMenu {
   up: (() => void) | null;
   down: (() => void) | null;
@@ -428,6 +415,7 @@ function ActionRow({
 
   return (
     <li
+      data-row-key={step.key}
       ref={setNodeRef}
       // Translate only: a scale would squash a row passing a taller one.
       style={{ transform: CSS.Translate.toString(transform), transition }}

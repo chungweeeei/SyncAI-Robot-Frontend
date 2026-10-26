@@ -201,6 +201,20 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
         ? "Click a waypoint to add it as the first stop."
         : "Click waypoints in the order to visit them.";
 
+  /**
+   * The frame the stops scroll in from lg. Whatever is selected is brought
+   * into it: a stop a map click just added at the end of a long route would
+   * otherwise land below the frame's edge, out of sight.
+   */
+  const frameRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (typeof selection !== "number") return;
+    const row = frameRef.current?.querySelector<HTMLElement>(`[data-row-key="${selection}"]`);
+    if (!row) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    row.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
+  }, [selection]);
+
   const pickWaypoint = (vertex: MapVertex) => {
     const row = { ...newStepDraft(stepTypeForVertex(vertex)), ...stepPatchFromVertex(vertex) };
     edit((current) => insertStop(current, insertAfter, row));
@@ -649,24 +663,32 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
               </Button>
             </div>
           </div>
-          <StopList
-            steps={steps}
-            catalogue={catalogue}
-            vertices={vertices}
-            verticesStatus={verticesStatus}
-            mapName={mapName}
-            waypointLink={waypointLink}
-            floors={floors}
-            stopMarks={stopMarks}
-            disabled={running}
-            stepStates={dispatch.stepStates}
-            refusal={refusal}
-            selected={selection}
-            onSelect={setSelected}
-            hoveredVertex={mapHover}
-            onHoverVertex={setCardHover}
-            edit={edit}
-          />
+          {/* From lg the stops scroll in a frame the height of the map
+            * beside them, so a long route never pushes the map, the Route
+            * strip or Save out of view. */}
+          <div
+            ref={frameRef}
+            className="lg:max-h-[calc(100dvh-15rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1"
+          >
+            <StopList
+              steps={steps}
+              catalogue={catalogue}
+              vertices={vertices}
+              verticesStatus={verticesStatus}
+              mapName={mapName}
+              waypointLink={waypointLink}
+              floors={floors}
+              stopMarks={stopMarks}
+              disabled={running}
+              stepStates={dispatch.stepStates}
+              refusal={refusal}
+              selected={selection}
+              onSelect={setSelected}
+              hoveredVertex={mapHover}
+              onHoverVertex={setCardHover}
+              edit={edit}
+            />
+          </div>
         </section>
       </div>
     </>

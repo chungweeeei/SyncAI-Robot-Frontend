@@ -324,6 +324,7 @@ function StopCard({
       onMouseEnter={() => onHoverVertex(stop.vertexId)}
       onMouseLeave={() => onHoverVertex(null)}
       data-stop={ordinal}
+      data-row-key={stop.key}
     >
       <div
         className={cn(
