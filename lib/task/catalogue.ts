@@ -176,7 +176,6 @@ export const LOCAL_STEP_CATALOGUE: StepCatalogue = {
         min: 1,
         max: SPEAK_REPEAT_MAX,
         default: 1,
-        unit: "times",
       },
     ]),
     spec("WAIT", false, [

@@ -382,3 +382,48 @@ export function stopWaypointOrdinals(
   }
   return marks;
 }
+
+/** The line over the stops that says what the job comes to before it is handed over. */
+export interface JobSummary {
+  stops: number;
+  /** Every Wait that reads as a duration, summed; a half-typed one counts nothing. */
+  waitSeconds: number;
+  /** The last stop: where the robot is when the job ends, and whether it docked there. */
+  end: { name: string | null; dock: boolean } | null;
+}
+
+export function jobSummary(
+  steps: readonly StepDraft[],
+  nameOf: (vertexId: string) => string | null,
+): JobSummary {
+  let stops = 0;
+  let waitSeconds = 0;
+  let last: StepDraft | null = null;
+  for (const step of steps) {
+    if (isNavStep(step)) {
+      stops += 1;
+      last = step;
+    } else if (step.type === "WAIT") {
+      const seconds = Number(step.seconds.trim());
+      if (step.seconds.trim() && Number.isFinite(seconds) && seconds > 0) waitSeconds += seconds;
+    }
+  }
+  return {
+    stops,
+    waitSeconds,
+    end: last
+      ? { name: last.vertexId === null ? null : nameOf(last.vertexId), dock: last.type === "DOCK" }
+      : null,
+  };
+}
+
+/** A duration as an operator reads it: `45 s`, `1 min 30 s`, `1 h 5 min`. */
+export function formatDuration(seconds: number): string {
+  const whole = Math.round(seconds);
+  if (whole < 60) return `${Number(seconds.toFixed(1))} s`;
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const rest = whole % 60;
+  if (hours > 0) return minutes ? `${hours} h ${minutes} min` : `${hours} h`;
+  return rest ? `${minutes} min ${rest} s` : `${minutes} min`;
+}

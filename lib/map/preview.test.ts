@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PREVIEW_INSET, planCaptions, previewView, stepCaption } from "@/lib/map/preview";
+import { PREVIEW_INSET, planCaptions, previewView, stopCaption } from "@/lib/map/preview";
 import { VERTEX_HIT_RADIUS, vertexAt, vertexScreen } from "@/lib/map/draw";
 import type { MapVertex } from "@/lib/types/map";
 import type { MapMetadata } from "@/lib/types/robot";
@@ -90,15 +90,15 @@ describe("planCaptions", () => {
   });
 });
 
-describe("stepCaption", () => {
-  it("names the step, or the steps, that go to a stop", () => {
-    expect(stepCaption("dock", [2])).toBe("dock · step 2");
+describe("stopCaption", () => {
+  it("names the stop, or the stops, that go to a waypoint", () => {
+    expect(stopCaption("dock", [2])).toBe("dock · stop 2");
     // A patrol that returns: one marker, every visit, in job order.
-    expect(stepCaption("dock", [1, 4])).toBe("dock · steps 1, 4");
+    expect(stopCaption("dock", [1, 4])).toBe("dock · stops 1, 4");
   });
 
-  it("is just the name for a stop the job does not visit", () => {
-    expect(stepCaption("room-a", [])).toBe("room-a");
+  it("is just the name for a waypoint the job does not visit", () => {
+    expect(stopCaption("room-a", [])).toBe("room-a");
   });
 });
 

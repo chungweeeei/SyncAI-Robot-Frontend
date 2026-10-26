@@ -12,12 +12,13 @@ import { drawWaypointPreview, previewView } from "@/lib/map/preview";
 import { panBy, reanchorView, zoomAt, type View } from "@/lib/map/view";
 import type { MapVertex } from "@/lib/types/map";
 import type { MapMetadata } from "@/lib/types/robot";
+import { cn } from "@/lib/utils";
 
 export interface WaypointPreviewProps {
   mapName: string;
   meta: MapMetadata;
   vertices: MapVertex[];
-  /** Vertex id → the job's step numbers that go there; see stepWaypointOrdinals. */
+  /** Vertex id → the job's stop numbers that go there; see stopWaypointOrdinals. */
   steps: ReadonlyMap<string, readonly number[]>;
   /** The waypoints a Dock row is picked on; see stepDockVertices. */
   docks: ReadonlySet<string>;
@@ -28,6 +29,12 @@ export interface WaypointPreviewProps {
    * pinches; only a press that lifts where it went down, on a stop, picks.
    */
   onPick?: (vertex: MapVertex) => void;
+  /** The waypoint to ring: the stop card the editor is pointing at. */
+  highlight?: string | null;
+  /** The waypoint under a mouse, or null as it leaves one, for the cards to answer. */
+  onHover?: (vertex: MapVertex | null) => void;
+  /** The frame's height; the editor's map pane is taller than the default. */
+  className?: string;
 }
 
 /** The one pointer dragging the map, in container-local px at its last move. */
@@ -43,15 +50,13 @@ interface Pan {
 }
 
 /**
- * The floor plan a Move row opens under its waypoint picker, because a name in
- * a dropdown is not a place. Every stop is drawn with its name, and the job's
- * Move stops are lit with their step numbers, so the map reads as the route.
- * Mounted only while open, so the raster is fetched only when asked for.
+ * The task editor's floor plan, beside its stops, because a name in a list is
+ * not a place. Every waypoint is drawn with its name, and the job's stops are
+ * lit with their stop numbers, so the map reads as the route.
  *
- * Under a row it is a view, not a control: it shows the whole job, so a click
- * on a stop would mean no one row. The dropdown sets a step (also the keyboard
- * and screen-reader path), hence `role="img"` with a description. The list's
- * Plan route passes `onPick`, where a tap does mean one thing: the next step.
+ * `onPick` makes a tap on a waypoint add it as a stop; without it (a running
+ * job) the map is a view. The cards' search lists are the keyboard and
+ * screen-reader path to the same picks, hence `role="img"` with a description.
  *
  * It zooms and pans, since two nearby stops are pixels apart at fit scale,
  * with the floor plan editor's view machinery so both feel the same. Draws on
@@ -65,6 +70,9 @@ export function WaypointPreview({
   docks,
   route,
   onPick,
+  highlight = null,
+  onHover,
+  className,
 }: WaypointPreviewProps) {
   const { image } = useMapImage(mapName);
   const { resolvedTheme } = useTheme();
@@ -103,7 +111,7 @@ export function WaypointPreview({
 
   // Read at draw time so `draw` stays stable and a prop change does not
   // rebuild the listener effect below.
-  const frameRef = React.useRef({ image, meta, vertices, steps, docks, route, theme });
+  const frameRef = React.useRef({ image, meta, vertices, steps, docks, route, highlight, theme });
 
   const draw = React.useCallback(() => {
     const container = containerRef.current;
@@ -138,7 +146,7 @@ export function WaypointPreview({
       frame.image,
       frame.meta,
       frame.vertices,
-      { steps: frame.steps, docks: frame.docks, route: frame.route },
+      { steps: frame.steps, docks: frame.docks, route: frame.route, highlight: frame.highlight },
       PALETTES[frame.theme],
     );
     setZoomPercent(Math.round(view.scale * 100));
@@ -153,9 +161,9 @@ export function WaypointPreview({
   }, [draw]);
 
   React.useEffect(() => {
-    frameRef.current = { image, meta, vertices, steps, docks, route, theme };
+    frameRef.current = { image, meta, vertices, steps, docks, route, highlight, theme };
     requestDraw();
-  }, [requestDraw, image, meta, vertices, steps, docks, route, theme]);
+  }, [requestDraw, image, meta, vertices, steps, docks, route, highlight, theme]);
 
   // A different map refits.
   React.useEffect(() => {
@@ -267,10 +275,10 @@ export function WaypointPreview({
     if (container) container.style.cursor = grabbing ? "grabbing" : "";
   };
 
-  /** The stop under a point, with a finger's wider slop; null when not picking. */
-  const stopAt = (cx: number, cy: number, touch: boolean) => {
+  /** The stop under a point, with a finger's wider slop. */
+  const waypointAt = (cx: number, cy: number, touch: boolean) => {
     const view = viewRef.current;
-    if (!onPick || !view) return null;
+    if (!view) return null;
     const { meta, vertices } = frameRef.current;
     return vertexAt(
       view,
@@ -280,6 +288,18 @@ export function WaypointPreview({
       cy,
       touch ? VERTEX_HIT_RADIUS_TOUCH : VERTEX_HIT_RADIUS,
     );
+  };
+  /** The stop a press would pick; null when not picking. */
+  const stopAt = (cx: number, cy: number, touch: boolean) =>
+    onPick ? waypointAt(cx, cy, touch) : null;
+
+  /** The last waypoint reported to onHover, so a move over the same one says nothing. */
+  const hoveredRef = React.useRef<string | null>(null);
+  const reportHover = (vertex: MapVertex | null) => {
+    const id = vertex?.id ?? null;
+    if (id === hoveredRef.current) return;
+    hoveredRef.current = id;
+    onHover?.(vertex);
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -361,9 +381,14 @@ export function WaypointPreview({
 
     const pan = panRef.current;
     if (!pan) {
-      // Hover only: says a stop takes a click before one is pressed.
-      if (onPick && event.pointerType === "mouse" && containerRef.current) {
-        containerRef.current.style.cursor = stopAt(cx, cy, false) ? "pointer" : "";
+      // Hover only: says a stop takes a click before one is pressed, and
+      // tells the editor which card it is.
+      if (event.pointerType === "mouse") {
+        const under = waypointAt(cx, cy, false);
+        if (onPick && containerRef.current) {
+          containerRef.current.style.cursor = under ? "pointer" : "";
+        }
+        reportHover(under);
       }
       return;
     }
@@ -415,8 +440,8 @@ export function WaypointPreview({
       ? `; ${visited
           .map(({ vertex, ordinals }) =>
             ordinals.length === 1
-              ? `${vertex.name} is step ${ordinals[0]}`
-              : `${vertex.name} is steps ${ordinals.slice(0, -1).join(", ")} and ${ordinals[ordinals.length - 1]}`,
+              ? `${vertex.name} is stop ${ordinals[0]}`
+              : `${vertex.name} is stops ${ordinals.slice(0, -1).join(", ")} and ${ordinals[ordinals.length - 1]}`,
           )
           .join(", ")}`
       : ""
@@ -428,11 +453,15 @@ export function WaypointPreview({
       data-zoom={zoomPercent}
       // touch-none so a finger pans the map rather than the page (and fires no
       // pointercancel); select-none so a drag out does not select the list.
-      className="relative h-64 w-full cursor-grab touch-none overflow-hidden rounded-sm border border-hairline select-none sm:h-80"
+      className={cn(
+        "relative w-full cursor-grab touch-none overflow-hidden rounded-sm border border-hairline select-none",
+        className ?? "h-64 sm:h-80",
+      )}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={endGesture}
       onPointerCancel={endGesture}
+      onPointerLeave={() => reportHover(null)}
       onContextMenu={(event) => event.preventDefault()}
       onDoubleClick={fit}
     >

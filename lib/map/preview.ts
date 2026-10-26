@@ -18,9 +18,9 @@ import type { MapMetadata } from "@/lib/types/robot";
 /** Which markers the preview lights up, and what it says about them. */
 export interface PreviewMarks {
   /**
-   * Vertex id → the 1-based numbers of the job's waypoint steps that go there,
-   * in job order (lib/task/step.ts stepWaypointOrdinals). A stop with an
-   * entry is filled in the command hue and captioned with those numbers.
+   * Vertex id → the 1-based numbers of the job's stops that go there, in job
+   * order (lib/task/stops.ts stopWaypointOrdinals). A waypoint with an entry
+   * is filled in the command hue and captioned with those numbers.
    */
   steps: ReadonlyMap<string, readonly number[]>;
   /**
@@ -35,10 +35,18 @@ export interface PreviewMarks {
    * where it falls in it.
    */
   route?: readonly string[];
+  /**
+   * The waypoint the editor is pointing at (a stop card under the pointer or
+   * selected), ringed so the card and the map read as one thing.
+   */
+  highlight?: string | null;
 }
 
 /** The route's legs, thin enough to leave the markers and walls legible. */
 const ROUTE_LINE_PX = 2;
+
+/** The highlight's ring, clear of the marker's own halo. */
+const HIGHLIGHT_RING_RADIUS = VERTEX_DOT_RADIUS + 5;
 
 /** The approach point's ring, smaller than a stop's dot so it never reads as one. */
 const STAGING_RING_RADIUS = 3;
@@ -114,12 +122,12 @@ export function planCaptions(
 }
 
 /**
- * A lit marker's caption, "dock · steps 1, 4", numbered the way the step list
- * is. drawMarker adds the glyph.
+ * A lit marker's caption, "dock · stops 1, 4", numbered the way the editor's
+ * stop cards are. drawMarker adds the glyph.
  */
-export function stepCaption(name: string, ordinals: readonly number[]): string {
+export function stopCaption(name: string, ordinals: readonly number[]): string {
   if (!ordinals.length) return name;
-  return `${name} · ${ordinals.length === 1 ? "step" : "steps"} ${ordinals.join(", ")}`;
+  return `${name} · ${ordinals.length === 1 ? "stop" : "stops"} ${ordinals.join(", ")}`;
 }
 
 /**
@@ -172,7 +180,7 @@ export function drawWaypointPreview(
     drawApproach(ctx, view, meta, vertex, placed.get(vertex.id)!, palette.cmd);
   }
 
-  drawStops(ctx, vertices, placed, marks.steps, palette);
+  drawStops(ctx, vertices, placed, marks.steps, palette, marks.highlight ?? null);
 }
 
 /** Where a stop is drawn, CSS px, and its heading as the screen shows it. */
@@ -187,8 +195,9 @@ export interface PlacedStop {
  * The stops themselves, at wherever the caller put them on screen: the floor
  * plan's transform, or the 3D view's projection (lib/scene/route-marks.ts),
  * so both surfaces draw the same marks. A stop not in `placed` is not drawn.
- * The job's stops are lit and drawn last, the earliest step on top, and
- * named first where captions would collide (`planCaptions`).
+ * The job's stops are lit and drawn last, the earliest stop on top, and
+ * named first where captions would collide (`planCaptions`). `highlight`
+ * rings one waypoint under everything, so its own marker stays legible.
  */
 export function drawStops(
   ctx: CanvasRenderingContext2D,
@@ -196,6 +205,7 @@ export function drawStops(
   placed: ReadonlyMap<string, PlacedStop>,
   steps: ReadonlyMap<string, readonly number[]>,
   palette: Palette,
+  highlight: string | null = null,
 ): void {
   ctx.save();
   ctx.lineJoin = "round";
@@ -209,7 +219,7 @@ export function drawStops(
     .filter((vertex) => ordinals(vertex).length > 0)
     .sort((a, b) => ordinals(b)[0] - ordinals(a)[0]);
   const rest = shown.filter((vertex) => ordinals(vertex).length === 0);
-  const label = (vertex: MapVertex) => stepCaption(vertex.name, ordinals(vertex));
+  const label = (vertex: MapVertex) => stopCaption(vertex.name, ordinals(vertex));
 
   ctx.font = CAPTION_FONT;
   // Captions are placed lit first, earliest step first: the stops the job
@@ -226,6 +236,19 @@ export function drawStops(
     }),
     (text) => ctx.measureText(text).width,
   );
+
+  const ringed = highlight === null ? undefined : placed.get(highlight);
+  if (ringed) {
+    ctx.beginPath();
+    ctx.arc(ringed.cx, ringed.cy, HIGHLIGHT_RING_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = palette.cmd;
+    ctx.globalAlpha = 0.18;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = palette.cmd;
+    ctx.stroke();
+  }
 
   for (const vertex of [...rest, ...lit]) {
     const at = placed.get(vertex.id)!;

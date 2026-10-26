@@ -7,7 +7,9 @@ import {
   addAction,
   duplicateAction,
   duplicateStop,
+  formatDuration,
   insertStop,
+  jobSummary,
   moveAction,
   moveActionTo,
   moveStop,
@@ -331,5 +333,36 @@ describe("stopWaypointOrdinals", () => {
         ["v-B", [2]],
       ]),
     );
+  });
+});
+
+describe("jobSummary", () => {
+  it("counts the stops, sums the waits, and says where the job ends", () => {
+    const steps = [
+      row("A"),
+      { ...row("pause", "WAIT"), seconds: "30" },
+      { ...row("half", "WAIT"), seconds: "1." },
+      row("C", "DOCK"),
+      { ...row("rest", "WAIT"), seconds: "60" },
+    ];
+    expect(jobSummary(steps, (id) => (id === "v-C" ? "Charger" : null))).toEqual({
+      stops: 2,
+      waitSeconds: 91,
+      end: { name: "Charger", dock: true },
+    });
+  });
+
+  it("has no end for a job that never sets off", () => {
+    expect(jobSummary([row("hi")], () => null)).toEqual({ stops: 0, waitSeconds: 0, end: null });
+  });
+});
+
+describe("formatDuration", () => {
+  it("reads in the largest units that matter", () => {
+    expect(formatDuration(45)).toBe("45 s");
+    expect(formatDuration(2.5)).toBe("2.5 s");
+    expect(formatDuration(90)).toBe("1 min 30 s");
+    expect(formatDuration(120)).toBe("2 min");
+    expect(formatDuration(3900)).toBe("1 h 5 min");
   });
 });

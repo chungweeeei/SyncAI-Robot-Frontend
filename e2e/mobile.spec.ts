@@ -143,8 +143,9 @@ test.describe("the console on a phone", () => {
   test("keeps a loaded task's name readable beside the editor's buttons", async ({
     page,
   }) => {
-    // With their words, Go back, Save and Delete would truncate the heading
-    // (the name field) to one letter, so below sm they are icons alone.
+    // Beside the editor's buttons the heading (the name field) was cut to a
+    // few letters, so below sm it has a row of its own and the buttons are
+    // icons alone on the next.
     await mockBackend(page);
     await page.goto("/tasks");
     await page
@@ -157,7 +158,7 @@ test.describe("the console on a phone", () => {
       "the heading is cut off",
     ).toBe(true);
 
-    for (const name of ["Go back", "Save", "Delete"]) {
+    for (const name of ["Go back", "Save", "Save and run"]) {
       const button = page.getByRole("button", { name, exact: true });
       await expectOnScreen(page, name, await button.boundingBox());
       // Named for a screen reader; nothing printed (innerText skips what is
@@ -630,8 +631,6 @@ test.describe("the console on a phone", () => {
     // close. A real grid, as above.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
     await page.goto("/tasks/editor");
-    await page.getByTitle("Walk to a waypoint.").click();
-    await page.getByRole("button", { name: "Floor plan for step 1" }).click();
     const plan = page.getByRole("img", { name: /^Floor plan of dp2f/ });
     await expect(plan).toBeVisible();
     const zoom = page.locator("[data-zoom]");
@@ -666,14 +665,13 @@ test.describe("the console on a phone", () => {
     await touch("touchEnd", []);
     await expect.poll(readZoom).toBeGreaterThan(fitted);
   });
-  test("adds a step for a finger's tap on a waypoint, and none for a pinch begun on one", async ({
+  test("adds a stop for a finger's tap on a waypoint, and none for a pinch begun on one", async ({
     page,
   }) => {
-    // Plan route under a finger: the tap is the pick, and a second finger
-    // turns the first into a pinch, which must not also be a pick.
+    // The editor's map under a finger: the tap is the pick, and a second
+    // finger turns the first into a pinch, which must not also be a pick.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
     await page.goto("/tasks/editor");
-    await page.getByRole("button", { name: "Plan route" }).click();
     const plan = page.getByRole("img", { name: /^Floor plan of dp2f/ });
     await expect(plan).toBeVisible();
     await plan.evaluate((element) => element.scrollIntoView({ block: "center" }));
@@ -688,7 +686,7 @@ test.describe("the console on a phone", () => {
       type: "touchStart" | "touchMove" | "touchEnd",
       touchPoints: { x: number; y: number; id: number }[],
     ) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
-    const rows = page.getByRole("listitem");
+    const rows = page.locator("[data-stop]");
 
     // A pinch whose first finger is on the stop, ending where it began.
     await touch("touchStart", [finger(sx, sy, 1)]);
@@ -702,6 +700,6 @@ test.describe("the console on a phone", () => {
     await touch("touchStart", [finger(sx, sy, 1)]);
     await touch("touchEnd", []);
     await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText("dock");
+    await expect(page.getByRole("combobox", { name: "Waypoint for stop 1" })).toHaveText("dock");
   });
 });
