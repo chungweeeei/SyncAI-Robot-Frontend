@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeftIcon,
-  CheckIcon,
   MapPinPlusIcon,
+  PlayIcon,
   RouteIcon,
   SaveIcon,
   Trash2Icon,
@@ -28,15 +28,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { useConsoleEstop } from "@/hooks/use-console-estop";
 import { useMapVertexList } from "@/hooks/use-map-vertex-list";
 import { useMaps } from "@/hooks/use-maps";
 import { useTaskTemplates } from "@/hooks/use-task-templates";
 import { useSchedules } from "@/hooks/use-schedules";
 import { useStepDrafts } from "@/hooks/use-step-drafts";
+import { useTaskDispatch } from "@/hooks/use-task-dispatch";
 import { useLeaveGuard } from "@/hooks/use-leave-guard";
 import { useTaskDraft } from "@/hooks/use-task-draft";
 import { editorViews, waypointEditor } from "@/lib/map/links";
-import type { TaskStepState } from "@/lib/api/task";
+import { dispatchMapLock } from "@/lib/map/run-lock";
 import { draftIsUnsaved, type TaskDraft } from "@/lib/task/draft-store";
 import {
   isNavStep,
@@ -45,31 +47,32 @@ import {
   stepIdFor,
   stepRoute,
   stepWaypointOrdinals,
+  toDispatchSteps,
   toTemplateSteps,
 } from "@/lib/task/step";
 import { taskTemplateNameOk } from "@/lib/task/template";
 import { cn } from "@/lib/utils";
-
-/** This page dispatches nothing, so no row has run state. Shared, not per render. */
-const NO_STEP_STATES: ReadonlyMap<string, TaskStepState> = new Map();
 
 /**
  * A 40 px finger target from sm up, a 32 px icon square below. `!` because the
  * button's inline-start padding is more specific than a width variant.
  */
 const HEADER_BUTTON = "sm:pointer-coarse:min-h-10 max-sm:size-8 max-sm:px-0!";
-/** Both dialogs end the editor's job, so the page behind them is put away. */
+/** Delete ends the editor's job, so the page behind it is put away. */
 const LEAVING_OVERLAY = "bg-black/80";
 
 /**
  * The task editor (/tasks/editor): the steps and the job's name, which is the
  * heading itself and saved with the steps.
  *
- * It does not run or schedule anything: a job does both from its row on
- * /tasks, so only a saved job can be scheduled. The overview hands a template
- * over through the draft (lib/task/draft-store.ts), so the URL carries no id.
+ * It runs only what it has just saved (Save & run), so an engineer tuning a
+ * job on site edits, runs and edits again without leaving the page; a run
+ * never goes out from an unsaved draft, so the history names a job that
+ * exists. Schedules stay on /tasks, where the schedule list is. The overview
+ * hands a template over through the draft (lib/task/draft-store.ts), so the
+ * URL carries no id.
  */
-export function TaskEditor() {
+export function TaskEditor({ robotId }: { robotId: string | null }) {
   const router = useRouter();
   /**
    * Everything unsaved lives in the tab's draft, not component state, so a
@@ -89,6 +92,8 @@ export function TaskEditor() {
   const drafts = useStepDrafts(draft.steps, setSteps);
   const schedules = useSchedules();
   const library = useTaskTemplates();
+  const dispatch = useTaskDispatch(robotId);
+  const { engaged: stopped } = useConsoleEstop();
   const { maps, status: mapsStatus } = useMaps();
   const activeMapName = maps?.find((map) => map.active)?.name ?? null;
 
@@ -218,29 +223,39 @@ export function TaskEditor() {
   const refusal =
     refusedKey !== undefined && library.error ? { key: refusedKey, message: library.error } : null;
 
-  const canSave = stepsOk && saveReason === null && !library.busy;
-  /** An update answers with a card, since it stays on the page. */
+  /** The list is frozen while its run is followed: step ids are positional. */
+  const running = dispatch.running;
+  const canSave = stepsOk && saveReason === null && !library.busy && !running;
+
+  /**
+   * Why Save & run is held beyond Save's own reasons, the overview's Run
+   * gates in the editor's words. A job for another map saves but does not run.
+   */
+  const runReason =
+    saveReason ??
+    (running
+      ? "This job is running. Wait for it to end, or stop it from the top bar."
+      : stopped
+        ? "The emergency stop is engaged."
+        : robotId === null
+          ? "The robot has not reported in yet."
+          : mapMismatch
+            ? `Load ${draftMapName} on the robot to run this job.`
+            : hasMoveStep
+              ? dispatchMapLock(editorMap).reason
+              : null);
+  const canRun = canSave && runReason === null && !dispatch.busy;
+
+  /** Every save answers with a card, since every save stays on the page. */
   const [savedNotice, setSavedNotice] = React.useState<SavedNoticeValue | null>(null);
   const dismissSaved = React.useCallback(() => setSavedNotice(null), []);
   /**
-   * A create answers with a dialog instead, because it leaves: a page that
-   * changed under the operator without a word read as a Save that lost the
-   * job. The draft is only emptied on the way out, or the editor behind the
-   * dialog would blank while it is still being read.
+   * An update when a template is loaded, a create otherwise. Both stay: a
+   * create becomes the loaded template, so a second press updates it rather
+   * than making a copy, and the job can be run and tuned from here.
    */
-  const [createdName, setCreatedName] = React.useState<string | null>(null);
-  const leaveCreated = () => {
-    setCreatedName(null);
-    clearDraft();
-    router.push("/tasks");
-  };
-  /**
-   * An update when a template is loaded, a create otherwise. A create empties
-   * the draft (it now duplicates a saved row) and leaves for /tasks, where the
-   * job runs; an update stays put so a second press does not make a copy.
-   */
-  const save = () => {
-    if (!canSave) return;
+  const save = (run = false) => {
+    if (!canSave || (run && !canRun)) return;
     setSavedNotice(null);
     if (!taskTemplateNameOk(draftName)) {
       setNameMissing(true);
@@ -256,16 +271,15 @@ export function TaskEditor() {
     void (editing ? library.update(editing.id, body) : library.create(body)).then(
       (saved) => {
         if (!saved) return;
-        if (!editing) {
-          setCreatedName(saved.name);
-          return;
-        }
         updateDraft((current) => ({
           ...current,
           editing: { id: saved.id, name: saved.name },
           name: saved.name,
         }));
         setSavedNotice({ name: saved.name, at: Date.now() });
+        // The saved row, not the draft: its steps are what the history and a
+        // later Run from /tasks will name.
+        if (run) void dispatch.send(toDispatchSteps(saved.steps), saved.name, saved.map_name);
       },
     );
   };
@@ -308,11 +322,17 @@ export function TaskEditor() {
             existingNames={library.templates.map((template) => template.name)}
             onChange={setName}
             onRevert={() => setName(editing?.name ?? "")}
-            onSubmit={save}
+            onSubmit={() => save()}
           />
           {library.error && (
             <p role="alert" className="mt-1 text-[11px] leading-snug break-words text-signal-warn">
               {library.error}
+            </p>
+          )}
+          {/* A refused run never started, so no row can say it. */}
+          {(dispatch.refused ?? dispatch.error) && (
+            <p role="alert" className="mt-1 text-[11px] leading-snug break-words text-signal-warn">
+              {dispatch.refused ?? dispatch.error}
             </p>
           )}
           {/* The draft survives leaving, so the page has to say it is unsaved.
@@ -342,7 +362,8 @@ export function TaskEditor() {
             <span className="max-sm:hidden">Go back</span>
           </Button>
           <Button
-            onClick={save}
+            variant="outline"
+            onClick={() => save()}
             disabled={!canSave}
             title={saveReason ?? undefined}
             aria-label="Save"
@@ -350,6 +371,16 @@ export function TaskEditor() {
           >
             <SaveIcon data-icon="inline-start" aria-hidden />
             <span className="max-sm:hidden">Save</span>
+          </Button>
+          <Button
+            onClick={() => save(true)}
+            disabled={!canRun}
+            title={runReason ?? undefined}
+            aria-label="Save and run"
+            className={HEADER_BUTTON}
+          >
+            <PlayIcon data-icon="inline-start" aria-hidden />
+            <span className="max-sm:hidden">Save &amp; run</span>
           </Button>
           {editing && (
             <Button
@@ -404,36 +435,10 @@ export function TaskEditor() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Any way out of it leaves: the job is saved either way, and staying
-        * on an editor that no longer holds it would invite a second copy. */}
-      <AlertDialog
-        open={createdName !== null}
-        onOpenChange={(open) => {
-          if (!open) leaveCreated();
-        }}
-      >
-        <AlertDialogContent overlayClassName={LEAVING_OVERLAY}>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <CheckIcon className="size-4 shrink-0 text-signal-live" aria-hidden />
-              <span className="min-w-0 break-words">Saved {createdName}</span>
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              It is in the task list on Tasks, ready to run or schedule.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <Button size="sm" autoFocus onClick={leaveCreated}>
-              Go to Tasks
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       <SavedNotice notice={savedNotice} onDismiss={dismissSaved} />
 
       {/* A run this tab is not following, whichever page started it. */}
-      <ActiveRunBanner trackedTaskId={null} />
+      <ActiveRunBanner trackedTaskId={dispatch.taskId} />
 
       <div className="overflow-hidden rounded-md border border-hairline bg-panel">
         <InstrumentGroup
@@ -443,7 +448,7 @@ export function TaskEditor() {
               <MapPicker
                 maps={maps}
                 value={mapName}
-                disabled={false}
+                disabled={running}
                 onPick={selectMap}
               />
               {/* Words beside the icon from sm up: a bare route glyph did not
@@ -453,7 +458,7 @@ export function TaskEditor() {
                 aria-pressed={pickOpen}
                 aria-label="Plan route"
                 title={pickProblem ?? "Tap waypoints on the map to add steps in order"}
-                disabled={pickProblem !== null}
+                disabled={pickProblem !== null || running}
                 onClick={() => setPicking((open) => !open)}
                 className={cn(
                   "instrument-label flex h-6 items-center gap-1 rounded-sm border px-1.5 transition-colors disabled:opacity-40 disabled:hover:bg-transparent max-sm:w-6 max-sm:justify-center max-sm:px-0",
@@ -517,8 +522,8 @@ export function TaskEditor() {
             stepMarks={stepMarks}
             dockMarks={dockMarks}
             route={route}
-            disabled={false}
-            stepStates={NO_STEP_STATES}
+            disabled={running}
+            stepStates={dispatch.stepStates}
             onAdd={drafts.add}
             onPatch={drafts.patch}
             onRemove={drafts.remove}
