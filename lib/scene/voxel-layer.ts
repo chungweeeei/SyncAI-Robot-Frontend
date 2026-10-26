@@ -26,6 +26,8 @@ export interface VoxelLayer {
    * repaints the band's colours rather than rebuilding the layer.
    * `ramp: "map"` colours over the whole map's heights instead: a band that
    * slides with the robot would otherwise recolour every cell on each move.
+   * Only the cells whose colours change are repainted and uploaded, so a
+   * `"map"` band after another paints nothing.
    */
   setBand: (lo: number, hi: number, options?: { ramp?: "band" | "map" }) => void;
   /**
@@ -70,7 +72,9 @@ const GHOST_OPACITY = 0.14;
  * for. Coloured by height over the 1st–99th percentile of what is drawn,
  * so a flight of stairs reads as a flight, a stray voxel does not flatten
  * the ramp, and one floor of a tall building gets the whole ramp to itself.
- * Held in height order so one floor is one draw range (see setBand).
+ * Held in height order so one floor is one draw range (see setBand), as
+ * 16-bit keys and byte colours, 9 bytes a cell where float xyz and rgb were
+ * 24.
  *
  * Opaque, which is what lets the translucent floor plan draw after it and
  * blend over it rather than hide it. Built wholesale and thrown away on any
@@ -81,44 +85,73 @@ export function createVoxelLayer(
   voxels: OccupiedVoxels,
   { ghostColor = 0x808080 }: { ghostColor?: number } = {},
 ): VoxelLayer {
+  const { count, res } = voxels;
   const { order, levelStart } = sortByHeight(voxels);
-  const unsorted = voxelPositions(voxels);
-  const positions = new Float32Array(unsorted.length);
-  for (let i = 0; i < voxels.count; i += 1) {
+  // The cells' own relative keys rather than metres: half the bytes of
+  // float xyz, on the GPU and in the heap, and exact. The object's scale and
+  // position turn a key into the cell's centre (see placeOnKeys).
+  const positions = new Uint16Array(count * 3);
+  for (let i = 0; i < count; i += 1) {
     const from = order[i] * 3;
-    positions[i * 3] = unsorted[from];
-    positions[i * 3 + 1] = unsorted[from + 1];
-    positions[i * 3 + 2] = unsorted[from + 2];
+    positions[i * 3] = voxels.keys[from];
+    positions[i * 3 + 1] = voxels.keys[from + 1];
+    positions[i * 3 + 2] = voxels.keys[from + 2];
   }
-  const colors = new Float32Array(positions.length);
+  // Bytes, normalised by the GPU: what the screen shows anyway, at a quarter
+  // of float colours' memory and of the upload a repaint costs.
+  const colors = new Uint8Array(count * 3);
   const rgb: [number, number, number] = [0, 0, 0];
 
+  // Over levels, not metres: a key is a linear map of a height, so the ramp
+  // lands on the same colours.
   const whole = heightRange(positions, 2, 3);
 
   /**
    * Colour the marks `[start, end)` over `range`, by default their own
-   * 1st-99th percentile.
+   * 1st-99th percentile, and queue just those bytes for upload.
    */
   function paint(start: number, end: number, range?: { lo: number; hi: number }) {
+    if (end <= start) return;
     const { lo, hi } = range ?? heightRange(positions.subarray(start * 3, end * 3), 2, 3);
     const span = hi > lo ? hi - lo : 1;
     for (let i = start * 3; i < end * 3; i += 3) {
       rampColor((positions[i + 2] - lo) / span, rgb);
-      colors[i] = rgb[0];
-      colors[i + 1] = rgb[1];
-      colors[i + 2] = rgb[2];
+      colors[i] = Math.round(rgb[0] * 255);
+      colors[i + 1] = Math.round(rgb[1] * 255);
+      colors[i + 2] = Math.round(rgb[2] * 255);
     }
+    colorAttribute.addUpdateRange(start * 3, (end - start) * 3);
+    colorAttribute.needsUpdate = true;
   }
-  paint(0, voxels.count, whole);
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  const colorAttribute = new THREE.BufferAttribute(colors, 3);
+  const colorAttribute = new THREE.BufferAttribute(colors, 3, true);
   geometry.setAttribute("color", colorAttribute);
+  paint(0, count, whole);
+  // The first upload is the whole buffer whatever the ranges say; cleared so
+  // a stale range never rides along with a later one.
+  colorAttribute.clearUpdateRanges();
+
+  /**
+   * The marks holding their own band's colours rather than the whole map's;
+   * every other mark is in the whole map's. What lets a band that slides
+   * with the robot (`ramp: "map"`) move two numbers and paint nothing.
+   */
+  let ownRamp: { start: number; end: number } | null = null;
+
+  /** Put `[start, end)` back in the whole map's colours, but for `keep`. */
+  function restore(from: { start: number; end: number }, keep?: { start: number; end: number }) {
+    if (!keep) return paint(from.start, from.end, whole);
+    paint(from.start, Math.min(from.end, keep.start), whole);
+    paint(Math.max(from.start, keep.end), from.end, whole);
+  }
+
   const points = new THREE.Points(
     geometry,
-    new THREE.PointsMaterial({ size: voxels.res, vertexColors: true, sizeAttenuation: true }),
+    new THREE.PointsMaterial({ size: res, vertexColors: true, sizeAttenuation: true }),
   );
+  placeOnKeys(points, voxels);
   // No bounding sphere over a million points; the layer is the map, so
   // culling it could only ever be wrong.
   points.frustumCulled = false;
@@ -140,6 +173,7 @@ export function createVoxelLayer(
       depthWrite: false,
     }),
   );
+  placeOnKeys(ghost, voxels);
   ghost.frustumCulled = false;
 
   /** The height levels (relative kz) whose centres lie in `[lo, hi)` metres. */
@@ -167,8 +201,12 @@ export function createVoxelLayer(
       const end = levelStart[b];
       geometry.setDrawRange(start, end - start);
       ghostGeometry.setDrawRange(0, start);
-      paint(start, end, ramp === "map" ? whole : undefined);
-      colorAttribute.needsUpdate = true;
+      // The whole map's own band is the whole map's ramp.
+      const own = ramp === "band" && (start > 0 || end < count) ? { start, end } : null;
+      if (own && ownRamp && own.start === ownRamp.start && own.end === ownRamp.end) return;
+      if (ownRamp) restore(ownRamp, own ?? undefined);
+      if (own) paint(own.start, own.end);
+      ownRamp = own;
     },
     zExtent: (lo, hi) => {
       const [a, b] = levels(lo, hi);
@@ -187,6 +225,18 @@ export function createVoxelLayer(
       ghost.material.dispose();
     },
   };
+}
+
+/**
+ * Scale and move marks whose positions are relative keys onto the cells'
+ * centres in metres: `(key + keyMin - origin + 0.5) * res` on each axis, as
+ * voxelPositions writes them. The sprite's size is not scaled with it, so
+ * it stays `res` metres across.
+ */
+function placeOnKeys(object: THREE.Object3D, voxels: OccupiedVoxels) {
+  const [x, y, z] = voxels.keyMin.map((k) => (k - OCTREE_KEY_ORIGIN + 0.5) * voxels.res);
+  object.position.set(x, y, z);
+  object.scale.setScalar(voxels.res);
 }
 
 /**

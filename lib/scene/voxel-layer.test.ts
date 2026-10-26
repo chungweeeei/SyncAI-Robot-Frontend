@@ -58,11 +58,29 @@ describe("createVoxelLayer", () => {
 
   it("colours the lowest cell at the ramp's start and the highest at its end", () => {
     const layer = createVoxelLayer(voxels());
-    const colors = layer.points.geometry.getAttribute("color").array as Float32Array;
+    const colors = layer.points.geometry.getAttribute("color").array as Uint8Array;
     const first = HEIGHT_RAMP[0][1];
     const last = HEIGHT_RAMP[HEIGHT_RAMP.length - 1][1];
-    expect(Array.from(colors.subarray(0, 3)).map((c) => Math.round(c * 255))).toEqual([...first]);
-    expect(Array.from(colors.subarray(6, 9)).map((c) => Math.round(c * 255))).toEqual([...last]);
+    expect(Array.from(colors.subarray(0, 3))).toEqual([...first]);
+    expect(Array.from(colors.subarray(6, 9))).toEqual([...last]);
+  });
+
+  it("draws each mark at its cell's centre, as voxelPositions puts it", () => {
+    const layer = createVoxelLayer(voxels());
+    layer.points.updateMatrixWorld();
+    const attribute = layer.points.geometry.getAttribute("position");
+    const expected = voxelPositions(voxels());
+    for (let i = 0; i < 3; i += 1) {
+      const p = new THREE.Vector3().fromBufferAttribute(attribute, i).applyMatrix4(layer.points.matrixWorld);
+      expect(p.x).toBeCloseTo(expected[i * 3]);
+      expect(p.y).toBeCloseTo(expected[i * 3 + 1]);
+      expect(p.z).toBeCloseTo(expected[i * 3 + 2]);
+    }
+    // The sprite stays one cell across, whatever the scale does to positions.
+    expect((layer.points.material as THREE.PointsMaterial).size).toBe(0.1);
+    expect(layer.ghost.position.equals(layer.points.position)).toBe(true);
+    expect(layer.ghost.scale.equals(layer.points.scale)).toBe(true);
+    layer.dispose();
   });
 
   it("gives a flat floor one hue instead of dividing by zero", () => {
@@ -153,24 +171,64 @@ describe("the layer's height band", () => {
 
   it("recolours a band over its own heights", () => {
     const layer = createVoxelLayer(storeys());
-    const colors = () => layer.points.geometry.getAttribute("color").array as Float32Array;
+    const colors = () => layer.points.geometry.getAttribute("color").array as Uint8Array;
     const last = HEIGHT_RAMP[HEIGHT_RAMP.length - 1][1];
 
     layer.setBand(-Infinity, 4.5);
     // 2.55 m is the band's top, so the ramp's end, though the map goes higher.
-    expect(Array.from(colors().subarray(6, 9)).map((c) => Math.round(c * 255))).toEqual([...last]);
+    expect(Array.from(colors().subarray(6, 9))).toEqual([...last]);
     layer.dispose();
   });
 
   it("keeps the whole map's colours on a band that asks for them, wherever it slides", () => {
     const layer = createVoxelLayer(storeys());
-    const colors = () => layer.points.geometry.getAttribute("color").array as Float32Array;
+    const colors = () => layer.points.geometry.getAttribute("color").array as Uint8Array;
     const before = Array.from(colors());
 
     layer.setBand(-Infinity, 4.5, { ramp: "map" });
     expect(Array.from(colors())).toEqual(before);
     layer.setBand(1, 6, { ramp: "map" });
     expect(Array.from(colors())).toEqual(before);
+    layer.dispose();
+  });
+
+  it("paints and uploads nothing while a whole-map band slides", () => {
+    const layer = createVoxelLayer(storeys());
+    const attribute = layer.points.geometry.getAttribute("color") as THREE.BufferAttribute;
+    const version = attribute.version;
+
+    layer.setBand(-Infinity, 4.5, { ramp: "map" });
+    layer.setBand(1, 6, { ramp: "map" });
+    expect(attribute.version).toBe(version);
+    expect(attribute.updateRanges).toEqual([]);
+    layer.dispose();
+  });
+
+  it("puts a floor's own colours back to the whole map's when it is left", () => {
+    const layer = createVoxelLayer(storeys());
+    const attribute = layer.points.geometry.getAttribute("color") as THREE.BufferAttribute;
+    const colors = () => Array.from(attribute.array);
+    const whole = colors();
+
+    // Upstairs alone is one height, so its own ramp starts over at the bottom.
+    layer.setBand(4.5, Infinity);
+    expect(colors()).not.toEqual(whole);
+    // Only the floor's one cell went up, not the whole buffer.
+    expect(attribute.updateRanges).toEqual([{ start: 9, count: 3 }]);
+    attribute.clearUpdateRanges();
+    // The same floor again: nothing to paint.
+    const version = attribute.version;
+    layer.setBand(4.5, Infinity);
+    expect(attribute.version).toBe(version);
+
+    layer.setBand(1, 6, { ramp: "map" });
+    expect(colors()).toEqual(whole);
+    layer.setBand(4.5, Infinity);
+    layer.setBand(-Infinity, 4.5);
+    // The lower floor holds its own ramp; the upper one is the whole map's again.
+    expect(colors().slice(9)).toEqual(whole.slice(9));
+    layer.setBand(-Infinity, Infinity);
+    expect(colors()).toEqual(whole);
     layer.dispose();
   });
 
