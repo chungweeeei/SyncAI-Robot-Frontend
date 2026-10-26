@@ -252,9 +252,9 @@ components/
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
                 and the /tasks/editor page, built for commissioning on a
-                laptop: the name, Save and Save & run (a run
-                only of what it has just saved; Save as copy and Delete in
-                its menu), and two columns from lg — the
+                laptop: the name, Save (Save as copy and Delete in its
+                menu; running and scheduling stay on /tasks), and two
+                columns from lg — the
                 map (route-map: a click on a waypoint adds a stop, a Dock on
                 a charger, after the stop selected, else at the end; on the
                 floor plan preview, or, for a map with a 3D map,

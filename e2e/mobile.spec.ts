@@ -158,7 +158,7 @@ test.describe("the console on a phone", () => {
       "the heading is cut off",
     ).toBe(true);
 
-    for (const name of ["Go back", "Save", "Save and run"]) {
+    for (const name of ["Go back", "Save"]) {
       const button = page.getByRole("button", { name, exact: true });
       await expectOnScreen(page, name, await button.boundingBox());
       // Named for a screen reader; nothing printed (innerText skips what is

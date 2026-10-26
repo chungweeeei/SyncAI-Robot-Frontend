@@ -12,7 +12,6 @@ import {
   mapSummary,
   mockBackend,
   octomapBt,
-  taskState,
   taskSteps,
   taskTemplate,
   vertex,
@@ -727,8 +726,8 @@ test.describe("the task console", () => {
 
   test("authors a job for a map the robot is not on", async ({ page }) => {
     // A job built for another map: the picker lists only that map's
-    // waypoints, the saved body names that map, and Save & run stays held
-    // because the robot is not there.
+    // waypoints, the saved body names that map, and the editor says it
+    // cannot run until the robot is there.
     const bay = vertex({
       id: "66666666-6666-6666-6666-666666666666",
       name: "bay-1",
@@ -787,7 +786,6 @@ test.describe("the task console", () => {
         })
         .first(),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Save and run" })).toBeDisabled();
 
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.getByRole("textbox", { name: "Task name" }).fill("to bay");
@@ -800,59 +798,6 @@ test.describe("the task console", () => {
     };
     expect(body.map_name).toBe("wh1");
     expect(body.steps[0].vertex_id).toBe(bay.id);
-  });
-
-  test("saves and runs the job from the editor, and keeps the steps still while it runs", async ({
-    page,
-  }) => {
-    // Tuning a job on site is edit, run, watch, edit: Save & run writes the
-    // job, then sends the saved row, named, on its map.
-    const template = "22222222-2222-2222-2222-222222222222";
-    const writes = await mockBackend(page);
-    await page.route(`**/api/v1/task_templates/${template}`, (route) => {
-      if (route.request().method() !== "PUT") return route.fallback();
-      const body = route.request().postDataJSON() as { name: string };
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(taskTemplate({ name: body.name })),
-      });
-    });
-    // The run it starts, as the robot reports it: its one stop under way.
-    await page.route("**/api/v1/tasks/*", (route) => {
-      if (route.request().method() !== "GET") return route.fallback();
-      const id = decodeURIComponent(new URL(route.request().url()).pathname.split("/").pop()!);
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(
-          taskState({ id, steps: [{ id: "1-move", status: "IN_PROGRESS", error_msg: "" }] }),
-        ),
-      });
-    });
-    await page.goto("/tasks");
-    await page
-      .getByRole("button", { name: 'Load "Morning round" into the editor' })
-      .click();
-    await page.getByRole("button", { name: "Save and run" }).click();
-
-    await expect
-      .poll(() => writes.filter((w) => w.path === "/api/v1/tasks"))
-      .toHaveLength(1);
-    const body = writes.find((w) => w.path === "/api/v1/tasks")!.body as {
-      name: string | null;
-      map_name?: string;
-      steps: { id: string }[];
-    };
-    expect(body.name).toBe("Morning round");
-    expect(body.map_name).toBe(MAP_NAME);
-    expect(body.steps.map((step) => step.id)).toEqual(["1-move"]);
-    // The stop says how it is going, and since the step ids are positional
-    // the list holds still while they are followed.
-    await expect(page.locator('[data-stop="1"]')).toContainText("IN PROGRESS");
-    await expect(
-      page.getByRole("button", { name: "Add an action at stop 1" }),
-    ).toBeDisabled();
   });
 
   test("announces a run this tab did not start", async ({ page }) => {

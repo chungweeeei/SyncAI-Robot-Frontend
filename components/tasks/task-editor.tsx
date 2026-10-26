@@ -8,7 +8,6 @@ import {
   CopyIcon,
   EllipsisIcon,
   MapPinPlusIcon,
-  PlayIcon,
   Redo2Icon,
   SaveIcon,
   Trash2Icon,
@@ -38,20 +37,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useConsoleEstop } from "@/hooks/use-console-estop";
 import { useLeaveGuard } from "@/hooks/use-leave-guard";
 import { useMapFloors } from "@/hooks/use-map-floors";
 import { useMapVertexList } from "@/hooks/use-map-vertex-list";
 import { useMaps } from "@/hooks/use-maps";
 import { useSchedules } from "@/hooks/use-schedules";
 import { useStepCatalogue } from "@/hooks/use-step-catalogue";
-import { useTaskDispatch } from "@/hooks/use-task-dispatch";
 import { useTaskDraft } from "@/hooks/use-task-draft";
 import { useTaskDraftHistory } from "@/hooks/use-task-draft-history";
 import { useTaskTemplates } from "@/hooks/use-task-templates";
 import { isTypingTarget } from "@/lib/keyboard";
+import type { TaskStepState } from "@/lib/api/task";
 import { editorViews, waypointEditor } from "@/lib/map/links";
-import { dispatchMapLock } from "@/lib/map/run-lock";
 import { draftIsUnsaved, type TaskDraft } from "@/lib/task/draft-store";
 import {
   isNavStep,
@@ -62,7 +59,6 @@ import {
   stepPatchFromVertex,
   stepRoute,
   stepTypeForVertex,
-  toDispatchSteps,
   toTemplateSteps,
   type StepDraft,
 } from "@/lib/task/step";
@@ -87,6 +83,9 @@ const HEADER_BUTTON = "sm:pointer-coarse:min-h-10 max-sm:size-8 max-sm:px-0!";
 /** Delete ends the editor's job, so the page behind it is put away. */
 const LEAVING_OVERLAY = "bg-black/80";
 
+/** This page dispatches nothing, so no row has run state. Shared, not per render. */
+const NO_STEP_STATES: ReadonlyMap<string, TaskStepState> = new Map();
+
 /** Whether an edit handed back the list it was given, row for row. */
 function sameRows(a: readonly StepDraft[], b: readonly StepDraft[]): boolean {
   return a.length === b.length && a.every((row, index) => row === b[index]);
@@ -98,13 +97,12 @@ function sameRows(a: readonly StepDraft[], b: readonly StepDraft[]): boolean {
  * with what is done on the way there and on arrival.
  *
  * It is built for an engineer commissioning a site on a laptop: waypoints
- * first, in the order to visit them, then the actions at each, then Save &
- * run, watch, and tune. It runs only what it has just saved, so the history
- * names a job that exists; schedules stay on /tasks, where the schedule list
- * is. The overview hands a template over through the draft
- * (lib/task/draft-store.ts), so the URL carries no id.
+ * first, in the order to visit them, then the actions at each. It runs and
+ * schedules nothing; a saved job does both from its row on /tasks. The
+ * overview hands a template over through the draft (lib/task/draft-store.ts),
+ * so the URL carries no id.
  */
-export function TaskEditor({ robotId }: { robotId: string | null }) {
+export function TaskEditor() {
   const router = useRouter();
   /**
    * Everything unsaved lives in the tab's draft, not component state, so a
@@ -131,8 +129,6 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
   const limits = React.useMemo(() => stepLimits(catalogue), [catalogue]);
   const schedules = useSchedules();
   const library = useTaskTemplates();
-  const dispatch = useTaskDispatch(robotId);
-  const { engaged: stopped } = useConsoleEstop();
   const { maps, status: mapsStatus } = useMaps();
   const activeMapName = maps?.find((map) => map.active)?.name ?? null;
 
@@ -175,9 +171,6 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
     [vertices],
   );
   const summary = jobSummary(steps, vertexName);
-
-  /** The list is frozen while its run is followed: step ids are positional. */
-  const running = dispatch.running;
 
   /**
    * A row's key, or "start". The map's next click adds a stop after the stop
@@ -290,26 +283,7 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
     refusedKey !== undefined && library.error ? { key: refusedKey, message: library.error } : null;
 
   // Save stays pressable with work missing and points at it instead.
-  const canSave = !library.busy && !running;
-
-  /**
-   * Why Save & run is held beyond Save's own reasons, the overview's Run
-   * gates in the editor's words. A job for another map saves but does not run.
-   */
-  const runReason =
-    saveReason ??
-    (running
-      ? "This job is running. Wait for it to end, or stop it from the top bar."
-      : stopped
-        ? "The emergency stop is engaged."
-        : robotId === null
-          ? "The robot has not reported in yet."
-          : mapMismatch
-            ? `Load ${draftMapName} on the robot to run this job.`
-            : hasStop
-              ? dispatchMapLock(editorMap).reason
-              : null);
-  const canRun = canSave && runReason === null && !dispatch.busy;
+  const canSave = !library.busy;
 
   const listRef = React.useRef<HTMLDivElement>(null);
   /** The first marked row, scrolled to and named, for a Save pressed too soon. */
@@ -329,11 +303,10 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
   /**
    * An update when a template is loaded, a create otherwise (or always, for a
    * copy). Every save stays: a create becomes the loaded template, so a
-   * second press updates it rather than making another, and the job can be
-   * run and tuned from here.
+   * second press updates it rather than making another.
    */
-  const save = (options: { run?: boolean; copy?: boolean } = {}) => {
-    if (!canSave || (options.run && !canRun)) return;
+  const save = (options: { copy?: boolean } = {}) => {
+    if (!canSave) return;
     setSavedNotice(null);
     if (saveReason) {
       setPressedEarly(true);
@@ -360,9 +333,6 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
         name: saved.name,
       }));
       setSavedNotice({ name: saved.name, at: Date.now() });
-      // The saved row, not the draft: its steps are what the history and a
-      // later Run from /tasks will name.
-      if (options.run) void dispatch.send(toDispatchSteps(saved.steps), saved.name, saved.map_name);
     });
   };
 
@@ -370,7 +340,7 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
   const { undo, redo } = history;
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isTypingTarget(event.target) || running) return;
+      if (isTypingTarget(event.target)) return;
       const mod = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
       if (mod && key === "z") {
@@ -386,7 +356,7 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo, running]);
+  }, [undo, redo]);
 
   /**
    * Delete, then leave, or Save would quietly re-create the job under a new id.
@@ -424,7 +394,7 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
   return (
     <>
       {/* One row that wraps below sm, the name on a line of its own: beside
-        * five buttons a phone left it a few letters. */}
+        * the buttons a phone left it a few letters. */}
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1 max-sm:basis-full">
           <TaskTitle
@@ -441,12 +411,6 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
           {library.error && (
             <p role="alert" className="mt-1 text-[11px] leading-snug break-words text-signal-warn">
               {library.error}
-            </p>
-          )}
-          {/* A refused run never started, so no row can say it. */}
-          {(dispatch.refused ?? dispatch.error) && (
-            <p role="alert" className="mt-1 text-[11px] leading-snug break-words text-signal-warn">
-              {dispatch.refused ?? dispatch.error}
             </p>
           )}
           {pressedEarly && saveReason && (
@@ -477,7 +441,6 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
             <span className="max-sm:hidden">Go back</span>
           </Button>
           <Button
-            variant="outline"
             onClick={() => save()}
             disabled={!canSave}
             aria-label="Save"
@@ -485,16 +448,6 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
           >
             <SaveIcon data-icon="inline-start" aria-hidden />
             <span className="max-sm:hidden">Save</span>
-          </Button>
-          <Button
-            onClick={() => save({ run: true })}
-            disabled={!canRun}
-            title={runReason ?? undefined}
-            aria-label="Save and run"
-            className={HEADER_BUTTON}
-          >
-            <PlayIcon data-icon="inline-start" aria-hidden />
-            <span className="max-sm:hidden">Save &amp; run</span>
           </Button>
           {editing && (
             <DropdownMenu>
@@ -566,7 +519,7 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
       <SavedNotice notice={savedNotice} onDismiss={dismissSaved} />
 
       {/* A run this tab is not following, whichever page started it. */}
-      <ActiveRunBanner trackedTaskId={dispatch.taskId} />
+      <ActiveRunBanner trackedTaskId={null} />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
         {/* Beside the stops from lg, and held in view while a long route
@@ -576,7 +529,7 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
           className="space-y-1.5 overflow-hidden rounded-md border border-hairline bg-panel p-2 lg:sticky lg:top-0"
         >
           <div className="flex flex-wrap items-center gap-1.5">
-            <MapPicker maps={maps} value={mapName} disabled={running} onPick={selectMap} />
+            <MapPicker maps={maps} value={mapName} disabled={false} onPick={selectMap} />
             {/* Opens the map's floor plan editor in Waypoints mode, or its
               * 3D map with Waypoint armed; its back button returns here. */}
             {waypointLink !== null && (
@@ -610,14 +563,12 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
                 stopMarks={stopMarks}
                 dockMarks={dockMarks}
                 route={route}
-                onPick={running ? undefined : pickWaypoint}
+                onPick={pickWaypoint}
                 highlight={highlight}
                 onHover={(vertex) => setMapHover(vertex?.id ?? null)}
               />
               <p className="text-[11px] leading-snug text-muted-foreground">
-                {running
-                  ? "The job is running; the route can be changed once it ends."
-                  : vertices.length === 0 && verticesStatus === "ok"
+                {vertices.length === 0 && verticesStatus === "ok"
                     ? "This map has no waypoints yet. Add some, then click them here."
                     : `${pickHint} A charger adds a Dock.`}
               </p>
@@ -643,7 +594,7 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
                 variant="outline"
                 size="sm"
                 onClick={undo}
-                disabled={!history.canUndo || running}
+                disabled={!history.canUndo}
                 aria-label="Undo"
                 title="Undo (Ctrl+Z)"
               >
@@ -654,7 +605,7 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
                 variant="outline"
                 size="sm"
                 onClick={redo}
-                disabled={!history.canRedo || running}
+                disabled={!history.canRedo}
                 aria-label="Redo"
                 title="Redo (Ctrl+Shift+Z)"
               >
@@ -679,8 +630,8 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
               waypointLink={waypointLink}
               floors={floors}
               stopMarks={stopMarks}
-              disabled={running}
-              stepStates={dispatch.stepStates}
+              disabled={false}
+              stepStates={NO_STEP_STATES}
               refusal={refusal}
               selected={selection}
               onSelect={setSelected}
