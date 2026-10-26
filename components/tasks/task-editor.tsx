@@ -440,17 +440,14 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
               {saveReason}
             </p>
           )}
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-            {/* The draft survives leaving, so the page has to say it is unsaved.
-              * Held back until the library answers for a loaded job, or it
-              * would flash on every open. */}
-            {unsaved && (draft.editing === null || library.status === "ok") && (
-              <Chip tone="caution">Unsaved changes</Chip>
-            )}
-            <p className="readout text-[12px] text-muted-foreground" aria-label="Job summary">
-              {summaryParts.join(" · ")}
-            </p>
-          </div>
+          {/* The draft survives leaving, so the page has to say it is unsaved.
+            * Held back until the library answers for a loaded job, or it
+            * would flash on every open. */}
+          {unsaved && (draft.editing === null || library.status === "ok") && (
+            <Chip tone="caution" className="mt-1">
+              Unsaved changes
+            </Chip>
+          )}
         </div>
         {/* Icons only below sm: with words they squeezed the heading to one
           * letter on a phone. */}
@@ -465,28 +462,6 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
             <ArrowLeftIcon data-icon="inline-start" aria-hidden />
             <span className="max-sm:hidden">Go back</span>
           </Button>
-          <div className="flex items-center">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={undo}
-              disabled={!history.canUndo || running}
-              aria-label="Undo"
-              title="Undo (Ctrl+Z)"
-            >
-              <Undo2Icon aria-hidden />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={redo}
-              disabled={!history.canRedo || running}
-              aria-label="Redo"
-              title="Redo (Ctrl+Shift+Z)"
-            >
-              <Redo2Icon aria-hidden />
-            </Button>
-          </div>
           <Button
             variant="outline"
             onClick={() => save()}
@@ -639,7 +614,41 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
           )}
         </section>
 
-        <section aria-label="Stops" ref={listRef}>
+        <section aria-label="Stops" ref={listRef} className="space-y-2">
+          {/* Over what they act on, as the map editors' tool strips are: Undo
+            * takes back stops, actions and a map switch, never the name,
+            * which its field undoes. In the page header it read as undoing
+            * the save beside it. */}
+          <div className="flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="instrument-label text-muted-foreground">Route</span>
+            <p className="readout min-w-0 text-[12px] text-muted-foreground" aria-label="Job summary">
+              {summaryParts.join(" · ")}
+            </p>
+            <div className="ml-auto flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={undo}
+                disabled={!history.canUndo || running}
+                aria-label="Undo"
+                title="Undo (Ctrl+Z)"
+              >
+                <Undo2Icon data-icon="inline-start" aria-hidden />
+                Undo
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={redo}
+                disabled={!history.canRedo || running}
+                aria-label="Redo"
+                title="Redo (Ctrl+Shift+Z)"
+              >
+                <Redo2Icon data-icon="inline-start" aria-hidden />
+                Redo
+              </Button>
+            </div>
+          </div>
           <StopList
             steps={steps}
             catalogue={catalogue}

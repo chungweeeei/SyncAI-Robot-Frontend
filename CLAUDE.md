@@ -252,9 +252,9 @@ components/
   recordings/   bag recorder and list
   tasks/        the /tasks overview (template library, schedules, a row's run)
                 and the /tasks/editor page, built for commissioning on a
-                laptop: the name, Undo / Redo, Save and Save & run (a run
+                laptop: the name, Save and Save & run (a run
                 only of what it has just saved; Save as copy and Delete in
-                its menu), a summary line, and two columns from lg — the
+                its menu), and two columns from lg — the
                 map (route-map: a click on a waypoint adds a stop, a Dock on
                 a charger, after the stop selected, else at the end; on the
                 floor plan preview, or, for a map with a 3D map,
@@ -263,7 +263,8 @@ components/
                 two pixels over a building, and a 2D / 3D switch for a map
                 with both, as editorViews offers; the card under the pointer
                 is ringed on it and the waypoint under the pointer lights its
-                cards) beside the stops (stop-list: what is done before
+                cards) beside the stops, under a Route strip of the job's
+                summary and Undo / Redo (stop-list: what is done before
                 setting off, then a card per stop — its waypoint by search
                 (waypoint-combobox, grouped by floor), then in the order it
                 happens what is done on the way there and at it, each
