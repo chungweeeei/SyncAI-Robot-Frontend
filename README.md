@@ -54,7 +54,7 @@ SYNCAI_DEV_ORIGINS=robot-01.lan,10.8.140.138 npm run dev
 | `/maps` | Map library: switch, rename, delete, export / import, and open a map's editor. |
 | `/maps/[name]/edit` | The map's editor. Floor plan view: cells, waypoints and forbidden zones. `?view=3d`: the 3D map's ground patches (Fill / Erase), waypoints and forbidden zones. Changes are staged and sent by **Save**. |
 | `/recordings` | Start, watch and manage recordings on the robot. |
-| `/tasks`, `/tasks/editor` | Saved jobs and schedules; the step editor. |
+| `/tasks`, `/tasks/editor` | Saved tasks by map, each with its schedules; the step editor. |
 | `/history` | Finished runs, with counts and success rate. |
 | `/settings` | Planner, Controller, Wi-Fi, Preferences, and **Restart**. |
 | `/drive` | Full-screen drive sticks for a phone (unlisted). |
