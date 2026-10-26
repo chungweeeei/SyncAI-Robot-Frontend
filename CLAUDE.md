@@ -254,9 +254,9 @@ components/
                 loaded one first, then the tasks bound to no map, then the
                 others folded, each saying where maps are switched) under
                 one search; a card per task, folded to its name and route
-                (waypoints by name, then lib/task/library.ts's summary),
-                opened by its name to the stops read-only and its
-                schedules; Run and Schedule labelled, Edit beside them,
+                (waypoints by name, then lib/task/library.ts's summary)
+                and a line per schedule with its pause, edit and delete,
+                opened by its name to the stops read-only; Run and Schedule labelled, Edit beside them,
                 Duplicate and Delete in its ⋯ menu; Schedule opens a
                 dialog; schedules no saved task owns listed apart. A run is
                 not followed here — the masthead's bar is where it is —
