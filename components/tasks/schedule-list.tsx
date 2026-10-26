@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { PauseIcon, PencilIcon, PlayIcon, Trash2Icon } from "lucide-react";
+import { ClockIcon, PauseIcon, PencilIcon, PlayIcon, Trash2Icon } from "lucide-react";
 
-import { Chip, Readout } from "@/components/console/instrument";
+import { Chip } from "@/components/console/instrument";
 import { IconButton } from "@/components/tasks/icon-button";
 import {
   ScheduleDrift,
@@ -30,14 +30,16 @@ export interface ScheduleActions {
 }
 
 /**
- * A task's schedules, inside its card. A schedule belongs to the task it was
- * made from, so it is read, paused and deleted there rather than in a list of
- * its own down the page.
+ * A task's schedules, a line each on its card, folded or not. A schedule
+ * belongs to the task it was made from, so it is read, paused and deleted
+ * there rather than in a list of its own down the page — and without opening
+ * the card first, which hid them under a long route.
  */
 export function ScheduleList({
   schedules,
   source,
   templates,
+  checkDrift = false,
   ...actions
 }: ScheduleActions & {
   schedules: readonly ScheduleState[];
@@ -45,6 +47,11 @@ export function ScheduleList({
   source: TaskTemplate | null;
   /** The library, so an orphan can say why no task owns it. */
   templates: readonly TaskTemplate[];
+  /**
+   * Compare each with what the task does now. One describe RPC a schedule,
+   * so only while the card is open, never for every row the page paints.
+   */
+  checkDrift?: boolean;
 }) {
   return (
     <ul className="space-y-1.5">
@@ -54,6 +61,7 @@ export function ScheduleList({
           schedule={schedule}
           source={source}
           templates={templates}
+          checkDrift={checkDrift}
           {...actions}
         />
       ))}
@@ -65,6 +73,7 @@ function ScheduleRow({
   schedule,
   source,
   templates,
+  checkDrift,
   readAtMs,
   busy,
   onPause,
@@ -74,6 +83,7 @@ function ScheduleRow({
   schedule: ScheduleState;
   source: TaskTemplate | null;
   templates: readonly TaskTemplate[];
+  checkDrift: boolean;
 }) {
   const [editing, setEditing] = React.useState(false);
   const timezone = useBrowserTimeZone();
@@ -99,14 +109,30 @@ function ScheduleRow({
     : null;
 
   return (
-    <li className="rounded-sm border border-hairline bg-background/60 px-2 py-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="readout min-w-0 flex-1 truncate text-[13px]">{schedule.id}</span>
+    <li className="rounded-sm border border-hairline bg-background/60 px-2 py-1">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        {/* One line, so a card's schedules are there without opening it. */}
+        <div className="flex min-w-0 flex-1 basis-56 flex-wrap items-baseline gap-x-1.5 text-[11px] leading-snug">
+          <ClockIcon className="size-3 shrink-0 self-center text-muted-foreground" aria-hidden />
+          <span className="readout min-w-0 truncate text-[12px] text-foreground">
+            {schedule.id}
+          </span>
+          <span aria-hidden className="text-muted-foreground">·</span>
+          <span className="readout text-signal-cmd">{describeTrigger(schedule.trigger)}</span>
+          <span aria-hidden className="text-muted-foreground">·</span>
+          <span className="text-muted-foreground">Next</span>
+          <span className={nextReadout ? "readout text-signal-live" : "text-muted-foreground"}>
+            {nextReadout?.value ?? "—"}
+          </span>
+          {nextReadout?.unit && (
+            <span className="text-muted-foreground">{nextReadout.unit}</span>
+          )}
+        </div>
 
         {!source && <ScheduleSourceChip schedule={schedule} templates={templates} />}
         {schedule.paused && <Chip tone="caution">Paused</Chip>}
 
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
           <IconButton
             label={editing ? "Close the schedule editor" : "Edit schedule"}
             disabled={busy}
@@ -148,20 +174,7 @@ function ScheduleRow({
         </div>
       </div>
 
-      <div className="mt-1.5 space-y-1">
-        <Readout
-          label="Trigger"
-          value={describeTrigger(schedule.trigger)}
-          tone="cmd"
-        />
-        <Readout
-          label="Next run"
-          value={nextReadout?.value ?? "—"}
-          unit={nextReadout?.unit}
-          tone={nextReadout ? "live" : "neutral"}
-        />
-        {source && <ScheduleDrift scheduleId={schedule.id} source={source} />}
-      </div>
+      {source && checkDrift && <ScheduleDrift scheduleId={schedule.id} source={source} />}
 
       {editing && (
         <ScheduleTriggerForm schedule={schedule} onDone={() => setEditing(false)} />

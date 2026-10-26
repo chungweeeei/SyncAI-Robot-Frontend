@@ -5,7 +5,6 @@ import {
   CalendarPlusIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  ClockIcon,
   CopyIcon,
   EllipsisIcon,
   PencilIcon,
@@ -35,7 +34,6 @@ import {
   taskSummary,
   type RouteStop,
 } from "@/lib/task/library";
-import { scheduleChipSummary } from "@/lib/task/schedule";
 import { repeatSuffix } from "@/lib/task/step";
 import { formatDuration } from "@/lib/task/stops";
 
@@ -61,7 +59,8 @@ export interface TaskTemplateRowProps {
 /**
  * One saved task. Folded, it is what an engineer on site recognises a task
  * by: its name and the waypoints it walks, with no step letters to decode.
- * Opened, it is the stops it was built from, read-only, and its schedules.
+ * Its schedules are a line each under the route, folded or not; opened, the
+ * card adds the stops it was built from, read-only.
  *
  * Run and Schedule are labelled buttons and Delete sits in the ⋯ menu: the
  * page exists to run and schedule tasks, and a delete beside them at the same
@@ -82,7 +81,6 @@ export function TaskTemplateRow({
 }: TaskTemplateRowProps) {
   const [open, setOpen] = React.useState(false);
   const detailId = React.useId();
-  const schedule = scheduleChipSummary(schedules);
 
   return (
     <li className="rounded-sm border border-hairline bg-elevated/40 px-2 py-2">
@@ -103,12 +101,6 @@ export function TaskTemplateRow({
           <span className="readout min-w-0 truncate text-[13px]">{template.name}</span>
         </button>
 
-        {schedule && (
-          <Chip tone={schedule.tone} className="gap-1" title="Open the task to see its schedules">
-            <ClockIcon className="size-3" aria-hidden />
-            {schedule.label}
-          </Chip>
-        )}
         {template.missing_vertex_count > 0 && (
           <Chip tone="caution">{template.missing_vertex_count} missing</Chip>
         )}
@@ -169,20 +161,21 @@ export function TaskTemplateRow({
         <TaskRoute steps={template.steps} />
       </div>
 
+      {schedules.length > 0 && (
+        <section aria-label={`Schedules for "${template.name}"`} className="mt-1.5 pl-5">
+          <ScheduleList
+            schedules={schedules}
+            source={template}
+            templates={[template]}
+            checkDrift={open}
+            {...scheduleActions}
+          />
+        </section>
+      )}
+
       {open && (
         <div id={detailId} className="mt-2 space-y-3 border-t border-hairline pt-2 pl-5">
           <TaskStopsView steps={template.steps} />
-          {schedules.length > 0 && (
-            <section aria-label={`Schedules for "${template.name}"`} className="space-y-1">
-              <h3 className="instrument-label text-muted-foreground">Schedules</h3>
-              <ScheduleList
-                schedules={schedules}
-                source={template}
-                templates={[template]}
-                {...scheduleActions}
-              />
-            </section>
-          )}
         </div>
       )}
     </li>

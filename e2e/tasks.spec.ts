@@ -172,12 +172,10 @@ test.describe("the task console", () => {
     await expect.poll(() => kinds).toEqual(["beforeunload"]);
   });
 
-  test("keeps a task's schedules on its card, and the paused ones counted", async ({
-    page,
-  }) => {
-    // Three schedules, two paused: the chip must show the pauses, not leave
-    // them to a hover title a finger never sees. One that names no task is
-    // listed apart, never on a card.
+  test("keeps a task's schedules on its card, folded or not", async ({ page }) => {
+    // Pause and delete must be in reach without opening the card: under a
+    // long route an opened card put them a screen away. One that names no
+    // task is listed apart, never on a card.
     const template = "22222222-2222-2222-2222-222222222222";
     const linked = (id: string, paused: boolean) => ({
       id,
@@ -202,19 +200,16 @@ test.describe("the task console", () => {
     });
     await page.goto("/tasks");
 
-    const card = page.getByRole("listitem").filter({
-      has: page.getByRole("button", { name: "Morning round", exact: true }),
-    });
-    await expect(card.getByText("3 schedules · 2 paused")).toBeVisible();
-    // Folded, the card shows no schedule rows.
-    await expect(card.getByText("half-hourly")).toHaveCount(0);
-
-    await card.getByRole("button", { name: "Morning round", exact: true }).click();
     const own = page.getByRole("region", { name: 'Schedules for "Morning round"' });
     for (const id of ["half-hourly", "weekend", "holiday"]) {
       await expect(own.getByText(id, { exact: true })).toBeVisible();
     }
     await expect(own.getByText("other", { exact: true })).toHaveCount(0);
+    await expect(own.getByText("Paused", { exact: true })).toHaveCount(2);
+    await expect(own.getByRole("button", { name: "Resume schedule" })).toHaveCount(2);
+    await expect(own.getByRole("button", { name: "Pause schedule" })).toHaveCount(1);
+    // Folded: the stops are not shown, the schedules are.
+    await expect(page.getByRole("list", { name: "Stops" })).toHaveCount(0);
 
     const orphans = page
       .locator("section")
@@ -1168,8 +1163,6 @@ test.describe("the task console", () => {
         return route.fulfill({ json: registered ? [created] : [] });
       });
       await page.goto("/tasks");
-      // Opened first, so the new row has a card to land on.
-      await page.getByRole("button", { name: "Morning round", exact: true }).click();
       await expect(page.getByRole("region", { name: /^Schedules for/ })).toHaveCount(0);
 
       await page
@@ -1192,12 +1185,8 @@ test.describe("the task console", () => {
         row.getByText("2099-01-01 09:00", { exact: true }),
       ).toBeVisible();
       expect(staleReads).toBe(2);
-      // The dialog closed on success, and the card's chip reads the same
-      // list, so it catches up with it.
+      // The dialog closed on success.
       await expect(page.getByRole("dialog")).toHaveCount(0);
-      await expect(
-        page.getByText("Weekdays at 09:00 · Asia/Taipei", { exact: true }),
-      ).toHaveCount(2);
     });
 
     test("keeps an edited row on its new time while the list catches up", async ({
