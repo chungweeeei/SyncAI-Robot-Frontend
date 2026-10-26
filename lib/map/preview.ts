@@ -10,7 +10,6 @@ import {
   type Palette,
 } from "@/lib/map/draw";
 import { stagingPose } from "@/lib/map/dock";
-import { vertexGlyph } from "@/lib/map/vertex";
 import { fitView, type Size, type View } from "@/lib/map/view";
 import type { MapVertex } from "@/lib/types/map";
 import type { MapMetadata } from "@/lib/types/robot";
@@ -122,15 +121,6 @@ export function planCaptions(
 }
 
 /**
- * A lit marker's caption, "dock · stops 1, 4", numbered the way the editor's
- * stop cards are. drawMarker adds the glyph.
- */
-export function stopCaption(name: string, ordinals: readonly number[]): string {
-  if (!ordinals.length) return name;
-  return `${name} · ${ordinals.length === 1 ? "stop" : "stops"} ${ordinals.join(", ")}`;
-}
-
-/**
  * One frame: the well, the raster, its extent, then every marker, named where
  * there is room (`planCaptions`). The job's stops are lit and drawn last, the
  * earliest step on top.
@@ -219,7 +209,10 @@ export function drawStops(
     .filter((vertex) => ordinals(vertex).length > 0)
     .sort((a, b) => ordinals(b)[0] - ordinals(a)[0]);
   const rest = shown.filter((vertex) => ordinals(vertex).length === 0);
-  const label = (vertex: MapVertex) => stopCaption(vertex.name, ordinals(vertex));
+  // The name alone, with no type glyph and no stop numbers: next to a dozen
+  // other captions, "M · lobby · stop 1" was three words to read past for
+  // one. Which waypoints the job goes to is the lit colour and the route.
+  const label = (vertex: MapVertex) => vertex.name;
 
   ctx.font = CAPTION_FONT;
   // Captions are placed lit first, earliest step first: the stops the job
@@ -231,7 +224,7 @@ export function drawStops(
         id: vertex.id,
         cx: at.cx,
         cy: at.cy,
-        caption: `${vertexGlyph(vertex.type)} · ${label(vertex)}`,
+        caption: label(vertex),
       };
     }),
     (text) => ctx.measureText(text).width,
@@ -259,7 +252,7 @@ export function drawStops(
       theta: at.theta,
       colour: emphasis ? palette.cmd : palette.vertex,
       emphasis,
-      glyph: vertexGlyph(vertex.type),
+      glyph: null,
       label: captioned.has(vertex.id) ? label(vertex) : null,
       dashed: false,
     });

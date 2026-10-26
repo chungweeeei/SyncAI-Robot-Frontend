@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PREVIEW_INSET, planCaptions, previewView, stopCaption } from "@/lib/map/preview";
+import { PREVIEW_INSET, planCaptions, previewView } from "@/lib/map/preview";
 import { VERTEX_HIT_RADIUS, vertexAt, vertexScreen } from "@/lib/map/draw";
 import type { MapVertex } from "@/lib/types/map";
 import type { MapMetadata } from "@/lib/types/robot";
@@ -87,18 +87,6 @@ describe("planCaptions", () => {
       measure,
     );
     expect([...kept]).toEqual(["lit", "next"]);
-  });
-});
-
-describe("stopCaption", () => {
-  it("names the stop, or the stops, that go to a waypoint", () => {
-    expect(stopCaption("dock", [2])).toBe("dock · stop 2");
-    // A patrol that returns: one marker, every visit, in job order.
-    expect(stopCaption("dock", [1, 4])).toBe("dock · stops 1, 4");
-  });
-
-  it("is just the name for a waypoint the job does not visit", () => {
-    expect(stopCaption("room-a", [])).toBe("room-a");
   });
 });
 
