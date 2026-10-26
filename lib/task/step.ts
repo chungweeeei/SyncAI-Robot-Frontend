@@ -18,8 +18,6 @@ export interface StepTypeSpec {
   value: StepType;
   /** Condensed caps in the UI, so short. */
   label: string;
-  /** One character in the row's leading column, mirroring the vertex glyphs. */
-  glyph: string;
   /** One line under the add row, so the vocabulary is not guessed. */
   hint: string;
 }
@@ -32,22 +30,20 @@ export interface StepTypeSpec {
  * authors one. A template stored with an UNDOCK step no longer loads.
  */
 export const STEP_TYPES: readonly StepTypeSpec[] = [
-  { value: "MOVE", label: "Move", glyph: "M", hint: "Walk to a waypoint." },
+  { value: "MOVE", label: "Move", hint: "Walk to a waypoint." },
   // Named for what the operator asks of the robot. The drive to the approach
   // point in front of the waypoint is part of it, and the hint says so.
   {
     value: "DOCK",
     label: "Dock",
-    glyph: "D",
     hint: "Go to a waypoint, then walk straight onto the charger there and stay standing on it.",
   },
-  // "T" (for TTS) because STANDUP already owns "S".
-  { value: "SPEAK", label: "Speak", glyph: "T", hint: "Say a line on the robot\u2019s speaker." },
+  { value: "SPEAK", label: "Speak", hint: "Say a line on the robot\u2019s speaker." },
   // "Stay put", not "pause": Pause is the masthead's hold on a running job.
-  { value: "WAIT", label: "Wait", glyph: "W", hint: "Stay put for a set time, then go on." },
-  { value: "STANDUP", label: "Stand", glyph: "S", hint: "Stand up. Nothing to set." },
+  { value: "WAIT", label: "Wait", hint: "Stay put for a set time, then go on." },
+  { value: "STANDUP", label: "Stand", hint: "Stand up. Nothing to set." },
   // "Lie down", as the history names the kind: the masthead reads this label.
-  { value: "LIEDOWN", label: "Lie down", glyph: "L", hint: "Lie down. Nothing to set." },
+  { value: "LIEDOWN", label: "Lie down", hint: "Lie down. Nothing to set." },
 ];
 
 /** Mirrors `SpeakParams.text`'s `max_length` — the backend 422s past this. */
@@ -76,15 +72,6 @@ export const DEFAULT_STEP_LIMITS: StepLimits = {
   speakRepeatMax: SPEAK_REPEAT_MAX,
   waitSecondsMax: WAIT_SECONDS_MAX,
 };
-
-const GLYPHS: Record<StepType, string> = STEP_TYPES.reduce(
-  (all, spec) => ({ ...all, [spec.value]: spec.glyph }),
-  {} as Record<StepType, string>,
-);
-
-export function stepGlyph(type: StepType): string {
-  return GLYPHS[type] ?? "?";
-}
 
 const NAV_STEP_TYPES: ReadonlySet<StepType> = new Set<NavStepType>(["MOVE", "DOCK"]);
 
@@ -505,22 +492,6 @@ export function wireGroupPlaces(steps: readonly { group?: string | null }[]): Gr
     if (up) return down ? "middle" : "end";
     return down ? "start" : null;
   });
-}
-
-/**
- * The step shape at a glance, for a template row: `M [M T] S` — the glyphs in
- * order, with the steps that run together bracketed.
- */
-export function stepShape(steps: readonly { type: StepType; group?: string | null }[]): string {
-  const places = wireGroupPlaces(steps);
-  return steps
-    .map((step, index) => {
-      const glyph = stepGlyph(step.type);
-      if (places[index] === "start") return `[${glyph}`;
-      if (places[index] === "end") return `${glyph}]`;
-      return glyph;
-    })
-    .join(" ");
 }
 
 /**

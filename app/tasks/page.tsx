@@ -6,12 +6,9 @@ import { TaskOverview } from "@/components/tasks/task-overview";
 import { RobotName } from "@/components/console/robot-name";
 
 /**
- * Chrome only — TaskOverview owns the library, a row's run and the schedules;
- * building a job is /tasks/editor.
- *
- * A run in flight survives a reload through `GET /api/v1/active_tasks`, whoever
- * started it, but the per-step readback only exists for a task this mount
- * dispatched (`useTaskDispatch`).
+ * Chrome only — TaskOverview owns the saved tasks, their Run and their
+ * schedules; building a task is /tasks/editor, and following a run is the
+ * masthead's.
  */
 export default function TasksPage() {
   const { state } = useConsoleRobotState();
@@ -26,8 +23,8 @@ export default function TasksPage() {
             <h1 className="text-xl font-semibold tracking-tight">Tasks</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Create tasks for{" "}
-              <RobotName id={state?.robot_id} />,
-              or schedule them to run on their own.
+              <RobotName id={state?.robot_id} />, run one now, or schedule it to
+              run on its own.
             </p>
           </div>
           <CreateTaskButton />

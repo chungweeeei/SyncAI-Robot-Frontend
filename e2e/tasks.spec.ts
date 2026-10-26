@@ -124,7 +124,7 @@ test.describe("the task console", () => {
     await mockBackend(page);
     await page.goto("/tasks");
     await page
-      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .getByRole("button", { name: 'Edit "Morning round"' })
       .click();
     await expect(page.getByRole("heading", { name: "Morning round" })).toBeVisible();
     await page.getByRole("button", { name: "Go back" }).click();
@@ -146,7 +146,7 @@ test.describe("the task console", () => {
     await mockBackend(page);
     await page.goto("/tasks");
     await page
-      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .getByRole("button", { name: 'Edit "Morning round"' })
       .click();
     await expect(page.getByRole("heading", { name: "Morning round" })).toBeVisible();
 
@@ -172,11 +172,12 @@ test.describe("the task console", () => {
     await expect.poll(() => kinds).toEqual(["beforeunload"]);
   });
 
-  test("counts a job's paused schedules, and points at them in the list", async ({
+  test("keeps a task's schedules on its card, and the paused ones counted", async ({
     page,
   }) => {
     // Three schedules, two paused: the chip must show the pauses, not leave
-    // them to a hover title a finger never sees.
+    // them to a hover title a finger never sees. One that names no task is
+    // listed apart, never on a card.
     const template = "22222222-2222-2222-2222-222222222222";
     const linked = (id: string, paused: boolean) => ({
       id,
@@ -201,31 +202,176 @@ test.describe("the task console", () => {
     });
     await page.goto("/tasks");
 
-    const chip = page.getByRole("button", {
-      name: /^Show the schedules for "Morning round"/,
+    const card = page.getByRole("listitem").filter({
+      has: page.getByRole("button", { name: "Morning round", exact: true }),
     });
-    await expect(chip).toHaveText("3 schedules · 2 paused");
-    await chip.click();
+    await expect(card.getByText("3 schedules · 2 paused")).toBeVisible();
+    // Folded, the card shows no schedule rows.
+    await expect(card.getByText("half-hourly")).toHaveCount(0);
 
-    // Lands on the job's first schedule, not on the list's first row.
-    const first = page.locator(`li[data-template-id="${template}"]`).first();
-    await expect(first).toBeFocused();
-    await expect(first).toContainText("half-hourly");
-    // Exactly that job's three, and not the unrelated one.
-    const lit = page.locator("li[data-highlighted]");
-    await expect(lit).toHaveCount(3);
-    await expect(lit.filter({ hasText: "other" })).toHaveCount(0);
-    // A flash, not a selection.
-    await expect(lit).toHaveCount(0, { timeout: 5000 });
+    await card.getByRole("button", { name: "Morning round", exact: true }).click();
+    const own = page.getByRole("region", { name: 'Schedules for "Morning round"' });
+    for (const id of ["half-hourly", "weekend", "holiday"]) {
+      await expect(own.getByText(id, { exact: true })).toBeVisible();
+    }
+    await expect(own.getByText("other", { exact: true })).toHaveCount(0);
+
+    const orphans = page
+      .locator("section")
+      .filter({ has: page.getByRole("heading", { name: "Schedules no saved task owns" }) });
+    await expect(orphans.getByText("other", { exact: true })).toBeVisible();
+    await expect(orphans.getByText("unsaved steps")).toBeVisible();
     expect(writes).toEqual([]);
   });
 
-  test("lists another map's jobs, marked and not runnable", async ({
+  test("reads a task as the waypoints it walks, never as coordinates", async ({
     page,
   }) => {
-    // A job for a map the robot is not on is still the operator's work: it is
+    // The card is how a task is told apart on site: by where it goes. The
+    // stored pose is the robot's business, and a letter per step was a code.
+    await mockBackend(page, {
+      templates: [
+        taskTemplate({
+          steps: [
+            {
+              id: "1-speak",
+              vertex_id: null,
+              vertex_name: null,
+              vertex_status: "NONE",
+              type: "SPEAK",
+              params: { text: "Starting", repeat: 2 },
+              resolved_params: { text: "Starting", repeat: 2 },
+            },
+            {
+              id: "2-move",
+              vertex_id: vertex().id,
+              vertex_name: "lobby",
+              vertex_status: "CURRENT",
+              type: "MOVE",
+              params: { x: 2.5, y: 1.25, theta: 90 },
+              resolved_params: { x: 2.5, y: 1.25, theta: 90 },
+            },
+            {
+              id: "3-wait",
+              vertex_id: null,
+              vertex_name: null,
+              vertex_status: "NONE",
+              type: "WAIT",
+              params: { seconds: 90 },
+              resolved_params: { seconds: 90 },
+            },
+            {
+              id: "4-dock",
+              vertex_id: "77777777-7777-7777-7777-777777777777",
+              vertex_name: "charger",
+              vertex_status: "MISSING",
+              type: "DOCK",
+              params: { x: 0, y: 0, theta: 0 },
+              resolved_params: { x: 0, y: 0, theta: 0 },
+            },
+          ],
+          missing_vertex_count: 1,
+        }),
+      ],
+    });
+    await page.goto("/tasks");
+
+    await expect(page.getByLabel("Route")).toHaveText("lobby → charger");
+    await expect(page.getByText("2 stops · 1 min 30 s of waiting · ends docked")).toBeVisible();
+    await expect(page.getByText("1 missing")).toBeVisible();
+
+    await page.getByRole("button", { name: "Morning round", exact: true }).click();
+    const stops = page.getByRole("list", { name: "Stops" });
+    await expect(stops.getByText("Before setting off")).toBeVisible();
+    await expect(stops.getByText("“Starting” ×2")).toBeVisible();
+    await expect(stops.getByText("At lobby")).toBeVisible();
+    await expect(stops.getByText("1 min 30 s")).toBeVisible();
+    await expect(stops.getByText("deleted")).toBeVisible();
+    await expect(stops.getByText("2.500")).toHaveCount(0);
+  });
+
+  test("groups the tasks by map, and a search finds one on any map", async ({ page }) => {
+    await mockBackend(page, {
+      templates: [
+        taskTemplate({ id: "a1", name: "Round 10" }),
+        taskTemplate({ id: "a2", name: "Round 2" }),
+        taskTemplate({ id: "a3", name: "Greet", map_name: null, steps: [] }),
+        taskTemplate({
+          id: "a4",
+          name: "Lab round",
+          map_name: "wh1",
+          map_matches_active: false,
+        }),
+      ],
+    });
+    await page.goto("/tasks");
+
+    const sections = page.getByRole("region", { name: /^Tasks / });
+    await expect(sections).toHaveCount(3);
+    await expect(sections.nth(0)).toHaveAccessibleName(`Tasks on ${MAP_NAME}`);
+    await expect(sections.nth(1)).toHaveAccessibleName("Tasks with no map");
+    await expect(sections.nth(2)).toHaveAccessibleName("Tasks on wh1");
+    // By number, not by character: 2 before 10.
+    const loaded = sections.nth(0).getByRole("button", { name: /^Round/ });
+    await expect(loaded).toHaveText(["Round 2", "Round 10"]);
+    // Another map's group is folded until asked for.
+    await expect(page.getByRole("button", { name: "Lab round", exact: true })).toHaveCount(0);
+
+    await page.getByRole("searchbox", { name: "Search tasks" }).fill("lab");
+    await expect(sections).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Lab round", exact: true })).toBeVisible();
+
+    await page.getByRole("searchbox", { name: "Search tasks" }).fill("nothing");
+    await expect(page.getByText("No task is named like “nothing”.")).toBeVisible();
+  });
+
+  test("duplicates a task from its menu, under a new name", async ({ page }) => {
+    const writes = await mockBackend(page);
+    await page.goto("/tasks");
+
+    await page.getByRole("button", { name: 'More for "Morning round"' }).click();
+    await page.getByRole("menuitem", { name: "Duplicate" }).click();
+
+    await expect
+      .poll(() => writes.filter((w) => w.path === "/api/v1/task_templates"))
+      .toHaveLength(1);
+    const body = writes.find((w) => w.path === "/api/v1/task_templates")!.body as {
+      name: string;
+      map_name: string;
+      steps: { vertex_id: string }[];
+    };
+    expect(body.name).toBe("Morning round (copy)");
+    expect(body.map_name).toBe(MAP_NAME);
+    expect(body.steps[0].vertex_id).toBe(vertex().id);
+  });
+
+  test("deletes a task from its menu only once confirmed", async ({ page }) => {
+    const writes = await mockBackend(page);
+    await page.goto("/tasks");
+    const remove = async () => {
+      await page.getByRole("button", { name: 'More for "Morning round"' }).click();
+      await page.getByRole("menuitem", { name: "Delete" }).click();
+    };
+
+    page.once("dialog", (dialog) => void dialog.dismiss());
+    await remove();
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
+
+    page.once("dialog", (dialog) => void dialog.accept());
+    await remove();
+    await expect
+      .poll(() => writes.filter((w) => w.method === "DELETE").map((w) => w.path))
+      .toEqual(["/api/v1/task_templates/22222222-2222-2222-2222-222222222222"]);
+  });
+
+  test("lists another map's tasks under that map, folded and not runnable", async ({
+    page,
+  }) => {
+    // A task for a map the robot is not on is still the operator's work: it is
     // listed and can be opened, but its coordinates are in another frame, so
-    // the two buttons that would move the robot are held.
+    // the two buttons that would move the robot are held, and the group says
+    // once where the map is switched.
     await mockBackend(page, {
       templates: [
         taskTemplate(),
@@ -239,23 +385,21 @@ test.describe("the task console", () => {
     });
     await page.goto("/tasks");
 
-    await expect(page.getByText("Second floor")).toBeVisible();
+    const group = page.getByRole("region", { name: "Tasks on wh1" });
     await expect(
-      page.getByText("Saved for wh1; the robot has dp2f loaded."),
+      group.getByText("These run once wh1 is loaded; the robot has dp2f loaded."),
     ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: 'Dispatch "Second floor" now' }),
-    ).toBeDisabled();
-    await expect(
-      page.getByRole("button", { name: 'Schedule "Second floor"' }),
-    ).toBeDisabled();
-    await expect(
-      page.getByRole("button", { name: 'Load "Second floor" into the editor' }),
-    ).toBeEnabled();
-    // The loaded map's job is untouched by the other one's presence.
-    await expect(
-      page.getByRole("button", { name: 'Dispatch "Morning round" now' }),
-    ).toBeEnabled();
+    await expect(group.getByRole("link", { name: "Switch maps" })).toHaveAttribute(
+      "href",
+      "/maps",
+    );
+    await group.getByRole("button", { name: /^wh1/ }).click();
+
+    await expect(page.getByRole("button", { name: 'Run "Second floor" now' })).toBeDisabled();
+    await expect(page.getByRole("button", { name: 'Schedule "Second floor"' })).toBeDisabled();
+    await expect(page.getByRole("button", { name: 'Edit "Second floor"' })).toBeEnabled();
+    // The loaded map's task is untouched by the other one's presence.
+    await expect(page.getByRole("button", { name: 'Run "Morning round" now' })).toBeEnabled();
   });
 
   test("keeps an unsaved job while waypoints are placed on the map", async ({
@@ -267,7 +411,7 @@ test.describe("the task console", () => {
     await mockBackend(page);
     await page.goto("/tasks");
     await page
-      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .getByRole("button", { name: 'Edit "Morning round"' })
       .click();
     await expect(page).toHaveURL(/\/tasks\/editor$/);
     await addAction(page, "Speak", "on arrival at stop 1");
@@ -348,7 +492,7 @@ test.describe("the task console", () => {
 
     await page.goto("/tasks");
     await page
-      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .getByRole("button", { name: 'Edit "Morning round"' })
       .click();
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect
@@ -603,10 +747,12 @@ test.describe("the task console", () => {
       ],
     });
     await page.goto("/tasks");
-    // The library row shows the pair as one bracket.
-    await expect(page.getByText("[T T]")).toBeVisible();
+    // A task that goes nowhere is counted by what it does, under no map.
+    await expect(
+      page.getByRole("region", { name: "Tasks with no map" }).getByText("no stops · 2 actions"),
+    ).toBeVisible();
     await page
-      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .getByRole("button", { name: 'Edit "Morning round"' })
       .click();
     await expect(page.getByRole("heading", { name: "Morning round" })).toBeVisible();
     const ungroup = page.getByRole("button", { name: "Ungroup actions 1 to 2" });
@@ -644,7 +790,7 @@ test.describe("the task console", () => {
     });
     await page.goto("/tasks");
     await page
-      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .getByRole("button", { name: 'Edit "Morning round"' })
       .click();
     await expect(page).toHaveURL(/\/tasks\/editor$/);
     await addAction(page, "Speak", "on arrival at stop 1");
@@ -696,7 +842,7 @@ test.describe("the task console", () => {
 
     await page.goto("/tasks");
     await page
-      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .getByRole("button", { name: 'Edit "Morning round"' })
       .click();
     await expect(page).toHaveURL(/\/tasks\/editor$/);
     const remove = async () => {
@@ -815,7 +961,8 @@ test.describe("the task console", () => {
         },
       ],
     });
-    await page.goto("/tasks");
+    // /tasks leaves a run to the masthead; the editor still announces one.
+    await page.goto("/tasks/editor");
 
     // Scoped past the masthead: its bar names the running job's id too, so a
     // page-wide locator would match both and prove neither.
@@ -838,7 +985,7 @@ test.describe("the task console", () => {
         },
       ],
     });
-    await page.goto("/tasks");
+    await page.goto("/tasks/editor");
 
     // The banner's own button: the masthead carries a second Cancel for the
     // same run (see run-controls.spec.ts), and this test is about the banner.
@@ -867,7 +1014,7 @@ test.describe("the task console", () => {
     // The form opens here, over the list it will join, not in the editor.
     await expect(page).toHaveURL(/\/tasks$/);
     await expect(page.getByText("Schedule Morning round")).toBeVisible();
-    await page.getByPlaceholder("robot01-daily-patrol").fill("weekday-patrol");
+    await page.getByPlaceholder("Night patrol").fill("weekday-patrol");
     await page.getByRole("button", { name: "Weekdays" }).click();
     await page.getByLabel("Time").fill("09:00");
 
@@ -912,7 +1059,7 @@ test.describe("the task console", () => {
     await page
       .getByRole("button", { name: 'Schedule "Morning round"' })
       .click();
-    await page.getByPlaceholder("robot01-daily-patrol").fill("half-hourly");
+    await page.getByPlaceholder("Night patrol").fill("half-hourly");
     await page.getByRole("button", { name: "Interval" }).click();
     await page.getByLabel("Every").fill("30");
     await expect(page.getByText("Runs every 30 min.")).toBeVisible();
@@ -959,7 +1106,7 @@ test.describe("the task console", () => {
         "true",
       );
       await expect(page.getByLabel("Time")).toHaveValue("21:00");
-      await expect(page.getByPlaceholder("robot01-daily-patrol")).toHaveCount(
+      await expect(page.getByPlaceholder("Night patrol")).toHaveCount(
         0,
       );
       const save = page.getByRole("button", { name: "Save schedule" });
@@ -1021,20 +1168,21 @@ test.describe("the task console", () => {
         return route.fulfill({ json: registered ? [created] : [] });
       });
       await page.goto("/tasks");
-      await expect(
-        page.getByText("No schedules are registered on this robot."),
-      ).toBeVisible();
+      // Opened first, so the new row has a card to land on.
+      await page.getByRole("button", { name: "Morning round", exact: true }).click();
+      await expect(page.getByRole("region", { name: /^Schedules for/ })).toHaveCount(0);
 
       await page
         .getByRole("button", { name: 'Schedule "Morning round"' })
         .click();
       await page
-        .getByPlaceholder("robot01-daily-patrol")
+        .getByPlaceholder("Night patrol")
         .fill("weekday-patrol");
       await page.getByRole("button", { name: "Weekdays" }).click();
       await page.getByRole("button", { name: "Create schedule" }).click();
 
       const row = page
+        .getByRole("region", { name: 'Schedules for "Morning round"' })
         .getByRole("listitem")
         .filter({ hasText: "weekday-patrol" });
       await expect(
@@ -1044,12 +1192,12 @@ test.describe("the task console", () => {
         row.getByText("2099-01-01 09:00", { exact: true }),
       ).toBeVisible();
       expect(staleReads).toBe(2);
-      // The job's own chip reads the same list, so it catches up with it.
+      // The dialog closed on success, and the card's chip reads the same
+      // list, so it catches up with it.
+      await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(
-        page.getByRole("button", {
-          name: /^Show the schedules for "Morning round"/,
-        }),
-      ).toHaveText("Weekdays at 09:00 · Asia/Taipei");
+        page.getByText("Weekdays at 09:00 · Asia/Taipei", { exact: true }),
+      ).toHaveCount(2);
     });
 
     test("keeps an edited row on its new time while the list catches up", async ({
@@ -1781,7 +1929,7 @@ test.describe("what a dispatch records about itself", () => {
     await page.goto("/tasks");
 
     await page
-      .getByRole("button", { name: 'Dispatch "Morning round" now' })
+      .getByRole("button", { name: 'Run "Morning round" now' })
       .click();
     await expect
       .poll(() => writes.filter((w) => w.path === "/api/v1/tasks"))
@@ -1858,7 +2006,7 @@ test.describe("a job the robot refuses for its map", () => {
     await page.goto("/tasks");
 
     await page
-      .getByRole("button", { name: 'Dispatch "Morning round" now' })
+      .getByRole("button", { name: 'Run "Morning round" now' })
       .click();
     await expect(page.getByRole("alert").filter({ hasText: refusal })).toBeVisible();
   });

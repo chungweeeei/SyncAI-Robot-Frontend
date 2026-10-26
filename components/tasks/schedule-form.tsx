@@ -94,6 +94,7 @@ export function ScheduleForm({
   const [amountText, setAmountText] = React.useState(seed.amountText);
   const [unit, setUnit] = React.useState<IntervalUnit>(seed.unit);
   const timezone = useBrowserTimeZone();
+  const nameHintId = React.useId();
 
   const trimmedId = id.trim();
 
@@ -184,16 +185,24 @@ export function ScheduleForm({
       }}
     >
       {!editing && (
-        <label className="block">
-          <span className="instrument-label text-muted-foreground">Schedule name</span>
-          <Input
-            value={id}
-            disabled={busy}
-            onChange={(event) => setId(event.target.value)}
-            placeholder="robot01-daily-patrol"
-            className="readout mt-0.5 h-7 rounded-sm md:text-[13px]"
-          />
-        </label>
+        <div>
+          <label className="block">
+            <span className="instrument-label text-muted-foreground">Schedule name</span>
+            <Input
+              value={id}
+              disabled={busy}
+              onChange={(event) => setId(event.target.value)}
+              placeholder="Night patrol"
+              aria-describedby={nameHintId}
+              className="readout mt-0.5 h-7 rounded-sm md:text-[13px]"
+            />
+          </label>
+          {/* Said before it is typed: the name is the robot's id for the
+            * schedule, which has no rename. */}
+          <p id={nameHintId} className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
+            The name cannot be changed later.
+          </p>
+        </div>
       )}
 
       <div>

@@ -149,7 +149,7 @@ test.describe("the console on a phone", () => {
     await mockBackend(page);
     await page.goto("/tasks");
     await page
-      .getByRole("button", { name: 'Load "Morning round" into the editor' })
+      .getByRole("button", { name: 'Edit "Morning round"' })
       .click();
     const heading = page.getByRole("textbox", { name: "Task name" });
     await expect(heading).toHaveValue("Morning round");
