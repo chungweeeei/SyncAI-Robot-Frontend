@@ -75,6 +75,7 @@ import {
   stopOfRow,
   stopWaypointOrdinals,
 } from "@/lib/task/stops";
+import { stepLimits } from "@/lib/task/catalogue";
 import { TASK_TEMPLATE_NAME_MAX, taskTemplateNameOk } from "@/lib/task/template";
 import type { MapVertex } from "@/lib/types/map";
 
@@ -127,6 +128,7 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
   );
 
   const catalogue = useStepCatalogue();
+  const limits = React.useMemo(() => stepLimits(catalogue), [catalogue]);
   const schedules = useSchedules();
   const library = useTaskTemplates();
   const dispatch = useTaskDispatch(robotId);
@@ -223,7 +225,7 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
     updateDraft((current) => ({ ...current, name }));
   };
 
-  const stepsOk = stepDraftsSubmittable(steps);
+  const stepsOk = stepDraftsSubmittable(steps, limits);
   const stepReason = !steps.length
     ? "Add at least one stop or action."
     : !stepsOk
@@ -333,7 +335,7 @@ export function TaskEditor({ robotId }: { robotId: string | null }) {
     const name = options.copy
       ? `${draftName.trim()} (copy)`.slice(0, TASK_TEMPLATE_NAME_MAX)
       : draftName.trim();
-    const body = { name, map_name: draftMapName, steps: toTemplateSteps(steps) };
+    const body = { name, map_name: draftMapName, steps: toTemplateSteps(steps, limits) };
     setSentKeys(new Map(steps.map((step, index) => [stepIdFor(index, step.type), step.key])));
     const write = editing && !options.copy ? library.update(editing.id, body) : library.create(body);
     void write.then((saved) => {

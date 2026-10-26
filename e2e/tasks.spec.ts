@@ -13,6 +13,7 @@ import {
   mockBackend,
   octomapBt,
   taskState,
+  taskSteps,
   taskTemplate,
   vertex,
   withOctomap,
@@ -1429,6 +1430,61 @@ test.describe("the step editor", () => {
     ]);
     // And the summary adds it up.
     await expect(page.getByLabel("Job summary")).toHaveText(/1 min 30 s of waiting/);
+  });
+
+  test("builds its menus and its limits from the steps the robot describes", async ({
+    page,
+  }) => {
+    // What the robot can do is its own to say: a step renamed there is
+    // renamed here, a bound moved there is the one a draft is held to, and a
+    // step this console cannot draw is left out rather than breaking the menu.
+    const steps = taskSteps().steps.map((spec) =>
+      spec.type === "SPEAK"
+        ? { ...spec, label: "Announce" }
+        : spec.type === "WAIT"
+          ? {
+              ...spec,
+              params: (spec.params as Record<string, unknown>[]).map((field) => ({
+                ...field,
+                max: 600,
+              })),
+            }
+          : spec,
+    );
+    steps.push({ type: "SCAN_QR", label: "Scan code", hint: "", occupies_body: false, params: [] });
+    await mockBackend(page, { taskSteps: { steps } });
+    const posted: { steps: unknown[] }[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as { name: string; steps: unknown[] };
+      posted.push(body);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(taskTemplate({ name: body.name })),
+      });
+    });
+    await page.goto("/tasks/editor");
+    await page.getByRole("textbox", { name: "Task name" }).fill("short pause");
+
+    await page.getByRole("button", { name: "Add an action before setting off" }).click();
+    await expect(page.getByRole("menuitem", { name: /^Announce/ })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: /^Speak/ })).toHaveCount(0);
+    await expect(page.getByRole("menuitem", { name: /^Scan code/ })).toHaveCount(0);
+    await page.getByRole("menuitem", { name: /^Wait/ }).click();
+
+    const duration = page.getByRole("textbox", { name: "Duration, before setting off" });
+    await duration.fill("601");
+    await expect(page.getByText("At most 600 seconds (10 min).")).toBeVisible();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    expect(posted).toEqual([]);
+
+    await duration.fill("600");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => posted).toHaveLength(1);
+    expect(posted[0]!.steps).toEqual([
+      { id: "1-wait", type: "WAIT", params: { seconds: 600 } },
+    ]);
   });
 
   test("waits out a conversion before drawing the floor plan it produced", async ({

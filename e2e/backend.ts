@@ -212,6 +212,53 @@ export function taskTemplate(over: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * GET /api/v1/task_steps as syncai_backend serialises it, nulls and all —
+ * written from its pydantic models rather than from the console's local copy,
+ * so a drift between the two fails at the schema.
+ */
+export function taskSteps(): { steps: Record<string, unknown>[] } {
+  const waypoint = (label: string, filter: string | null = null) => ({
+    kind: "waypoint",
+    key: "target",
+    label,
+    filter,
+  });
+  return {
+    steps: [
+      { type: "MOVE", label: "Move", hint: "Walk to a waypoint.", occupies_body: true, params: [waypoint("Waypoint")] },
+      {
+        type: "DOCK",
+        label: "Dock",
+        hint: "Go to a waypoint, then walk straight onto the charger there and stay standing on it.",
+        occupies_body: true,
+        params: [waypoint("Charger", "charger")],
+      },
+      {
+        type: "SPEAK",
+        label: "Speak",
+        hint: "Say a line on the robot\u2019s speaker.",
+        occupies_body: false,
+        params: [
+          { kind: "text", key: "text", label: "Say", max_length: 1000, placeholder: "Delivery arrived \u2014 please take your items." },
+          { kind: "integer", key: "repeat", label: "Times", min: 1, max: 50, default: 1, unit: null },
+        ],
+      },
+      {
+        type: "WAIT",
+        label: "Wait",
+        hint: "Stay put for a set time, then go on.",
+        occupies_body: false,
+        params: [
+          { kind: "number", key: "seconds", label: "Duration", min: 0, min_exclusive: true, max: 3600, unit: "seconds", placeholder: "10" },
+        ],
+      },
+      { type: "STANDUP", label: "Stand", hint: "Stand up. Nothing to set.", occupies_body: true, params: [] },
+      { type: "LIEDOWN", label: "Lie down", hint: "Lie down. Nothing to set.", occupies_body: true, params: [] },
+    ],
+  };
+}
+
 export function taskHistoryEntry(over: Record<string, unknown> = {}) {
   return {
     id: "robot01-task-1758000000-1",
@@ -374,6 +421,8 @@ export interface BackendOverrides {
   wifiConnections?: Record<string, unknown>[];
   /** GET /network/wifi/scan's networks. */
   wifiNetworks?: Record<string, unknown>[];
+  /** GET /task_steps' answer; `taskSteps()` by default, the robot's six. */
+  taskSteps?: { steps: Record<string, unknown>[] };
 }
 
 /** One floor, as GET .../floors lists it. */
@@ -449,6 +498,7 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   const taskHistory = over.taskHistory ?? [];
   const taskHistoryPageSize = over.taskHistoryPageSize ?? 20;
   const taskStates = over.taskStates ?? {};
+  const stepCatalogue = over.taskSteps ?? taskSteps();
   // Every id the active list has carried. A test ends a job by emptying the
   // list, and the backend still answers a finished run from retention.
   const listedTaskIds = new Set<string>();
@@ -562,6 +612,7 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         return route.fulfill({ status: 204, body: "" });
       }
     }
+    if (path === "/api/v1/task_steps" && method === "GET") return json(route, stepCatalogue);
     if (path === "/api/v1/active_tasks") {
       for (const task of activeTasks) listedTaskIds.add(task.id as string);
       return json(route, { tasks: activeTasks, as_of: "2026-09-18T09:45:00Z" });

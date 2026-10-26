@@ -43,7 +43,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { TaskStepState } from "@/lib/api/task";
-import { stepSpec, type StepCatalogue, type StepSpec } from "@/lib/task/catalogue";
+import {
+  stepLimits,
+  stepSpec,
+  type StepCatalogue,
+  type StepSpec,
+} from "@/lib/task/catalogue";
 import {
   newStepDraft,
   stepDraftError,
@@ -129,6 +134,7 @@ export function ActionSection({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
   const rows = steps.slice(range.from, range.to);
+  const limits = stepLimits(catalogue);
   const keys = rows.map((row) => row.key);
   const onWalk = section.kind === "transit";
   // Boxes mean nothing on a walk: everything there starts with it.
@@ -244,7 +250,7 @@ export function ActionSection({
                     }
                     disabled={disabled}
                     error={
-                      stepDraftError(step) ??
+                      stepDraftError(step, limits) ??
                       stepGroupError(steps, index) ??
                       (refusal?.key === step.key ? refusal.message : null)
                     }

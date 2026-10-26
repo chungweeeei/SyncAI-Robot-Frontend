@@ -1,13 +1,12 @@
 // The steps the robot can take, as the task editor builds its menus and forms
 // from them.
 //
-// What the robot can do is the backend's to say, so this is written as the
-// contract a catalogue endpoint will answer with: every type, its operator
-// label and hint, whether it occupies the robot's body (the group rule), and
-// its parameters as a short list of field kinds the console knows how to
-// draw. Until that endpoint exists the editor reads LOCAL_STEP_CATALOGUE
-// through useStepCatalogue, and nothing in components/ imports it directly,
-// so moving to the backend's answer is a change to that hook alone.
+// What the robot can do is the backend's to say: GET /api/v1/task_steps
+// answers with every type, its operator label and hint, whether it occupies
+// the robot's body (the group rule), and its parameters as a short list of
+// field kinds the console knows how to draw. useStepCatalogue reads it, and
+// falls back to LOCAL_STEP_CATALOGUE while it loads and on a robot from
+// before the endpoint; nothing in components/ imports either directly.
 //
 // A closed set of field kinds rather than JSON Schema: each kind is drawn
 // with the care the hand-built rows had (a counter near a text limit, no
@@ -18,10 +17,12 @@ import { z } from "zod";
 
 import type { StepType } from "@/lib/api/task";
 import {
+  DEFAULT_STEP_LIMITS,
   SPEAK_REPEAT_MAX,
   SPEAK_TEXT_MAX,
   STEP_TYPES,
   WAIT_SECONDS_MAX,
+  type StepLimits,
 } from "@/lib/task/step";
 
 /**
@@ -124,20 +125,31 @@ const NumberFieldSchema: z.ZodType<NumberField> = z.object({
   placeholder: z.string().nullish(),
 });
 
-/** For the catalogue endpoint's answer, once there is one. */
-export const StepCatalogueSchema: z.ZodType<StepCatalogue> = z.object({
-  steps: z.array(
-    z.object({
-      type: z.enum(["MOVE", "DOCK", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
-      label: z.string(),
-      hint: z.string(),
-      occupies_body: z.boolean(),
-      params: z.array(
-        z.union([WaypointFieldSchema, TextFieldSchema, IntegerFieldSchema, NumberFieldSchema]),
-      ),
-    }),
+const StepSpecSchema: z.ZodType<StepSpec> = z.object({
+  type: z.enum(["MOVE", "DOCK", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
+  label: z.string(),
+  hint: z.string(),
+  occupies_body: z.boolean(),
+  params: z.array(
+    z.union([WaypointFieldSchema, TextFieldSchema, IntegerFieldSchema, NumberFieldSchema]),
   ),
 });
+
+/**
+ * GET /api/v1/task_steps. A step this console cannot draw — a type it does
+ * not know, or a field of a kind it has no control for — is left out of the
+ * menus rather than failing the whole answer: a robot updated before its
+ * console must cost the new step, not the editor. Everything else is checked
+ * as strictly as any read.
+ */
+export const StepCatalogueSchema: z.ZodType<StepCatalogue> = z
+  .object({ steps: z.array(z.unknown()) })
+  .transform(({ steps }) => ({
+    steps: steps.flatMap((raw) => {
+      const parsed = StepSpecSchema.safeParse(raw);
+      return parsed.success ? [parsed.data] : [];
+    }),
+  }));
 
 function spec(type: StepType, occupiesBody: boolean, params: StepParamField[]): StepSpec {
   const words = STEP_TYPES.find((each) => each.value === type);
@@ -220,4 +232,25 @@ export function stopSpecs(catalogue: StepCatalogue): StepSpec[] {
  */
 export function transitSpecs(catalogue: StepCatalogue): StepSpec[] {
   return actionSpecs(catalogue).filter((each) => !each.occupies_body);
+}
+
+/**
+ * The bounds a draft is checked against, from the robot's own fields: Speak's
+ * text and count, Wait's duration. A field the catalogue leaves out keeps the
+ * local bound.
+ */
+export function stepLimits(catalogue: StepCatalogue): StepLimits {
+  const field = (type: StepType, key: string) =>
+    stepSpec(catalogue, type)?.params.find((each) => each.key === key);
+  const text = field("SPEAK", "text");
+  const repeat = field("SPEAK", "repeat");
+  const seconds = field("WAIT", "seconds");
+  return {
+    speakTextMax:
+      text?.kind === "text" ? text.max_length : DEFAULT_STEP_LIMITS.speakTextMax,
+    speakRepeatMax:
+      repeat?.kind === "integer" ? repeat.max : DEFAULT_STEP_LIMITS.speakRepeatMax,
+    waitSecondsMax:
+      seconds?.kind === "number" ? seconds.max : DEFAULT_STEP_LIMITS.waitSecondsMax,
+  };
 }
