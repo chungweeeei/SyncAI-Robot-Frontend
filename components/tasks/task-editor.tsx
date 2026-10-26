@@ -521,12 +521,12 @@ export function TaskEditor() {
       {/* A run this tab is not following, whichever page started it. */}
       <ActiveRunBanner trackedTaskId={null} />
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
-        {/* Beside the stops from lg, and held in view while a long route
-          * scrolls past it. */}
+      {/* From lg the map sets the row's height and the stops stretch to it,
+        * so the two columns end on one line however long the route is. */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <section
           aria-label="Map"
-          className="space-y-1.5 overflow-hidden rounded-md border border-hairline bg-panel p-2 lg:sticky lg:top-0"
+          className="space-y-1.5 overflow-hidden rounded-md border border-hairline bg-panel p-2"
         >
           <div className="flex flex-wrap items-center gap-1.5">
             <MapPicker maps={maps} value={mapName} disabled={false} onPick={selectMap} />
@@ -579,7 +579,14 @@ export function TaskEditor() {
           )}
         </section>
 
-        <section aria-label="Stops" ref={listRef} className="space-y-2">
+        {/* contain-size keeps the list out of the row's sizing, or a long
+          * route would grow the row past the map; the floor is for the map's
+          * empty states, which are a line tall. */}
+        <section
+          aria-label="Stops"
+          ref={listRef}
+          className="flex flex-col gap-2 lg:min-h-96 lg:contain-size"
+        >
           {/* Over what they act on, as the map editors' tool strips are: Undo
             * takes back stops, actions and a map switch, never the name,
             * which its field undoes. In the page header it read as undoing
@@ -614,12 +621,12 @@ export function TaskEditor() {
               </Button>
             </div>
           </div>
-          {/* From lg the stops scroll in a frame the height of the map
-            * beside them, so a long route never pushes the map, the Route
-            * strip or Save out of view. */}
+          {/* From lg the stops scroll in what the map leaves under the Route
+            * strip, so a long route never pushes the map, the strip or Save
+            * out of view. */}
           <div
             ref={frameRef}
-            className="lg:max-h-[calc(100dvh-15rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1"
+            className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:pr-1"
           >
             <StopList
               steps={steps}
