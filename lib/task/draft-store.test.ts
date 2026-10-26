@@ -280,6 +280,24 @@ describe("draftIsUnsaved", () => {
     expect(draftIsUnsaved(opened(), library)).toBe(false);
   });
 
+  // A job saved as [Speak, Move] started together opens as the stop with
+  // the Speak on its walk: it runs alike, so it is not the operator's edit.
+  it("opens a job saved with its stop second in a group stop first, and unedited", () => {
+    const [move, speak] = savedRound().steps;
+    const saved = savedRound({
+      steps: [
+        { ...speak!, group: "g1" },
+        { ...move!, group: "g1" },
+      ],
+    });
+    const next = draftFromTemplate(EMPTY_TASK_DRAFT, saved);
+    expect(next.steps.map((step) => [step.type, step.withPrevious])).toEqual([
+      ["MOVE", false],
+      ["SPEAK", true],
+    ]);
+    expect(draftIsUnsaved(next, [saved])).toBe(false);
+  });
+
   it("does not count a waypoint moved on the map since the job was opened", () => {
     // The load re-resolves the Move from the waypoint's current pose; the
     // operator changed nothing, so nothing of theirs is at risk.
