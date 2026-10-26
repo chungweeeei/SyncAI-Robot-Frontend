@@ -22,7 +22,6 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
-  CopyIcon,
   EllipsisIcon,
   GripVerticalIcon,
   PlusIcon,
@@ -64,7 +63,6 @@ import {
 } from "@/lib/task/step";
 import {
   addAction,
-  duplicateStop,
   insertStop,
   moveStop,
   removeStop,
@@ -417,11 +415,7 @@ function StopCard({
                   <ArrowDownIcon aria-hidden />
                   Move down
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => edit((current) => duplicateStop(current, stop.key))}>
-                  <CopyIcon aria-hidden />
-                  Duplicate stop
-                </DropdownMenuItem>
+                {other.length > 0 && <DropdownMenuSeparator />}
                 {other.map((each) => (
                   <DropdownMenuItem
                     key={each.type}

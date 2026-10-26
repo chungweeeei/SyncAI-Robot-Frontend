@@ -6,7 +6,6 @@ import {
   actionMoveTarget,
   addAction,
   duplicateAction,
-  duplicateStop,
   formatDuration,
   insertStop,
   jobSummary,
@@ -207,15 +206,6 @@ describe("stops as blocks", () => {
     const next = moveStop(steps, keyOf(steps, "B"), 0);
     expect(shape(next)).toEqual(["stand", "B", "bye", "A", "&excuse", "hello", "pause"]);
     expect(groupsValid(next)).toBe(true);
-  });
-
-  it("copies a stop and its actions under fresh keys, straight after it", () => {
-    const steps = patrol();
-    const next = duplicateStop(steps, keyOf(steps, "A"));
-    expect(next).toHaveLength(steps.length + 4);
-    expect(next.slice(5, 9).map((step) => step.type)).toEqual(["MOVE", "SPEAK", "SPEAK", "WAIT"]);
-    expect(next[6]!.withPrevious).toBe(true);
-    expect(new Set(next.map((step) => step.key)).size).toBe(next.length);
   });
 });
 

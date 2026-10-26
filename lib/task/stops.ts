@@ -226,14 +226,6 @@ function copyOf(row: StepDraft): StepDraft {
   return { ...row, key: newStepDraft(row.type).key };
 }
 
-/** The list with a copy of a stop and all its actions straight after it. */
-export function duplicateStop(steps: readonly StepDraft[], key: number): StepDraft[] {
-  const block = stopLayout(steps).stops.find((stop) => stop.key === key);
-  if (!block) return [...steps];
-  const copy = steps.slice(block.index, block.end).map(copyOf);
-  return [...steps.slice(0, block.end), ...copy, ...steps.slice(block.end)];
-}
-
 /** The list without one action; the rows it started together with stay together. */
 export function removeAction(steps: readonly StepDraft[], key: number): StepDraft[] {
   const index = steps.findIndex((step) => step.key === key);
