@@ -68,7 +68,7 @@ test.describe("the task console", () => {
     // sight. Declining keeps it; accepting is the only way it goes.
     const writes = await mockBackend(page);
     await page.goto("/tasks/editor");
-    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByTitle("Say a line on the robot’s speaker.").click();
     await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
     await page.goto("/tasks");
 
@@ -139,7 +139,7 @@ test.describe("the task console", () => {
     await expect(page.getByText(/^dock · \(/)).toBeVisible();
     await expect(page.getByText("Unsaved changes")).toHaveCount(0);
 
-    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByTitle("Say a line on the robot’s speaker.").click();
     await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
     await expect(page.getByText("Unsaved changes")).toBeVisible();
     await page.close({ runBeforeUnload: true });
@@ -244,7 +244,7 @@ test.describe("the task console", () => {
       .getByRole("button", { name: 'Load "Morning round" into the editor' })
       .click();
     await expect(page).toHaveURL(/\/tasks\/editor$/);
-    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByTitle("Say a line on the robot’s speaker.").click();
     await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
 
     await page
@@ -338,7 +338,7 @@ test.describe("the task console", () => {
     await page.goto("/tasks");
     page.once("dialog", (dialog) => void dialog.accept());
     await page.getByRole("button", { name: "Create task" }).click();
-    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByTitle("Say a line on the robot’s speaker.").click();
     await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
     const save = page.getByRole("button", { name: "Save", exact: true });
     // No name yet: Save sends nothing and points at the name field, and
@@ -405,7 +405,7 @@ test.describe("the task console", () => {
     await page.goto("/tasks/editor");
     await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
     await page.getByRole("textbox", { name: "Task name" }).fill("greeting");
-    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByTitle("Say a line on the robot’s speaker.").click();
     await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
     await page.getByRole("button", { name: "Save", exact: true }).click();
 
@@ -437,7 +437,7 @@ test.describe("the task console", () => {
     await page.goto("/tasks/editor");
     await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
     await page.getByRole("textbox", { name: "Task name" }).fill("greeting");
-    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByTitle("Say a line on the robot’s speaker.").click();
     await page.getByPlaceholder(/Delivery arrived/).fill("Arriving");
     const times = page.getByRole("textbox", { name: "Times" });
     await expect(times).toHaveValue("1");
@@ -472,7 +472,7 @@ test.describe("the task console", () => {
     await page.goto("/tasks/editor");
     await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
     await page.getByRole("textbox", { name: "Task name" }).fill("greeting");
-    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByTitle("Say a line on the robot’s speaker.").click();
     await page.getByPlaceholder(/Delivery arrived/).fill("Arriving");
     await page.getByTitle("Stand up. Nothing to set.").click();
     await page.getByTitle("Stay put for a set time, then go on.").click();
@@ -523,7 +523,7 @@ test.describe("the task console", () => {
     await expect(
       page.getByRole("menuitem", { name: "Start together with step 1" }),
     ).toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByText(/one Move, Dock, Stand or Lie at a time/)).toBeVisible();
+    await expect(page.getByText(/one Move, Dock, Stand or Lie down at a time/)).toBeVisible();
     expect(writes).toEqual([]);
   });
 
@@ -547,7 +547,7 @@ test.describe("the task console", () => {
     await page.getByRole("textbox", { name: "Task name" }).fill("greeting");
     await page.getByTitle("Stay put for a set time, then go on.").click();
     await page.getByRole("textbox", { name: "Duration" }).fill("5");
-    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByTitle("Say a line on the robot’s speaker.").click();
     await page.getByPlaceholder(/Delivery arrived/).fill("Arriving");
     await page.getByRole("button", { name: "Save", exact: true }).click();
 
@@ -628,7 +628,7 @@ test.describe("the task console", () => {
       .getByRole("button", { name: 'Load "Morning round" into the editor' })
       .click();
     await expect(page).toHaveURL(/\/tasks\/editor$/);
-    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByTitle("Say a line on the robot’s speaker.").click();
     await page.getByPlaceholder(/Delivery arrived/).last().fill("Evening");
 
     const field = page.getByRole("textbox", { name: "Task name" });
@@ -741,7 +741,7 @@ test.describe("the task console", () => {
       });
     });
     await page.goto("/tasks/editor");
-    await page.getByTitle("Drive to a pose in the map frame.").click();
+    await page.getByTitle("Walk to a waypoint.").click();
 
     // Opens on the loaded map, and says so.
     const map = page.getByRole("combobox", { name: "Map" });
@@ -1187,7 +1187,7 @@ test.describe("the step editor", () => {
     // so they are reached by their hints.
     await page.getByTitle("Stand up. Nothing to set.").click();
     await page.getByTitle("Lie down. Nothing to set.").click();
-    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByTitle("Say a line on the robot’s speaker.").click();
     await page.getByPlaceholder(/Delivery arrived/).fill("Hello");
 
     const rows = page
@@ -1201,12 +1201,12 @@ test.describe("the step editor", () => {
           (item) => item.querySelector("[aria-expanded] .instrument-label")?.textContent,
         ),
       );
-    await expect.poll(order).toEqual(["Stand", "Lie", "Speak"]);
+    await expect.poll(order).toEqual(["Stand", "Lie down", "Speak"]);
 
     // Menu: the last row straight to the top.
     await page.getByRole("button", { name: "More actions for step 3" }).click();
     await page.getByRole("menuitem", { name: "Move to top" }).click();
-    await expect.poll(order).toEqual(["Speak", "Stand", "Lie"]);
+    await expect.poll(order).toEqual(["Speak", "Stand", "Lie down"]);
 
     // Drag: the last row's handle onto the first row.
     const handle = page.getByRole("button", { name: "Reorder step 3" });
@@ -1216,7 +1216,7 @@ test.describe("the step editor", () => {
     await page.mouse.down();
     await page.mouse.move(from.x + from.width / 2, to.y + 4, { steps: 12 });
     await page.mouse.up();
-    await expect.poll(order).toEqual(["Lie", "Speak", "Stand"]);
+    await expect.poll(order).toEqual(["Lie down", "Speak", "Stand"]);
 
     // Keyboard: pick the last row up, one slot up, drop. Before the ArrowUp
     // (this failed only under load):
@@ -1247,7 +1247,7 @@ test.describe("the step editor", () => {
       });
     }).toPass({ timeout: 10_000 });
     await page.keyboard.press("Space");
-    await expect.poll(order).toEqual(["Lie", "Stand", "Speak"]);
+    await expect.poll(order).toEqual(["Lie down", "Stand", "Speak"]);
 
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await page
@@ -1283,7 +1283,7 @@ test.describe("the step editor", () => {
     await expect(page.getByText(/^dock · \(/)).toBeVisible();
     await expect(waypoint).toHaveCount(0);
 
-    await page.getByTitle("Say a line on the robot speaker (TTS).").click();
+    await page.getByTitle("Say a line on the robot’s speaker.").click();
     const say = page.getByPlaceholder(/Delivery arrived/);
     await expect(say).toBeVisible();
 
@@ -1369,7 +1369,7 @@ test.describe("the step editor", () => {
     });
     await page.goto("/tasks/editor");
     // The floor plan opens from a Move row, beside its waypoint picker.
-    await page.getByTitle("Drive to a pose in the map frame.").click();
+    await page.getByTitle("Walk to a waypoint.").click();
     await page.getByRole("button", { name: "Floor plan for step 1" }).click();
     await expect(
       page.getByRole("img", { name: /^Floor plan of dp2f/ }),
@@ -1407,7 +1407,7 @@ test.describe("the step editor", () => {
     // The button belongs to a Move row, not to the Steps header.
     const toggle = page.getByRole("button", { name: "Floor plan for step 1" });
     await expect(page.getByRole("button", { name: /^Floor plan/ })).toHaveCount(0);
-    await page.getByTitle("Drive to a pose in the map frame.").click();
+    await page.getByTitle("Walk to a waypoint.").click();
     await expect(toggle).toHaveCount(1);
 
     // Closed until asked for.
@@ -1433,7 +1433,7 @@ test.describe("the step editor", () => {
 
     // A second Move to the dock: both stops, in job order, on the map the
     // first row opened — it is the job's route, not the row's pick.
-    await page.getByTitle("Drive to a pose in the map frame.").click();
+    await page.getByTitle("Walk to a waypoint.").click();
     await expect(page.getByRole("button", { name: "Floor plan for step 2" })).toHaveAttribute(
       "aria-pressed",
       "false",
@@ -1655,7 +1655,7 @@ test.describe("the step editor", () => {
     // A real 400 x 300 grid, so the raster has an extent to zoom into.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
     await page.goto("/tasks/editor");
-    await page.getByTitle("Drive to a pose in the map frame.").click();
+    await page.getByTitle("Walk to a waypoint.").click();
     await page.getByRole("button", { name: "Floor plan for step 1" }).click();
     const plan = page.getByRole("img", { name: /^Floor plan of dp2f/ });
     await expect(plan).toBeVisible();

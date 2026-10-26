@@ -245,7 +245,7 @@ export function StepRow({
               />
               {/* The type as a word, not the library's glyph: this is the line
                * that is scanned. Fixed width so the summaries line up. */}
-              <span className="instrument-label w-11 shrink-0">{typeLabel}</span>
+              <span className="instrument-label min-w-11 shrink-0">{typeLabel}</span>
               {!open && problem ? (
                 <span className="min-w-0 truncate text-[11px] text-signal-warn">
                   {problem}

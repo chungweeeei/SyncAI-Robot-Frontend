@@ -630,7 +630,7 @@ test.describe("the console on a phone", () => {
     // close. A real grid, as above.
     await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
     await page.goto("/tasks/editor");
-    await page.getByTitle("Drive to a pose in the map frame.").click();
+    await page.getByTitle("Walk to a waypoint.").click();
     await page.getByRole("button", { name: "Floor plan for step 1" }).click();
     const plan = page.getByRole("img", { name: /^Floor plan of dp2f/ });
     await expect(plan).toBeVisible();

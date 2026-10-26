@@ -32,7 +32,7 @@ export interface StepTypeSpec {
  * authors one. A template stored with an UNDOCK step no longer loads.
  */
 export const STEP_TYPES: readonly StepTypeSpec[] = [
-  { value: "MOVE", label: "Move", glyph: "M", hint: "Drive to a pose in the map frame." },
+  { value: "MOVE", label: "Move", glyph: "M", hint: "Walk to a waypoint." },
   // Named for what the operator asks of the robot. The drive to the approach
   // point in front of the waypoint is part of it, and the hint says so.
   {
@@ -42,11 +42,12 @@ export const STEP_TYPES: readonly StepTypeSpec[] = [
     hint: "Go to a waypoint, then walk straight onto the charger there and stay standing on it.",
   },
   // "T" (for TTS) because STANDUP already owns "S".
-  { value: "SPEAK", label: "Speak", glyph: "T", hint: "Say a line on the robot speaker (TTS)." },
+  { value: "SPEAK", label: "Speak", glyph: "T", hint: "Say a line on the robot\u2019s speaker." },
   // "Stay put", not "pause": Pause is the masthead's hold on a running job.
   { value: "WAIT", label: "Wait", glyph: "W", hint: "Stay put for a set time, then go on." },
   { value: "STANDUP", label: "Stand", glyph: "S", hint: "Stand up. Nothing to set." },
-  { value: "LIEDOWN", label: "Lie", glyph: "L", hint: "Lie down. Nothing to set." },
+  // "Lie down", as the history names the kind: the masthead reads this label.
+  { value: "LIEDOWN", label: "Lie down", glyph: "L", hint: "Lie down. Nothing to set." },
 ];
 
 /** Mirrors `SpeakParams.text`'s `max_length` — the backend 422s past this. */
@@ -398,7 +399,7 @@ const BODY_STEP_TYPES: ReadonlySet<StepType> = new Set([
   "LIEDOWN",
 ]);
 
-const ONE_BODY_STEP = "The robot does one Move, Dock, Stand or Lie at a time";
+const ONE_BODY_STEP = "The robot does one Move, Dock, Stand or Lie down at a time";
 
 function spanMoves(drafts: readonly StepDraft[], span: StepSpan | undefined): boolean {
   if (!span) return false;

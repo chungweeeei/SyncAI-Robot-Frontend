@@ -881,7 +881,7 @@ test.describe("the editor's 3D view", () => {
       failOnConsoleErrors(page, errors);
       await mockBackend(page, { maps: [treeOnly({ active: true })], vertices: [] });
       await page.goto("/tasks/editor");
-      await page.getByTitle("Drive to a pose in the map frame.").click();
+      await page.getByTitle("Walk to a waypoint.").click();
 
       const href = `${VIEW_3D}&tool=waypoint&from=tasks`;
       // The row's hint names the 3D map, which is where they go on this map.
