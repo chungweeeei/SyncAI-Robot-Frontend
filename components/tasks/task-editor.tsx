@@ -522,8 +522,9 @@ export function TaskEditor() {
       <ActiveRunBanner trackedTaskId={null} />
 
       {/* From lg the map sets the row's height and the stops stretch to it,
-        * so the two columns end on one line however long the route is. */}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        * so the two columns end on one line however long the route is. The
+        * map takes three fifths: it is what a route is picked on. */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <section
           aria-label="Map"
           className="space-y-1.5 overflow-hidden rounded-md border border-hairline bg-panel p-2"
