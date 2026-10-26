@@ -18,8 +18,12 @@ const VIEW_OPTIONS = [
   { value: "3d", label: "3D map" },
 ] as const;
 
-/** Tall enough to plan on beside the stops from lg, a band above them below. */
-const MAP_HEIGHT = "h-72 sm:h-96 lg:h-[min(36rem,calc(100dvh-16rem))]";
+/**
+ * Tall enough to plan on beside the stops from lg, a band above them below.
+ * From lg it fills the screen under the page chrome, so Save stays in view,
+ * and the cap only stops a tall monitor from stretching the plan past use.
+ */
+const MAP_HEIGHT = "h-72 sm:h-96 lg:h-[min(56rem,calc(100dvh-16rem))]";
 
 export interface RouteMapProps {
   mapName: string;
