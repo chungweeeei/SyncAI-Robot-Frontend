@@ -32,17 +32,15 @@ import {
 
 import { Chip } from "@/components/console/instrument";
 import { TaskStatusChip } from "@/components/console/task-chip";
-import {
-  ActionSection,
-  AddActionMenu,
-  type EditSteps,
-} from "@/components/tasks/action-section";
+import { ActionSection, type EditSteps } from "@/components/tasks/action-section";
 import { IconButton } from "@/components/tasks/icon-button";
 import { WaypointCombobox } from "@/components/tasks/waypoint-combobox";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -65,6 +63,7 @@ import {
   type StepDraft,
 } from "@/lib/task/step";
 import {
+  addAction,
   duplicateStop,
   insertStop,
   moveStop,
@@ -73,6 +72,7 @@ import {
   stopLayout,
   stopOfRow,
   type StopBlock,
+  type StopSection,
 } from "@/lib/task/stops";
 import type { MapFloor, MapVertex } from "@/lib/types/map";
 import { cn } from "@/lib/utils";
@@ -296,6 +296,11 @@ function StopCard({
   const spec = stepSpec(catalogue, stop.type);
   const label = spec?.label ?? stop.type;
   const name = `stop ${ordinal}`;
+  /** What the card's headings call the stop: its waypoint, once one is picked. */
+  const place =
+    (stop.vertexId !== null
+      ? vertices.find((vertex) => vertex.id === stop.vertexId)?.name
+      : undefined) ?? name;
   const other = stopSpecs(catalogue).filter((each) => each.type !== stop.type);
   const ownSelected = selected !== null && selected !== "start" && stopOfRow(steps, selected) === stop.key;
   const error =
@@ -464,47 +469,136 @@ function StopCard({
             )}
           </div>
         )}
+        {/* In the order it happens: the walk here, then what is done on
+          * arrival, each named for the waypoint so neither heading needs
+          * explaining. A dashed rail is the walk, a dot the arrival. */}
         <div className="space-y-1.5 px-2 py-1.5">
-          <ActionSection
-            {...shared}
-            section={{ kind: "transit", stop: stop.key }}
-            label="On the way"
-            context={`on the way to ${name}`}
-            range={{ from: walk.from, to: walk.to }}
-            addSpecs={transitSpecs(catalogue)}
-            withAdd={false}
+          {walk.to > walk.from && (
+            <div className="relative pl-4">
+              <span
+                aria-hidden
+                className="absolute top-1.5 bottom-0 left-[5px] border-l-2 border-dashed border-signal-cmd/40"
+              />
+              <ActionSection
+                {...shared}
+                section={{ kind: "transit", stop: stop.key }}
+                label={<PlaceLabel words="On the way to" place={place} />}
+                context={`on the way to ${name}`}
+                range={{ from: walk.from, to: walk.to }}
+                addSpecs={transitSpecs(catalogue)}
+                withAdd={false}
+              />
+            </div>
+          )}
+          {arrival.to > arrival.from && (
+            <div className="relative pl-4">
+              <span
+                aria-hidden
+                className="absolute top-2 left-[2px] size-2 rounded-full bg-signal-cmd"
+              />
+              <ActionSection
+                {...shared}
+                section={{ kind: "arrival", stop: stop.key }}
+                label={<PlaceLabel words="At" place={place} />}
+                context={`on arrival at ${name}`}
+                range={{ from: arrival.from, to: arrival.to }}
+                addSpecs={actionSpecs(catalogue)}
+                withAdd={false}
+              />
+            </div>
+          )}
+          <StopAddMenu
+            name={name}
+            place={place}
+            stopKey={stop.key}
+            catalogue={catalogue}
+            disabled={disabled}
+            edit={edit}
+            onSelect={onSelect}
           />
-          <ActionSection
-            {...shared}
-            section={{ kind: "arrival", stop: stop.key }}
-            label="On arrival"
-            context={`on arrival at ${name}`}
-            range={{ from: arrival.from, to: arrival.to }}
-            addSpecs={actionSpecs(catalogue)}
-            withAdd={false}
-          />
-          <div className="flex flex-wrap items-center gap-1.5">
-            <AddActionMenu
-              label="On arrival"
-              ariaLabel={`Add an action on arrival at ${name}`}
-              section={{ kind: "arrival", stop: stop.key }}
-              specs={actionSpecs(catalogue)}
-              disabled={disabled}
-              edit={edit}
-              onSelect={onSelect}
-            />
-            <AddActionMenu
-              label="On the way"
-              ariaLabel={`Add an action on the way to ${name}`}
-              section={{ kind: "transit", stop: stop.key }}
-              specs={transitSpecs(catalogue)}
-              disabled={disabled}
-              edit={edit}
-              onSelect={onSelect}
-            />
-          </div>
         </div>
       </div>
     </li>
+  );
+}
+
+/** "At lobby": the words in the heading's face, the waypoint's name as it is spelled. */
+function PlaceLabel({ words, place }: { words: string; place: string }) {
+  return (
+    <>
+      {words}{" "}
+      <span className="readout text-[12px] text-foreground normal-case">{place}</span>
+    </>
+  );
+}
+
+/**
+ * One Add for the card, its menu in the order the stop happens: what is done
+ * at the waypoint first, since that is most of what is added, then what is
+ * done on the way there — only what leaves the body free, as the walk
+ * already occupies it.
+ */
+function StopAddMenu({
+  name,
+  place,
+  stopKey,
+  catalogue,
+  disabled,
+  edit,
+  onSelect,
+}: {
+  name: string;
+  place: string;
+  stopKey: number;
+  catalogue: StepCatalogue;
+  disabled: boolean;
+  edit: EditSteps;
+  onSelect: (selected: number | "start" | null) => void;
+}) {
+  const add = (section: StopSection, spec: StepSpec) => {
+    // Minted here, not in the updater, so a twice-run updater cannot mint two.
+    const row = newStepDraft(spec.type);
+    edit((current) => addAction(current, section, row));
+    onSelect(row.key);
+  };
+  const groups: { section: StopSection; label: string; specs: StepSpec[] }[] = [
+    { section: { kind: "arrival", stop: stopKey }, label: `At ${place}`, specs: actionSpecs(catalogue) },
+    {
+      section: { kind: "transit", stop: stopKey },
+      label: `On the way to ${place}`,
+      specs: transitSpecs(catalogue),
+    },
+  ];
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        disabled={disabled}
+        aria-label={`Add an action at ${name}`}
+        className="instrument-label ml-4 flex h-6 items-center gap-1 rounded-sm border border-dashed border-hairline px-1.5 text-muted-foreground transition-colors hover:border-solid hover:bg-elevated hover:text-foreground disabled:pointer-events-none disabled:opacity-40 pointer-coarse:h-10"
+      >
+        <PlusIcon className="size-3" aria-hidden />
+        Add action
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64">
+        {groups.map((group, at) => (
+          <React.Fragment key={group.section.kind}>
+            {at > 0 && <DropdownMenuSeparator />}
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="truncate">{group.label}</DropdownMenuLabel>
+              {group.specs.map((spec) => (
+                <DropdownMenuItem key={spec.type} onClick={() => add(group.section, spec)}>
+                  <span className="flex min-w-0 flex-col">
+                    <span>{spec.label}</span>
+                    <span className="text-[11px] leading-snug text-muted-foreground">
+                      {spec.hint}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+          </React.Fragment>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

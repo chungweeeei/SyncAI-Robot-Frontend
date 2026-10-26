@@ -265,8 +265,10 @@ components/
                 is ringed on it and the waypoint under the pointer lights its
                 cards) beside the stops (stop-list: what is done before
                 setting off, then a card per stop — its waypoint by search
-                (waypoint-combobox, grouped by floor), what is done on the
-                way and on arrival (action-section: drag within a run, boxes
+                (waypoint-combobox, grouped by floor), then in the order it
+                happens what is done on the way there and at it, each
+                headed with the waypoint's name, and one Add for both
+                (action-section: drag within a run, boxes
                 that start together, Move up / down across stops); every
                 action's fields drawn from the step catalogue
                 (param-fields), not written per type)

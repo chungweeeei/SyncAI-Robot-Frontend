@@ -77,7 +77,7 @@ export type EditSteps = (change: (steps: StepDraft[]) => StepDraft[], tag?: stri
 export interface ActionSectionProps {
   section: StopSection;
   /** What the robot does here, as the section's heading says it. */
-  label: string;
+  label: React.ReactNode;
   /** Appended to each row's accessible names: "on arrival at stop 2". */
   context: string;
   steps: StepDraft[];

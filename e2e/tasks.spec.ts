@@ -28,12 +28,23 @@ const PREVIEW_META: MapMetadata = {
 };
 
 /**
- * Add an action from one of the editor's Add menus, which are named for where
- * they add: "before setting off", "on arrival at stop 1", "on the way to stop 1".
+ * Add an action where it says: "before setting off", "on arrival at stop 1" or
+ * "on the way to stop 1". A stop card has one Add, its menu in two groups
+ * headed "At <waypoint>" and "On the way to <waypoint>".
  */
 async function addAction(page: Page, type: string, where = "before setting off") {
-  await page.getByRole("button", { name: `Add an action ${where}` }).click();
-  await page.getByRole("menuitem", { name: new RegExp(`^${type}`) }).click();
+  const item = new RegExp(`^${type}`);
+  const atStop = /^(on arrival at|on the way to) (stop \d+)$/.exec(where);
+  if (!atStop) {
+    await page.getByRole("button", { name: `Add an action ${where}` }).click();
+    await page.getByRole("menuitem", { name: item }).click();
+    return;
+  }
+  await page.getByRole("button", { name: `Add an action at ${atStop[2]}` }).click();
+  const group = page.getByRole("group", {
+    name: atStop[1] === "on arrival at" ? /^At / : /^On the way to /,
+  });
+  await group.getByRole("menuitem", { name: item }).click();
 }
 
 /** Pick a stop's waypoint by name, from the search list on its card. */
@@ -840,7 +851,7 @@ test.describe("the task console", () => {
     // the list holds still while they are followed.
     await expect(page.locator('[data-stop="1"]')).toContainText("IN PROGRESS");
     await expect(
-      page.getByRole("button", { name: "Add an action on arrival at stop 1" }),
+      page.getByRole("button", { name: "Add an action at stop 1" }),
     ).toBeDisabled();
   });
 
