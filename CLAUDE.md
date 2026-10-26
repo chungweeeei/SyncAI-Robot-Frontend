@@ -793,11 +793,10 @@ when working here:
 - `grill-me` — user-invoked only (`/grill-me`): a relentless interview that
   sharpens a plan or design before it is built. Not for Claude to start on
   its own.
-- `ship-to-sim` — user-invoked only (`/ship-to-sim`): the whole loop from a
-  branch to the sim — gates, commits, PR to `dev`, CI, merge, branch
-  cleanup, then rebuilding the local sim's `syncai_frontend` container (tag
-  `sim`, empty `NEXT_PUBLIC_*`, since `.env` points at another machine).
-  Invoking it is the go-ahead to merge; it stops on a red gate or check.
+- `ship-to-dev` — user-invoked only (`/ship-to-dev`): the whole loop from a
+  branch to `dev` — gates, commits, PR to `dev`, CI, merge, and deleting
+  the branch locally and on the remote. Invoking it is the go-ahead to
+  merge; it stops on a red gate or check.
 
 A personal `daily-report` skill lives at user level (`~/.claude/skills/`), not
 in this repo: it summarises a day's commits, PRs and CI runs for whatever repo

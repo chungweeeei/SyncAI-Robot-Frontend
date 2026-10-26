@@ -1,21 +1,19 @@
 ---
-name: ship-to-sim
+name: ship-to-dev
 description: >
   Ship the work on the current branch end to end: run the gates, commit,
-  push, open a PR to dev, watch CI, merge it, delete the branch, then rebuild
-  and restart the local sim's frontend container on the merged dev. User
-  invoked (/ship-to-sim); invoking it is the go-ahead to merge into dev.
+  push, open a PR to dev, watch CI, merge it, and delete the branch locally
+  and on the remote. User invoked (/ship-to-dev); invoking it is the
+  go-ahead to merge into dev.
 metadata:
   origin: project
 ---
 
-# Ship to the Sim
+# Ship to dev
 
 The loop this repo's day-to-day work runs: a change on a branch ends up
-merged into `dev` and running in the sim's `syncai_frontend` container,
-which is where the operator looks at it. `github-flow` is the reference for
-each git step (and its gotchas); this skill is the order they are run in,
-plus the container step github-flow does not cover.
+merged into `dev`, with its branch gone. `github-flow` is the reference for
+each git step (and its gotchas); this skill is the order they are run in.
 
 **Invoking it is the authorization to merge into `dev`.** Nothing else in
 it asks. It still *stops and reports* rather than pushing through on any of
@@ -38,8 +36,8 @@ npx tsc --noEmit && npm run lint && npm test
 ```
 
 Then the e2e specs the change touches (the whole suite for a broad change).
-**Check port 3001 first** — playwright reuses whatever listens there, and
-on this machine the sim container does:
+**Check port 3001 first** — playwright reuses whatever listens there (a
+`next dev` or a container), which would test that build instead of this one:
 
 ```bash
 lsof -iTCP:3001 -sTCP:LISTEN
@@ -123,45 +121,8 @@ git branch -d <branch>                             # -d, never -D
 
 `--merge`, matching the merge commits `dev` already has.
 
-## 6. Rebuild and restart the sim container
-
-The sim's console is the `frontend` service of this repo's
-`docker-compose.yaml`, running the tag **`sim`** — not the `local` that
-`.env` names. And it must be built with **empty** `NEXT_PUBLIC_*`: `.env`
-sets `NEXT_PUBLIC_API_BASE` to another machine's backend, and compose reads
-`.env` for build args, so a plain build bakes that address in and the
-console talks to the wrong robot. Empty, the page calls `:3000` of the host
-it was opened from, which is the sim's backend. Shell variables beat `.env`:
-
-```bash
-FRONTEND_TAG=sim NEXT_PUBLIC_API_BASE= NEXT_PUBLIC_WS_BASE= docker compose build frontend-build
-FRONTEND_TAG=sim NEXT_PUBLIC_API_BASE= NEXT_PUBLIC_WS_BASE= docker compose up -d frontend
-```
-
-Before building, confirm the container is still the one described here
-(`docker ps --filter name=syncai_frontend`: image `syncai-frontend:sim`).
-If it runs something else, the setup changed — ask instead of rebuilding.
-
-Then check, and report each:
-
-```bash
-docker inspect syncai_frontend --format '{{.State.Health.Status}}'   # healthy (poll ~60 s)
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3001/        # 200
-docker exec syncai_frontend sh -c 'grep -rl "<a string the change added>" .next/static | head -1'
-docker exec syncai_frontend sh -c 'grep -rl "10.8.140.138" . | head -1'   # must print nothing
-```
-
-The third proves the image holds the change; the last that no backend
-address was baked in.
-
-The same `.env.local` trap applies to a **local** build used to check
-something against the sim by hand: `npm run build` reads `.env.local`,
-which points at the other machine too. Build such a check with
-`NEXT_PUBLIC_API_BASE= NEXT_PUBLIC_WS_BASE= npm run build`.
-
-## 7. Report
+## 6. Report
 
 Short, to the operator: the PR link and that it merged (with the merge
-commit), the branch deleted, the container healthy with the change in it,
-anything that was skipped or could not be verified, and that `review` was
-skipped if it was.
+commit), the branch deleted locally and on the remote, anything that was
+skipped or could not be verified, and that `review` was skipped if it was.
