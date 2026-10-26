@@ -399,6 +399,11 @@ const BODY_STEP_TYPES: ReadonlySet<StepType> = new Set([
   "LIEDOWN",
 ]);
 
+/** Whether a step occupies the body; the catalogue's `occupies_body` must agree. */
+export function stepOccupiesBody(type: StepType): boolean {
+  return BODY_STEP_TYPES.has(type);
+}
+
 const ONE_BODY_STEP = "The robot does one Move, Dock, Stand or Lie down at a time";
 
 function spanMoves(drafts: readonly StepDraft[], span: StepSpan | undefined): boolean {
