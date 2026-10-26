@@ -23,7 +23,6 @@ import {
   stepMoveProblem,
   stepPatchFromVertex,
   stepRoute,
-  stepShape,
   stepSpans,
   stepSummary,
   stepTypeForVertex,
@@ -688,17 +687,6 @@ describe("step groups", () => {
   it("reads links off wire steps by shared, adjacent names", () => {
     const steps = [{ group: null }, { group: "g2" }, { group: "g2" }, { group: undefined }];
     expect(steps.map((_, index) => wireLinked(steps, index))).toEqual([false, false, true, false]);
-  });
-
-  it("brackets the glyphs of steps that start together", () => {
-    expect(
-      stepShape([
-        { type: "MOVE" },
-        { type: "MOVE", group: "g2" },
-        { type: "SPEAK", group: "g2" },
-        { type: "STANDUP" },
-      ]),
-    ).toBe("M [M T] S");
   });
 });
 

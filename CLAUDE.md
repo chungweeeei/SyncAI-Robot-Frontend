@@ -250,8 +250,17 @@ components/
                 card's pencil opens it there, and the task editor's links
                 with Waypoint chosen and Place armed)
   recordings/   bag recorder and list
-  tasks/        the /tasks overview (template library, schedules, a row's run)
-                and the /tasks/editor page, built for commissioning on a
+  tasks/        the /tasks overview: the saved tasks grouped by map (the
+                loaded one first, then the tasks bound to no map, then the
+                others folded, each saying where maps are switched) under
+                one search; a card per task, folded to its name and route
+                (waypoints by name, then lib/task/library.ts's summary)
+                and a line per schedule with its pause, edit and delete,
+                opened by its name to the stops read-only; Run and Schedule labelled, Edit beside them,
+                Duplicate and Delete in its ⋯ menu; Schedule opens a
+                dialog; schedules no saved task owns listed apart. A run is
+                not followed here — the masthead's bar is where it is —
+                only a refused Run is said. And the /tasks/editor page, built for commissioning on a
                 laptop: the name, Save (Save as copy and Delete in its
                 menu; running and scheduling stay on /tasks), and two
                 columns from lg — the
@@ -391,6 +400,8 @@ lib/
                 the 3D map is coloured by (height-ramp.ts: data colouring,
                 deliberately not a signal hue)
   task/         step, schedule and history domain helpers, template name limit,
+                the /tasks list (library.ts: grouping by map, the natural
+                name order, a card's route line, summary and read-only stops),
                 the group rule (step.ts: one Move, Dock, Stand or Lie per group,
                 refused as it is built by stepLinkProblem / stepMoveProblem,
                 with stepGroupError as the backstop for a list handed in),

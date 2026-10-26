@@ -5,271 +5,309 @@ import {
   CalendarPlusIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  ClockIcon,
+  CopyIcon,
+  EllipsisIcon,
   PencilIcon,
-  SendIcon,
+  PlayIcon,
   Trash2Icon,
 } from "lucide-react";
 
 import { Chip } from "@/components/console/instrument";
-import { TaskStatusChip } from "@/components/console/task-chip";
-import { GroupRail } from "@/components/tasks/group-rail";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/tasks/icon-button";
+import { ScheduleList, type ScheduleActions } from "@/components/tasks/schedule-list";
+import { useStepCatalogue } from "@/hooks/use-step-catalogue";
 import type { ScheduleState } from "@/lib/api/schedule";
 import type { TemplateStep, TaskTemplate } from "@/lib/api/task-template";
-import type { TaskStepState } from "@/lib/api/task";
-import { describeTrigger, scheduleChipSummary } from "@/lib/task/schedule";
+import { stepSpec } from "@/lib/task/catalogue";
 import {
-  isNavStep,
-  repeatSuffix,
-  stepGlyph,
-  stepShape,
-  wireGroupPlaces,
-  type GroupPlace,
-} from "@/lib/task/step";
-import { cn } from "@/lib/utils";
+  routeLine,
+  routeStops,
+  taskStops,
+  taskSummary,
+  type RouteStop,
+} from "@/lib/task/library";
+import { repeatSuffix } from "@/lib/task/step";
+import { formatDuration } from "@/lib/task/stops";
 
 export interface TaskTemplateRowProps {
   template: TaskTemplate;
-  /** The map the robot is on, for the mismatch sentence. Null when none loaded. */
-  activeMapName: string | null;
-  /** True while any task is in flight, or the robot id is not known yet. */
-  dispatchDisabled: boolean;
-  /** Why this job's map cannot take a job now; shown so a greyed Run does not read as broken. */
-  dispatchLock: string | null;
-  /** Per-step state, but only when *this* row is the one that was dispatched. */
-  stepStates: ReadonlyMap<string, TaskStepState> | null;
-  /** Task-level status of the run this row started, or null. */
-  taskStatus: React.ComponentProps<typeof TaskStatusChip>["status"] | null;
-  /** The schedules frozen from this template; empty for a one-time job. */
-  schedules: readonly ScheduleState[];
+  /** A write to the library is in flight. */
   busy: boolean;
-  onDispatch: () => void;
-  onLoad: () => void;
+  /** The task's map is not the loaded one, or is held; the group says why. */
+  runBlocked: boolean;
+  /** As `runBlocked`, for Schedule: only another map holds it. */
+  scheduleBlocked: boolean;
+  /** The schedules made from this task; empty for one run by hand. */
+  schedules: readonly ScheduleState[];
+  /** Pause, resume, delete: the schedule list's own, with its own busy. */
+  scheduleActions: ScheduleActions;
+  onRun: () => void;
   onSchedule: () => void;
+  onEdit: () => void;
+  onDuplicate: () => void;
   onDelete: () => void;
-  /** Point at this row's schedules in the Registered schedules list. */
-  onShowSchedules: () => void;
 }
 
 /**
- * One library row. Actions are bare icon buttons rather than a menu, like the
- * console's other lists, keeping tap targets large.
+ * One saved task. Folded, it is what an engineer on site recognises a task
+ * by: its name and the waypoints it walks, with no step letters to decode.
+ * Its schedules are a line each under the route, folded or not; opened, the
+ * card adds the stops it was built from, read-only.
+ *
+ * Run and Schedule are labelled buttons and Delete sits in the ⋯ menu: the
+ * page exists to run and schedule tasks, and a delete beside them at the same
+ * size was one slip of a finger from the button meant.
  */
 export function TaskTemplateRow({
   template,
-  activeMapName,
-  dispatchDisabled,
-  dispatchLock,
-  stepStates,
-  taskStatus,
+  runBlocked,
+  scheduleBlocked,
   schedules,
   busy,
-  onDispatch,
-  onLoad,
+  onRun,
   onSchedule,
+  onEdit,
+  onDuplicate,
   onDelete,
-  onShowSchedules,
+  scheduleActions,
 }: TaskTemplateRowProps) {
   const [open, setOpen] = React.useState(false);
-  const groupPlaces = wireGroupPlaces(template.steps);
-  const railed = groupPlaces.some(Boolean);
-
-  /**
-   * One chip for all this template's schedules. A button that lights them in
-   * the list below; the hover title lists them for a mouse.
-   */
-  const schedule = scheduleChipSummary(schedules);
-  const scheduleTitle = schedules
-    .map(
-      (entry) =>
-        `${entry.id}: ${describeTrigger(entry.trigger)}${entry.paused ? " (paused)" : ""}`,
-    )
-    .join("\n");
-
-  // The hard gate: another map's coordinates point elsewhere on the loaded one.
-  // A missing vertex only falls back to the snapshot.
-  const wrongMap = template.map_name !== null && !template.map_matches_active;
-  const blocked = wrongMap || dispatchDisabled || dispatchLock !== null;
+  const detailId = React.useId();
 
   return (
     <li className="rounded-sm border border-hairline bg-elevated/40 px-2 py-2">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {/* The name opens the card; Edit is its own button. */}
         <button
           type="button"
-          aria-label={open ? "Hide steps" : "Show steps"}
           aria-expanded={open}
+          aria-controls={detailId}
           onClick={() => setOpen((v) => !v)}
-          className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:size-10"
+          className="flex min-w-0 flex-1 basis-40 items-center gap-1.5 rounded-sm text-left transition-colors hover:text-foreground pointer-coarse:min-h-10"
         >
           {open ? (
-            <ChevronDownIcon className="size-3.5" aria-hidden />
+            <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           ) : (
-            <ChevronRightIcon className="size-3.5" aria-hidden />
+            <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           )}
+          <span className="readout min-w-0 truncate text-[13px]">{template.name}</span>
         </button>
 
-        <span className="readout min-w-0 flex-1 truncate text-[13px]">
-          {template.name}
-        </span>
-
-        {/* The shape at a glance: M M S is a route, [M T] two steps together. */}
-        <span
-          className="readout min-w-0 max-w-full truncate text-[11px] tracking-wider text-muted-foreground"
-          aria-label={`${template.steps.length} steps`}
-        >
-          {stepShape(template.steps)}
-        </span>
-
-        {/* Before the map chip: running unattended outranks which map. */}
-        {schedule && (
-          <button
-            type="button"
-            onClick={onShowSchedules}
-            aria-label={`Show the schedules for "${template.name}": ${schedule.label}`}
-            title={scheduleTitle}
-            className="shrink-0 rounded-sm transition-opacity hover:opacity-80 pointer-coarse:min-h-10"
-          >
-            <Chip tone={schedule.tone} className="gap-1">
-              <ClockIcon className="size-3" aria-hidden />
-              {schedule.label}
-            </Chip>
-          </button>
-        )}
-        {template.map_name && (
-          <Chip tone={wrongMap ? "caution" : "neutral"}>{template.map_name}</Chip>
-        )}
         {template.missing_vertex_count > 0 && (
           <Chip tone="caution">{template.missing_vertex_count} missing</Chip>
         )}
-        {taskStatus && <TaskStatusChip status={taskStatus} />}
 
-        <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          <IconButton
-            label={`Dispatch "${template.name}" now`}
-            disabled={blocked || busy}
-            onClick={onDispatch}
-            className="text-signal-cmd hover:bg-signal-cmd/12"
+        {/* Below sm the buttons take a row of their own under the route, so
+          * the route stays under the name it describes. */}
+        <div className="ml-auto flex shrink-0 items-center gap-1 max-sm:order-last">
+          <Button
+            size="sm"
+            aria-label={`Run "${template.name}" now`}
+            disabled={runBlocked || busy}
+            onClick={onRun}
+            className="bg-signal-cmd text-background hover:bg-signal-cmd/85"
           >
-            <SendIcon className="size-3.5" aria-hidden />
-          </IconButton>
+            <PlayIcon data-icon="inline-start" aria-hidden />
+            <span className="max-sm:hidden">Run</span>
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            aria-label={`Schedule "${template.name}"`}
+            disabled={scheduleBlocked || busy}
+            onClick={onSchedule}
+          >
+            <CalendarPlusIcon data-icon="inline-start" aria-hidden />
+            <span className="max-sm:hidden">Schedule</span>
+          </Button>
           <IconButton
-            label={`Load "${template.name}" into the editor`}
-            // Allowed for another map's job too: fixing it is the next thing to do.
+            label={`Edit "${template.name}"`}
+            // Allowed for another map's task too: fixing it is the next thing to do.
             disabled={busy}
-            onClick={onLoad}
+            onClick={onEdit}
           >
             <PencilIcon className="size-3.5" aria-hidden />
           </IconButton>
-          <IconButton
-            label={`Schedule "${template.name}"`}
-            disabled={wrongMap || busy}
-            onClick={onSchedule}
-          >
-            <CalendarPlusIcon className="size-3.5" aria-hidden />
-          </IconButton>
-          <IconButton
-            label={`Delete "${template.name}"`}
-            disabled={busy}
-            className="text-signal-warn hover:bg-signal-warn/12"
-            onClick={onDelete}
-          >
-            <Trash2Icon className="size-3.5" aria-hidden />
-          </IconButton>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label={`More for "${template.name}"`}
+              disabled={busy}
+              className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-30 pointer-coarse:size-10"
+            >
+              <EllipsisIcon className="size-3.5" aria-hidden />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem onClick={onDuplicate}>
+                <CopyIcon aria-hidden />
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                <Trash2Icon aria-hidden />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
+
+        <TaskRoute steps={template.steps} />
       </div>
 
-      {wrongMap && (
-        <p className="mt-1 pl-7 text-[11px] leading-tight text-signal-caution">
-          Saved for <span className="readout">{template.map_name}</span>; the robot has{" "}
-          <span className="readout">{activeMapName ?? "no map"}</span> loaded.
-        </p>
-      )}
-      {!wrongMap && dispatchLock && (
-        <p className="mt-1 pl-7 text-[11px] leading-tight text-signal-caution">
-          {dispatchLock}
-        </p>
+      {schedules.length > 0 && (
+        <section aria-label={`Schedules for "${template.name}"`} className="mt-1.5 pl-5">
+          <ScheduleList
+            schedules={schedules}
+            source={template}
+            templates={[template]}
+            checkDrift={open}
+            {...scheduleActions}
+          />
+        </section>
       )}
 
       {open && (
-        <ol className={cn("mt-1.5 space-y-0.5", railed ? "pl-4.5" : "pl-7")}>
-          {template.steps.map((step, index) => (
-            <TemplateStepLine
-              key={step.id}
-              step={step}
-              index={index}
-              place={groupPlaces[index] ?? null}
-              railed={railed}
-              state={stepStates?.get(step.id) ?? null}
-            />
-          ))}
-        </ol>
+        <div id={detailId} className="mt-2 space-y-3 border-t border-hairline pt-2 pl-5">
+          <TaskStopsView steps={template.steps} />
+        </div>
       )}
     </li>
   );
 }
 
-function TemplateStepLine({
-  step,
-  index,
-  place,
-  railed,
-  state,
+/** `lobby → hall → charger · 3 stops · 1 min 30 s of waiting · ends docked`. */
+function TaskRoute({ steps }: { steps: readonly TemplateStep[] }) {
+  const stops = routeStops(steps);
+  const summary = taskSummary(steps);
+  const parts = [
+    summary.stops === 0
+      ? `no stops · ${steps.length} ${steps.length === 1 ? "action" : "actions"}`
+      : `${summary.stops} ${summary.stops === 1 ? "stop" : "stops"}`,
+    summary.waitSeconds > 0 ? `${formatDuration(summary.waitSeconds)} of waiting` : null,
+    summary.endsDocked ? "ends docked" : null,
+  ].filter((part): part is string => part !== null);
+
+  return (
+    <p className="flex min-w-0 basis-full flex-wrap items-baseline gap-x-2 pl-5 text-[11px] leading-snug text-muted-foreground">
+      {stops.length > 0 && (
+        <span className="readout min-w-0 text-foreground/80" aria-label="Route">
+          {routeLine(stops).map((item, index) => (
+            <React.Fragment key={index}>
+              {index > 0 && <span aria-hidden> → </span>}
+              {"hidden" in item ? (
+                <span>+{item.hidden}</span>
+              ) : (
+                <StopName stop={item} />
+              )}
+            </React.Fragment>
+          ))}
+        </span>
+      )}
+      <span>{parts.join(" · ")}</span>
+    </p>
+  );
+}
+
+function StopName({ stop }: { stop: RouteStop }) {
+  const name = stop.name ?? "a waypoint";
+  if (!stop.missing) return <span>{name}</span>;
+  return (
+    <span
+      className="text-signal-caution line-through"
+      title="This waypoint has been deleted. The robot will use the position it had when the task was saved."
+    >
+      {name}
+    </span>
+  );
+}
+
+/** The stops as the editor showed them, read-only: no coordinates, no letters. */
+function TaskStopsView({ steps }: { steps: readonly TemplateStep[] }) {
+  const catalogue = useStepCatalogue();
+  const label = (step: TemplateStep) => stepSpec(catalogue, step.type)?.label ?? step.type;
+  const read = taskStops(steps);
+
+  return (
+    <ol className="space-y-2" aria-label="Stops">
+      {read.start.length > 0 && (
+        <li>
+          <ActionRun heading="Before setting off" steps={read.start} label={label} />
+        </li>
+      )}
+      {read.stops.map((stop, index) => {
+        const place = stop.step.vertex_name ?? "a waypoint";
+        return (
+          <li key={stop.step.id} className="space-y-1">
+            <div className="flex items-baseline gap-2 text-[12px]">
+              <span className="readout w-4 shrink-0 text-muted-foreground">{index + 1}</span>
+              <span className="instrument-label w-10 shrink-0 text-muted-foreground">
+                {label(stop.step)}
+              </span>
+              <StopName
+                stop={{
+                  name: stop.step.vertex_name,
+                  missing: stop.step.vertex_status === "MISSING",
+                  dock: stop.step.type === "DOCK",
+                }}
+              />
+              {/* A chip, since a finger cannot hover to ask what the strike means. */}
+              {stop.step.vertex_status === "MISSING" && <Chip tone="caution">deleted</Chip>}
+            </div>
+            {stop.transit.length > 0 && (
+              <ActionRun heading={`On the way to ${place}`} steps={stop.transit} label={label} />
+            )}
+            {stop.arrival.length > 0 && (
+              <ActionRun heading={`At ${place}`} steps={stop.arrival} label={label} />
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function ActionRun({
+  heading,
+  steps,
+  label,
 }: {
-  step: TemplateStep;
-  index: number;
-  place: GroupPlace;
-  /** The list has a group, so every line reserves the rail's column. */
-  railed: boolean;
-  state: TaskStepState | null;
+  heading: string;
+  steps: readonly TemplateStep[];
+  label: (step: TemplateStep) => string;
 }) {
   return (
-    <li className={cn("flex items-baseline gap-2 text-[11px]", railed && "relative pl-2.5")}>
-      <GroupRail place={place} gap="0.5" />
-      <span className="readout w-3 shrink-0 text-muted-foreground">{index + 1}</span>
-      <span className="instrument-label w-3 shrink-0 text-muted-foreground">
-        {stepGlyph(step.type)}
-      </span>
-      {step.vertex_name && (
-        <span
-          className={
-            step.vertex_status === "MISSING"
-              ? "readout shrink-0 text-signal-caution line-through"
-              : "readout shrink-0 text-muted-foreground"
-          }
-        >
-          {step.vertex_name}
-        </span>
-      )}
-      {/* A chip, since a finger cannot hover to ask what the strike means. */}
-      {step.vertex_status === "MISSING" && (
-        <Chip
-          tone="caution"
-          title="This waypoint has been deleted. The robot will use the position it had when the job was saved."
-        >
-          deleted
-        </Chip>
-      )}
-      {/* resolved_params, not params: what a dispatch would actually send. */}
-      {isNavStep(step) && step.resolved_params && (
-        <span className="readout min-w-0 truncate">
-          {step.resolved_params.x.toFixed(3)}, {step.resolved_params.y.toFixed(3)} ·{" "}
-          {step.resolved_params.theta.toFixed(1)}°
-        </span>
-      )}
-      {/* Wrapped, not truncated: the expanded detail has vertical room. */}
-      {step.type === "SPEAK" && step.resolved_params && (
-        <span className="min-w-0 wrap-anywhere italic">
-          “{step.resolved_params.text}”{repeatSuffix(step.resolved_params.repeat)}
-        </span>
-      )}
-      {step.type === "WAIT" && step.resolved_params && (
-        <span className="readout">{step.resolved_params.seconds} s</span>
-      )}
-      {state?.message && (
-        <span className="min-w-0 truncate text-muted-foreground">{state.message}</span>
-      )}
-      {state && <TaskStatusChip status={state.status} />}
-    </li>
+    <div className="ml-6 space-y-0.5">
+      <p className="instrument-label text-muted-foreground">{heading}</p>
+      <ul className="space-y-0.5">
+        {steps.map((step) => (
+          <li key={step.id} className="flex items-baseline gap-2 text-[11px]">
+            <span className="w-16 shrink-0">{label(step)}</span>
+            <ActionDetail step={step} />
+          </li>
+        ))}
+      </ul>
+    </div>
   );
+}
+
+function ActionDetail({ step }: { step: TemplateStep }) {
+  if (step.type === "SPEAK" && step.resolved_params) {
+    // Wrapped, not truncated: the opened card has vertical room.
+    return (
+      <span className="min-w-0 wrap-anywhere italic">
+        “{step.resolved_params.text}”{repeatSuffix(step.resolved_params.repeat)}
+      </span>
+    );
+  }
+  if (step.type === "WAIT" && step.resolved_params) {
+    return <span className="readout">{formatDuration(step.resolved_params.seconds)}</span>;
+  }
+  return null;
 }

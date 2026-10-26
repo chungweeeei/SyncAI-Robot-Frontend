@@ -346,7 +346,7 @@ test.describe("when a motor overheats", () => {
     const notice = page.getByRole("banner").getByRole("alert").filter({
       hasText: "A motor is overheating",
     });
-    await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
     state.motor_status = hot(91);
     await expect(notice).toBeVisible();
     await expect(notice.getByText("91")).toBeVisible();

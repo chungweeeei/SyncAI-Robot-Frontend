@@ -393,7 +393,7 @@ test.describe("a map whose floor plan is being rebuilt", () => {
     await page.goto("/tasks");
 
     await expect(
-      page.getByRole("button", { name: 'Dispatch "Morning round" now' }),
+      page.getByRole("button", { name: 'Run "Morning round" now' }),
     ).toBeDisabled();
     await expect(
       page.getByText(/This map's floor plan is being rebuilt/),

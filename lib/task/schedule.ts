@@ -310,30 +310,6 @@ export function describeTrigger(trigger: ScheduleTrigger): string {
 }
 
 /**
- * What a saved job's clock chip says about the schedules frozen from it, or
- * null when there are none.
- *
- * The paused count is in the label (a hover title is invisible to a finger),
- * and a lone schedule keeps its trigger either way. Caution only when nothing
- * will run.
- */
-export function scheduleChipSummary(
-  schedules: readonly ScheduleState[],
-): { label: string; tone: "active" | "caution" } | null {
-  if (schedules.length === 0) return null;
-  const paused = schedules.filter((entry) => entry.paused).length;
-  const tone = paused === schedules.length ? "caution" : "active";
-  if (schedules.length === 1) {
-    const trigger = describeTrigger(schedules[0].trigger);
-    return { label: paused ? `${trigger} · paused` : trigger, tone };
-  }
-  const count = `${schedules.length} schedules`;
-  if (paused === 0) return { label: count, tone };
-  if (paused === schedules.length) return { label: `${count} · all paused`, tone };
-  return { label: `${count} · ${paused} paused`, tone };
-}
-
-/**
  * How long after a schedule's fire time the list is re-read: slack for the two
  * clocks disagreeing, since `next_run_times` is recomputed the moment it fires.
  */
