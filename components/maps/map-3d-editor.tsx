@@ -670,7 +670,14 @@ function Map3dSurface({
   const commitPlace = (picked: PlanarPose) => {
     const placed = {
       ...picked,
-      z: placedGround({ voxels, band: floorBand, x: picked.x, y: picked.y, moving: moving?.z }),
+      z: placedGround({
+        voxels,
+        band: floorBand,
+        hasFloors: floors.length > 0,
+        x: picked.x,
+        y: picked.y,
+        moving: moving?.z,
+      }),
     };
     if (moving) {
       const target = moving.id;
@@ -745,7 +752,14 @@ function Map3dSurface({
    */
   const moveVertex = (vertex: MapVertex, pose: PlanarPose) => {
     if (placeLock !== null) return;
-    const z = placedGround({ voxels, band: floorBand, x: pose.x, y: pose.y, moving: vertex.z });
+    const z = placedGround({
+      voxels,
+      band: floorBand,
+      hasFloors: floors.length > 0,
+      x: pose.x,
+      y: pose.y,
+      moving: vertex.z,
+    });
     setVertexList((current) =>
       current.map((stop) =>
         stop.id === vertex.id ? { ...stop, x: pose.x, y: pose.y, theta: pose.theta, z } : stop,

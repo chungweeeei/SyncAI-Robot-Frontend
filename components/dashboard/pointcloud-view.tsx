@@ -297,6 +297,7 @@ export function PointCloudView({
         z: placedGround({
           voxels,
           band: floorBand,
+          hasFloors: bands.length > 0,
           x: picked.x,
           y: picked.y,
           moving: pick?.mode === "vertex" ? pick.vertex.z : null,
@@ -318,7 +319,7 @@ export function PointCloudView({
       }
       setPick(null);
     },
-    [pick, voxels, floorBand, commitPose, sendGoal, moveVertex],
+    [pick, voxels, floorBand, bands, commitPose, sendGoal, moveVertex],
   );
 
   // The dialog closes first; GoalControl reports the job and any error.

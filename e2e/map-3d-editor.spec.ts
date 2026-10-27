@@ -1001,7 +1001,9 @@ test.describe("the editor's 3D view", () => {
           expect(value).toBeLessThanOrEqual(0.4);
         }
         expect(Number.isFinite(stop.theta)).toBe(true);
-        // No floors on this map: the ground floor, the wire's 0.
+        // No floors on this map, so the ground under the stop -- but the
+        // press lands on octomapBt's hole, where there is none to read: the
+        // wire's 0. (A stop over ground: waypoint-ground.test.ts.)
         expect(stop.z).toBe(0);
       }
       await expect(
