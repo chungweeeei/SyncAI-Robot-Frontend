@@ -189,8 +189,13 @@ components/
                 initial pose lands on it, at the ground the 3D map shows
                 under the point on that floor — the floor's one height only
                 over a hole — and without a floor picked the initial pose sends no height,
-                so the localizer keeps its storey; a 2D map, one without an
-                octomap.bt, has no floors, so its picks stay at 0), zones
+                so the localizer keeps its storey; a 3D map with no floors
+                is one storey, so a goal or a waypoint, new or moved, lands at
+                the lowest cell of the column under it, however the ground
+                slopes — the robot's planner looks for the ground only a
+                metre either side of the z, so a 0 on a slope was out of its
+                reach; a 2D map, one without an octomap.bt, has no ground to
+                read, so its picks stay at 0), zones
                 and the path (on
                 the ground it crosses, so a route up a stair is on both
                 storeys; with a floor picked,
