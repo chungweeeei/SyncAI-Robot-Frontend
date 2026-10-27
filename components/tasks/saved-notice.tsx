@@ -16,9 +16,9 @@ export interface SavedNoticeValue {
 }
 
 /**
- * The card a Save that stays on the page answers with. An update leaves
- * nothing else on screen that changes — the heading already read the name —
- * so without it a Save that worked and one that never left looked the same.
+ * The card a Save as copy answers with, the one save that stays on the page.
+ * Only the heading changes, to a name the operator may not read again, so
+ * without it a copy that worked and one that never left looked the same.
  *
  * The live region is always mounted and only its content comes and goes,
  * because a region inserted together with its text is not announced by

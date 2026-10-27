@@ -456,12 +456,13 @@ test.describe("the task console", () => {
     await expect(stop).toHaveCount(0);
   });
 
-  test("saves over the loaded job, and stays on a new one as loaded", async ({
+  test("saves over the loaded job, and goes back to the list on every save", async ({
     page,
   }) => {
-    // One Save: a loaded template is updated in place, never copied. A job
-    // saved for the first time stays open as the loaded template, so the next
-    // Save updates it rather than making a second one.
+    // One Save: a loaded template is updated in place, never copied, and a
+    // job saved for the first time is created. Either way the editor goes
+    // back to /tasks, where the job is run and scheduled. Save as copy is the
+    // one save that stays, as the loaded template.
     const loaded = "22222222-2222-2222-2222-222222222222";
     const created = "44444444-4444-4444-4444-444444444444";
     await mockBackend(page);
@@ -493,15 +494,30 @@ test.describe("the task console", () => {
     await expect
       .poll(() => writes)
       .toEqual([{ method: "PUT", path: `/api/v1/task_templates/${loaded}` }]);
-    // The page does not move on a save, so a card says it landed.
-    const notice = page.getByRole("status").filter({ hasText: "Saved Morning round" });
+    await expect(page).toHaveURL(/\/tasks$/);
+
+    // Save as copy creates, and stays on the copy with a card saying so.
+    await page
+      .getByRole("button", { name: 'Edit "Morning round"' })
+      .click();
+    await page.getByRole("button", { name: "More for this job" }).click();
+    await page.getByRole("menuitem", { name: "Save as copy" }).click();
+    await expect
+      .poll(() => writes.slice(1))
+      .toEqual([{ method: "POST", path: "/api/v1/task_templates" }]);
+    const notice = page.getByRole("status").filter({ hasText: "Saved Morning round (copy)" });
     await expect(notice).toBeVisible();
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
     await notice.getByRole("button", { name: "Dismiss" }).click();
     await expect(notice).toBeHidden();
+    // The copy is the loaded template: Save updates it, and leaves.
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect
+      .poll(() => writes.slice(2))
+      .toEqual([{ method: "PUT", path: `/api/v1/task_templates/${created}` }]);
+    await expect(page).toHaveURL(/\/tasks$/);
 
-    // A fresh job. The loaded one is still in the draft, so Create task asks first.
-    await page.goto("/tasks");
-    page.once("dialog", (dialog) => void dialog.accept());
+    // A fresh job. The draft was cleared on leaving, so Create task asks nothing.
     await page.getByRole("button", { name: "Create task" }).click();
     await addAction(page, "Speak");
     await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
@@ -512,7 +528,7 @@ test.describe("the task console", () => {
     await save.click();
     await expect(field).toBeFocused();
     await expect(page.getByText("Name this task to save it.")).toBeVisible();
-    expect(writes).toHaveLength(1);
+    expect(writes).toHaveLength(3);
     await field.fill("greeting");
     await expect(page.getByText("Name this task to save it.")).toHaveCount(0);
     // Schedules stay on /tasks.
@@ -524,17 +540,9 @@ test.describe("the task console", () => {
     ).toHaveCount(0);
     await page.keyboard.press("Enter");
     await expect
-      .poll(() => writes.slice(1))
+      .poll(() => writes.slice(3))
       .toEqual([{ method: "POST", path: "/api/v1/task_templates" }]);
-    await expect(page.getByRole("status").filter({ hasText: "Saved greeting" })).toBeVisible();
-    await expect(page).toHaveURL(/\/tasks\/editor$/);
-    await expect(page.getByRole("heading", { name: "greeting" })).toBeAttached();
-
-    // The second press updates what the first made.
-    await save.click();
-    await expect
-      .poll(() => writes.slice(2))
-      .toEqual([{ method: "PUT", path: `/api/v1/task_templates/${created}` }]);
+    await expect(page).toHaveURL(/\/tasks$/);
   });
 
   test("names a new job in the heading and saves it in one press", async ({
@@ -566,8 +574,7 @@ test.describe("the task console", () => {
     await expect.poll(() => posted).toHaveLength(1);
     expect(posted[0]!.name).toBe("greeting");
     expect(posted[0]!.steps).toHaveLength(1);
-    await expect(page.getByRole("status").filter({ hasText: "Saved greeting" })).toBeVisible();
-    await expect(page).toHaveURL(/\/tasks\/editor$/);
+    await expect(page).toHaveURL(/\/tasks$/);
   });
 
   test("saves a Speak said more than once with its count", async ({ page }) => {
@@ -806,9 +813,7 @@ test.describe("the task console", () => {
     expect(puts[0]!.steps).toContainEqual(
       expect.objectContaining({ type: "SPEAK", params: { text: "Evening" } }),
     );
-    await expect(
-      page.getByRole("heading", { name: "Evening round" }),
-    ).toBeAttached();
+    await expect(page).toHaveURL(/\/tasks$/);
   });
 
   test("deletes the loaded job only once confirmed, and leaves", async ({

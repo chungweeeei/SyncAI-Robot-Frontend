@@ -294,7 +294,7 @@ export function TaskEditor() {
     marked.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
   };
 
-  /** Every save answers with a card, since every save stays on the page. */
+  /** A copy answers with a card, since a copy is the one save that stays on the page. */
   const [savedNotice, setSavedNotice] = React.useState<SavedNoticeValue | null>(null);
   const dismissSaved = React.useCallback(() => setSavedNotice(null), []);
   /** Shown under the heading when Save is pressed with work missing. */
@@ -302,8 +302,10 @@ export function TaskEditor() {
 
   /**
    * An update when a template is loaded, a create otherwise (or always, for a
-   * copy). Every save stays: a create becomes the loaded template, so a
-   * second press updates it rather than making another.
+   * copy). A save goes back to /tasks, since running and scheduling are only
+   * offered there and staying left the operator nothing to do next. A copy
+   * stays, as the loaded template, because it is made to be edited apart
+   * from the original; a second press updates it rather than making another.
    */
   const save = (options: { copy?: boolean } = {}) => {
     if (!canSave) return;
@@ -327,6 +329,11 @@ export function TaskEditor() {
     const write = editing && !options.copy ? library.update(editing.id, body) : library.create(body);
     void write.then((saved) => {
       if (!saved) return;
+      if (!options.copy) {
+        clearDraft();
+        router.push("/tasks");
+        return;
+      }
       updateDraft((current) => ({
         ...current,
         editing: { id: saved.id, name: saved.name },
