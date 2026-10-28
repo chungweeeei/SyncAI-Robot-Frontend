@@ -7,6 +7,7 @@ import {
   ArrowLeftIcon,
   CopyIcon,
   EllipsisIcon,
+  EraserIcon,
   MapPinPlusIcon,
   Redo2Icon,
   SaveIcon,
@@ -607,6 +608,22 @@ export function TaskEditor() {
               {summaryParts.join(" · ")}
             </p>
             <div className="ml-auto flex items-center gap-1">
+              {/* Unasked, as removing a stop is: Undo brings the route back
+                * whole. The name and the map stay, which are the job's and
+                * not its route's. */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  edit(() => []);
+                  setSelected(null);
+                }}
+                disabled={steps.length === 0}
+                title="Clear every stop and action"
+              >
+                <EraserIcon data-icon="inline-start" aria-hidden />
+                Clear
+              </Button>
               <Button
                 variant="outline"
                 size="sm"

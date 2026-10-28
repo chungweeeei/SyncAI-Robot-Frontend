@@ -1407,6 +1407,42 @@ test.describe("the step editor", () => {
     ]);
   });
 
+  test("clears the route in one press, and Undo brings it back whole", async ({ page }) => {
+    const room = (id: string, name: string, x: number) =>
+      vertex({ id, name, type: "MOVE", x, y: 2, theta: 0 });
+    await mockBackend(page, {
+      vertices: [
+        room("aaaaaaaa-0000-0000-0000-00000000000a", "room-a", -2),
+        room("aaaaaaaa-0000-0000-0000-00000000000b", "room-b", 2),
+      ],
+    });
+    await page.goto("/tasks/editor");
+    await page.getByRole("textbox", { name: "Task name" }).fill("lap");
+    const clear = page.getByRole("button", { name: "Clear", exact: true });
+    // Nothing to clear yet.
+    await expect(clear).toBeDisabled();
+
+    await addAction(page, "Speak");
+    for (const [stop, name] of [[1, "room-a"], [2, "room-b"]] as const) {
+      await page.getByRole("button", { name: "Add a Move stop" }).click();
+      await pickWaypoint(page, stop, name);
+    }
+    const cards = page.locator("[data-stop]");
+    await expect(cards).toHaveCount(2);
+
+    await clear.click();
+    await expect(cards).toHaveCount(0);
+    await expect(page.getByRole("textbox", { name: /^Say/ })).toHaveCount(0);
+    await expect(clear).toBeDisabled();
+    // The job's name is not its route.
+    await expect(page.getByRole("textbox", { name: "Task name" })).toHaveValue("lap");
+
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await expect(cards).toHaveCount(2);
+    await expect(page.getByRole("combobox", { name: "Waypoint for stop 2" })).toHaveText("room-b");
+    await expect(page.getByRole("textbox", { name: /^Say/ })).toHaveCount(1);
+  });
+
   test("moves an action along its stop, on to the next, and onto the walk", async ({ page }) => {
     // Move up and Move down cross into the next stop at a run's edge, and an
     // action on arrival can be done on the way instead: what is sent is the
