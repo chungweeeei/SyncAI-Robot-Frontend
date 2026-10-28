@@ -160,7 +160,7 @@ export type StopStepType = NavStepType | "PATROL";
 export type BareStepType = Posture;
 
 /** The backend's full `StepType` vocabulary. */
-export type StepType = StopStepType | "SPEAK" | "WAIT" | BareStepType;
+export type StepType = StopStepType | "SPEAK" | "WAIT" | "DEMO" | BareStepType;
 
 /** `theta` in degrees, folded into (-180, 180] on the way out. */
 export interface MoveStepParams {
@@ -216,6 +216,14 @@ export interface WaitStepParams {
 }
 
 /**
+ * Demo branch only: an inspection result for the capture service, one of
+ * `INSPECTION_OPTIONS` (lib/task/step.ts). The backend refuses any other.
+ */
+export interface DemoStepParams {
+  inspection: string;
+}
+
+/**
  * One step as the endpoint takes it. Discriminated so a bare step cannot
  * carry `params`, which 422s with a validation array instead of a sentence.
  */
@@ -224,6 +232,7 @@ export type TaskStepRequest = (
   | { id: string; type: "PATROL"; params: PatrolStepParams }
   | { id: string; type: "SPEAK"; params: SpeakStepParams }
   | { id: string; type: "WAIT"; params: WaitStepParams }
+  | { id: string; type: "DEMO"; params: DemoStepParams }
   | { id: string; type: BareStepType }
 ) & {
   /**
@@ -263,6 +272,10 @@ export const WaitStepParamsSchema: z.ZodType<WaitStepParams> = z.object({
   seconds: z.number(),
 });
 
+export const DemoStepParamsSchema: z.ZodType<DemoStepParams> = z.object({
+  inspection: z.string(),
+});
+
 /**
  * For a schedule's step list read back. A plain union: a bare step's
  * discriminator is three literals.
@@ -290,6 +303,12 @@ export const TaskStepRequestSchema: z.ZodType<TaskStepRequest> = z.union([
     id: z.string(),
     type: z.literal("WAIT"),
     params: WaitStepParamsSchema,
+    group: z.string().nullish(),
+  }),
+  z.object({
+    id: z.string(),
+    type: z.literal("DEMO"),
+    params: DemoStepParamsSchema,
     group: z.string().nullish(),
   }),
   z.object({

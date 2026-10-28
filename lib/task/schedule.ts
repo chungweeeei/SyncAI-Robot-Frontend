@@ -419,6 +419,9 @@ export function scheduleDrift(
         before.every((pose, at) => samePose(pose, after[at]!));
       return same ? count : count + 1;
     }
+    if (step.type === "DEMO" && now.type === "DEMO") {
+      return step.params.inspection === now.params.inspection ? count : count + 1;
+    }
     if (!isNavStep(step) || !isNavStep(now)) return count;
     return samePose(step.params, now.params) ? count : count + 1;
   }, 0);

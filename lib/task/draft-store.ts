@@ -47,7 +47,7 @@ export function isEmptyTaskDraft(draft: TaskDraft): boolean {
 // are stripped, so a draft written by a newer build still restores.
 const StepDraftSchema: z.ZodType<StepDraft> = z.object({
   key: z.number(),
-  type: z.enum(["MOVE", "DOCK", "PATROL", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
+  type: z.enum(["MOVE", "DOCK", "PATROL", "SPEAK", "WAIT", "STANDUP", "LIEDOWN", "DEMO"]),
   x: z.string(),
   y: z.string(),
   theta: z.string(),
@@ -71,6 +71,8 @@ const StepDraftSchema: z.ZodType<StepDraft> = z.object({
       }),
     )
     .default([]),
+  // Defaulted likewise: a draft from before DEMO (demo branch only).
+  inspection: z.string().default(""),
   vertexId: z.string().nullable(),
   // Defaulted likewise: a draft from before floors is on the ground floor.
   z: z.number().default(0),
@@ -137,6 +139,8 @@ function stepContent(step: StepDraft): string {
       return `SPEAK ${step.repeat.trim()} ${step.text.trim()}`;
     case "WAIT":
       return `WAIT ${step.seconds}`;
+    case "DEMO":
+      return `DEMO ${step.inspection}`;
     default:
       return step.type;
   }
