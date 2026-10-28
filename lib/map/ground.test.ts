@@ -14,6 +14,7 @@ import {
   metresToKz,
   occupiedIn,
   surfaceNear,
+  surfaceTopNear,
 } from "@/lib/map/ground";
 import { OCTREE_KEY_ORIGIN, type OccupiedVoxels } from "@/lib/types/octree";
 
@@ -125,6 +126,30 @@ describe("groundAt", () => {
     expect(groundAt(site(), ...at(3, 3), -Infinity, Infinity)).toBeNull();
     expect(groundAt(site(), 50, 50, -Infinity, Infinity)).toBeNull();
     expect(groundAt(site(), ...at(1, 1), 2, Infinity)).toBeNull();
+  });
+});
+
+describe("surfaceTopNear", () => {
+  const at = (x: number, y: number) => [(x + 10.5) * 0.1, (y - 2.5) * 0.1] as const;
+  const near = (x: number, y: number, z: number, reach = 1.0) =>
+    surfaceTopNear(site(), columnStacks(site()), ...at(x, y), z, reach);
+
+  it("reads the ground's top face, where the planner puts a route", () => {
+    // The floor's cell is centred at -0.45: its top is -0.40.
+    expect(near(1, 1, -0.4)).toBeCloseTo(-0.4);
+    // The robot's ground a few centimetres off the map's still finds it.
+    expect(near(1, 1, -0.47)).toBeCloseTo(-0.4);
+  });
+
+  it("takes the storey at the robot's height in a column both are over", () => {
+    expect(near(6, 6, -0.4)).toBeCloseTo(-0.4);
+    expect(near(6, 6, 2.6)).toBeCloseTo(2.6);
+  });
+
+  it("has no answer over a hole, off the tree or out of reach", () => {
+    expect(near(3, 3, -0.4)).toBeNull();
+    expect(surfaceTopNear(site(), columnStacks(site()), 50, 50, -0.4, 1.0)).toBeNull();
+    expect(near(1, 1, 1.5)).toBeNull();
   });
 });
 

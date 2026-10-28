@@ -371,7 +371,8 @@ lib/
                 staging point and leg (dock-layer.ts), what the robot sees
                 and means to drive around it while it navigates
                 (local-nav-layer.ts: its costmap as one texture, each cost's
-                opacity, and its trajectory), the 3D map's voxel
+                opacity, draped over the 3D map's ground when the map is up,
+                and its trajectory), the 3D map's voxel
                 layer (one cell-sized point per occupied cell, coloured by
                 height, held in height order so a floor is one draw range;
                 it lends its box to Recenter and Top down), the eye-dome
@@ -705,7 +706,9 @@ As built:
   drive) — is on the feed as refs beside pose and joints, because only the
   render loop reads it: `PointCloudCanvas` hands each new one to its
   `LocalNavLayer` (`lib/scene/local-nav-layer.ts`) by identity and keeps the
-  layer on the robot's ground every frame. The backend sends both only while
+  layer on the robot's ground every frame; with the 3D map up the costmap is
+  draped over the ground the map shows instead (`setSurface`, the column
+  surface nearest the robot's ground, a metre either way). The backend sends both only while
   a navigation it sent is running, and once empty when it ends; the path
   toggle hides them with the route. The
   staging point is not on the socket at all: the robot does not publish it,

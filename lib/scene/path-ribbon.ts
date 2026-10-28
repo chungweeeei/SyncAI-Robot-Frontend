@@ -2,7 +2,7 @@
 
 import * as THREE from "three";
 
-import { GROUND_FLOOR_Z_M, drawnGround } from "@/lib/map/floors";
+import { GROUND_FLOOR_Z_M, drawnGround, snapToGroundFloor } from "@/lib/map/floors";
 import type { Theme } from "@/lib/scene/theme";
 
 /*
@@ -225,10 +225,10 @@ export function createPathRibbon(points: Float32Array, theme: Theme): PathRibbon
   for (let i = 0; i < n; i++) {
     const x = points[i * 3];
     const y = points[i * 3 + 1];
-    // Never under the ground floor: a planner's ground there wanders a few
-    // centimetres around it with the odometry's drift, and under it the
-    // whole route would be out of sight beneath the floor.
-    const z = Math.max(drawnGround(points[i * 3 + 2]), GROUND_FLOOR_Z_M) + PATH_Z_M;
+    // A planner's ground a few centimetres under the ground floor is drift and
+    // is lifted onto it, or the route would be out of sight beneath the
+    // floor; one further down is a real lower ground (snapToGroundFloor).
+    const z = snapToGroundFloor(drawnGround(points[i * 3 + 2])) + PATH_Z_M;
 
     // Tangent from the neighbours (one-sided at the ends), in the ground
     // plane: both segments share the offset vertices, so a corner joins with
@@ -304,7 +304,7 @@ export function createPathRibbon(points: Float32Array, theme: Theme): PathRibbon
   const stations = arrowStations(points);
   const arrowPositions = new Float32Array(stations.length * 4 * 3);
   stations.forEach(({ x, y, z: ground, tx, ty }, k) => {
-    const z = Math.max(drawnGround(ground), GROUND_FLOOR_Z_M) + PATH_Z_M + ARROW_LIFT_M;
+    const z = snapToGroundFloor(drawnGround(ground)) + PATH_Z_M + ARROW_LIFT_M;
     const l = ARROW_LENGTH_M / 2;
     const w = ARROW_WIDTH_M / 2;
     const corners = [

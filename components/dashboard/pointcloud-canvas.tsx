@@ -50,8 +50,8 @@ import {
   type PathRibbon,
 } from "@/lib/scene/path-ribbon";
 import { aimRaycaster, intersectGround } from "@/lib/scene/picking";
-import { GROUND_FLOOR_Z_M, drawnGround } from "@/lib/map/floors";
-import { columnAt } from "@/lib/map/ground";
+import { drawnGround, snapToGroundFloor } from "@/lib/map/floors";
+import { columnAt, columnStacks, surfaceTopNear } from "@/lib/map/ground";
 import { POSE_EASE_TAU_S, type SmoothPose } from "@/lib/scene/pose";
 import {
   ROBOT_BASE_HEIGHT_M,
@@ -359,6 +359,9 @@ export function PointCloudCanvas({
    * feeds it from the telemetry feed and keeps it on the robot's ground.
    */
   const localNavRef = React.useRef<LocalNavLayer | null>(null);
+  // The 3D map's columns, which the costmap is draped over: one pass over the
+  // keys per map, not per frame, and kept across a theme change.
+  const voxelStacks = React.useMemo(() => (voxels ? columnStacks(voxels) : null), [voxels]);
   /**
    * The feed's costmap and trajectory last handed to the layer, compared by
    * identity like the pose. Reset by a scene rebuild, so the new layer is
@@ -722,10 +725,10 @@ export function PointCloudCanvas({
       }
 
       // The local costmap and trajectory lie on the ground the machine stands
-      // on (its body height under base_link), never under the ground floor, as
-      // the route's band is held over it.
+      // on (its body height under base_link), lifted off the drift just under
+      // the ground floor as the route's band is.
       if (cur) {
-        localNav.setGround(Math.max(cur.z - ROBOT_BASE_HEIGHT_M, GROUND_FLOOR_Z_M));
+        localNav.setGround(snapToGroundFloor(cur.z - ROBOT_BASE_HEIGHT_M));
       }
 
       // An initial-pose drag draws the robot at the dragged pose, un-eased so
@@ -1216,7 +1219,7 @@ export function PointCloudCanvas({
   // rebuild.
   React.useEffect(() => {
     const ctx = sceneRef.current;
-    if (!ctx || !voxels) return;
+    if (!ctx || !voxels || !voxelStacks) return;
 
     const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const layer = createVoxelLayer(voxels, { ghostColor: theme.voxelGhost });
@@ -1231,6 +1234,11 @@ export function PointCloudCanvas({
     // floor's own hue; over the map both go pale.
     const localNav = localNavRef.current;
     localNav?.setOverMap(true);
+    // The costmap lies on the ground the map shows, as the route does, rather
+    // than one plane at the robot's feet that cut into a slope ahead of it.
+    localNav?.setSurface((wx, wy, z, reach) =>
+      surfaceTopNear(voxels, voxelStacks, wx, wy, z, reach),
+    );
     pathRibbonRef.current?.setOverMap(true);
     voxelFrameRef.current = layer.frame;
     // The wheel's range follows the box the views now frame, or a 3D map
@@ -1253,12 +1261,13 @@ export function PointCloudCanvas({
       ctx.scene.remove(layer.ghost);
       layer.dispose();
       localNav?.setOverMap(false);
+      localNav?.setSurface(null);
       // The route on screen now, which is not the one there at setup:
       // a new route replaces the band every few seconds.
       pathRibbonRef.current?.setOverMap(false);
       if (voxelFrameRef.current === layer.frame) voxelFrameRef.current = null;
     };
-  }, [voxels, resolvedTheme]);
+  }, [voxels, voxelStacks, resolvedTheme]);
 
   // ---- 3D map floor (band) ----------------------------------------------
   // Two numbers on the layer, not a rebuild. Declared after the layer effect

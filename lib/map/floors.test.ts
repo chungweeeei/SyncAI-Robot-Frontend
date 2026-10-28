@@ -5,6 +5,7 @@ import {
   FLOOR_BAND_BELOW_M,
   FLOOR_GROUND_BELOW_LEVEL_M,
   FOLLOW_STEP_M,
+  GROUND_FLOOR_SNAP_M,
   GROUND_FLOOR_Z_M,
   drawnGround,
   floorBands,
@@ -15,6 +16,7 @@ import {
   followWindow,
   nextFloor,
   sameFloors,
+  snapToGroundFloor,
 } from "@/lib/map/floors";
 import { ROBOT_BASE_HEIGHT_M } from "@/lib/scene/robot-model";
 
@@ -165,6 +167,22 @@ describe("drawnGround", () => {
     const [, second] = floorBands(TWO);
     expect(drawnGround(-0.45)).toBe(-0.45);
     expect(drawnGround(floorGround(second, 5.05))).toBe(5.05);
+  });
+});
+
+describe("snapToGroundFloor", () => {
+  it("lifts the drift just under the ground floor onto it", () => {
+    expect(snapToGroundFloor(GROUND_FLOOR_Z_M - 0.05)).toBe(GROUND_FLOOR_Z_M);
+    expect(snapToGroundFloor(GROUND_FLOOR_Z_M - GROUND_FLOOR_SNAP_M)).toBe(GROUND_FLOOR_Z_M);
+  });
+
+  it("keeps a real lower ground, and every ground over the ground floor", () => {
+    expect(snapToGroundFloor(-2.0)).toBe(-2.0);
+    expect(snapToGroundFloor(GROUND_FLOOR_Z_M - GROUND_FLOOR_SNAP_M - 0.01)).toBeCloseTo(
+      GROUND_FLOOR_Z_M - GROUND_FLOOR_SNAP_M - 0.01,
+    );
+    expect(snapToGroundFloor(-0.45)).toBe(-0.45);
+    expect(snapToGroundFloor(3.0)).toBe(3.0);
   });
 });
 

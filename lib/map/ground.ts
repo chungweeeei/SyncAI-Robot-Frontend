@@ -211,6 +211,39 @@ export function groundAt(
 }
 
 /**
+ * The top face of the surface under a map-frame point whose top lies nearest
+ * the height `z`, metres, searched `reach` either side of it; null off the
+ * tree's box or with no surface in reach (a hole, a wall's column, the void
+ * over a stairwell). The top face rather than the centre, because that is
+ * where the robot's planner puts a route's ground and where a foot lands.
+ * Nearest `z` rather than lowest: under a stair's flight a column holds the
+ * ground and the treads, and the one the robot is on is the one at its own
+ * height. Per draw rather than per pick, so it reads `stacks`, not the keys.
+ */
+export function surfaceTopNear(
+  voxels: OccupiedVoxels,
+  stacks: ColumnStacks,
+  wx: number,
+  wy: number,
+  z: number,
+  reach: number,
+): number | null {
+  const column = columnAt(voxels, wx, wy);
+  if (!column) return null;
+  // The relative kz whose top face is at `z` (fractional), and the band.
+  const kz = z / voxels.res - 1 + OCTREE_KEY_ORIGIN - voxels.keyMin[2];
+  const span = reach / voxels.res;
+  const top = surfaceNear(
+    stacks,
+    column.x + column.y * stacks.width,
+    kz,
+    Math.floor(kz - span),
+    Math.ceil(kz + span),
+  );
+  return top === NO_FLOOR ? null : kzToMetres(top, voxels) + voxels.res / 2;
+}
+
+/**
  * The column under a map-frame point (`x` right, `y` up, the tree's own key
  * order), or null off the tree's box: where a pick stops being on the map.
  */
