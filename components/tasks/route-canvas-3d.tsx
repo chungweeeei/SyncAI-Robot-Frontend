@@ -11,7 +11,7 @@ import { IconButton } from "@/components/tasks/icon-button";
 import { useGpuContext } from "@/hooks/use-gpu-context";
 import { PALETTES, VERTEX_HIT_RADIUS, VERTEX_HIT_RADIUS_TOUCH } from "@/lib/map/draw";
 import { isDrag } from "@/lib/map/gesture";
-import { drawRoute, drawStops, type PlacedStop } from "@/lib/map/preview";
+import { drawRoute, drawStops, type PlacedStop, type RoutePoint } from "@/lib/map/preview";
 import { frameGround } from "@/lib/scene/camera";
 import { createEdlPass, type EdlPass } from "@/lib/scene/edl";
 import { projectStops, stopNear } from "@/lib/scene/route-marks";
@@ -35,10 +35,12 @@ export interface RouteCanvas3dProps {
   /** Vertex id → the job's stop numbers that go there; see stopWaypointOrdinals. */
   steps: ReadonlyMap<string, readonly number[]>;
   /** The waypoints in visiting order; see stepRoute. */
-  route: readonly string[];
+  route: readonly RoutePoint[];
   onPick: (vertex: MapVertex) => void;
   /** The waypoint to ring: the stop card the editor is pointing at. */
   highlight?: string | null;
+  /** That stop's row, whose leg in is drawn bold, and whether the rest fade; see drawRoute. */
+  focus?: { key: number; fade: boolean } | null;
   /** The waypoint under a mouse, or null as it leaves one. */
   onHover?: (vertex: MapVertex | null) => void;
   /** The frame's height; the editor's map pane is taller than the default. */
@@ -75,6 +77,7 @@ export function RouteCanvas3d({
   route,
   onPick,
   highlight = null,
+  focus = null,
   onHover,
   className,
   children,
@@ -112,11 +115,23 @@ export function RouteCanvas3d({
     route,
     onPick,
     highlight,
+    focus,
     onHover,
     theme,
   });
   React.useLayoutEffect(() => {
-    latestRef.current = { vertices, band, groundZ, steps, route, onPick, highlight, onHover, theme };
+    latestRef.current = {
+      vertices,
+      band,
+      groundZ,
+      steps,
+      route,
+      onPick,
+      highlight,
+      focus,
+      onHover,
+      theme,
+    };
   });
 
   const frameDirtyRef = React.useRef(true);
@@ -136,6 +151,7 @@ export function RouteCanvas3d({
       steps: marks,
       route: legs,
       highlight: ringed,
+      focus: bold,
       theme: hue,
     } = latestRef.current;
     const placed = projectStops(camera, stops, shown, width, height);
@@ -144,8 +160,10 @@ export function RouteCanvas3d({
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
     context.clearRect(0, 0, width, height);
     const palette = PALETTES[hue];
-    if (legs.length > 1) drawRoute(context, legs, placed, palette.cmd);
-    drawStops(context, stops, placed, marks, palette, ringed);
+    if (legs.length > 1) drawRoute(context, legs, placed, palette.cmd, bold?.key ?? null, bold?.fade);
+    // A single stop is where the job starts and ends; a ring would say nothing.
+    const end = legs.length > 1 ? legs[legs.length - 1]!.vertexId : null;
+    drawStops(context, stops, placed, marks, palette, ringed, end);
   }, []);
 
   const fit = React.useCallback(() => {
@@ -225,7 +243,7 @@ export function RouteCanvas3d({
   // step numbers or a longer route only need the next frame.
   React.useEffect(() => {
     invalidate();
-  }, [vertices, steps, route, highlight, invalidate]);
+  }, [vertices, steps, route, highlight, focus, invalidate]);
 
   /** The last waypoint reported to onHover, so a move over the same one says nothing. */
   const hoveredRef = React.useRef<string | null>(null);

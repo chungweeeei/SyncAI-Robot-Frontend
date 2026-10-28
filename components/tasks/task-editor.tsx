@@ -7,6 +7,7 @@ import {
   ArrowLeftIcon,
   CopyIcon,
   EllipsisIcon,
+  EraserIcon,
   MapPinPlusIcon,
   Redo2Icon,
   SaveIcon,
@@ -210,12 +211,20 @@ export function TaskEditor() {
     setSelected(row.key);
   };
 
-  /** The waypoint the map rings: the card under the pointer, else the selected stop's. */
-  const [cardHover, setCardHover] = React.useState<string | null>(null);
+  /**
+   * The stop the map points at: the card under the pointer, else the
+   * selected stop. Its waypoint is ringed and its leg in drawn bold; only a
+   * hovered card fades the other legs.
+   */
+  const [cardHover, setCardHover] = React.useState<number | null>(null);
   const [mapHover, setMapHover] = React.useState<string | null>(null);
-  const selectedStop =
-    typeof insertAfter === "number" ? steps.find((step) => step.key === insertAfter) : undefined;
-  const highlight = cardHover ?? selectedStop?.vertexId ?? null;
+  const focusKey = cardHover ?? (typeof insertAfter === "number" ? insertAfter : null);
+  const focusStop = focusKey === null ? undefined : steps.find((step) => step.key === focusKey);
+  const highlight = focusStop?.vertexId ?? null;
+  const focus = React.useMemo(
+    () => (focusKey === null ? null : { key: focusKey, fade: cardHover !== null }),
+    [focusKey, cardHover],
+  );
 
   /**
    * Set when Save is pressed without a usable name, so Save points at the
@@ -566,6 +575,7 @@ export function TaskEditor() {
                 route={route}
                 onPick={pickWaypoint}
                 highlight={highlight}
+                focus={focus}
                 onHover={(vertex) => setMapHover(vertex?.id ?? null)}
               />
               <p className="text-[11px] leading-snug text-muted-foreground">
@@ -598,6 +608,22 @@ export function TaskEditor() {
               {summaryParts.join(" · ")}
             </p>
             <div className="ml-auto flex items-center gap-1">
+              {/* Unasked, as removing a stop is: Undo brings the route back
+                * whole. The name and the map stay, which are the job's and
+                * not its route's. */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  edit(() => []);
+                  setSelected(null);
+                }}
+                disabled={steps.length === 0}
+                title="Clear every stop and action"
+              >
+                <EraserIcon data-icon="inline-start" aria-hidden />
+                Clear
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -644,7 +670,7 @@ export function TaskEditor() {
               selected={selection}
               onSelect={setSelected}
               hoveredVertex={mapHover}
-              onHoverVertex={setCardHover}
+              onHoverStop={setCardHover}
               edit={edit}
             />
           </div>

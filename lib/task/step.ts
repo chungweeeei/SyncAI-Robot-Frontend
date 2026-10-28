@@ -259,16 +259,25 @@ export function stepWaypointOrdinals(
   return marks;
 }
 
+/** One point of the route map's line: the stop's row and the waypoint it goes to. */
+export interface RouteStop {
+  key: number;
+  vertexId: string;
+}
+
 /**
  * The waypoints the job goes to, in step order, for the route map's
  * line. A row with no waypoint is passed over rather than breaking the line,
- * and a stop picked twice running is one point, not a zero-length leg.
+ * and a stop picked twice running is one point, not a zero-length leg: the
+ * first of them, since the leg into a point is the walk to that stop.
  */
-export function stepRoute(drafts: readonly StepDraft[]): string[] {
-  const route: string[] = [];
+export function stepRoute(drafts: readonly StepDraft[]): RouteStop[] {
+  const route: RouteStop[] = [];
   for (const draft of drafts) {
     if (!isNavStep(draft) || draft.vertexId === null) continue;
-    if (route[route.length - 1] !== draft.vertexId) route.push(draft.vertexId);
+    if (route[route.length - 1]?.vertexId !== draft.vertexId) {
+      route.push({ key: draft.key, vertexId: draft.vertexId });
+    }
   }
   return route;
 }

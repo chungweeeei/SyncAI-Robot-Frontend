@@ -7,6 +7,7 @@ import { RouteCanvas3d } from "@/components/tasks/route-canvas-3d";
 import { useMapFloors } from "@/hooks/use-map-floors";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
 import { drawnGround, floorBands, floorGround } from "@/lib/map/floors";
+import type { RoutePoint } from "@/lib/map/preview";
 import type { MapVertex } from "@/lib/types/map";
 
 /**
@@ -22,11 +23,13 @@ export interface RouteMapProps {
   /** Vertex id → the job's stop numbers that go there; see stopWaypointOrdinals. */
   stopMarks: ReadonlyMap<string, readonly number[]>;
   /** The waypoints in visiting order; see stepRoute. */
-  route: readonly string[];
+  route: readonly RoutePoint[];
   /** Adds the waypoint as a stop; absent while the job runs, when the map only shows. */
   onPick?: (vertex: MapVertex) => void;
   /** The waypoint the stop card under the pointer or selected goes to. */
   highlight: string | null;
+  /** That stop's row, whose leg in is drawn bold; a hovered card fades the rest. */
+  focus: { key: number; fade: boolean } | null;
   onHover: (vertex: MapVertex | null) => void;
 }
 
@@ -46,6 +49,7 @@ export function RouteMap({
   route,
   onPick,
   highlight,
+  focus,
   onHover,
 }: RouteMapProps) {
   const tree = useMapOctomap(mapName);
@@ -70,6 +74,7 @@ export function RouteMap({
           route={route}
           onPick={pick}
           highlight={highlight}
+          focus={focus}
           onHover={onHover}
           className={MAP_HEIGHT}
         >
