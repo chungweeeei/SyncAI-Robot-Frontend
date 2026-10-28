@@ -10,11 +10,30 @@ import type { LocalCostmap, PlannedPath } from "@/lib/types/robot";
 /*
  * Both lie on the robot's own ground (setGround), not on the ground floor or a
  * height of their own: the robot sends them planar, and they are about the
- * storey it stands on. The costmap under the route (PATH_Z_M, 0.012), so the
- * route stays readable across it; the trajectory over the route, since it is
- * the robot's next step along it.
+ * storey it stands on. With the 3D map up the costmap is draped over the
+ * ground it shows instead (setSurface), since one plane at the robot's feet
+ * cut into a slope ahead and floated over one behind. The costmap under the
+ * route (PATH_Z_M, 0.012), so the route stays readable across it; the
+ * trajectory over the route, since it is the robot's next step along it.
  */
 const COSTMAP_Z_M = 0.006;
+/*
+ * The drape's vertex spacing, metres: the 3D map's own cell (0.1 m on every
+ * map so far), so each column's ground gets a vertex and nothing finer is
+ * invented between them. A 4 m costmap is 41 x 41 vertices, re-read twice a
+ * second.
+ */
+const DRAPE_STEP_M = 0.1;
+/*
+ * How far from the robot's ground a vertex looks for the map's, metres. The
+ * costmap reaches 2.8 m from the robot at its corners, a 20 degree slope (the
+ * steepest the planner takes) rises 1.0 m over it; a storey's slab is three
+ * times as far, so the floor above or below is never taken for this one.
+ */
+const DRAPE_REACH_M = 1.0;
+/* As the route's band (path-ribbon.ts): the floor's sprites stand up through
+ * a sheet at their tops from any oblique view. */
+const POLYGON_OFFSET = -4;
 const LOCAL_PLAN_Z_M = 0.02;
 /* Narrower than the route (0.12) and the dock's approach, so it reads as a
  * thread through the band rather than a second band; with its rim it is
@@ -70,6 +89,65 @@ export function costmapRgba(cells: Uint8Array, color: number, out?: Uint8Array):
   return rgba;
 }
 
+/**
+ * The ground under a map-frame point nearest the height `z`, searched `reach`
+ * either side of it, metres; null where the map shows none in reach.
+ */
+export type SurfaceSampler = (wx: number, wy: number, z: number, reach: number) => number | null;
+
+/**
+ * Heights for a `cols` x `rows` vertex lattice (row-major, `samples`' order),
+ * with every vertex the map had no ground for filled in from its neighbours:
+ * a wall's column or a hole would otherwise pull the sheet down to the robot's
+ * ground in a spike. Spread outward one ring a pass, the mean of the known
+ * 4-neighbours; what is left after `cols + rows` passes has no known vertex
+ * anywhere and takes `fallback`.
+ */
+export function fillHeights(
+  samples: (number | null)[],
+  cols: number,
+  rows: number,
+  fallback: number,
+): Float32Array {
+  const heights = new Float32Array(samples.length);
+  const known = new Uint8Array(samples.length);
+  samples.forEach((h, i) => {
+    if (h !== null) {
+      heights[i] = h;
+      known[i] = 1;
+    }
+  });
+  for (let pass = 0; pass < cols + rows; pass++) {
+    const next: [number, number][] = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const i = r * cols + c;
+        if (known[i]) continue;
+        let sum = 0;
+        let n = 0;
+        for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const cc = c + dc;
+          const rr = r + dr;
+          if (cc < 0 || rr < 0 || cc >= cols || rr >= rows) continue;
+          const j = rr * cols + cc;
+          if (known[j]) {
+            sum += heights[j];
+            n++;
+          }
+        }
+        if (n) next.push([i, sum / n]);
+      }
+    }
+    if (!next.length) break;
+    for (const [i, h] of next) {
+      heights[i] = h;
+      known[i] = 1;
+    }
+  }
+  for (let i = 0; i < heights.length; i++) if (!known[i]) heights[i] = fallback;
+  return heights;
+}
+
 export interface LocalNavLayer {
   group: THREE.Group;
   /** Draw a costmap; undefined, or the `width` 0 clear, hides it. */
@@ -83,14 +161,20 @@ export interface LocalNavLayer {
   setOverMap: (over: boolean) => void;
   /** The ground the robot stands on, map-frame metres: where both lie. */
   setGround: (z: number) => void;
+  /**
+   * The 3D map's ground, which the costmap is draped over from its next
+   * frame; null lays it flat on the robot's ground again, at once.
+   */
+  setSurface: (sample: SurfaceSampler | null) => void;
   dispose: () => void;
 }
 
 /**
- * The costmap as one textured quad and the trajectory as a dashed thread, in
+ * The costmap as one textured sheet and the trajectory as a dashed thread, in
  * one group. Mutable rather than rebuilt per frame: the costmap arrives twice
  * a second at a fixed size, so its texture is rewritten in place, and the
- * group's height follows the robot every drawn frame.
+ * group's height follows the robot every drawn frame. Draped, the sheet's
+ * vertices carry map-frame heights, and its frame cancels the group's.
  */
 export function createLocalNavLayer(theme: Theme): LocalNavLayer {
   const group = new THREE.Group();
@@ -99,15 +183,23 @@ export function createLocalNavLayer(theme: Theme): LocalNavLayer {
   const costmapFrame = new THREE.Group();
   group.add(costmapFrame);
 
-  // A unit quad with its corner at the origin, scaled to the grid's size, so
-  // the texture's (0, 0) texel lands on the costmap's origin cell.
-  const geometry = new THREE.PlaneGeometry(1, 1);
-  geometry.translate(0.5, 0.5, 0);
+  // A sheet in metres with its corner at the origin, so the texture's (0, 0)
+  // texel lands on the costmap's origin cell: one quad flat, a lattice of
+  // DRAPE_STEP_M draped.
+  const makeSheet = (sizeX: number, sizeY: number, cols: number, rows: number) => {
+    const sheet = new THREE.PlaneGeometry(sizeX, sizeY, cols, rows);
+    sheet.translate(sizeX / 2, sizeY / 2, 0);
+    return sheet;
+  };
+  let geometry = makeSheet(1, 1, 1, 1);
   const material = new THREE.MeshBasicMaterial({
     transparent: true,
     // Its own cells blend; it must not hide the route drawn just above it.
     depthWrite: false,
     side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: POLYGON_OFFSET,
+    polygonOffsetUnits: POLYGON_OFFSET,
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.z = COSTMAP_Z_M;
@@ -124,6 +216,57 @@ export function createLocalNavLayer(theme: Theme): LocalNavLayer {
   let costmapColor = theme.localCostmap;
   // The cells on screen, so a hue change repaints them without a new frame.
   let shownCells: Uint8Array | null = null;
+  let surface: SurfaceSampler | null = null;
+  let shownCostmap: LocalCostmap | null = null;
+  let ground = 0;
+  let draped = false;
+  // The sheet's size and lattice, so a costmap of the same shape reuses it.
+  let sheetKey = "";
+
+  /** The sheet for `costmap`: flat, or draped over `surface` at map heights. */
+  const shapeSheet = (costmap: LocalCostmap) => {
+    const sizeX = costmap.width * costmap.resolution;
+    const sizeY = costmap.height * costmap.resolution;
+    const cols = surface ? Math.max(1, Math.round(sizeX / DRAPE_STEP_M)) : 1;
+    const rows = surface ? Math.max(1, Math.round(sizeY / DRAPE_STEP_M)) : 1;
+    const key = `${sizeX}:${sizeY}:${cols}:${rows}`;
+    if (key !== sheetKey) {
+      geometry.dispose();
+      geometry = makeSheet(sizeX, sizeY, cols, rows);
+      mesh.geometry = geometry;
+      sheetKey = key;
+    }
+    const position = geometry.getAttribute("position") as THREE.BufferAttribute;
+    if (!surface) {
+      for (let i = 0; i < position.count; i++) position.setZ(i, 0);
+      position.needsUpdate = true;
+      draped = false;
+      costmapFrame.position.z = 0;
+      return;
+    }
+    const cos = Math.cos(costmap.origin.yaw);
+    const sin = Math.sin(costmap.origin.yaw);
+    const samples: (number | null)[] = [];
+    for (let i = 0; i < position.count; i++) {
+      const lx = position.getX(i);
+      const ly = position.getY(i);
+      samples.push(
+        surface(
+          costmap.origin.x + cos * lx - sin * ly,
+          costmap.origin.y + sin * lx + cos * ly,
+          ground,
+          DRAPE_REACH_M,
+        ),
+      );
+    }
+    // PlaneGeometry's vertices run row by row, cols + 1 to a row.
+    const heights = fillHeights(samples, cols + 1, rows + 1, ground);
+    for (let i = 0; i < position.count; i++) position.setZ(i, heights[i]);
+    position.needsUpdate = true;
+    geometry.computeBoundingSphere();
+    draped = true;
+    costmapFrame.position.z = -ground;
+  };
 
   const dropPlan = () => {
     if (!plan) return;
@@ -143,6 +286,7 @@ export function createLocalNavLayer(theme: Theme): LocalNavLayer {
       ) {
         mesh.visible = false;
         shownCells = null;
+        shownCostmap = null;
         return;
       }
       if (!texture || texWidth !== costmap.width || texHeight !== costmap.height) {
@@ -165,9 +309,10 @@ export function createLocalNavLayer(theme: Theme): LocalNavLayer {
       texture.needsUpdate = true;
       shownCells = costmap.cells;
 
-      mesh.scale.set(costmap.width * costmap.resolution, costmap.height * costmap.resolution, 1);
       costmapFrame.position.set(costmap.origin.x, costmap.origin.y, 0);
       costmapFrame.rotation.z = costmap.origin.yaw;
+      shapeSheet(costmap);
+      shownCostmap = costmap;
       mesh.visible = true;
     },
     setPlan: (next) => {
@@ -202,6 +347,15 @@ export function createLocalNavLayer(theme: Theme): LocalNavLayer {
     },
     setGround: (z) => {
       group.position.z = z;
+      ground = z;
+      // Draped, the sheet's heights are the map's: the group's lift is undone.
+      if (draped) costmapFrame.position.z = -z;
+    },
+    setSurface: (sample) => {
+      surface = sample;
+      // Off the map at once; onto it with the next costmap, which comes
+      // within half a second while a navigation runs.
+      if (!sample && shownCostmap) shapeSheet(shownCostmap);
     },
     dispose: () => {
       dropPlan();

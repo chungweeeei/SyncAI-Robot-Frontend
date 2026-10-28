@@ -9,6 +9,7 @@ import {
   costAlpha,
   costmapRgba,
   createLocalNavLayer,
+  fillHeights,
 } from "@/lib/scene/local-nav-layer";
 import { createPathRibbon } from "@/lib/scene/path-ribbon";
 import { THEMES } from "@/lib/scene/theme";
@@ -81,13 +82,71 @@ describe("createLocalNavLayer", () => {
     expect(frame.rotation.z).toBeCloseTo(Math.PI / 2);
     const mesh = quad(layer.group);
     expect(mesh.visible).toBe(true);
-    expect(mesh.scale.x).toBeCloseTo(0.1);
-    expect(mesh.scale.y).toBeCloseTo(0.1);
 
-    // The unit quad runs from the corner, so texel (0, 0) is the origin cell.
+    // The sheet runs from the corner, so texel (0, 0) is the origin cell, and
+    // spans the grid: two cells of 0.05 m.
     mesh.geometry.computeBoundingBox();
     expect(mesh.geometry.boundingBox!.min.x).toBeCloseTo(0);
-    expect(mesh.geometry.boundingBox!.max.y).toBeCloseTo(1);
+    expect(mesh.geometry.boundingBox!.max.x).toBeCloseTo(0.1);
+    expect(mesh.geometry.boundingBox!.max.y).toBeCloseTo(0.1);
+    layer.dispose();
+  });
+
+  it("drapes the costmap over the map's ground, at map heights whatever the robot's", () => {
+    const layer = createLocalNavLayer(THEMES.light);
+    layer.setGround(-0.5);
+    // A slope rising 0.5 m a metre along the map's x.
+    layer.setSurface((wx) => -0.5 + 0.5 * wx);
+    layer.setCostmap(costmap({ width: 20, height: 20, cells: new Uint8Array(400), origin: { x: 0, y: 0, yaw: 0 } }));
+
+    const mesh = quad(layer.group);
+    const position = mesh.geometry.getAttribute("position");
+    const frame = layer.group.children[0] as THREE.Group;
+    // A vertex's height on screen: its own, plus its frame's, plus the group's.
+    const worldZ = (i: number) => position.getZ(i) + frame.position.z + layer.group.position.z;
+    for (let i = 0; i < position.count; i++) {
+      expect(worldZ(i)).toBeCloseTo(-0.5 + 0.5 * position.getX(i));
+    }
+
+    // The robot walks on: its ground moves, the sheet stays on the map's.
+    layer.setGround(-0.3);
+    for (let i = 0; i < position.count; i++) {
+      expect(worldZ(i)).toBeCloseTo(-0.5 + 0.5 * position.getX(i));
+    }
+    layer.dispose();
+  });
+
+  it("follows the map's yaw-turned frame when sampling the ground", () => {
+    const layer = createLocalNavLayer(THEMES.light);
+    const seen: [number, number][] = [];
+    layer.setSurface((wx, wy) => {
+      seen.push([wx, wy]);
+      return 0;
+    });
+    // Turned a quarter: the costmap's own x runs along the map's y.
+    layer.setCostmap(costmap({ width: 20, height: 2, cells: new Uint8Array(40), origin: { x: 1, y: 2, yaw: Math.PI / 2 } }));
+    const xs = seen.map(([x]) => x);
+    const ys = seen.map(([, y]) => y);
+    expect(Math.min(...ys)).toBeCloseTo(2);
+    expect(Math.max(...ys)).toBeCloseTo(3);
+    expect(Math.max(...xs)).toBeCloseTo(1);
+    expect(Math.min(...xs)).toBeCloseTo(0.9);
+    layer.dispose();
+  });
+
+  it("lies flat on the robot's ground again once the map is gone", () => {
+    const layer = createLocalNavLayer(THEMES.light);
+    layer.setGround(-0.5);
+    layer.setSurface(() => 1.0);
+    layer.setCostmap(costmap({ width: 20, height: 20, cells: new Uint8Array(400), origin: { x: 0, y: 0, yaw: 0 } }));
+    layer.setSurface(null);
+
+    const mesh = quad(layer.group);
+    const position = mesh.geometry.getAttribute("position");
+    const frame = layer.group.children[0] as THREE.Group;
+    expect(frame.position.z).toBe(0);
+    for (let i = 0; i < position.count; i++) expect(position.getZ(i)).toBe(0);
+    expect(layer.group.position.z).toBe(-0.5);
     layer.dispose();
   });
 
@@ -165,5 +224,28 @@ describe("createLocalNavLayer", () => {
     layer.setGround(2.5);
     expect(layer.group.position.z).toBe(2.5);
     layer.dispose();
+  });
+});
+
+describe("fillHeights", () => {
+  it("keeps every height the map had", () => {
+    expect(Array.from(fillHeights([1, 2, 3, 4], 2, 2, 0))).toEqual([1, 2, 3, 4]);
+  });
+
+  it("fills a hole from its neighbours rather than dropping to the robot's ground", () => {
+    // A wall's column in the middle of a level floor at 1 m.
+    const heights = fillHeights([1, 1, 1, 1, null, 1, 1, 1, 1], 3, 3, -5);
+    expect(heights[4]).toBeCloseTo(1);
+  });
+
+  it("reaches a gap several vertices wide, ring by ring", () => {
+    const heights = fillHeights([2, null, null, null, null], 5, 1, -5);
+    expect(Array.from(heights)).toEqual([2, 2, 2, 2, 2]);
+  });
+
+  it("takes the fallback where the map has no ground at all", () => {
+    expect(Array.from(fillHeights([null, null], 2, 1, -0.48))).toEqual(
+      [-0.48, -0.48].map((h) => Math.fround(h)),
+    );
   });
 });
