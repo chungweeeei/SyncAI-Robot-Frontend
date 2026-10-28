@@ -19,10 +19,9 @@ const DIRTY_REASON =
  * its button, where a double-click on a grid of names is undiscoverable.
  *
  * Shares MapRenameControl's rules, but shows the backend's refusals
- * (`map_active`, `conversion_running`, `name_taken`) rather than pre-greying —
- * it has no MapSummary to grey from. Its own refusal is `dirty`: a rename
- * navigates to the new route, which reloads the grid and would throw unsaved
- * cells away.
+ * (`map_active`, `name_taken`) rather than pre-greying — it has no
+ * MapSummary to grey from. Its own refusal is `dirty`: a rename navigates to
+ * the new route, which reloads the editor and would throw unsaved edits away.
  *
  */
 export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }) {
@@ -83,9 +82,7 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
           setEditing(false);
           setNote(result.message);
           // replace, not push: the old URL names a directory that no longer
-          // exists. The query (view, mode or tool, back target) rides along,
-          // so a 3D view stays one and does not open a floor plan the map
-          // may not have.
+          // exists. The query (tool, back target) rides along.
           router.replace(`/maps/${encodeURIComponent(trimmed)}/edit${window.location.search}`);
         },
       },

@@ -41,7 +41,7 @@ const POLYGON_OFFSET = -4;
  * How far the casing lies under its core. On one plane the two are cut into
  * different triangles that interpolate depth a hair apart, and the casing
  * striped through the core; 4 mm is well over the depth buffer's step at
- * any distance the map is read from, and still over the floor plan.
+ * any distance the map is read from, and still over the ground.
  */
 const CASING_DROP_M = 0.004;
 /*
@@ -225,9 +225,9 @@ export function createPathRibbon(points: Float32Array, theme: Theme): PathRibbon
   for (let i = 0; i < n; i++) {
     const x = points[i * 3];
     const y = points[i * 3 + 1];
-    // Never under the floor plan: a planner's ground on the ground floor
-    // wanders a few centimetres around it with the odometry's drift, and
-    // under it the whole route would be out of sight beneath the plan.
+    // Never under the ground floor: a planner's ground there wanders a few
+    // centimetres around it with the odometry's drift, and under it the
+    // whole route would be out of sight beneath the floor.
     const z = Math.max(drawnGround(points[i * 3 + 2]), GROUND_FLOOR_Z_M) + PATH_Z_M;
 
     // Tangent from the neighbours (one-sided at the ends), in the ground

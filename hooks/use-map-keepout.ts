@@ -17,7 +17,7 @@ export interface UseMapKeepout {
 }
 
 /**
- * One map's forbidden zones, for the floor plan editor and the dashboard. Not
+ * One map's forbidden zones, for the map editor and the dashboard. Not
  * polled: nothing changes them on its own (see queryKeys.mapKeepout).
  *
  * `null` (not read yet) and `[]` (none) are different facts, and load-bearing:

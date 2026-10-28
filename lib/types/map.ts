@@ -1,16 +1,13 @@
 // The map catalogue, as GET /api/v1/maps returns it (snake_case, mirroring the
-// backend). Not verbatim, fixed up in lib/api/map.ts: `grid.origin` arrives as
-// {x, y, yaw}, and `thumbnail` as a relative path.
+// backend), checked in lib/api/map.ts.
 //
-// A map is a directory under `map/`: the mapping save writes the scan, then a
-// background conversion writes the floor plan. That can lag or fail, which is
-// why `grid` is nullable.
+// A map is a directory under `map/`: the mapping save writes the scan, then
+// the robot's map cleaning builds the 3D map (octomap.bt) minutes later. That
+// can lag or fail, which is why `octomap_status` is more than a yes or no.
 
 import { z } from "zod";
 
-import type { MapMetadata } from "@/lib/types/robot";
-
-export const GridStatusSchema = z.enum([
+export const OctomapStatusSchema = z.enum([
   "none",
   "converting",
   "ok",
@@ -21,46 +18,26 @@ export const GridStatusSchema = z.enum([
 export const VertexTypeSchema = z.enum(["MOVE", "CHARGE"]);
 
 /**
- * How a map's floor plan stands. The three unloadable states are kept apart
- * because they ask different things of the operator:
+ * How a map's 3D map stands. The three unusable states are kept apart because
+ * they ask different things of the operator:
  *
- * - `none` — never converted. Build it.
- * - `failed` — rejected; `grid_error` says why, and the same recipe will fail
- *   the same way.
- * - `interrupted` — the backend went away mid-conversion (restart or mode
- *   switch); a retry very likely works.
+ * - `none` — never built.
+ * - `failed` — the robot's map cleaning rejected it; `octomap_error` says why.
+ * - `interrupted` — the build went away mid-way; a retry very likely works.
  */
-export type GridStatus =
-  | "none"
-  | "converting"
-  | "ok"
-  | "failed"
-  | "interrupted";
+export type OctomapStatus = z.infer<typeof OctomapStatusSchema>;
 
 export interface MapSummary {
   /** Directory name — the identity everything keys off. */
   name: string;
   /**
    * Whether the running stack loaded this map. Server-derived on purpose:
-   * `RobotState.map` is a *path* (`map/dp2f/gridmap.yaml`), and parsing it
+   * `RobotState.map` is a *path*, and parsing it
    * is not the UI's job.
    */
   active: boolean;
-  /** Null until the floor plan conversion has run; the map cannot be loaded then. */
-  grid: MapMetadata | null;
-  /** Null whenever `grid` is null. */
-  thumbnail: string | null;
   /** The scan the localizer relocalizes against. */
   has_pointcloud: boolean;
-  /**
-   * The conversion's only status surface (there is no job resource), so a
-   * client that starts one watches this until it leaves `"converting"`.
-   */
-  grid_status: GridStatus;
-  /** Null unless `"failed"`. Operator-facing; render verbatim. */
-  grid_error: string | null;
-  /** @deprecated Kept for older callers; read `grid_status`. */
-  grid_converting: boolean;
   /** The whole directory, dominated by the scan. */
   size_bytes: number;
   /** ISO 8601, newest file in the directory. */
@@ -68,11 +45,11 @@ export interface MapSummary {
   vertex_count: number;
   /**
    * How the map's 3D map stands — the occupancy tree the robot's map cleaning
-   * writes beside the scan when asked to, which the dashboard draws and the
-   * editor's 3D view patches and places waypoints on. The same five words as
-   * `grid_status`, read off a different file: `none` also covers a save that never asked for one.
+   * writes beside the scan, which the robot navigates on, the dashboard draws
+   * and the editor patches and places waypoints on. Only an `"ok"` map can be
+   * switched to.
    */
-  octomap_status: GridStatus;
+  octomap_status: OctomapStatus;
   /** Null unless `octomap_status` is `"failed"`. Operator-facing; render verbatim. */
   octomap_error: string | null;
   /**
@@ -85,13 +62,6 @@ export interface MapSummary {
   /** Cell edge of the 3D map in metres, null unless `"ok"`. */
   octomap_resolution: number | null;
 }
-
-/**
- * The two conversion recipes. No "auto" (size-based picking misrouted every
- * glass-walled hall). Traversability walls off everything it did not observe,
- * which is why choosing it is an operator act.
- */
-export type GridRecipe = "z-band" | "traversability";
 
 /**
  * Closed, because an unknown value 422s with a validation array rather than a
@@ -109,7 +79,7 @@ export interface MapVertex {
   /** Map frame, metres. */
   x: number;
   y: number;
-  /** **Degrees**, CCW from +x — not radians, unlike `MapMetadata.origin[2]`. */
+  /** **Degrees**, CCW from +x — not radians. */
   theta: number;
   /**
    * Height of the ground the waypoint stands on, metres in the map frame:
@@ -148,8 +118,7 @@ export interface ZonePoint {
  * `z_min` / `z_max` are the floor it forbids on a 3D map: the ground heights,
  * map-frame metres, between which the robot's 3D planner applies it (the
  * ground's z, not the body's). Unset (absent or null) is unbounded, so a zone
- * with neither covers every floor, which is what a floor plan zone means. The
- * floor plan's mask ignores them. `name` is a label. All three come back from
+ * with neither covers every floor. `name` is a label. All three come back from
  * the robot and must go back to it unchanged: a save is the whole list, and a
  * zone sent without its band widens to every storey.
  */

@@ -30,8 +30,7 @@ export interface StagedDraft {
   y: number;
   theta: number;
   /**
-   * The ground height of its floor. The 3D view places on any floor; the
-   * floor plan's stops are on the ground floor's 0, and a move there keeps z.
+   * The ground height of its floor. The editor places on any floor.
    */
   z: number;
 }

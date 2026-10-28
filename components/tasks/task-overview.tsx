@@ -15,7 +15,6 @@ import { useConsoleEstop } from "@/hooks/use-console-estop";
 import { useTaskDispatch } from "@/hooks/use-task-dispatch";
 import { useTaskDraft } from "@/hooks/use-task-draft";
 import type { TaskTemplate } from "@/lib/api/task-template";
-import { dispatchMapLock } from "@/lib/map/run-lock";
 import { draftFromTemplate, draftWouldBeLost } from "@/lib/task/draft-store";
 import { fromTemplateSteps, toDispatchSteps, toTemplateSteps } from "@/lib/task/step";
 import { TASK_TEMPLATE_NAME_MAX } from "@/lib/task/template";
@@ -152,7 +151,6 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
             busy={library.busy}
             activeMapName={activeMap?.name ?? null}
             runDisabled={dispatch.running || robotId === null || stopped}
-            loadedMapHold={dispatchMapLock(activeMap).reason}
             onRun={run}
             onEdit={openInEditor}
             onSchedule={(template) => setSchedulingId(template.id)}

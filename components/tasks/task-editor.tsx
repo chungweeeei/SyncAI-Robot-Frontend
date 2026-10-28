@@ -48,12 +48,11 @@ import { useTaskDraftHistory } from "@/hooks/use-task-draft-history";
 import { useTaskTemplates } from "@/hooks/use-task-templates";
 import { isTypingTarget } from "@/lib/keyboard";
 import type { TaskStepState } from "@/lib/api/task";
-import { editorViews, waypointEditor } from "@/lib/map/links";
+import { canEditMap, waypointEditor } from "@/lib/map/links";
 import { draftIsUnsaved, type TaskDraft } from "@/lib/task/draft-store";
 import {
   isNavStep,
   newStepDraft,
-  stepDockVertices,
   stepDraftsSubmittable,
   stepIdFor,
   stepPatchFromVertex,
@@ -149,13 +148,11 @@ export function TaskEditor() {
     () => maps?.find((map) => map.name === mapName) ?? null,
     [maps, mapName],
   );
-  const mapGrid = editorMap?.grid ?? null;
-  /** Where this map's waypoints are placed: its floor plan, else its 3D map. */
+  /** Where this map's waypoints are placed: its 3D map, once built. */
   const waypointLink = React.useMemo(
     () => (editorMap ? waypointEditor(editorMap, { from: "tasks" }) : null),
     [editorMap],
   );
-  const views = React.useMemo(() => (editorMap ? editorViews(editorMap) : []), [editorMap]);
   const list = useMapVertexList(mapName);
   const vertices = list.vertices;
   // The catalogue's state first, so "no-map" never means "not asked yet".
@@ -164,7 +161,6 @@ export function TaskEditor() {
   const { floors } = useMapFloors(mapName);
 
   const stopMarks = React.useMemo(() => stopWaypointOrdinals(steps), [steps]);
-  const dockMarks = React.useMemo(() => stepDockVertices(steps), [steps]);
   const route = React.useMemo(() => stepRoute(steps), [steps]);
   const vertexName = React.useCallback(
     (id: string) => vertices.find((vertex) => vertex.id === id)?.name ?? null,
@@ -538,12 +534,12 @@ export function TaskEditor() {
         >
           <div className="flex flex-wrap items-center gap-1.5">
             <MapPicker maps={maps} value={mapName} disabled={false} onPick={selectMap} />
-            {/* Opens the map's floor plan editor in Waypoints mode, or its
-              * 3D map with Waypoint armed; its back button returns here. */}
+            {/* Opens the map's editor with Waypoint armed; its back button
+              * returns here. */}
             {waypointLink !== null && (
               <Link
                 href={waypointLink.href}
-                aria-label={`Add waypoints on the ${waypointLink.surface}`}
+                aria-label="Add waypoints on the 3D map"
                 className="instrument-label flex h-6 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground"
               >
                 <MapPinPlusIcon className="size-3.5" aria-hidden />
@@ -555,9 +551,9 @@ export function TaskEditor() {
             <p className="py-6 text-center text-[11px] text-muted-foreground">
               Pick a map to plan this job&apos;s route on.
             </p>
-          ) : views.length === 0 ? (
+          ) : !canEditMap(editorMap) ? (
             <p className="py-6 text-center text-[11px] text-muted-foreground">
-              This map has no floor plan or 3D map to pick waypoints on.
+              This map has no 3D map to pick waypoints on.
             </p>
           ) : (
             <>
@@ -565,11 +561,8 @@ export function TaskEditor() {
                 // A new map starts on its own first view and floor.
                 key={mapName}
                 mapName={mapName}
-                mapGrid={mapGrid}
-                views={views}
                 vertices={vertices}
                 stopMarks={stopMarks}
-                dockMarks={dockMarks}
                 route={route}
                 onPick={pickWaypoint}
                 highlight={highlight}

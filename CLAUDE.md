@@ -84,7 +84,7 @@ in `e2e/`. The split is by what they can actually prove, not by size:
 - **Playwright** covers the flows where a button does something to a real
   machine. Every test installs its own fake backend (`e2e/backend.ts`), so a
   run needs no robot and can hold states a robot will not: unlocalized,
-  mid-conversion, a run started by another console. Assert both halves — what
+  a 3D map mid-build, a run started by another console. Assert both halves — what
   the screen says *and* what the console sent — because a build that posts to
   the wrong endpoint passes a screen-only test.
 - The e2e suite fails on any console error the page logs, which is what catches
@@ -101,9 +101,7 @@ in `e2e/`. The split is by what they can actually prove, not by size:
   bugs were all about the second finger. Every gesture test carries a
   positive control (one finger *does* paint, *does* send a goal), because
   "nothing happened" is also what a canvas that never received the touch
-  reports. And the fake's 1 px floor plan is one cell the size of the canvas:
-  any zoom shrinks it out from under the fingers, so an editor test that
-  strokes or zooms hands `mockBackend` a real grid via `floorPlanPng`.
+  reports.
 - What neither can prove is that the backend really answers in these shapes.
   The fixtures are written from the same interfaces the zod schemas mirror, so
   a drifted fixture fails at the schema boundary rather than passing quietly.
@@ -120,8 +118,10 @@ The stack as built. Correct this section if a choice changes.
 - **TanStack Query v5** for every REST read. One `QueryClient` in
   `components/query-provider.tsx` with `retry: false` and
   `refetchOnWindowFocus: false` — poll intervals are the retry policy.
-- **Raw three.js** (no react-three-fiber) for the 3D viewport, and a 2D
-  `<canvas>` for the gridmap editor. Both are hand-rolled render loops.
+- **Raw three.js** (no react-three-fiber) for the 3D views (the dashboard,
+  the map editor, the task editor's route map), each a hand-rolled render
+  loop; the route map lays a 2D `<canvas>` of screen-sized marks over its
+  scene.
 - **WebRTC (WHEP) in `lib/video/`** reaches the operator as the masthead's
   camera window (`useCameraStream` → `components/console/camera-window.tsx`), a
   movable, resizable panel any screen can open. The `/webrtc-test` bench is the
@@ -129,7 +129,7 @@ The stack as built. Correct this section if a choice changes.
   build — the robot runs a production one — and is kept off an operator's path
   by being unlisted in the nav rail rather than by a 404.
 - **@dnd-kit** (`core` + `sortable`) for the task editor's drag-to-reorder
-  step list. Everything else that drags (the gridmap editor, the camera window,
+  step list. Everything else that drags (the map views, the camera window,
   the thumbstick) is hand-rolled pointer capture; a sortable list is the one
   place a library earned its keep, because it brings the keyboard path, the
   screen-reader announcements and the auto-scroll that a hand-rolled one
@@ -175,9 +175,7 @@ components/
                 Conventions)
   dashboard/    3D viewport (pointcloud-canvas) with the pose laid over its
                 corner — its layers are the saved scan, the robot's 3D map
-                (the occupancy tree, off by default like the scan under a
-                floor plan and on by default without one, drawn whether or
-                not the map has a floor plan, one floor at a time
+                (the occupancy tree, on by default, one floor at a time
                 on a map that spans storeys — the floors under it faint
                 in one neutral (VoxelLayer.ghost), and a switch carrying
                 the camera to the new floor's ground (liftView), so 2F
@@ -194,8 +192,8 @@ components/
                 the lowest cell of the column under it, however the ground
                 slopes — the robot's planner looks for the ground only a
                 metre either side of the z, so a 0 on a slope was out of its
-                reach; a 2D map, one without an octomap.bt, has no ground to
-                read, so its picks stay at 0), zones
+                reach; until the tree is read there is no ground to read,
+                so picks stay at 0), zones
                 and the path (on
                 the ground it crosses, so a route up a stair is on both
                 storeys; with a floor picked,
@@ -214,26 +212,21 @@ components/
   mapping/      the mode switch (the rail), the run strip over the viewport
                 (Start, then a recording-style indicator beside Save and New
                 map — its face is lib/map/run-face.ts), the save dialog (the
-                name, and which of the floor plan and the 3D map to build —
-                lib/map/save-outputs.ts: the floor plan alone by default, at
-                least one), the
-                refusal panel under the strip and the save receipt's two
-                lines: the floor plan conversion and the 3D map build
-  maps/         map library cards (each tile the map's 3D map when it has
-                one — a still drawn in the browser once the card nears the
-                screen, lib/scene/voxel-snapshot.ts, each storey cut under
-                its ceiling — else its floor plan thumbnail, and the floor
-                plan again when the tree cannot be read), and the map's
-                editor (/maps/[name]/edit, map-editor: one page, two views,
-                the 2D / 3D switch in its header for a map with both and
-                the view in the URL — which views a map has is
-                lib/map/links.ts's editorViews): the gridmap editor
-                (map-grid-editor, grid-canvas) and the 3D view
-                (?view=3d, map-3d-editor, map-3d-canvas: the 3D map in 3D,
-                orbited freely, its heights narrowed by a band or a floor
-                picked in the column under the Draw strip; worked like the
-                floor plan — a Draw list on the right (Ground patch or
-                Waypoint) picks what the tools on the left are; a Fill or
+                name alone: the robot builds the 3D map after every save),
+                the refusal panel under the strip and the save receipt's
+                line on the 3D map build (useMapBuild)
+  maps/         map library cards (each tile the map's 3D map — a still
+                drawn in the browser once the card nears the screen,
+                lib/scene/voxel-snapshot.ts, each storey cut under its
+                ceiling — else a placeholder saying there is none; a chip
+                and a note say a 3D map building, failed or stopped), and
+                the map's editor (/maps/[name]/edit, map-editor's header
+                over map-3d-editor and map-3d-canvas, opened only for a map
+                whose 3D map is built — lib/map/links.ts's canEditMap: the
+                3D map in 3D, orbited freely, its heights narrowed by a band
+                or a floor picked in the column under the Draw strip; a Draw
+                list on the right (Ground patch, Waypoint or Forbidden
+                zone) picks what the tools on the left are; a Fill or
                 Erase brush that patches the holes the lidar never saw — it
                 aims at the surface under the pointer (a tread, a landing,
                 the rim of the hole it is over; never a wall's face), so a
@@ -241,19 +234,19 @@ components/
                 and says so when there is no floor near to read; its rules are
                 lib/map/ground-fill.ts, its save a record the robot's own
                 tool applies, and its unsaved patches guard Back and the
-                2D / 3D switch as the floor plan's edits do; and Place and
+                title's rename; and Place and
                 Remove for waypoints — the dashboard's place, tap, re-place
-                and delete, but staged as the floor plan's are and sent by
+                and delete, but staged and sent by
                 Save (Place stays armed for a run of stops; Remove asks
                 first, since waypoints have no undo here); Move drags a
                 stop to a new spot, its heading kept; and with Waypoint
                 chosen a list on the left names every stop on the map
-                (map-3d-waypoint-panel, the floor plan's list reused),
-                whose rows, and Select's taps on the map, make a set
-                that one Delete takes, asked once — which is
-                where a map with no floor plan gets its waypoints: the
-                card's pencil opens it there, and the task editor's links
-                with Waypoint chosen and Place armed)
+                (map-3d-waypoint-panel), whose rows, and Select's taps on
+                the map, make a set that one Delete takes, asked once —
+                which is where a map gets its waypoints: the task editor's
+                links open it with Waypoint chosen and Place armed. A
+                waypoint's name and type are set when it is placed; there
+                is no form to rename, retype or type in a pose)
   recordings/   bag recorder and list
   tasks/        the /tasks overview: the saved tasks grouped by map (the
                 loaded one first, then the tasks bound to no map, then the
@@ -270,12 +263,10 @@ components/
                 menu; running and scheduling stay on /tasks), and two
                 columns from lg — the
                 map (route-map: a click on a waypoint adds a stop, a Dock on
-                a charger, after the stop selected, else at the end; on the
-                floor plan preview, or, for a map with a 3D map,
-                route-canvas-3d: the tree in 3D with the floor plan's marks
+                a charger, after the stop selected, else at the end;
+                route-canvas-3d: the tree in 3D with flat marks
                 projected over it at screen size, since a metre-sized pin is
-                two pixels over a building, and a 2D / 3D switch for a map
-                with both, as editorViews offers; the card under the pointer
+                two pixels over a building; the card under the pointer
                 is ringed on it and the waypoint under the pointer lights its
                 cards) beside the stops, under a Route strip of the job's
                 summary and Undo / Redo (stop-list: what is done before
@@ -310,37 +301,33 @@ hooks/          one hook per backend interaction; the only place components get 
                 use-history-filter, use-leave-guard, use-undo-history,
                 use-view-commands, use-gpu-context): React glue over a lib/
                 module or a browser API, never a second home for the logic
-                itself. use-zone-editing is both map editors' forbidden zones:
+                itself. use-zone-editing is the map editor's forbidden zones:
                 lib/map/zone-session.ts's reducer and the keepout write
 lib/
   api/          typed fetchers per backend router, config.ts, http.ts, query-keys.ts
                 (requests only — mirrored validation rules live with their domain)
   ros/          WebSocket clients + frame decoders (telemetry, point cloud, teleop)
-  map/          gridmap maths: view transforms, patches, session, vertex helpers,
-                name rule, the 2D drawing (draw.ts), the editor's vocabulary,
-                the forbidden zone rules (zone.ts: corner count, close-on-first,
+  map/          map rules: vertex helpers, name rule, the route map's flat
+                marks (draw.ts: palette and marker; preview.ts: stops,
+                route legs and which captions fit), the forbidden zone rules (zone.ts: corner count, close-on-first,
                 point-in-polygon pick, and a zone's floor band: zoneBandAround,
-                and what an editor does with a press's verdict, as a reducer
-                both editors share: zone-session.ts,
+                and what the editor does with a press's verdict, as a
+                reducer: zone-session.ts,
                 zoneGround, zoneOnFloor — `z_min` / `z_max` are the ground
                 heights the robot's 3D planner applies a zone between, unset
                 = every floor, and must go back on every save, since a zone
                 sent without them widens to every storey), the editor's staged waypoints
                 (vertex-stage.ts: local ids, the save plan, the rebase after
-                a partial save), the editor's one undo history over strokes
-                and waypoint edits (history.ts, on patch.ts's stack) and
-                the task editor's floor plan preview (preview.ts: fit, markers,
-                hit test), the gesture rules both map surfaces share
-                (gesture.ts: press intent, drag deadzone, heading, band), the
-                job lock (run-lock.ts), where a map's waypoints are placed
-                (links.ts: waypointEditor — the editor's floor plan view, else
-                its 3D view, else nowhere — the rule every link offering to
-                place them goes through) and which views the map editor offers
-                (editorViews: the floor plan unless it is mid-conversion,
-                then a finished 3D map; the first is where the pencil opens,
-                and a bare /edit is always the floor plan), which maps the robot may be switched
-                onto (switch.ts: a floor plan or a 3D map, either one — the
-                backend's rule), the mapping run strip's face rule
+                a partial save), the byte-capped undo stack the editors'
+                histories sit on (undo.ts), the gesture rules every canvas
+                shares (gesture.ts: drag deadzone, heading, zoom step), the
+                job lock (run-lock.ts), the editor's links (links.ts:
+                mapEditorHref; canEditMap — a built 3D map, or nothing to
+                open; waypointEditor — the editor with Waypoint armed, else
+                nowhere — the rule every link offering to place waypoints
+                goes through), which maps the robot may be switched onto
+                (switch.ts: a scan and a built 3D map — the backend's rule,
+                409 `octomap_missing` otherwise), the mapping run strip's face rule
                 (run-face.ts: what the robot's run state lets the strip offer)
                 and the robot's 3D map (octree.ts: the `.bt` decoder — the
                 occupancy tree's own compact form, read into its occupied
@@ -348,9 +335,9 @@ lib/
                 and the e2e fake build trees with), with where it shows the
                 ground (ground.ts: each column's floor inside a height
                 band, the floor a band mostly stands on, which the editor's
-                3D view frames itself on, the ground under a point and the
+                editor frames itself on, the ground under a point and the
                 column under it, and every column's cells as stacks, where
-                a surface is the top of a run) and the 3D view's brush rules
+                a surface is the top of a run) and the editor's brush rules
                 on top of it (ground-fill.ts: the surface a pointer aims at,
                 a patch's height — the median of the surfaces nearest the
                 hole within half a metre of the aim, so a hole in a tread
@@ -362,8 +349,7 @@ lib/
                 both)), the z a placed waypoint is written with
                 (waypoint-ground.ts: the ground under it on the floor
                 picked, a re-placed stop's own with none, else the ground
-                floor's 0 — the rule the dashboard and the editor's 3D view
-                share), and the floors of a
+                floor's 0 — the rule the dashboard and the editor share), and the floors of a
                 map that spans storeys (floors.ts: the band each floor owns —
                 from a metre under its level, so a slab's top is in the
                 floor above, to a cut 1.5 m over it, under the ceiling that
@@ -373,13 +359,13 @@ lib/
                 where a ground height is drawn: the map frame's 0 is a
                 body height over the floor the robot's odometry started
                 on, so the console's 0 for the ground floor is drawn at
-                GROUND_FLOOR_Z_M (drawnGround), and the floor plan with
-                it, or the robot stands half through the plan; the wire
-                keeps its 0)
+                GROUND_FLOOR_Z_M (drawnGround), and the ground floor's
+                marks with it, or the robot stands half through them; the
+                wire keeps its 0)
   scene/        three.js scene building for the 3D viewport: the viewport
                 itself (viewport.ts: renderer, z-up camera, controls, the
                 resize-then-draw, the frame loop, a lost GPU context's
-                events and the teardown, for both 3D views), theme, markers,
+                events and the teardown, for every 3D view), theme, markers,
                 vertex layer, zone layer (a banded zone on its floor's ground,
                 one of every floor at the floor shown), path ribbon, the running dock's
                 staging point and leg (dock-layer.ts), what the robot sees
@@ -388,16 +374,15 @@ lib/
                 opacity, and its trajectory), the 3D map's voxel
                 layer (one cell-sized point per occupied cell, coloured by
                 height, held in height order so a floor is one draw range;
-                it thins the floor plan while up and lends its box to
-                Recenter when there is no floor plan), the eye-dome
+                it lends its box to Recenter and Top down), the eye-dome
                 lighting that outlines the 3D map by depth (edl.ts: the
-                editor's whole 3D view; on the dashboard only the
+                editor's whole view; on the dashboard only the
                 map's own layer, the rest drawn over it against its
                 depth, so a scan point is not ringed), the task editor's
                 waypoints as screen marks over the 3D map (route-marks.ts:
                 projectStops, stopNear), camera policy (the
-                opening, overhead and front framings, and the editor's
-                3D view's: the primary button orbits until a brush or
+                opening, overhead and front framings, and the editor's:
+                the primary button orbits until a brush or
                 Waypoint is armed, then paints or places while the right
                 button orbits), the ground patches' 3D marks, picking,
                 robot mesh
@@ -505,24 +490,18 @@ touch one, prefer moving it toward the rule.
   negotiation, and a hook that hides it would leave the bench with nothing to
   report. The route is unlisted but reachable in every build, since testing the
   video path means testing it on the robot.
-- **One server read outside TanStack Query**, on purpose: `hooks/use-map-grid.ts`
-  owns a mutable `GridSession` holding a cell buffer and a canvas that must be
-  disposed, which is not something a structurally-shared cache should hand
-  around. Everything else that reads the backend is a query.
 - **The canvases are still the biggest components** (`pointcloud-canvas`
-  ~1500 lines, `grid-canvas` ~1100, `map-3d-canvas` ~1000), but what is
-  left is React: refs, effects and the pointer state machines. The scene
-  builders, the viewport, the 2D drawing and the gesture rules moved to
-  `lib/scene/`, `lib/map/draw.ts` and `lib/map/gesture.ts`.
-  The rules are which gesture a press starts, the drag deadzone, the heading
-  of a drag and what a rubber band selects. What stays in the handlers is
-  acting on them: pointer capture, the cell stamps and the blits.
+  ~1500 lines, `map-3d-canvas` ~1000), but what is left is React: refs,
+  effects and the pointer state machines. The scene builders, the viewport,
+  the route map's flat marks and the gesture rules moved to `lib/scene/`,
+  `lib/map/draw.ts` and `lib/map/gesture.ts`. What stays in the handlers is
+  acting on them: pointer capture and the raycasts.
 
 ## Data layer conventions
 
 - **Fetchers** live in `lib/api/<router>.ts` and go through `lib/api/http.ts`.
   There are exactly two doors: `requestJson` for a JSON answer, `requestRaw`
-  for one that is not (the gridmap image, the map point cloud). Nothing under
+  for one that is not (the map scan, the 3D map, an export archive). Nothing under
   `lib/api/` or `lib/ros/` calls `fetch` itself, so the way a refusal becomes
   an `Error` is written once. `lib/video/` is the exception and stays one: WHIP
   and WHEP exchange SDP and read a `Location` header, which is not this
@@ -608,7 +587,7 @@ touch one, prefer moving it toward the rule.
   the error would do it twice.
 - **Query keys** all live in `lib/api/query-keys.ts`, one object, documented per
   key. Cache *sharing* is deliberate and visible there: `mapVertices(name)` is
-  read by both the gridmap editor and the dashboard so a vertex moved on one is
+  read by both the map editor and the dashboard so a vertex moved on one is
   current on the other — at once from the dashboard, which writes through, and
   on Save from the editor, which stages its edits and seeds itself from the
   key once. Never inline a key. The few mutations another part of the console must see
@@ -617,9 +596,9 @@ touch one, prefer moving it toward the rule.
   time (409 `wifi_busy`) and every such button greys while one runs.
 - **Polling policy**: poll only while the server is changing something on its
   own, and let the status that triggered the poll switch it off (`useMaps`
-  while `grid_status === "converting"`, at 5 s instead of 2 s while only an
-  `octomap_status` is — the robot's map cleaning takes minutes, and a listing
-  walks every map directory — and `useRecordings` while a bag is live).
+  every 5 s while an `octomap_status` is `"converting"` — the robot's map
+  cleaning takes minutes, and a listing walks every map directory — and
+  `useRecordings` while a bag is live).
   Two console-wide polls are mounted once in `app/layout.tsx`:
   `RobotStateProvider` (1 Hz) and `ActiveTaskProvider` (2 s). Pages read those
   providers; they do not start their own `robotState` poll. `/mapping` adds
@@ -650,15 +629,13 @@ touch one, prefer moving it toward the rule.
   names a time that has passed, which is what `upcomingRun` steps over.
 - **Invalidate across keys.** A rename or activate on a map changes task
   templates (`map_name`, `map_matches_active`); vertex CRUD changes map
-  vertex counts and template resolution; a grid save or convert, a mapping
-  save, and a map rename or delete change the floor plan raster the task
-  editor draws (`mapImage`); a mapping save and a map rename or delete also
-  change the scan the dashboard's "Map scan" layer draws (`mapPointCloud`),
-  which a grid save or convert leaves alone, and the same writes drop the
+  vertex counts and template resolution; a mapping save and a map rename or
+  delete change the scan the dashboard's "Map scan" layer draws
+  (`mapPointCloud`), and the same writes drop the
   decoded 3D map (`mapOctomap`, by its name-only prefix) and its ground
   patches (`mapOctomapEdits`) and its floors (`mapFloors`, detected from
   the walk a mapping save replaces); a floor save writes its answer into
-  `mapFloors`, which the dashboard and the editor's 3D view share; a ground
+  `mapFloors`, which the dashboard and the editor share; a ground
   patch save writes its own list back as the next read and leaves
   `mapOctomap` alone, since the tree only changes on the robot, by its
   tool, which the catalogue's version reports (the dashboard reads the same
@@ -673,34 +650,28 @@ touch one, prefer moving it toward the rule.
   drops every key that belongs to the map through `mapScopedKeys`, and a
   rule test fails when a `map-…` key taken by name is missing from it.
 - **A file cache is versioned by the catalogue, not by this console's
-  writes, where the catalogue can say which file changed.** `mapImage` never
-  goes stale on its own, so its key carries the map's `modified_at` and
-  `grid_status`, read through `useMapEntry`. An invalidation only fires for a
-  write this tab made, and a conversion another console started would
-  otherwise leave the old floor plan on screen until a reload. The write
-  hooks still drop the entries early, by the name-only prefix key.
-  `mapPointCloud` is the exception and is keyed by name alone:
-  `modified_at` covers the whole map directory, so a floor plan rebuild
-  would re-download a scan that did not change. `queryKeys.mapPointCloud`
-  records the one case that leaves open. `mapOctomap` closes it for the 3D
-  map by asking the backend for a version of that one file:
-  `octomap_version` (its size and mtime, the download's ETag unquoted),
-  which a re-clean or the robot's edit tool moves and nothing else does.
+  writes, where the catalogue can say which file changed.** An invalidation
+  only fires for a write this tab made, so `mapOctomap` asks the backend for
+  a version of that one file: `octomap_version` (its size and mtime, the
+  download's ETag unquoted), read through `useMapEntry`, which a re-clean or
+  the robot's edit tool moves and nothing else does. The write hooks still
+  drop the entries early, by the name-only prefix key. `mapPointCloud` is
+  keyed by name alone: `modified_at` covers the whole map directory, so a 3D
+  map rebuild would re-download a scan that did not change.
+  `queryKeys.mapPointCloud` records the one case that leaves open.
 - **A map a job drives on is read-only for the job's length.** Every job
   that moves carries its map on the wire: the dispatch sends the map it
   planned on (`map_name`, which the backend checks against the loaded one
   and refuses with `map_mismatch`), and `GET /active_tasks` answers with
   the map each running job was stamped with. The backend is the gate — it
-  refuses waypoint, floor plan, forbidden zone and rebuild writes on that
+  refuses waypoint, forbidden zone and ground patch writes on that
   map with `task_running` (`tasks_unknown` when it cannot tell), for every
   console and for a schedule nobody here started. `mapRunLock` in
   `lib/map/run-lock.ts` is only how the console greys those controls
   first, read off the shared active-tasks poll through `useMapRunLock`. It
   keys on the job's `map_name` and never on which map is active, and it
-  fails closed while the poll is loading or failing. The reverse is
-  `dispatchMapLock`: no job that moves goes onto a map whose floor plan is
-  mid-rebuild. Only writes are held; the editor keeps strokes and typed
-  names until the job ends.
+  fails closed while the poll is loading or failing. Only writes are held;
+  the editor keeps its staged edits until the job ends.
 - **Wire types** are split between `lib/types/` and the fetcher modules with no
   rule yet. Prefer `lib/types/` for anything more than one router shares.
 
@@ -745,9 +716,10 @@ As built:
   canvas's width and height, which clears it, and a `ResizeObserver` fires
   after the frame's render — so the viewport's resize callback renders a
   frame itself, or the browser paints the cleared canvas and the scene
-  blinks out. `lib/scene/viewport.ts` does this for both 3D views; a view
-  hands it a `draw` and gets it called after every resize. The 2D canvases are safe by construction: they reassign the
-  size inside the draw that repaints it. The same reason keeps the nav rail's
+  blinks out. `lib/scene/viewport.ts` does this for every 3D view; a view
+  hands it a `draw` and gets it called after every resize. The route map's
+  2D canvas is safe by construction: it reassigns the size inside the draw
+  that repaints it. The same reason keeps the nav rail's
   fold unanimated: an eased width is a resize on every frame.
 - **A lost GPU context is a state, not a crash.** The viewport reports a
   `webglcontextlost` and its restore; `useGpuContext` lays a notice over the
@@ -756,11 +728,11 @@ As built:
   renderer.
 - **three.js teardown does not reach textures.** A material's `.map` is not
   disposed by disposing the material (nor by `disposeTree`, the viewport's
-  sweep), so anything that loads one holds it and frees it by hand — see the ground texture in `pointcloud-canvas.tsx` and the
-  vertex layer's badge textures. An async load also has to check the scene it
+  sweep), so anything that loads one holds it and frees it by hand — see the
+  vertex layer's badge textures and the local costmap's texture. An async load also has to check the scene it
   was started for is still current before assigning.
-- **A layer effect lists the scene's rebuild deps** (`meta`, `mapImageUrl`,
-  `resolvedTheme`) even when it reads none of them, because a rebuild discards
+- **A layer effect lists the scene's rebuild deps** (`resolvedTheme`) even
+  when it reads none of them, because a rebuild discards
   the scene it added to and the layer has to be re-added to the new one. Each
   such effect adds and removes its own object in one place; do not clean up the
   previous run at the top of the next one.
@@ -776,8 +748,8 @@ As built:
   the track, which has the browser flushing the recorder while the explicit
   stop is still on its way.
 
-Both canvases read their signal hues from `lib/theme/signal.ts`, and the task
-editor's floor plan preview inherits them through `lib/map/draw.ts`'s palette — three.js
+The 3D views read their signal hues from `lib/theme/signal.ts`, and the task
+editor's route marks inherit them through `lib/map/draw.ts`'s palette — three.js
 wants a number and a 2D context wants a string, and neither can read a CSS
 custom property, so the values are transcribed from `app/globals.css` exactly
 once. A token moved there is a two-file change, and the second file says so.
@@ -829,11 +801,11 @@ it is run in, so it does not belong to any one of them.
   file on disk, a shell command, a vendor or algorithm name such as LIO, zstd,
   Temporal or the Tegra). Diagnostics of that kind were deliberately removed
   rather than demoted — do not reintroduce them, and do not put one in an
-  error string because it would help you debug. The house words are: **floor
-  plan** (not gridmap / 2D grid / occupancy grid), **scan** (not point cloud /
+  error string because it would help you debug. The house words are:
+  **scan** (not point cloud /
   "the cloud"), **3D map** (not octomap / octree / voxels — the occupancy
   tree the robot builds beside the scan), **ground patch** for a floor cell
-  an operator paints into it (with **Fill**, in the editor's 3D view),
+  an operator paints into it (with **Fill**, in the map editor),
   **floor** for one storey of a 3D map
   (`1F`, `2F`; never "level" or "layer", which the toolbar already uses), **waypoint** (not vertex / stop), **forbidden zone** (not
   polygon / no-go area), **channel** (not topic),
@@ -869,7 +841,7 @@ it is run in, so it does not belong to any one of them.
   never share a word on screen — and, unusually for this codebase, not in the
   code either: `clip*` identifiers exist so a reader can tell which of the two a
   function is about without following it.
-- **The code keeps the engineering names.** `vertex`, `grid`, `cloud`, `bag`
+- **The code keeps the engineering names.** `vertex`, `octomap`, `cloud`, `bag`
   and `topic` are the backend's vocabulary and stay in identifiers, types,
   query keys and routes. Only the strings a human reads are translated, which
   means `VertexPicker` renders the word "waypoint" on purpose — that gap is
@@ -913,12 +885,10 @@ it is run in, so it does not belong to any one of them.
   that must stay on the first line needs `max-sm:basis-0 max-sm:grow` rather
   than `shrink` alone — which is what keeps the robot id's cluster from
   pushing the health cluster onto a third line.
-- **A touch gesture belongs to one pointer.** Both canvases and both panels
+- **A touch gesture belongs to one pointer.** The canvases and both panels
   gate move and release on the pointer id the press recorded; a second
   finger is never a second press. What it is instead is each surface's
-  decision: on the floor plan editor it starts a pinch if the first finger
-  is panning or idle and is ignored over a stroke, a band or an aim (those
-  have already acted); on the 3D viewport it abandons a planted pose, and so
+  decision: on the 3D viewport it abandons a planted pose, and so
   does `pointercancel`, because only a deliberate lift may send the robot
   anywhere. A tap — press and release inside `DRAG_DEADZONE_PX`, from
   `lib/map/gesture.ts` — is the touch form of every double-click the console
@@ -940,8 +910,7 @@ it is run in, so it does not belong to any one of them.
 - Backend addressing: never hardcode a host. Every REST and WebSocket path goes
   through `apiUrl()` / `wsUrl()` in `lib/api/config.ts`, which default to the
   page's own hostname on port 3000 and are overridable via
-  `NEXT_PUBLIC_API_BASE` / `NEXT_PUBLIC_WS_BASE`. Even `<img src>` for map
-  thumbnails is absolutised this way.
+  `NEXT_PUBLIC_API_BASE` / `NEXT_PUBLIC_WS_BASE`.
 
 ## Git workflow
 

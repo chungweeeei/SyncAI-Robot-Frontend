@@ -34,7 +34,7 @@ function quad(group: THREE.Group): THREE.Mesh {
 
 describe("costAlpha", () => {
   it("draws neither free nor never-seen cells", () => {
-    // The scan and the floor plan under them are what the operator reads there.
+    // The scan and the 3D map under them are what the operator reads there.
     expect(costAlpha(COST_FREE)).toBe(0);
     expect(costAlpha(COST_UNKNOWN)).toBe(0);
   });

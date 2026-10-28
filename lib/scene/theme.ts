@@ -7,8 +7,6 @@ import { SIGNAL } from "@/lib/theme/signal";
 // so the machine looks like the same machine in either theme.
 export interface Theme {
   background: number;
-  ground: number;
-  groundOpacity: number;
   /** Solid colour for the map scan, distinct from the height-coloured live scan. */
   mapCloud: number;
   /** Committed / being-dragged goal marker: `signal-cmd`, a commanded value. */
@@ -24,15 +22,15 @@ export interface Theme {
    * (lib/theme/height-ramp.ts) never reaches: violet through red covers the
    * rest of the wheel, and the old dark teal sank into the violet the ramp
    * gives the floor — the very cells a stop stands on. Clear of the zones'
-   * red and the dock leg's violet too. A step deeper in light, where it lies
-   * on the white floor plan; brighter in dark, over the near-black well.
+   * red and the dock leg's violet too. A step deeper in light; brighter in
+   * dark, over the near-black well.
    */
   vertex: number;
   /**
    * The rim under a stop's ground ring. The 3D map is dark violet at the
    * floor and bright at the walls, so no one hue holds an edge against both;
-   * a pale rim beside a saturated ring does, as the floor plan editor's
-   * `MARKER_HALO` does over its grid.
+   * a pale rim beside a saturated ring does, as `MARKER_HALO` does for the
+   * route map's flat marks.
    */
   vertexHalo: number;
   /** The vertex under the pointer, in the commanded hue: one tap from being the goal. */
@@ -55,8 +53,7 @@ export interface Theme {
    * the ramp's violet into blue and cyan, the very hues of `path`, so the
    * route sank into the cells it runs over even with its pale rim. The
    * neutrals are the ramp's one free family, so the core goes pale and the
-   * rim and chevrons dark. Over the floor plan alone the cyan stays: the
-   * light theme's plan is white, and a white route would vanish on it.
+   * rim and chevrons dark. With the 3D map off the cyan stays.
    */
   pathOverMap: number;
   pathCasingOverMap: number;
@@ -73,7 +70,7 @@ export interface Theme {
    * the staging point — the robot walks it blind, steering to the dock.
    */
   dock: number;
-  /** Forbidden zones: `signal-warn`, the same mark as on the floor plan editor. */
+  /** Forbidden zones: `signal-warn`, the same mark as in the map editor. */
   zone: number;
   /**
    * What the robot itself sees around it while it drives (the costmap its
@@ -86,7 +83,7 @@ export interface Theme {
    * so over the map an obstacle the robot sees would read as one more wall
    * a storey up; the only hues the ramp leaves free are magenta (the
    * waypoints') and the neutrals, and the map's floor is its dark violet,
-   * so a pale wash it is. Over the floor plan alone the amber stays.
+   * so a pale wash it is. With the 3D map off the amber stays.
    */
   localCostmapOverMap: number;
   /**
@@ -101,23 +98,12 @@ export interface Theme {
    * band. Dark in dark, where both are bright; white in light.
    */
   localPlanCasing: number;
-  /**
-   * The floor plan's opacity while the 3D map is shown. The robot's floor
-   * lies about half a metre under the plane the floor plan is drawn on (the
-   * map frame's zero is the body, not the ground), so at full opacity the
-   * plane hides the whole map from every angle above it. Thinned rather than
-   * lifted out of the way: the floor plan is still the reference the stops
-   * and zones sit on. The map itself is coloured by lib/theme/height-ramp.ts.
-   */
-  groundOpacityUnderVoxels: number;
 }
 
 // Tracks the console surfaces so the viewport reads as a recessed well.
 export const THEMES: Record<"light" | "dark", Theme> = {
   light: {
     background: SIGNAL.light.background,
-    ground: 0xffffff,
-    groundOpacity: 0.85,
     mapCloud: 0x54646f,
     goal: SIGNAL.light.cmd,
     goalDraft: 0x4aa6c6,
@@ -137,12 +123,9 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     localCostmapOverMap: 0xffffff,
     localPlan: SIGNAL.light.live,
     localPlanCasing: 0xffffff,
-    groundOpacityUnderVoxels: 0.35,
   },
   dark: {
     background: SIGNAL.dark.background,
-    ground: SIGNAL.dark.elevated,
-    groundOpacity: 0.6,
     mapCloud: 0xa7b6c1,
     goal: SIGNAL.dark.cmd,
     goalDraft: 0x8adcf7,
@@ -162,6 +145,5 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     localCostmapOverMap: 0xf2f7fa,
     localPlan: SIGNAL.dark.live,
     localPlanCasing: SIGNAL.dark.background,
-    groundOpacityUnderVoxels: 0.3,
   },
 };

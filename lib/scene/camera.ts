@@ -19,8 +19,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
  * table; two fingers add pinch-zoom. In "focus", DOLLY_PAN degrades to
  * pinch-zoom since pan is off.
  *
- * `zoomToCursor` is on in "move" so the wheel closes in on the pointer, as the
- * floor plan editor does. It is off in "focus" because it works by shifting
+ * `zoomToCursor` is on in "move" so the wheel closes in on the pointer. It is off in "focus" because it works by shifting
  * the target, which the render loop re-pins to the robot every frame
  * (`stepPose`) — a lurch per notch.
  */
@@ -43,7 +42,7 @@ export function applyCameraMode(
   };
 }
 
-// Fallback framing with no floor plan: points arrive near the odom origin.
+// Fallback framing with no 3D map up: points arrive near the odom origin.
 export const DEFAULT_SPAN_M = 20;
 
 /** The rectangle a scene was built around, in metres on the z=0 floor. */

@@ -1,8 +1,8 @@
 /**
- * Forbidden zones: the rules for drawing one on the floor plan editor. The
- * shape types live in lib/types/map.ts and are re-exported so the editor
- * takes rules and types from one place. No Path2D, so this is testable
- * without a canvas; the drawing is lib/map/draw.ts's.
+ * Forbidden zones: the rules for drawing one in the map editor. The shape
+ * types live in lib/types/map.ts and are re-exported so the editor takes
+ * rules and types from one place. No three.js, so this is testable without
+ * a scene; the drawing is lib/scene/zone-layer.ts's.
  */
 
 import type { ZonePoint, ZonePolygon } from "@/lib/types/map";

@@ -34,8 +34,7 @@ export interface UseMapVertexWrites {
  * map too, but stages its changes for Save (useMapVertices).
  *
  * Placing writes live in 3D views because that is where *where* is visible: a
- * stop inside a wall is obvious over the scan or the 3D map and invisible on
- * the floor plan editor's flat raster. Rename and retype stay in that editor.
+ * stop inside a wall is obvious over the scan or the 3D map.
  *
  * `writeError` is apart from `status`: a failed write must not make the layer
  * read as unloaded.

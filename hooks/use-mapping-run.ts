@@ -8,7 +8,6 @@ import {
   saveMap,
   startMapping,
   type MappingStatus,
-  type SaveMapOptions,
 } from "@/lib/api/mapping";
 import { queryKeys } from "@/lib/api/query-keys";
 
@@ -56,21 +55,17 @@ export function useStartMapping() {
 }
 
 /**
- * POST /api/v1/maps — save the current run. The conversion's outcome arrives
- * through the catalogue, which is what `useMapConversion` watches.
+ * POST /api/v1/maps — save the current run. The 3D map's build arrives
+ * through the catalogue, which is what `useMapBuild` watches.
  */
 export function useSaveMap() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ name, ...options }: { name: string } & SaveMapOptions) =>
-      saveMap(name, options),
+    mutationFn: ({ name }: { name: string }) => saveMap(name),
     onSuccess: (_result, { name }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       // A save ends the run.
       void queryClient.invalidateQueries({ queryKey: queryKeys.mappingStatus });
-      // A save over an existing name replaces its floor plan once converted.
-      // Dropped, not invalidated: the new bytes are not there yet.
-      queryClient.removeQueries({ queryKey: queryKeys.mapImage(name) });
       // Dropped: nothing on this screen reads the scan.
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(name) });
       // The same for the 3D map: a save into the name deletes the old tree

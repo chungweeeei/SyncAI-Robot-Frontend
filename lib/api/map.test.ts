@@ -34,12 +34,7 @@ function olderRow(over: Record<string, unknown> = {}) {
   return {
     name: "dp2f",
     active: true,
-    grid: null,
-    thumbnail: null,
     has_pointcloud: true,
-    grid_status: "none",
-    grid_error: null,
-    grid_converting: false,
     size_bytes: 1,
     modified_at: "2026-09-18T09:22:41Z",
     vertex_count: 0,
@@ -72,6 +67,26 @@ describe("fetchMaps", () => {
     expect(map.octomap_status).toBe("ok");
     expect(map.octomap_version).toBe("2971216-1760414598000000000");
     expect(map.octomap_resolution).toBe(0.1);
+  });
+
+  // A backend from before the floor plan was removed still sends its fields;
+  // nothing reads them, so they must neither break the read nor leak through.
+  it("drops the floor plan fields an older backend still sends", async () => {
+    fetchMock.mockResolvedValue(
+      answer([
+        olderRow({
+          grid: { resolution: 0.05, origin: { x: 0, y: 0, yaw: 0 }, width: 10, height: 10 },
+          thumbnail: "/api/v1/maps/dp2f/thumbnail",
+          grid_status: "converting",
+          grid_error: null,
+          grid_converting: true,
+        }),
+      ]),
+    );
+    const [map] = await fetchMaps();
+    expect(map).not.toHaveProperty("grid");
+    expect(map).not.toHaveProperty("grid_status");
+    expect(map).not.toHaveProperty("thumbnail");
   });
 
   it("refuses a 3D map status it does not know, naming the field", async () => {

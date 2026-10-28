@@ -37,7 +37,6 @@ import { useActiveMap } from "@/hooks/use-maps";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import { useViewCommands } from "@/hooks/use-view-commands";
-import { apiUrl } from "@/lib/api/config";
 import {
   FLOOR_GROUND_BELOW_LEVEL_M,
   type FloorBand,
@@ -47,7 +46,6 @@ import {
   followWindow,
 } from "@/lib/map/floors";
 import { withGroundPatches } from "@/lib/map/ground-fill";
-import { dispatchMapLock } from "@/lib/map/run-lock";
 import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
 import { liveDock } from "@/lib/task/run";
 import { cn } from "@/lib/utils";
@@ -71,29 +69,19 @@ export function PointCloudView({
   robotId: string;
   className?: string;
 }) {
-  // A failure or an unconverted map leaves grid null: no ground plane.
   const { map: activeMap } = useActiveMap();
-  const mapImageUrl = React.useMemo(
-    () =>
-      activeMap?.grid
-        ? apiUrl(`/api/v1/maps/${encodeURIComponent(activeMap.name)}/image`)
-        : undefined,
-    [activeMap],
-  );
   // The one write this screen makes to a waypoint is its position (see the hook).
   const stops = useActiveMapVertices();
   const { vertices, moveVertex, createVertex, removeVertex } = stops;
   // Greys waypoint writes while a job drives on this map, keyed on the map the
   // waypoints belong to (see lib/map/run-lock.ts).
   const runLock = useMapRunLock(stops.mapName);
-  // The reverse: no goal onto a map whose floor plan is mid-rebuild.
   const { engaged: stopped } = useConsoleEstop();
-  const dispatchLock = dispatchMapLock(activeMap);
   const { feed, path, dockPath } = useTelemetry();
   // A running dock's target, for its staging point. The same query entry the
   // status strip polls, so this adds no request. Only on the map the job runs
-  // on: a dock pose drawn on another map's floor plan would be a place that
-  // does not exist there.
+  // on: a dock pose drawn on another map would be a place that does not
+  // exist there.
   const { run } = useActiveRun();
   const dock =
     run && activeMap && run.task.map_name === activeMap.name
@@ -113,21 +101,17 @@ export function PointCloudView({
   const scan = useMapPointCloud(
     showMapCloud && hasScan && activeMap ? activeMap.name : null,
   );
-  // The robot's 3D map. Its default follows what else the map has: off
-  // under a floor plan, for the scan's reason — a million cells, decoded
-  // and drawn when someone wants to look — and on without one, since a map
-  // with no floor plan would otherwise open on an empty viewport while the
-  // floor it has goes unshown (the viewport frames on the tree instead).
-  // The operator's own toggle wins, held per map so another map's choice
-  // does not carry over. Offered only once the robot reports it built —
-  // building, failed or never made has nothing to give but a refusal, and
-  // the Maps screen is where those states are said.
+  // The robot's 3D map, on by default: it is the map the robot navigates on,
+  // and the viewport frames on it. The operator's own toggle wins, held per
+  // map so another map's choice does not carry over. Offered only once the
+  // robot reports it built — building, failed or never made has nothing to
+  // give but a refusal, and the Maps screen is where those states are said.
   const [voxelChoice, setVoxelChoice] = React.useState<{ map: string; on: boolean } | null>(
     null,
   );
   const hasVoxels = activeMap?.octomap_status === "ok";
   const showVoxels =
-    activeMap && voxelChoice?.map === activeMap.name ? voxelChoice.on : !activeMap?.grid;
+    activeMap && voxelChoice?.map === activeMap.name ? voxelChoice.on : true;
   const toggleVoxels = () => {
     if (activeMap) setVoxelChoice({ map: activeMap.name, on: !showVoxels });
   };
@@ -244,7 +228,7 @@ export function PointCloudView({
   // name dialog stays up instead: its Create greys and the typed name survives.
   if (
     (runLock.locked && (pick?.mode === "place" || pick?.mode === "vertex")) ||
-    ((dispatchLock.locked || stopped) && pick?.mode === "goal")
+    (stopped && pick?.mode === "goal")
   ) {
     setPick(null);
   }
@@ -273,10 +257,9 @@ export function PointCloudView({
     setPick({ mode: "vertex", vertex });
   }, []);
 
-  // A pick lands on the floor shown, which only a 3D map has: a map is 3D
-  // when it has an octomap.bt (the backend's and the robot's rule, a floor
-  // plan beside it or not), and a 2D map has no floors to pick, so every
-  // pick on it stays at 0, the ground floor, as before floors. A re-place
+  // A pick lands on the floor shown, which is read off the 3D map: until the
+  // tree is in there is no floor to pick, so every pick stays at 0, the
+  // ground floor, as before floors. A re-place
   // with no floor picked stays on its own floor: moving a 2F stop a metre
   // must not drop it to the ground floor because 2F was not up.
   const pickZ = pick?.mode === "vertex" && !floorBand ? pick.vertex.z : floorZ;
@@ -431,8 +414,6 @@ export function PointCloudView({
     <div className={cn("relative h-full w-full", className)}>
       <ViewportBoundary>
         <PointCloudCanvas
-          meta={activeMap?.grid ?? undefined}
-          mapImageUrl={mapImageUrl}
           telemetry={feed}
           mapCloud={scan.cloud}
           voxels={voxels}
@@ -490,7 +471,6 @@ export function PointCloudView({
         busy={task.busy}
         running={task.running}
         editLock={runLock.reason}
-        dispatchLock={dispatchLock.reason}
         deleting={stops.busy}
         deleteError={stops.writeError}
         onConfirm={moveToVertex}
@@ -519,8 +499,8 @@ export function PointCloudView({
                 ? pick.mode
                 : null
             }
-            goalLocked={task.running || task.busy || dispatchLock.locked || stopped}
-            goalLockReason={stopped ? ESTOP_REFUSAL : dispatchLock.reason}
+            goalLocked={task.running || task.busy || stopped}
+            goalLockReason={stopped ? ESTOP_REFUSAL : undefined}
             onArmGoal={() => armPick("goal")}
             onArmInitialPose={() => armPick("initial-pose")}
             autoLocalizeBusy={localize.busy}

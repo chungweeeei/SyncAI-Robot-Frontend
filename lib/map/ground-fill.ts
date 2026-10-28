@@ -18,7 +18,6 @@
 // nothing is near that height in it (isHole) — whatever lies a storey under
 // it.
 
-import { type GridSize, stampDisc } from "@/lib/map/grid";
 import {
   type Band,
   type ColumnFloors,
@@ -26,11 +25,41 @@ import {
   columnFloors,
   columnStacks,
   fullBand,
+  type GridSize,
   NO_FLOOR,
   occupiedIn,
   surfaceNear,
 } from "@/lib/map/ground";
 import { OCTREE_KEY_ORIGIN, type OccupiedVoxels } from "@/lib/types/octree";
+
+/**
+ * Every column of a disc `diameter` columns wide centred on (col, row),
+ * clipped to the grid — one call of `sink` per column index (`col + row *
+ * width`). The brush's footprint: a diameter of one is the column alone.
+ */
+function stampDisc(
+  size: GridSize,
+  col: number,
+  row: number,
+  diameter: number,
+  sink: (index: number) => void,
+): void {
+  const r = (diameter - 1) / 2;
+  const rr = r * r + r;
+
+  const rowFrom = Math.max(-r, -row);
+  const rowTo = Math.min(r, size.height - 1 - row);
+
+  for (let dy = rowFrom; dy <= rowTo; dy += 1) {
+    const span = r === 0 ? 0 : Math.floor(Math.sqrt(Math.max(rr - dy * dy, 0)));
+    const colFrom = Math.max(-span, -col);
+    const colTo = Math.min(span, size.width - 1 - col);
+    const base = (row + dy) * size.width + col;
+    for (let dx = colFrom; dx <= colTo; dx += 1) {
+      sink(base + dx);
+    }
+  }
+}
 
 /**
  * How many surface cells a patch's height is read from, the nearest ones:
@@ -311,7 +340,7 @@ export function fillDab(
 ): number[] {
   const fills: [number, number][] = [];
   const { width } = stacks;
-  stampDisc(stacks, col, row, 2 * radius + 1, 0, (index) => {
+  stampDisc(stacks, col, row, 2 * radius + 1, (index) => {
     if (edits.has(index)) return;
     const f = patchHeight(stacks, edits, index % width, Math.floor(index / width), aim, reach);
     if (f === null || !isHole(stacks, index, f, reach)) return;
@@ -337,7 +366,7 @@ export function eraseDab(
   radius: number,
 ): number[] {
   const changed: number[] = [];
-  stampDisc(size, col, row, 2 * radius + 1, 0, (index) => {
+  stampDisc(size, col, row, 2 * radius + 1, (index) => {
     const before = edits.get(index);
     if (before === undefined) return;
     stroke.record(index, before);
@@ -440,8 +469,8 @@ export function sameEdits(a: GroundEdits, b: GroundEdits): boolean {
 }
 
 /**
- * The editor's mutable state, held by reference like the floor plan's
- * GridSession and never put in React state: a stroke writes `edits` at
+ * The editor's mutable state, held by reference and never put in React
+ * state: a stroke writes `edits` at
  * pointer rate. `floors` follows `band`; `setGroundBand` rebuilds it. The
  * brush reads `stacks`, which do not: the band limits what it aims at, not
  * what a surface is.

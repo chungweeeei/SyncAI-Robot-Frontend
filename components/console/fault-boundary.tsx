@@ -43,7 +43,7 @@ export const FaultBoundary = unstable_catchError(FaultFallback);
 
 /**
  * The boundary every map view sits in — the dashboard's and the mapping
- * screen's 3D view, and the editor's floor plan and 3D map — so the controls
+ * screen's 3D view, and the map editor's 3D map — so the controls
  * around a view that failed (drive, the tool strips, Save) stay usable.
  */
 export function ViewportBoundary({ children }: { children: React.ReactNode }) {

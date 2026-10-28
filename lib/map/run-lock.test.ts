@@ -4,11 +4,9 @@ import {
   AUTO_LOCALIZE_JOB_RUNNING,
   AUTO_LOCALIZE_NOT_NAVIGATING,
   AUTO_LOCALIZE_UNKNOWN,
-  DISPATCH_LOCK_CONVERTING,
   RUN_LOCK_RUNNING,
   RUN_LOCK_UNKNOWN,
   autoLocalizeLock,
-  dispatchMapLock,
   mapRunLock,
 } from "@/lib/map/run-lock";
 
@@ -56,24 +54,6 @@ describe("mapRunLock", () => {
 
   it("never locks when there is no map to lock", () => {
     expect(mapRunLock({ mapName: null, tasks: [], status: "error" }).locked).toBe(false);
-  });
-});
-
-describe("dispatchMapLock", () => {
-  it("holds a moving job while its map's floor plan is being rebuilt", () => {
-    expect(dispatchMapLock({ grid_status: "converting" })).toEqual({
-      locked: true,
-      reason: DISPATCH_LOCK_CONVERTING,
-    });
-  });
-
-  it("lets a job go once the floor plan is ready, or failed and kept its old one", () => {
-    expect(dispatchMapLock({ grid_status: "ok" }).locked).toBe(false);
-    expect(dispatchMapLock({ grid_status: "failed" }).locked).toBe(false);
-  });
-
-  it("does not hold a job when the map is not known", () => {
-    expect(dispatchMapLock(null).locked).toBe(false);
   });
 });
 

@@ -42,8 +42,6 @@ export interface SaveMapResult {
   name: string;
   /** True on any 200. */
   has_pointcloud: boolean;
-  /** The floor plan conversion started; the map lists `grid: null` until done. */
-  grid_pending: boolean;
   /** Operator-facing; render verbatim. */
   message: string;
 }
@@ -51,32 +49,20 @@ export interface SaveMapResult {
 const SaveMapResultSchema: z.ZodType<SaveMapResult> = z.object({
   name: z.string(),
   has_pointcloud: z.boolean(),
-  grid_pending: z.boolean(),
   message: z.string(),
 });
 
 /**
- * What a save builds from the scan. Both are always sent: the backend's
- * `octomap: null` means "the robot's own setting", which the operator who
- * ticked a box did not ask for.
- */
-export interface SaveMapOptions {
-  /** The floor plan, converted in the background for tens of seconds. */
-  grid: boolean;
-  /** The 3D map, built minutes later by the robot's map cleaning. */
-  octomap: boolean;
-}
-
-/**
  * Save the mapping run as a map — and end it; the next map needs another
- * `startMapping`. Slow (a ~20 MB scan is merged and written). Refused 502
- * outside Mapping, 409 for a taken name, 409 `mapping_idle` for a run never
- * started, 400 `nothing_to_build` when both options are off.
+ * `startMapping`. Slow (a ~20 MB scan is merged and written). The robot then
+ * builds the map's 3D map from the scan, minutes later: the catalogue's
+ * `octomap_status` says how that goes. Refused 502 outside Mapping, 409 for a
+ * taken name, 409 `mapping_idle` for a run never started.
  */
-export function saveMap(name: string, options: SaveMapOptions): Promise<SaveMapResult> {
+export function saveMap(name: string): Promise<SaveMapResult> {
   return requestJson<SaveMapResult>(apiUrl("/api/v1/maps"), {
     method: "POST",
-    body: JSON.stringify({ name, grid: options.grid, octomap: options.octomap }),
+    body: JSON.stringify({ name }),
     schema: SaveMapResultSchema,
   });
 }

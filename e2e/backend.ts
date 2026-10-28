@@ -1,5 +1,3 @@
-import { deflateSync } from "node:zlib";
-
 import type { Page, Route } from "@playwright/test";
 
 import { encodeOctomapBt } from "@/lib/map/octree";
@@ -20,7 +18,7 @@ export const MAP_NAME = "dp2f";
  * A 3D map the size of a doormat: a `size`×`size` floor one cell thick,
  * half a metre under the origin like the robot's own floor, with one 2×2
  * hole in the middle (cells `size/2 - 1` and `size/2` on both axes). Enough
- * for the dashboard to draw and for the editor's 3D view to have a hole to
+ * for the dashboard to draw and for the editor to have a hole to
  * patch. Built by the console's own encoder, which the decoder's unit tests
  * pin, so the fake and the client agree on the bit order. The 4×4 default
  * puts a hole cell under a click wherever the editor is; a phone test that
@@ -40,65 +38,11 @@ export function octomapBt(size = 4): Buffer {
   return Buffer.from(encodeOctomapBt({ res: 0.1, occupied }));
 }
 
-/** A 1x1 transparent PNG, so an <img> and a TextureLoader both succeed. */
-const PNG_1PX = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-  "base64",
-);
-
-/**
- * A floor plan the editor can paint on: an 8-bit greyscale PNG of
- * `width` x `height` cells, every one `byte` (254 free, 0 obstacle, 205
- * unknown — see classify in lib/map/grid.ts).
- *
- * The editor reads the image *as the grid*, so the 1x1 default is one cell
- * fitted to the canvas, and any zoom shrinks it out from under the pointer.
- * Hand this to `gridImage` in a test that strokes or pinches after zooming.
- */
-export function floorPlanPng(
-  width: number,
-  height: number,
-  byte: number,
-): Buffer {
-  const chunk = (type: string, data: Buffer) => {
-    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
-    const length = Buffer.alloc(4);
-    length.writeUInt32BE(data.length);
-    const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(crc32(body));
-    return Buffer.concat([length, body, crc]);
-  };
-  const header = Buffer.alloc(13);
-  header.writeUInt32BE(width, 0);
-  header.writeUInt32BE(height, 4);
-  header[8] = 8; // bit depth
-  header[9] = 0; // greyscale
-  // Each scanline is a filter byte (0: none) followed by the row.
-  const raw = Buffer.alloc((width + 1) * height, byte);
-  for (let y = 0; y < height; y += 1) raw[y * (width + 1)] = 0;
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk("IHDR", header),
-    chunk("IDAT", deflateSync(raw)),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
-}
-
-function crc32(data: Buffer): number {
-  let crc = 0xffffffff;
-  for (const byte of data) {
-    crc ^= byte;
-    for (let i = 0; i < 8; i += 1)
-      crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
 export function robotState(over: Record<string, unknown> = {}) {
   return {
     timestamp: 1_758_000_000,
     robot_id: "robot01",
-    map: `map/${MAP_NAME}/gridmap.yaml`,
+    map: `map/${MAP_NAME}/octomap.bt`,
     mode: "AUTO",
     low_level_mode: { policy: "PPO", motion: "LOCOMOTION", safety_locked: false },
     localization_valid: true,
@@ -126,27 +70,33 @@ export function mapSummary(over: Record<string, unknown> = {}) {
   return {
     name: MAP_NAME,
     active: true,
-    grid: {
-      resolution: 0.05,
-      origin: { x: -12.3, y: -7.8, yaw: 0 },
-      width: 400,
-      height: 300,
-    },
-    thumbnail: `/api/v1/maps/${MAP_NAME}/thumbnail`,
     has_pointcloud: true,
-    grid_status: "ok",
-    grid_error: null,
-    grid_converting: false,
     size_bytes: 24_117_248,
     modified_at: "2026-09-18T09:22:41Z",
     vertex_count: 2,
-    // No 3D map unless a test says so: the robot builds one only when asked.
-    // Typed loosely so a test can move the version under a mounted page.
-    octomap_status: "none" as string,
-    octomap_error: null as string | null,
-    octomap_version: null as string | null,
-    octomap_resolution: null as number | null,
+    // A built 3D map, as every map the robot can use has; a test of one being
+    // built, failed or missing says so (`withoutOctomap`). Typed loosely so a
+    // test can move the version under a mounted page.
+    ...(withOctomap() as {
+      octomap_status: string;
+      octomap_error: string | null;
+      octomap_version: string | null;
+      octomap_resolution: number | null;
+    }),
     ...over,
+  };
+}
+
+/**
+ * The 3D map fields of a map with no tree on disk, for `mapSummary(over)`:
+ * `status` says why (never built, being built, failed, interrupted).
+ */
+export function withoutOctomap(status: "none" | "converting" | "failed" | "interrupted" = "none") {
+  return {
+    octomap_status: status,
+    octomap_error: null as string | null,
+    octomap_version: null,
+    octomap_resolution: null,
   };
 }
 
@@ -390,8 +340,6 @@ export interface BackendOverrides {
    * the default `taskState`; any other id with none answers 404.
    */
   taskStates?: Record<string, Record<string, unknown>>;
-  /** The floor plan every map's /image answers with; see floorPlanPng. */
-  gridImage?: Buffer;
   /** The tree every map's /octomap answers with; see octomapBt. */
   octomap?: Buffer;
   /**
@@ -502,7 +450,6 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   // Every id the active list has carried. A test ends a job by emptying the
   // list, and the backend still answers a finished run from retention.
   const listedTaskIds = new Set<string>();
-  const gridImage = over.gridImage ?? PNG_1PX;
   const octomap = over.octomap ?? octomapBt();
   // Copied: the PUT below replaces a map's list, and a test's fixture must
   // not change under it.
@@ -685,15 +632,15 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     if (path === "/api/v1/maps" && method === "GET") return json(route, maps);
     const activateMatch = /^\/api\/v1\/maps\/([^/]+)\/activate$/.exec(path);
     if (activateMatch && method === "POST") {
-      // The backend's rule: a floor plan or a 3D map, either one. `active`
-      // moves, so the cards' next read shows the switch.
+      // The backend's rule: a built 3D map. `active` moves, so the cards'
+      // next read shows the switch.
       const name = decodeURIComponent(activateMatch[1]);
       const map = maps.find((entry) => entry.name === name);
       if (!map) return json(route, { detail: `Map "${name}" not found` }, 404);
-      if (map.grid_status !== "ok" && map.octomap_status !== "ok") {
+      if (map.octomap_status !== "ok") {
         return json(
           route,
-          { detail: `'${name}' has no floor plan and no 3D map.`, code: "grid_missing" },
+          { detail: `'${name}' has no 3D map.`, code: "octomap_missing" },
           409,
         );
       }
@@ -856,7 +803,7 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         active,
         reloaded: active,
         message: active
-          ? `Saved ${count} for '${name}' and reloaded the keepout filter.`
+          ? `Saved ${count} for '${name}' and reloaded the planner's zones.`
           : `Saved ${count} for '${name}'.`,
       });
     }
@@ -932,32 +879,16 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     if (path === "/api/v1/maps" && method === "POST") {
       // A save ends the run, so the next poll moves the rail back to Start.
       // The catch-all's `{ message }` would fail the save schema.
-      const body = parseBody(request.postData()) as {
-        name?: string;
-        grid?: boolean;
-        octomap?: boolean;
-      } | null;
+      const body = parseBody(request.postData()) as { name?: string } | null;
       const name = body?.name ?? "map";
       mappingStatus = { state: "idle", key_poses: 0, loop_closures: 0 };
-      // A save that asked for the 3D map lists at once as building it, as
-      // the robot's cleaning writes its sidecar before the save answers. A
-      // test that passed `maps` holds the array and can finish the build.
-      if (body?.octomap) {
-        maps.push(
-          mapSummary({
-            name,
-            active: false,
-            grid: null,
-            thumbnail: null,
-            grid_status: "none",
-            octomap_status: "converting",
-          }),
-        );
-      }
+      // The saved map lists at once as building its 3D map, as the robot's
+      // cleaning writes its sidecar before the save answers. A test that
+      // passed `maps` holds the array and can finish the build.
+      maps.push(mapSummary({ name, active: false, ...withoutOctomap("converting") }));
       return json(route, {
         name,
         has_pointcloud: true,
-        grid_pending: false,
         message: `Saved '${name}'. Mapping has stopped — start it again for another map.`,
       });
     }
@@ -1034,9 +965,6 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   // Binary assets, answered with minimal real payloads rather than a 404: a
   // failed subresource is a console error, and ignoring those would also
   // ignore the ones that mean something.
-  await page.route(/\/api\/v1\/maps\/[^/]+\/(image|thumbnail)$/, (route) =>
-    route.fulfill({ status: 200, contentType: "image/png", body: gridImage }),
-  );
   await page.route(/\/api\/v1\/maps\/[^/]+\/export$/, (route) =>
     // The console never opens the archive; a few bytes of the right type do.
     route.fulfill({

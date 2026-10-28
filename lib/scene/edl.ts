@@ -32,7 +32,7 @@ export const EDL_STEP_PER_M = 0.003;
 /**
  * The layer the dashboard puts its 3D map on, so only the map is shaded:
  * the viewport draws a robot, a live scan and markers beside it, and each
- * scan point outlined against the floor plan behind it would be a dark ring.
+ * scan point outlined against the floor behind it would be a dark ring.
  */
 export const EDL_LAYER = 1;
 

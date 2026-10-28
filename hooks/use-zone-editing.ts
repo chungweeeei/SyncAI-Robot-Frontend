@@ -70,8 +70,7 @@ export interface UseZoneEditing extends ZoneSession {
  * `zones` null and every write refused. The first list read is taken once.
  *
  * `clearNoteOnEdit` puts a finished save's note away at the next edit to a
- * zone (the 3D view's rule); the floor plan editor instead hides a note that
- * no longer describes the screen.
+ * zone.
  */
 export function useZoneEditing(
   name: string,

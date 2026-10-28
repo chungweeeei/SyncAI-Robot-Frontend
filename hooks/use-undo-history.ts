@@ -8,12 +8,12 @@ import {
   popUndo,
   pushPatch,
   type UndoStack,
-} from "@/lib/map/patch";
+} from "@/lib/map/undo";
 
 export interface UndoHistory<T> {
   /**
    * The stack itself, one object for the editor's life, for what rewrites
-   * entries in place (a save's waypoint ids, remapWaypointIds).
+   * entries in place (a save's waypoint ids).
    */
   stack: UndoStack<T>;
   canUndo: boolean;
@@ -25,7 +25,7 @@ export interface UndoHistory<T> {
 }
 
 /**
- * A map editor's undo history (lib/map/patch.ts's byte-capped stack) with
+ * An editor's undo history (lib/map/undo.ts's byte-capped stack) with
  * the two flags its toolbar greys Undo and Redo on. Applying an entry stays
  * the editor's: only it knows what a stroke or a waypoint edit changes.
  */

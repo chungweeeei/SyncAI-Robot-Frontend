@@ -7,6 +7,7 @@ import {
   mockBackend,
   recording,
   robotState,
+  withoutOctomap,
 } from "./backend";
 
 /**
@@ -49,7 +50,7 @@ test.describe("words and names on the operator's screens", () => {
 
     const header = page.getByRole("banner");
     await expect(header.getByText(MAP_NAME, { exact: true })).toBeVisible();
-    await expect(header.getByText(/gridmap\.yaml|map\//)).toHaveCount(0);
+    await expect(header.getByText(/octomap\.bt|map\//)).toHaveCount(0);
   });
 
   test("follows a map switched from another console", async ({ page }) => {
@@ -63,7 +64,7 @@ test.describe("words and names on the operator's screens", () => {
     const header = page.getByRole("banner");
     await expect(header.getByText(MAP_NAME, { exact: true })).toBeVisible();
 
-    state.map = "map/wh1/gridmap.yaml";
+    state.map = "map/wh1/octomap.bt";
     here.active = false;
     there.active = true;
     await expect(header.getByText("wh1", { exact: true })).toBeVisible();
@@ -107,37 +108,22 @@ test.describe("words and names on the operator's screens", () => {
     ).toBeVisible();
   });
 
-  test("names the waypoint field and the editor in the operator's words", async ({
-    page,
-  }) => {
+  test("names the editor in the operator's words", async ({ page }) => {
     await mockBackend(page);
-    await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
-    await expect(page.getByRole("toolbar", { name: "Draw" })).toBeVisible();
-    await expect(page.getByText(/gridmap|vertices/i)).toHaveCount(0);
-
-    await page.getByRole("button", { name: "Place" }).click();
-    const canvas = (await page.locator("canvas").boundingBox())!;
-    await page.mouse.click(
-      canvas.x + canvas.width / 2,
-      canvas.y + canvas.height / 2,
-    );
-    // Focused on arrival, and reachable by its name rather than a placeholder
-    // that disappears the moment something is typed.
-    await expect(page.getByRole("textbox", { name: "Name" })).toBeFocused();
+    await page.goto(`/maps/${MAP_NAME}/edit?tool=waypoint`);
+    await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+    await expect(page.getByText(/octomap|vertices/i)).toHaveCount(0);
   });
 
-  test("sends an operator to the button that builds a missing floor plan", async ({
+  test("says why a map with no 3D map cannot be edited, not the file it lacks", async ({
     page,
   }) => {
-    await mockBackend(page, {
-      maps: [mapSummary({ grid: null, thumbnail: null, grid_status: "none" })],
-    });
+    await mockBackend(page, { maps: [mapSummary(withoutOctomap())] });
     await page.goto(`/maps/${MAP_NAME}/edit`);
 
     await expect(
-      page.getByText(
-        `"${MAP_NAME}" has no floor plan yet. Build one from the map's card`,
-      ),
+      page.getByText("This map has no 3D map, so there is nothing to edit."),
     ).toBeVisible();
+    await expect(page.getByText(/octomap/i)).toHaveCount(0);
   });
 });

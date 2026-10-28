@@ -81,7 +81,7 @@ const RecordingSummarySchema: z.ZodType<RecordingSummary> = z.object({
 ## 2. Fetcher
 
 Two doors only: `requestJson` for JSON, `requestRaw` for anything else (the
-gridmap image, the map point cloud). **Never call `fetch` directly** — that is
+map scan, the 3D map, an export archive). **Never call `fetch` directly** — that is
 how a refusal stops being the backend's sentence. `lib/video/` is the one
 permanent exception and stays one.
 
@@ -110,12 +110,14 @@ Only then. `mapError` turns a `code` into a typed error; everything else wants
 the plain `Error` carrying the backend's sentence.
 
 ```ts
-mapError: ({ detail, code }) =>
-  code === "gridmap_hand_edited" ? new ConvertConflictError(detail, code) : undefined,
+mapError: ({ detail, code }, res) =>
+  res.status === 409 && code && ACTIVATE_CONFLICT_CODES.includes(code)
+    ? new ActivateConflictError(detail, code as ActivateConflictCode)
+    : undefined,
 ```
 
-Two endpoints do this today (grid convert, map activate). If you are reaching
-for a third, check the control actually *branches* — showing the sentence is
+One endpoint does this today (map activate). If you are reaching
+for a second, check the control actually *branches* — showing the sentence is
 not branching.
 
 ## 3. Query key
@@ -153,7 +155,7 @@ export function useRecordings(): UseRecordings {
 
 **Polling policy — poll only while the server is changing something on its
 own, and let the status that triggered the poll switch it off.** `useMaps`
-polls while `grid_status === "converting"`; `useRecordings` polls while a bag
+polls while an `octomap_status` is `"converting"`; `useRecordings` polls while a bag
 is live. A poll with no off-switch is a bug. Anything this console does itself
 (start, stop, delete) invalidates instead.
 
@@ -221,8 +223,7 @@ Known cross-key edges in this codebase:
 | map rename | `taskTemplates` | templates carry `map_name` |
 | map activate | `taskTemplates`, `mapVertices` (both maps) | `map_matches_active` flips on every template |
 | vertex CRUD | `maps`, `taskTemplates` | vertex counts, template resolution |
-| grid save / convert, mapping save, map rename / delete | `mapImage` | the floor plan raster the task editor draws was decoded from the file that changed or went away |
-| mapping save, map rename / delete | `mapPointCloud` | the dashboard's map scan was read from the `map.pcd` that was rewritten or went away; a grid save or convert does not touch it |
+| mapping save, map rename / delete | `mapPointCloud` | the dashboard's map scan was read from the `map.pcd` that was rewritten or went away |
 | forbidden zone save | `mapKeepout` (set), `maps` | the answer is the next zone read; the files moved `modified_at` |
 | map rename / delete / activate | `mapKeepout` | the zones move with the directory; `active` moves with a switch |
 | recording start/stop | `recordings` **and** `activeRecording` | one event changes both faces |

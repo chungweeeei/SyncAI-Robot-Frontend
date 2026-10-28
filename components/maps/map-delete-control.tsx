@@ -18,12 +18,9 @@ import type { MapSummary } from "@/lib/types/map";
 
 const LOCKED_REASON =
   "The robot is working in this map right now, so it cannot be deleted. Switch it to another map first.";
-const CONVERTING_REASON =
-  "This map is still being prepared. Wait for it to finish.";
-
 /**
  * The corner tile, shared by the button and the greyed span; its own
- * `bg-panel` so the glyph doesn't sink into the thumbnail.
+ * `bg-panel` so the glyph doesn't sink into the tile.
  */
 const CORNER =
   "absolute top-2 right-2 z-10 flex size-6 items-center justify-center rounded-sm border border-hairline bg-panel/90 backdrop-blur-sm";
@@ -43,16 +40,14 @@ function vertexWarning(map: MapSummary): string | null {
  * The card-side face of DELETE /api/v1/maps/{name}: an X in the card's top
  * right, not a word in the header, so it can't read as another view. It owns
  * the `absolute` (the card is the positioned ancestor) because its dialog is
- * a sibling, and carries its own surface to contrast with either thumbnail.
+ * a sibling, and carries its own surface to contrast with the tile.
  *
  * Confirmed in an AlertDialog (no backdrop dismiss) because nothing is behind
- * it: a rebuild keeps the previous floor plan and a rename can be undone, but
- * this removes the run and its waypoints. The dialog names the map and warns
+ * it: a rename can be undone, but this removes the run and its waypoints. The dialog names the map and warns
  * about the waypoints, nothing else.
  *
  * The map in use can't be deleted (409 `map_active`): the running stack holds
- * paths into it. Greyed on the active card and mid-conversion (the conversion
- * is writing into the directory). A refusal keeps the dialog open — 409
+ * paths into it. Greyed on the active card. A refusal keeps the dialog open — 409
  * `template_bound` names the templates still bound to the map.
  *
  * On success the card unmounts with the refetch, so the sentence goes up
@@ -71,11 +66,10 @@ export function MapDeleteControl({
   const [confirming, setConfirming] = React.useState(false);
 
   const busy = remove.isPending;
-  // 409s (in use, converting, a bound template) arrive as the backend's sentence.
+  // 409s (in use, a bound template) arrive as the backend's sentence.
   const error = remove.error?.message ?? null;
 
   const locked = map.active;
-  const blocked = locked || map.grid_status === "converting";
 
   const submit = () => {
     if (busy) return;
@@ -96,10 +90,10 @@ export function MapDeleteControl({
     <>
       {/* A look-alike span when blocked: `disabled` swallows the pointer
         * events the tooltip needs. */}
-      {blocked ? (
+      {locked ? (
         <span
           aria-disabled="true"
-          title={locked ? LOCKED_REASON : CONVERTING_REASON}
+          title={LOCKED_REASON}
           className={cn(CORNER, "cursor-not-allowed text-muted-foreground opacity-40")}
         >
           <XIcon className="size-3.5" aria-hidden />

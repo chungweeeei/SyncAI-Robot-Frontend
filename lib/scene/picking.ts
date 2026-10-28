@@ -4,7 +4,7 @@ import * as THREE from "three";
 
 /**
  * The plane a pick projects onto: the mathematical plane, not the ground
- * mesh, which spans only the floor plan (or is absent). Bounds are checked
+ * of any mesh. Bounds are checked
  * separately. Its height is set per cast — the ground of the floor shown —
  * so it is scratch like the two below.
  */

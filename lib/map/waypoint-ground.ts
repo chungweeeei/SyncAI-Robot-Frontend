@@ -54,8 +54,8 @@ export function columnGround(voxels: OccupiedVoxels | null, x: number, y: number
  * re-place included, since there is no other storey to keep it on. With
  * floors but none picked, a re-place keeps its own height — moving a 2F stop
  * a metre must not drop it to the ground floor because 2F was not up — and a
- * new stop is on the ground floor, 0, as every stop was before floors. A 2D
- * map (no tree) has no ground to read, so its stops stay at 0.
+ * new stop is on the ground floor, 0, as every stop was before floors. With
+ * no tree (not read yet) there is no ground to read, so stops stay at 0.
  */
 export function placedGround({
   voxels,
@@ -87,7 +87,7 @@ export function placedGround({
  * its body height is in. On a 3D map with no floors, the lowest cell of its
  * column within a floor's band under its body (`FLOOR_BAND_BELOW_M`), else a
  * body height under it — the column alone could reach under a ledge it stands
- * on. Else (a 2D map, or a height on no floor) the ground floor's 0.
+ * on. Else (no tree read, or a height on no floor) the ground floor's 0.
  */
 export function robotGround(
   voxels: OccupiedVoxels | null,

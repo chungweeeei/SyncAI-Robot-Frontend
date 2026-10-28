@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchKeepout, saveKeepout } from "@/lib/api/keepout";
 
 /**
- * The forbidden zones' wire. One file serves a floor plan and a 3D map: a
- * zone may carry a name and the floor band the robot's 3D planner applies it
- * on, and a save is the whole list -- so a field the console read must go
- * back unchanged, or a floor plan save widens a 3D zone to every storey.
+ * The forbidden zones' wire. A zone may carry a name and the floor band the
+ * robot's 3D planner applies it on, and a save is the whole list -- so a
+ * field the console read must go back unchanged, or a save widens a zone to
+ * every storey.
  */
 
 let fetchMock: ReturnType<typeof vi.fn>;

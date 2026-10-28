@@ -82,7 +82,7 @@ describe("placedGround", () => {
     ).toBeCloseTo(-1.45);
   });
 
-  it("keeps a 2D map's stops, which have no ground to read, at 0", () => {
+  it("keeps stops at 0 while there is no 3D map to read the ground off", () => {
     expect(placedGround({ voxels: null, band: null, hasFloors: false, x: 0, y: 0 })).toBe(0);
   });
 
@@ -124,7 +124,7 @@ describe("robotGround", () => {
     expect(robotGround(slope(), [], { ...xy(9), z: 0 })).toBeCloseTo(-0.48);
   });
 
-  it("puts it on the ground floor on a 2D map", () => {
+  it("puts it on the ground floor while there is no 3D map", () => {
     expect(robotGround(null, [], { ...xy(4), z: 3.3 })).toBe(0);
   });
 });

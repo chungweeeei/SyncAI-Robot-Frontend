@@ -1,8 +1,8 @@
 // Where a dock step really starts: the approach point in front of the dock.
 // The robot works it out itself from the dock pose it is sent and does not
 // publish it, so this copy is what the console draws in both places it shows
-// the leg no row of the operator's names: the task editor's floor plan
-// preview, and the dashboard while a dock runs (lib/scene/dock-layer.ts).
+// the leg no row of the operator's names: the dashboard while a dock runs
+// (lib/scene/dock-layer.ts).
 
 import type { PlanarPose } from "@/lib/types/robot";
 

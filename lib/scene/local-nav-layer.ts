@@ -8,7 +8,7 @@ import type { Theme } from "@/lib/scene/theme";
 import type { LocalCostmap, PlannedPath } from "@/lib/types/robot";
 
 /*
- * Both lie on the robot's own ground (setGround), not on the floor plan or a
+ * Both lie on the robot's own ground (setGround), not on the ground floor or a
  * height of their own: the robot sends them planar, and they are about the
  * storey it stands on. The costmap under the route (PATH_Z_M, 0.012), so the
  * route stays readable across it; the trajectory over the route, since it is

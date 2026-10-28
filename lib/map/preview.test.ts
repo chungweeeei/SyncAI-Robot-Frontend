@@ -1,65 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { PREVIEW_INSET, planCaptions, previewView } from "@/lib/map/preview";
-import { VERTEX_HIT_RADIUS, vertexAt, vertexScreen } from "@/lib/map/draw";
-import type { MapVertex } from "@/lib/types/map";
-import type { MapMetadata } from "@/lib/types/robot";
+import { planCaptions } from "@/lib/map/preview";
 
 /**
- * The rules the floor plan preview has to keep: the view it opens at leaves
- * room for the marks on the map's edge, a lit stop says which steps go to it,
- * and captions that would smear give way in a known order.
+ * The rule the route map's captions keep: captions that would smear give way
+ * in a known order, the job's stops first.
  */
-
-const meta: MapMetadata = {
-  resolution: 0.05,
-  origin: [-12.3, -7.8, 0],
-  width: 400,
-  height: 300,
-};
-
-// A wide preview: a 4:3 map fits by height, with a well either side, where a
-// naive x/width scale would be wrong.
-const rect = { width: 320, height: 160 };
-const view = previewView(rect, meta);
-
-function stop(over: Partial<MapVertex>): MapVertex {
-  return {
-    id: "v",
-    name: "v",
-    type: "MOVE",
-    map_name: "dp2f",
-    x: 0,
-    y: 0,
-    theta: 0,
-    z: 0,
-    ...over,
-  };
-}
-
-describe("previewView", () => {
-  it("fits the whole map inside the inset, centred", () => {
-    const innerW = 320 - PREVIEW_INSET.left - PREVIEW_INSET.right;
-    const innerH = 160 - PREVIEW_INSET.top - PREVIEW_INSET.bottom;
-    // 300 rows into the inset height is the tighter side.
-    const scale = innerH / 300;
-    expect(view.scale).toBeCloseTo(scale);
-    expect(view.oy).toBeCloseTo(PREVIEW_INSET.top);
-    // 400 cols at that scale leave a well split evenly inside the inset.
-    expect(view.ox).toBeCloseTo(PREVIEW_INSET.left + (innerW - 400 * scale) / 2);
-  });
-
-  it("keeps a stop on the map's edge clear of the canvas edge", () => {
-    // The right and top need the most room: that is where a caption goes.
-    const corner = stop({
-      x: meta.origin[0] + meta.width * meta.resolution,
-      y: meta.origin[1] + meta.height * meta.resolution,
-    });
-    const at = vertexScreen(view, meta, corner.x, corner.y);
-    expect(rect.width - at.cx).toBeGreaterThanOrEqual(PREVIEW_INSET.right);
-    expect(at.cy).toBeGreaterThanOrEqual(PREVIEW_INSET.top);
-  });
-});
 
 describe("planCaptions", () => {
   // Seven px a character, like a monospace caption at 11 px.
@@ -87,21 +33,5 @@ describe("planCaptions", () => {
       measure,
     );
     expect([...kept]).toEqual(["lit", "next"]);
-  });
-});
-
-describe("vertexAt", () => {
-  const a = stop({ id: "a", x: 0, y: 0 });
-  const b = stop({ id: "b", x: 0.05, y: 0 });
-  const at = vertexScreen(view, meta, 0, 0);
-
-  it("finds a stop within the slop and nothing outside it", () => {
-    expect(vertexAt(view, meta, [a], at.cx + 5, at.cy, VERTEX_HIT_RADIUS)?.id).toBe("a");
-    expect(vertexAt(view, meta, [a], at.cx + VERTEX_HIT_RADIUS + 1, at.cy, VERTEX_HIT_RADIUS)).toBeNull();
-  });
-
-  it("picks the one drawn on top where two overlap", () => {
-    // Drawn in list order, so the last is the one the pointer sees.
-    expect(vertexAt(view, meta, [a, b], at.cx, at.cy, VERTEX_HIT_RADIUS)?.id).toBe("b");
   });
 });

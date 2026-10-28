@@ -138,22 +138,9 @@ export interface RobotState {
   motor_status: RobotMotorStatus[];
 }
 
-// Mirrors the ROS map_server YAML (map/warehouse.yaml)
-export interface MapMetadata {
-  /** meters per cell */
-  resolution: number;
-  /** world coordinates of the grid's bottom-left cell [x, y, yaw] */
-  origin: [number, number, number];
-  /** grid width in cells */
-  width: number;
-  /** grid height in cells */
-  height: number;
-}
-
 // ---- Runtime schemas --------------------------------------------------
 //
-// Only for what arrives over REST (MapMetadata arrives as `{x, y, yaw}` and is
-// folded in lib/api/map.ts).
+// Only for what arrives over REST.
 
 const RobotPoseSchema: z.ZodType<RobotPose> = z.object({
   x: z.number(),

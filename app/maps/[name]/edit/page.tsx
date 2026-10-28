@@ -6,10 +6,9 @@ import { useParams, useSearchParams } from "next/navigation";
 import { MapEditor } from "@/components/maps/map-editor";
 
 /**
- * A map's editor, its floor plan or its 3D map. Chrome only — MapEditor
- * owns the header and the switch; each view owns its editing. The
- * canvases size from their container, so the editor gives them a definite
- * height; the page does not scroll.
+ * A map's editor, on its 3D map. Chrome only — MapEditor owns the header,
+ * Map3dEditor the editing. The canvas sizes from its container, so the
+ * editor gives it a definite height; the page does not scroll.
  */
 export default function MapEditPage() {
   return (
@@ -22,10 +21,9 @@ export default function MapEditPage() {
 }
 
 /**
- * `view=3d` opens the 3D view (without it, the floor plan, as this route
- * always has), `mode=vertex` the floor plan's Waypoints mode,
- * `tool=waypoint` the 3D view's Waypoint tool, and `from=tasks` points Back
- * at the task editor; all are written by lib/map/links.ts.
+ * `tool=waypoint` arms the Waypoint tool and `from=tasks` points Back at the
+ * task editor; both are written by lib/map/links.ts. A `view` left in an old
+ * link is ignored.
  */
 function MapEditScreen() {
   const params = useParams<{ name: string }>();
@@ -34,8 +32,6 @@ function MapEditScreen() {
   return (
     <MapEditor
       name={params.name}
-      view={search.get("view") === "3d" ? "3d" : "2d"}
-      initialMode={search.get("mode") === "vertex" ? "vertex" : "grid"}
       openOnWaypoint={search.get("tool") === "waypoint"}
       from={search.get("from") === "tasks" ? "tasks" : null}
     />

@@ -1,5 +1,5 @@
 // Every TanStack Query key, so cache *sharing* is decided in one visible place
-// (e.g. mapVertices, read by both the floor plan editor and the dashboard).
+// (e.g. mapVertices, read by both the map editor and the dashboard).
 // Never inline a key in its hook.
 
 export const queryKeys = {
@@ -59,22 +59,10 @@ export const queryKeys = {
    */
   mapKeepout: (name: string) => ["map-keepout", name] as const,
   /**
-   * GET /api/v1/maps/<name>/image, decoded — the task editor's floor plan,
-   * one entry per map version shared by every open MOVE row.
-   *
-   * `version` comes from the catalogue (see useMapImage), so a raster
-   * rewritten elsewhere is retired too. Without it the key is a prefix over
-   * every version, which is how the write hooks drop a map's entries.
-   */
-  mapImage: (name: string, version?: string) =>
-    version === undefined
-      ? (["map-image", name] as const)
-      : (["map-image", name, version] as const),
-  /**
    * GET /api/v1/maps/<name>/pointcloud, decoded — the dashboard's "Map scan".
    *
-   * Keyed by name alone, unlike `mapImage`: `modified_at` covers the whole
-   * map directory, so a floor plan rebuild would re-download an unchanged
+   * Keyed by name alone, unlike `mapOctomap`: `modified_at` covers the whole
+   * map directory, so a 3D map rebuild would re-download an unchanged
    * scan. A name's scan only changes by delete and re-save (a taken name is
    * refused), which this console's writes drop. The open case: another
    * console deleting and re-saving the name; only a backend scan version
@@ -85,7 +73,7 @@ export const queryKeys = {
    * GET /api/v1/maps/<name>/octomap, decoded — the dashboard's "3D map" and
    * the 3D view's, one entry shared by both.
    *
-   * Keyed like `mapImage`, by a version the catalogue reports
+   * Keyed by a version the catalogue reports
    * (`octomap_version`, see useMapOctomap): unlike the scan, the tree is
    * replaced in place — by a re-clean, or by the robot's edit tool applying
    * the ground patches — and `modified_at` cannot say which file moved.
@@ -164,7 +152,6 @@ export function mapScopedKeys(name: string): readonly (readonly unknown[])[] {
   return [
     queryKeys.mapVertices(name),
     queryKeys.mapKeepout(name),
-    queryKeys.mapImage(name),
     queryKeys.mapPointCloud(name),
     queryKeys.mapOctomap(name),
     queryKeys.mapOctomapPreview(name),
