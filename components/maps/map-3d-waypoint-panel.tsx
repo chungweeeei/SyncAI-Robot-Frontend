@@ -1,9 +1,11 @@
 "use client";
 
-import { Trash2Icon } from "lucide-react";
+import * as React from "react";
+import { SearchIcon, Trash2Icon } from "lucide-react";
 
 import { Chip, overlayPanel } from "@/components/console/instrument";
-import { VertexList } from "@/components/maps/vertex-panel";
+import { Input } from "@/components/ui/input";
+import { vertexGlyph } from "@/lib/map/vertex";
 import { cn } from "@/lib/utils";
 import type { MapVertex } from "@/lib/types/map";
 
@@ -11,9 +13,8 @@ import type { MapVertex } from "@/lib/types/map";
  * The 3D view's waypoint list: every name on the map, so an operator naming
  * the next stop can see which names are taken, and the set a Delete takes.
  *
- * A row toggles its stop in the selection rather than narrowing to it, as
- * the Select tool does on the map: the floor plan's form has no place here,
- * since a tap on a marker already opens the stop. Every floor's stops are
+ * A row toggles its stop in the selection, as the Select tool does on the
+ * map; a tap on a marker already opens the stop. Every floor's stops are
  * listed, the hidden ones too, so the list answers "is this name taken" for
  * the whole map.
  */
@@ -85,6 +86,98 @@ export function Map3dWaypointPanel({
             Delete {count}
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** The list itself: every waypoint, filterable by name, a row toggling its stop. */
+function VertexList({
+  vertices,
+  selectedIds,
+  pendingIds,
+  onSelect,
+  empty,
+}: {
+  vertices: MapVertex[];
+  /** Every highlighted row, so a band lights all of its members here too. */
+  selectedIds: readonly string[];
+  /** Rows Save would write, marked with the toolbar Save's caution dot. */
+  pendingIds: ReadonlySet<string>;
+  /** A row picked: it toggles that stop in the selection. */
+  onSelect: (id: string) => void;
+  empty: string | null;
+}) {
+  const [filter, setFilter] = React.useState("");
+  if (!vertices.length) {
+    return empty ? (
+      <p className="text-[11px] leading-tight text-muted-foreground">{empty}</p>
+    ) : null;
+  }
+
+  // By name, case-folded: typing "Dock" should find "dock-a".
+  const needle = filter.trim().toLowerCase();
+  const shown = needle
+    ? vertices.filter((vertex) => vertex.name.toLowerCase().includes(needle))
+    : vertices;
+
+  return (
+    <div className="border-t border-hairline pt-1.5">
+      <div className="relative mb-1">
+        <SearchIcon
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 left-1.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          type="search"
+          aria-label="Filter waypoints"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          placeholder="Filter by name"
+          className="h-7 rounded-sm pl-6 md:text-[12px]"
+        />
+      </div>
+      {shown.length === 0 ? (
+        <p className="px-1 py-0.5 text-[11px] leading-tight text-muted-foreground">
+          No waypoint matches.
+        </p>
+      ) : (
+        // Five rows, by request, then its own scroll so a long list can't grow
+        // the panel past the viewport. 114 px = five 22 px rows + four 1 px gaps.
+        <ul className="max-h-[114px] space-y-px overflow-y-auto">
+          {shown.map((vertex) => (
+            <li key={vertex.id}>
+              <button
+                type="button"
+                aria-pressed={selectedIds.includes(vertex.id)}
+                onClick={() => onSelect(vertex.id)}
+                className={cn(
+                  "flex w-full items-center gap-1.5 rounded-sm px-1 py-0.5 text-left transition-colors",
+                  selectedIds.includes(vertex.id)
+                    ? "bg-signal-cmd/12 text-signal-cmd"
+                    : "hover:bg-elevated",
+                )}
+              >
+                <span className="instrument-label w-3 shrink-0 text-muted-foreground">
+                  {vertexGlyph(vertex.type)}
+                </span>
+                <span className="readout min-w-0 flex-1 truncate text-[12px]">
+                  {vertex.name}
+                </span>
+                {pendingIds.has(vertex.id) && (
+                  // The toolbar Save's dot, so the eye links them; words for a screen reader.
+                  <span className="flex shrink-0 items-center" title="Unsaved">
+                    <span aria-hidden className="size-1.5 rounded-full bg-signal-caution" />
+                    <span className="sr-only">(unsaved)</span>
+                  </span>
+                )}
+                <span className="readout shrink-0 text-[11px] text-muted-foreground">
+                  {vertex.x.toFixed(1)}, {vertex.y.toFixed(1)}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

@@ -69,7 +69,7 @@ test.describe("a running dock", () => {
     await expect(pathLayer(page)).toBeVisible();
   });
 
-  test("is not drawn over another map's floor plan", async ({ page }) => {
+  test("is not drawn over another map", async ({ page }) => {
     // A dock pose on the job's map is somewhere else, or nowhere, on this one.
     await mockBackend(page, {
       activeTasks: [activeTask({ id: ID, map_name: "warehouse" })],

@@ -8,7 +8,7 @@ import {
   failOnConsoleErrors,
   mapSummary,
   mockBackend,
-  withOctomap,
+  withoutOctomap,
 } from "./backend";
 
 /**
@@ -20,8 +20,8 @@ import {
 test.describe("the map library", () => {
   test("marks the map the stack is running and locks it", async ({ page }) => {
     // The running map cannot be renamed or deleted, and the card says so
-    // rather than leaving it to a 409. Its floor plan stays editable while the
-    // robot is idle: the backend saves onto the live map and reloads it.
+    // rather than leaving it to a 409. It stays editable while the robot is
+    // idle: the backend saves onto the live map and reloads it.
     await mockBackend(page, { maps: [mapSummary({ active: true })] });
     await page.goto("/maps");
 
@@ -37,30 +37,18 @@ test.describe("the map library", () => {
     ).toHaveAttribute("href", `/maps/${MAP_NAME}/edit`);
   });
 
-  test("switches the robot onto a map with a 3D map and no floor plan", async ({ page }) => {
-    // The robot navigates a map on its 3D map whenever it has one, so a
-    // missing floor plan is no reason to hold the switch. A map with neither
-    // still is, with the reason where the button would be.
+  test("switches the robot onto a map with a 3D map, and holds one without", async ({
+    page,
+  }) => {
+    // The robot navigates on 3D maps only: a map whose tree is not built has
+    // nothing to load, and says so where the button would be.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, {
       maps: [
-        mapSummary({ active: true, name: "site-2d" }),
-        mapSummary({
-          active: false,
-          name: "site-3d",
-          grid: null,
-          thumbnail: null,
-          grid_status: "none",
-          ...withOctomap(),
-        }),
-        mapSummary({
-          active: false,
-          name: "site-bare",
-          grid: null,
-          thumbnail: null,
-          grid_status: "none",
-        }),
+        mapSummary({ active: true, name: "site-a" }),
+        mapSummary({ active: false, name: "site-3d" }),
+        mapSummary({ active: false, name: "site-bare", ...withoutOctomap() }),
       ],
     });
     await page.goto("/maps");
@@ -87,7 +75,7 @@ test.describe("the map library", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("shows a card its 3D map when it has one, else its floor plan", async ({ page }) => {
+  test("shows a card its 3D map, and says so when it has none", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const treeReads: string[] = [];
@@ -97,15 +85,8 @@ test.describe("the map library", () => {
     });
     await mockBackend(page, {
       maps: [
-        mapSummary({ active: true, name: "site-3d", ...withOctomap() }),
-        mapSummary({ active: false, name: "site-2d" }),
-        mapSummary({
-          active: false,
-          name: "site-bare",
-          grid: null,
-          thumbnail: null,
-          grid_status: "none",
-        }),
+        mapSummary({ active: true, name: "site-3d" }),
+        mapSummary({ active: false, name: "site-bare", ...withoutOctomap() }),
       ],
     });
     await page.goto("/maps");
@@ -113,26 +94,24 @@ test.describe("the map library", () => {
     const still = page.getByRole("img", { name: "3D map of site-3d" });
     await expect(still).toBeVisible();
     await expect(still).toHaveAttribute("src", /^data:image\/png;base64,/);
-    // The 3D map stands in for the floor plan, not beside it.
-    await expect(page.getByRole("img", { name: "Floor plan of site-3d" })).toHaveCount(0);
-    await expect(page.getByRole("img", { name: "Floor plan of site-2d" })).toBeVisible();
-    await expect(page.getByRole("img", { name: "3D map of site-2d" })).toHaveCount(0);
-    await expect(
-      page.getByRole("article").filter({ hasText: "site-bare" }).getByText("No preview"),
-    ).toBeVisible();
+    const bare = page.getByRole("article").filter({ hasText: "site-bare" });
+    await expect(bare.getByRole("img")).toHaveCount(0);
+    await expect(bare.getByText("No 3D map")).toHaveCount(2);
     // Only the map that has a tree downloads one.
     expect(treeReads).toEqual(["/api/v1/maps/site-3d/octomap"]);
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("falls back to the floor plan when the 3D map cannot be read", async ({ page }) => {
+  test("says so when the 3D map cannot be read", async ({ page }) => {
     await mockBackend(page, {
-      maps: [mapSummary({ active: true, name: "site-3d", ...withOctomap() })],
+      maps: [mapSummary({ active: true, name: "site-3d" })],
       octomap: Buffer.from("not a tree"),
     });
     await page.goto("/maps");
 
-    await expect(page.getByRole("img", { name: "Floor plan of site-3d" })).toBeVisible();
+    await expect(
+      page.getByRole("article").filter({ hasText: "site-3d" }).getByText("No preview"),
+    ).toBeVisible();
     await expect(page.getByRole("img", { name: "3D map of site-3d" })).toHaveCount(0);
   });
 
@@ -360,7 +339,7 @@ test.describe("the map library", () => {
     expect(writes.filter((w) => w.method === "POST")).toHaveLength(0);
   });
 
-  test("explains a conversion that failed instead of showing a hole", async ({
+  test("explains a 3D map that failed instead of showing a hole", async ({
     page,
   }) => {
     await mockBackend(page, {
@@ -368,48 +347,14 @@ test.describe("the map library", () => {
         mapSummary({
           active: false,
           name: "bad-cloud",
-          grid: null,
-          thumbnail: null,
-          grid_status: "failed",
-          grid_error: "intensity/normal gate selected no ground points",
+          ...withoutOctomap("failed"),
+          octomap_error: "map cleaning ran out of memory",
         }),
       ],
     });
     await page.goto("/maps");
 
-    await expect(
-      page.getByText("intensity/normal gate selected no ground points"),
-    ).toBeVisible();
-  });
-});
-
-test.describe("a map whose floor plan is being rebuilt", () => {
-  const converting = () => [
-    mapSummary({ grid_status: "converting", grid_converting: true }),
-  ];
-
-  test("holds a saved job's Run, and says why", async ({ page }) => {
-    const writes = await mockBackend(page, { maps: converting() });
-    await page.goto("/tasks");
-
-    await expect(
-      page.getByRole("button", { name: 'Run "Morning round" now' }),
-    ).toBeDisabled();
-    await expect(
-      page.getByText(/This map's floor plan is being rebuilt/),
-    ).toBeVisible();
-    expect(writes.filter((w) => w.path === "/api/v1/tasks")).toEqual([]);
-  });
-
-  test("holds Set goal, but still lets the robot stand", async ({ page }) => {
-    const writes = await mockBackend(page, { maps: converting() });
-    await page.goto("/");
-
-    await expect(page.getByRole("button", { name: "Set goal" })).toBeDisabled();
-    await page.getByRole("button", { name: "Manual drive panel" }).click();
-    await page.getByRole("button", { name: "Stand", exact: true }).click();
-    await expect
-      .poll(() => writes.filter((w) => w.path === "/api/v1/robot/set_motion_key"))
-      .toHaveLength(1);
+    await expect(page.getByText("map cleaning ran out of memory")).toBeVisible();
+    await expect(page.getByText("3D map failed")).toBeVisible();
   });
 });

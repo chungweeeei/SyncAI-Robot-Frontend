@@ -1,5 +1,5 @@
 // Waypoints: /api/v1/maps/{name}/vertices. Plain JSON CRUD, kept apart from
-// lib/api/map.ts's binary floor plan round trip.
+// lib/api/map.ts's map files.
 //
 // The map is always in the URL, never in a body: the backend's models have no
 // `map_name`, so a request cannot name a different map than its path.

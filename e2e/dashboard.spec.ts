@@ -15,7 +15,32 @@ import {
   TWO_FLOORS,
   vertex,
   withOctomap,
+  withoutOctomap,
 } from "./backend";
+
+/**
+ * Two cells at the corners of a 20 × 15 m box centred on (-2.3, -0.3), at
+ * key height `kz` (relative to the origin): what Top down frames once the 3D
+ * map is up, so a test can say where a stop lands on screen. 0.1 m cells.
+ */
+function framingCorners(kz: number): Array<[number, number, number]> {
+  const O = OCTREE_KEY_ORIGIN;
+  return [
+    [O - 123, O - 78, O + kz],
+    [O + 76, O + 71, O + kz],
+  ];
+}
+
+/** The fake's doormat floor, inside the 20 × 15 m box Top down frames. */
+function framedTree(): Buffer {
+  const O = OCTREE_KEY_ORIGIN;
+  const occupied: Array<[number, number, number]> = [];
+  for (let y = 0; y < 4; y += 1) {
+    for (let x = 0; x < 4; x += 1) occupied.push([O + x, O + y, O - 5]);
+  }
+  occupied.push(...framingCorners(-5));
+  return Buffer.from(encodeOctomapBt({ res: 0.1, occupied }));
+}
 
 /**
  * The dashboard's 3D view: its layers, and the waypoints placed and tapped on it.
@@ -76,10 +101,10 @@ test.describe("the dashboard's map scan layer", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("keeps the scan it has through a floor plan rebuild", async ({
+  test("keeps the scan it has through a change to the map's directory", async ({
     page,
   }) => {
-    // A rebuild moves the catalogue's modified_at but leaves the scan alone,
+    // A save into the map moves the catalogue's modified_at but leaves the scan alone,
     // so a new directory time must not cost a second (large) download.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
@@ -157,7 +182,7 @@ test.describe("the dashboard's 3D map layer", () => {
   const treePath = `/api/v1/maps/${MAP_NAME}/octomap`;
   const toggle = (page: Page) => page.getByRole("button", { name: /^3D map/ });
 
-  test("downloads the running map's tree once, and only when asked", async ({
+  test("downloads the running map's tree once, and draws it from the start", async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -175,12 +200,7 @@ test.describe("the dashboard's 3D map layer", () => {
       page.getByRole("region", { name: "Map viewport" }),
     ).toBeVisible();
 
-    // A million cells to decode and draw: only when someone asks to see them.
-    await expect(toggle(page)).toHaveAttribute("aria-pressed", "false");
-    expect(treeReads).toEqual([]);
-    expect(patchReads).toEqual([]);
-
-    await toggle(page).click();
+    // The map the robot navigates on, so it is up without asking.
     await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
     await expect.poll(() => treeReads).toEqual([treePath]);
     // With the ground patches saved for it: the map as the robot drives it.
@@ -199,7 +219,7 @@ test.describe("the dashboard's 3D map layer", () => {
   }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    await mockBackend(page);
+    await mockBackend(page, { maps: [mapSummary(withoutOctomap())] });
     await page.goto("/");
     await expect(
       page.getByRole("region", { name: "Map viewport" }),
@@ -226,11 +246,12 @@ test.describe("the dashboard's 3D map layer", () => {
     });
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
-    // The floors are picked on the 3D map, so not offered while it is hidden.
-    await expect(page.getByRole("group", { name: "Floor" })).toHaveCount(0);
-
-    await toggle(page).click();
     const floors = page.getByRole("group", { name: "Floor" });
+    await expect(floors).toBeVisible();
+    // The floors are picked on the 3D map, so not offered while it is hidden.
+    await toggle(page).click();
+    await expect(floors).toHaveCount(0);
+    await toggle(page).click();
     await expect(floors).toBeVisible();
     await expect(floors.getByRole("button", { name: "All" })).toHaveAttribute(
       "aria-pressed",
@@ -259,32 +280,23 @@ test.describe("the dashboard's 3D map layer", () => {
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { maps: [mapSummary(withOctomap())] });
     await page.goto("/");
-    // Front view is the 3D map's: a floor plan from the front is a line.
-    await expect(page.getByRole("button", { name: "Front view" })).toHaveCount(0);
-    await toggle(page).click();
+    // Front view is the 3D map's: an empty map from the front is a line.
     await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("button", { name: "Front view" })).toBeVisible();
+    await toggle(page).click();
+    await expect(page.getByRole("button", { name: "Front view" })).toHaveCount(0);
+    await toggle(page).click();
     await page.waitForTimeout(500);
     await expect(page.getByRole("group", { name: "Floor" })).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("opens on the 3D map of a map that has no floor plan", async ({ page }) => {
-    // A scan-only save: no floor plan, so no ground plane and nothing to
-    // frame — the tree is what the viewport has, so it is up without asking,
-    // and Top down frames on it.
+  test("frames on the 3D map, and holds the operator's choice to hide it", async ({ page }) => {
+    // The tree is what the viewport has to frame, so Top down and Recenter
+    // look at it.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    await mockBackend(page, {
-      maps: [
-        mapSummary({
-          grid: null,
-          thumbnail: null,
-          grid_status: "none",
-          ...withOctomap(),
-        }),
-      ],
-    });
+    await mockBackend(page, { maps: [mapSummary()] });
     const treeReads: string[] = [];
     page.on("request", (request) => {
       const { pathname } = new URL(request.url());
@@ -328,7 +340,6 @@ test.describe("the dashboard's 3D map layer", () => {
     await expect(
       page.getByRole("region", { name: "Map viewport" }),
     ).toBeVisible();
-    await toggle(page).click();
     await expect.poll(() => treeReads).toEqual([treePath]);
 
     entry.octomap_version = "2-2";
@@ -338,7 +349,6 @@ test.describe("the dashboard's 3D map layer", () => {
     await expect(
       page.getByRole("region", { name: "Map viewport" }),
     ).toBeVisible();
-    await toggle(page).click();
     await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
     await expect.poll(() => treeReads).toEqual([treePath, treePath]);
     expect(errors, "the page logged errors").toEqual([]);
@@ -361,7 +371,6 @@ test.describe("the dashboard's 3D map layer", () => {
     );
     await page.goto("/");
 
-    await toggle(page).click();
     const alert = page.getByRole("alert").filter({ hasText: "still being built" });
     await expect(alert).toHaveText(`The 3D map of '${MAP_NAME}' is still being built`);
 
@@ -668,8 +677,9 @@ test.describe("tapping a stop on the dashboard", () => {
 
   /**
    * Open the waypoint's dialog by tapping its marker. Top down first, because
-   * from overhead the floor is a plain scale (20 x 15 m map, 8 % margin, 60°
-   * fov), so the waypoint lands a known number of pixels from the centre.
+   * from overhead the floor is a plain scale (the 20 x 15 m box of
+   * framedTree, 8 % margin, 60° fov), so the waypoint lands a known number of
+   * pixels from the centre.
    */
   const tapStop = async (page: Page) => {
     const region = page.getByRole("region", { name: "Map viewport" });
@@ -699,7 +709,7 @@ test.describe("tapping a stop on the dashboard", () => {
   }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    const writes = await mockBackend(page);
+    const writes = await mockBackend(page, { octomap: framedTree() });
     await page.goto("/");
 
     await tapStop(page);
@@ -727,7 +737,7 @@ test.describe("tapping a stop on the dashboard", () => {
   }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    const writes = await mockBackend(page, { activeTasks: [activeTask()] });
+    const writes = await mockBackend(page, { octomap: framedTree(), activeTasks: [activeTask()] });
     await page.goto("/");
 
     await tapStop(page);
@@ -748,7 +758,7 @@ test.describe("tapping a stop on the dashboard", () => {
   test("writes nothing when the confirm is dismissed", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    const writes = await mockBackend(page);
+    const writes = await mockBackend(page, { octomap: framedTree() });
     await page.goto("/");
 
     await tapStop(page);
@@ -771,16 +781,16 @@ test.describe("waypoints on an upper floor", () => {
 
   /**
    * Two storeys: the ground floor's 4×4 doormat half a metre under the
-   * origin, and a 2F slab whose box spans 60 m — two far corners are enough
-   * for the box, which is what bounds a pick off the ground floor — so a
-   * press anywhere on the screen lands inside it.
+   * origin, and a 2F slab whose box is the 20 × 15 m Top down frames — two
+   * far corners are enough for the box, which is what bounds a pick off the
+   * ground floor.
    */
   function storeys(): Buffer {
     const occupied: Array<[number, number, number]> = [];
     for (let y = 0; y < 4; y += 1) {
       for (let x = 0; x < 4; x += 1) occupied.push([O + x, O + y, O - 5]);
     }
-    occupied.push([O - 300, O - 300, O + 50], [O + 300, O + 300, O + 50]);
+    occupied.push(...framingCorners(50));
     return Buffer.from(encodeOctomapBt({ res: 0.1, occupied }));
   }
 
@@ -796,7 +806,6 @@ test.describe("waypoints on an upper floor", () => {
   });
 
   const showFloor = async (page: Page, name: string) => {
-    await page.getByRole("button", { name: /^3D map/ }).click();
     const floors = page.getByRole("group", { name: "Floor" });
     await floors.getByRole("button", { name }).click();
     await expect(floors.getByRole("button", { name })).toHaveAttribute("aria-pressed", "true");
@@ -933,7 +942,6 @@ test.describe("waypoints on an upper floor", () => {
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
     // Framed at the ground floor first; the switch alone must lift it.
-    await page.getByRole("button", { name: /^3D map/ }).click();
     await page.getByRole("button", { name: "Top down" }).click();
     const floors = page.getByRole("group", { name: "Floor" });
     await floors.getByRole("button", { name: "2F" }).click();
@@ -968,7 +976,6 @@ test.describe("waypoints on an upper floor", () => {
       state,
     });
     await page.goto("/");
-    await page.getByRole("button", { name: /^3D map/ }).click();
     const floors = page.getByRole("group", { name: "Floor" });
     const follow = floors.getByRole("button", { name: "Follow robot" });
     // Off by default: the whole map, as before.

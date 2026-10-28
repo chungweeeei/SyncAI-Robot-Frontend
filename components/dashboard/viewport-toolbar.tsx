@@ -75,7 +75,7 @@ export function ViewportToolbar({
   onTopDown: () => void;
   /**
    * Look at the map level from the front. Omitted, no button: from the
-   * front a floor plan is a line, so it is offered while the 3D map is up,
+   * front an empty map is a line, so it is offered while the 3D map is up,
    * which also keeps the strip to one row on a phone the rest of the time.
    */
   onFront?: () => void;
@@ -270,7 +270,7 @@ const LAYER_ICONS = {
   voxels: CuboidIcon,
   waypoints: MapPinIcon,
   path: RouteIcon,
-  // The floor plan editor's forbidden zone icon.
+  // The map editor's forbidden zone icon.
   zones: BanIcon,
 } as const;
 

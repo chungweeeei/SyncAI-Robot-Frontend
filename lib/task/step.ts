@@ -260,7 +260,7 @@ export function stepWaypointOrdinals(
 }
 
 /**
- * The waypoints the job goes to, in step order, for the floor plan's route
+ * The waypoints the job goes to, in step order, for the route map's
  * line. A row with no waypoint is passed over rather than breaking the line,
  * and a stop picked twice running is one point, not a zero-length leg.
  */
@@ -271,19 +271,6 @@ export function stepRoute(drafts: readonly StepDraft[]): string[] {
     if (route[route.length - 1] !== draft.vertexId) route.push(draft.vertexId);
   }
   return route;
-}
-
-/**
- * The waypoints a Dock row is picked on, for the floor plan to draw the
- * approach point in front of: the robot drives there before it walks on, and
- * that leg is not a row of its own.
- */
-export function stepDockVertices(drafts: readonly StepDraft[]): ReadonlySet<string> {
-  const docks = new Set<string>();
-  for (const draft of drafts) {
-    if (draft.type === "DOCK" && draft.vertexId !== null) docks.add(draft.vertexId);
-  }
-  return docks;
 }
 
 /**

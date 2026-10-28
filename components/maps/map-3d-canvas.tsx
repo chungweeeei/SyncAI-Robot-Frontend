@@ -66,8 +66,7 @@ export type Map3dTool =
 const tapsZones = (tool: Map3dTool) => tool === "zone" || tool === "zoneRemove";
 
 /**
- * How near a corner a press picks it up, CSS pixels: the floor plan editor's
- * corner targets (grid-canvas.tsx), mouse and finger. One target for every
+ * How near a corner a press picks it up, CSS pixels, mouse and finger. One target for every
  * corner -- the shape's first (close), a finished zone's (anchor, merge) and
  * any of them for a drag.
  */
@@ -531,8 +530,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   }, [zoneDraft, zonePlaneZ, props.band.lo, props.band.hi, session, theme, invalidate]);
 
   // The finished zones' corners, as dots, while Zone is armed: what a press
-  // anchors a shape on, merges it at, or drags. The floor plan shows them
-  // the same way.
+  // anchors a shape on, merges it at, or drags.
   const zoneTool = props.tool === "zone";
   React.useEffect(() => {
     const ctx = sceneRef.current;
@@ -696,7 +694,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   /**
    * The finished zone's corner under a press, with the height it lies at, or
    * null. Any shown zone's until the shape is anchored, then only its own
-   * zone's, the anchor itself excepted -- the floor plan's rule.
+   * zone's, the anchor itself excepted.
    */
   const handleAt = (
     event: React.PointerEvent<HTMLDivElement>,
@@ -718,7 +716,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     return { zoneId, index, z };
   };
 
-  /** What a tap with a zone tool armed does: the floor plan's rules (classifyZonePress). */
+  /** What a tap with a zone tool armed does (classifyZonePress). */
   const tapZone = (event: React.PointerEvent<HTMLDivElement>) => {
     const { tool, zoneDraft: draft, zoneAnchor: anchor } = propsRef.current;
     if (tool === "zoneRemove") {

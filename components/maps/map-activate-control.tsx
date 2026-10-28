@@ -20,7 +20,7 @@ import type { MapSummary } from "@/lib/types/map";
 /**
  * The corner tile, MapDeleteControl's shape on the opposite side; shared by
  * the button and the greyed span, with its own `bg-panel` so the glyph doesn't
- * sink into the thumbnail. It is the slot of MapCard's in-use badge — the two
+ * sink into the tile. It is the slot of MapCard's in-use badge — the two
  * are mutually exclusive, so one tile sits there on every card.
  */
 const CORNER =
@@ -32,10 +32,9 @@ const CORNER =
  *
  * Swap arrows rather than an outlined check, which would read as "done,
  * greyed out" and be confused with the real greyed state. `ArrowLeftRight`,
- * to stay clear of Rebuild's `RefreshCw`. Greyed, with the reason in the
- * tooltip, for a map with neither a floor plan nor a 3D map, no scan, or
- * mid-conversion (`switchRefusal`) — a span look-alike, since `disabled`
- * swallows the tooltip's pointer events.
+ * to stay clear of a refresh's `RefreshCw`. Greyed, with the reason in the
+ * tooltip, for a map with no finished 3D map or no scan (`switchRefusal`) — a
+ * span look-alike, since `disabled` swallows the tooltip's pointer events.
  *
  * Confirmed in an AlertDialog that names the map, because the consequence
  * isn't guessable from an arrow: the pose resets to the new map's origin and

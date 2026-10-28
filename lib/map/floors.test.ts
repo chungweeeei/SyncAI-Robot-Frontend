@@ -153,8 +153,8 @@ describe("drawnGround", () => {
     expect(GROUND_FLOOR_Z_M).toBeCloseTo(-FLOOR_GROUND_BELOW_LEVEL_M);
   });
 
-  it("stands the robot on the floor plan at the height it reports", () => {
-    // base_link as robot01 reported it standing on its floor plan in AUTO
+  it("stands the robot on the ground floor at the height it reports", () => {
+    // base_link as robot01 reported it standing on its ground floor in AUTO
     // (2026-10-19). Its feet, a rest-pose leg under it, must meet the plan
     // rather than hang half a metre through it, as they did with the plan at 0.
     const reportedBase = -0.056;

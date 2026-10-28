@@ -92,31 +92,18 @@ describe("saveMap", () => {
   const saved = {
     name: "site_a",
     has_pointcloud: true,
-    grid_pending: false,
     message: "Saved 'site_a'.",
   };
 
-  // An unticked 3D map is sent as false, never left out: the backend reads a
-  // missing one as "the robot's own setting", which may build it anyway.
-  it("posts both choices, a false one included", async () => {
+  // The robot always builds the 3D map now; the body names the map and
+  // nothing else.
+  it("posts the name alone", async () => {
     fetchMock.mockResolvedValue(answer(saved));
-    await saveMap("site_a", { grid: false, octomap: true });
+    await saveMap("site_a");
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toMatch(/\/api\/v1\/maps$/);
     expect(init.method).toBe("POST");
-    expect(JSON.parse(init.body as string)).toEqual({
-      name: "site_a",
-      grid: false,
-      octomap: true,
-    });
-  });
-
-  it("sends an unticked 3D map as false", async () => {
-    fetchMock.mockResolvedValue(answer(saved));
-    await saveMap("site_a", { grid: true, octomap: false });
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(init.body as string)).toHaveProperty("octomap", false);
+    expect(JSON.parse(init.body as string)).toEqual({ name: "site_a" });
   });
 });

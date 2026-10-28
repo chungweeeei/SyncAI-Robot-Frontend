@@ -7,30 +7,27 @@ import {
   MAP_NAME,
   activeTask,
   failOnConsoleErrors,
-  floorPlanPng,
   mapSummary,
   mockBackend,
   taskState,
   TWO_FLOORS,
   vertex,
   withOctomap,
+  withoutOctomap,
 } from "./backend";
 
 /**
- * The map editor's 3D view: the fake's doormat-sized 3D map is a 4×4 floor
- * with a 2×2 hole in the middle (see octomapBt in backend.ts), half a metre
- * under the origin; the ground patches painted into it, the map's waypoints
- * on it, and the 2D / 3D switch between it and the floor plan. Every test
+ * The map editor: the fake's doormat-sized 3D map is a 4×4 floor with a 2×2
+ * hole in the middle (see octomapBt in backend.ts), half a metre under the
+ * origin; the ground patches painted into it, and the map's waypoints and
+ * forbidden zones on it. Every test
  * that writes asserts what the console sent, not only what the screen says —
  * the patch record is what the robot's tool applies, so a screen that says
  * "4 cells" over a PUT of the wrong keys would pass a screen-only test.
  */
 
-const VIEW_3D = `/maps/${MAP_NAME}/edit?view=3d`;
-const viewSwitch = (page: Page) => page.getByRole("group", { name: "View" });
+const EDITOR = `/maps/${MAP_NAME}/edit`;
 const drawList = (page: Page) => page.getByRole("combobox", { name: "Draw" });
-/** The floor plan view's own tool: the 3D view has a Draw list too, but Orbit, not Pan. */
-const floorPlanTools = (page: Page) => page.getByRole("button", { name: "Pan", exact: true });
 
 /** Pick what a press works on in the 3D view's Draw list. */
 async function chooseDraw(
@@ -78,123 +75,16 @@ async function armFill(page: Page, radius = "0.1 m") {
 const patched = (page: Page) => page.locator("[data-patched]");
 
 test.describe("the editor's 3D view", () => {
-  test("opens a map with both on its floor plan, and switches to the 3D map and back", async ({
-    page,
-  }) => {
-    const errors: string[] = [];
-    failOnConsoleErrors(page, errors);
-    await mockBackend(page, {
-      maps: [mapSummary(withOctomap())],
-      gridImage: floorPlanPng(400, 300, 254),
-    });
-    await page.goto("/maps");
-    const pencil = page.getByRole("link", { name: `Edit ${MAP_NAME}` });
-    await expect(pencil).toHaveAttribute("href", `/maps/${MAP_NAME}/edit`);
-    await pencil.click();
-
-    await expect(floorPlanTools(page)).toBeVisible();
-    await expect(viewSwitch(page).getByRole("button", { name: "2D" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-
-    await viewSwitch(page).getByRole("button", { name: "3D" }).click();
-    await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit\\?view=3d$`));
-    await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
-    await expect(floorPlanTools(page)).toHaveCount(0);
-
-    await viewSwitch(page).getByRole("button", { name: "2D" }).click();
-    await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit$`));
-    await expect(floorPlanTools(page)).toBeVisible();
-    await expect(page.getByTestId("map-3d-canvas")).toHaveCount(0);
-    expect(errors, "the page logged errors").toEqual([]);
-  });
-
-  test("asks before a switch drops unsaved floor plan changes", async ({ page }) => {
-    const errors: string[] = [];
-    failOnConsoleErrors(page, errors);
-    const writes = await mockBackend(page, {
-      maps: [mapSummary(withOctomap())],
-      gridImage: floorPlanPng(400, 300, 254),
-    });
-    await page.goto(`/maps/${MAP_NAME}/edit`);
-    const canvas = page.locator("canvas");
-    await canvas.waitFor();
-
-    // A Wall stroke over free cells: a real, unsaved change.
-    await drawList(page).click();
-    await page.getByRole("option", { name: "Wall", exact: true }).click();
-    await page.getByRole("button", { name: "Brush" }).click();
-    const box = (await canvas.boundingBox())!;
-    const x = box.x + box.width / 2;
-    const y = box.y + box.height * 0.6;
-    await page.mouse.move(x, y);
-    await page.mouse.down();
-    await page.mouse.move(x + 60, y, { steps: 4 });
-    await page.mouse.up();
-    const save = page.getByRole("button", { name: "Save", exact: true });
-    await expect(save).toBeEnabled();
-
-    // Declined: still the floor plan, the stroke still unsaved.
-    const asked: string[] = [];
-    page.once("dialog", (dialog) => {
-      asked.push(dialog.message());
-      void dialog.dismiss();
-    });
-    await viewSwitch(page).getByRole("button", { name: "3D" }).click();
-    await expect.poll(() => asked).toHaveLength(1);
-    expect(asked[0]).toMatch(/unsaved changes/);
-    await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit$`));
-    await expect(save).toBeEnabled();
-
-    // Accepted: the 3D view, and nothing was written on the way.
-    page.once("dialog", (dialog) => void dialog.accept());
-    await viewSwitch(page).getByRole("button", { name: "3D" }).click();
-    await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit\\?view=3d$`));
-    await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
-    expect(writes).toEqual([]);
-    expect(errors, "the page logged errors").toEqual([]);
-  });
-
-  test("offers no switch on a map with one view", async ({ page }) => {
-    const errors: string[] = [];
-    failOnConsoleErrors(page, errors);
-    await mockBackend(page, {
-      maps: [
-        mapSummary({ name: "flat", active: true }),
-        mapSummary({
-          name: "solid",
-          active: false,
-          grid: null,
-          thumbnail: null,
-          grid_status: "none",
-          ...withOctomap(),
-        }),
-      ],
-      gridImage: floorPlanPng(400, 300, 254),
-    });
-
-    await page.goto("/maps/flat/edit");
-    await expect(floorPlanTools(page)).toBeVisible();
-    await expect(viewSwitch(page)).toHaveCount(0);
-
-    await page.goto("/maps/solid/edit?view=3d");
-    await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
-    await expect(viewSwitch(page)).toHaveCount(0);
-    await expect(page.getByText("3D map", { exact: true })).toBeVisible();
-    expect(errors, "the page logged errors").toEqual([]);
-  });
-
   test("says why it cannot open a map with no 3D map", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    await mockBackend(page, { maps: [mapSummary()], gridImage: floorPlanPng(400, 300, 254) });
-    await page.goto(VIEW_3D);
-    await expect(page.getByText("This map has no 3D map.")).toBeVisible();
+    await mockBackend(page, { maps: [mapSummary(withoutOctomap())] });
+    await page.goto(EDITOR);
+    await expect(page.getByText("This map has no 3D map, so there is nothing to edit.")).toBeVisible();
     await expect(page.getByTestId("map-3d-canvas")).toHaveCount(0);
-    // The switch still offers the way out, to the floor plan it does have.
-    await viewSwitch(page).getByRole("button", { name: "2D" }).click();
-    await expect(floorPlanTools(page)).toBeVisible();
+    // Back still leads out.
+    await page.getByRole("button", { name: "Back to maps" }).click();
+    await expect(page.getByRole("heading", { name: "Maps", level: 1 })).toBeVisible();
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -204,7 +94,7 @@ test.describe("the editor's 3D view", () => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, { maps: [mapSummary(withOctomap())], vertices: [] });
-    await page.goto(VIEW_3D);
+    await page.goto(EDITOR);
     const canvas = page.getByTestId("map-3d-canvas");
     await expect(canvas).toHaveAttribute("data-distance", /\d+/);
     const opening = await canvas.getAttribute("data-distance");
@@ -248,7 +138,7 @@ test.describe("the editor's 3D view", () => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
       const writes = await mockBackend(page, { maps: [mapSummary(withOctomap())] });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       await expect(patched(page)).toHaveAttribute("data-patched", "0");
 
@@ -286,7 +176,7 @@ test.describe("the editor's 3D view", () => {
         maps: [mapSummary(withOctomap())],
         octomapEdits: { [MAP_NAME]: HOLE },
       });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       // The saved record is what it opens on, and is not unsaved.
       await expect(patched(page)).toHaveAttribute("data-patched", "4");
@@ -328,7 +218,7 @@ test.describe("the editor's 3D view", () => {
         activeTasks: running,
         taskStates: states,
       });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       await expect(page.getByRole("status").filter({ hasText: "Read-only." })).toBeVisible();
 
@@ -364,7 +254,7 @@ test.describe("the editor's 3D view", () => {
             })
           : route.fallback(),
       );
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await armFill(page);
       const hole = await holeOnScreen(page);
       await page.mouse.click(hole.x, hole.y);
@@ -382,7 +272,7 @@ test.describe("the editor's 3D view", () => {
         maps: [mapSummary(withOctomap())],
         octomapEdits: { [MAP_NAME]: [[O + 1, O + 1, O - 5], [O + 400, O + 400, O - 5]] },
       });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await expect(patched(page)).toHaveAttribute("data-patched", "1");
       await expect(
         page.getByRole("status").filter({ hasText: "1 saved patch lies outside" }),
@@ -396,7 +286,7 @@ test.describe("the editor's 3D view", () => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
       await mockBackend(page, { maps: [mapSummary(withOctomap())] });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       const canvas = page.getByTestId("map-3d-canvas");
       await expect(canvas).toHaveAttribute("data-distance", /\d+/);
       const opening = await canvas.getAttribute("data-distance");
@@ -428,7 +318,7 @@ test.describe("the editor's 3D view", () => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
       await mockBackend(page, { maps: [mapSummary(withOctomap())] });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await armFill(page);
       const hole = await holeOnScreen(page);
       await page.mouse.click(hole.x, hole.y);
@@ -441,40 +331,6 @@ test.describe("the editor's 3D view", () => {
       page.once("dialog", (dialog) => dialog.accept());
       await page.getByRole("button", { name: "Back to maps" }).click();
       await expect(page.getByRole("heading", { name: "Maps", level: 1 })).toBeVisible();
-      expect(errors, "the page logged errors").toEqual([]);
-    });
-
-    test("asks before a switch drops unsaved patches", async ({ page }) => {
-      const errors: string[] = [];
-      failOnConsoleErrors(page, errors);
-      const writes = await mockBackend(page, {
-        maps: [mapSummary(withOctomap())],
-        gridImage: floorPlanPng(400, 300, 254),
-      });
-      await page.goto(VIEW_3D);
-      await armFill(page);
-      const hole = await holeOnScreen(page);
-      await page.mouse.click(hole.x, hole.y);
-      await expect(patched(page)).toHaveAttribute("data-patched", "4");
-
-      // Declined: still the 3D view, the patches still unsaved.
-      const asked: string[] = [];
-      page.once("dialog", (dialog) => {
-        asked.push(dialog.message());
-        void dialog.dismiss();
-      });
-      await viewSwitch(page).getByRole("button", { name: "2D" }).click();
-      await expect.poll(() => asked).toHaveLength(1);
-      expect(asked[0]).toMatch(/unsaved changes in the 3D view/);
-      await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit\\?view=3d$`));
-      await expect(patched(page)).toHaveAttribute("data-patched", "4");
-
-      // Accepted: the floor plan, and nothing was written on the way.
-      page.once("dialog", (dialog) => void dialog.accept());
-      await viewSwitch(page).getByRole("button", { name: "2D" }).click();
-      await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit$`));
-      await expect(floorPlanTools(page)).toBeVisible();
-      expect(writes.filter((write) => write.path === editsPath)).toEqual([]);
       expect(errors, "the page logged errors").toEqual([]);
     });
   });
@@ -505,7 +361,7 @@ test.describe("the editor's 3D view", () => {
         octomap: twoStoreys(),
         floors: { [MAP_NAME]: { detected: TWO_FLOORS } },
       });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       const floors = page.getByRole("group", { name: "Floor" });
       await expect(floors.getByRole("button", { name: "All" })).toHaveAttribute(
@@ -575,7 +431,7 @@ test.describe("the editor's 3D view", () => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
       await mockBackend(page, { maps: [mapSummary(withOctomap())] });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       await chooseDraw(page, "Forbidden zone");
       await expect(page.getByText("A new zone forbids every floor.")).toBeVisible();
@@ -591,7 +447,7 @@ test.describe("the editor's 3D view", () => {
       await expect(page.getByText("3 corners")).toBeVisible();
       await page.mouse.click(corners[0].x, corners[0].y);
       // Closed on screen only: nothing goes to the robot until Save, which
-      // lights up, as on the floor plan.
+      // lights up.
       await expect(page.getByText(/Unsaved — press Save/)).toBeVisible();
       await expect(saveButton(page)).toBeEnabled();
       expect(puts).toEqual([]);
@@ -601,7 +457,7 @@ test.describe("the editor's 3D view", () => {
 
       expect(body.zones).toHaveLength(1);
       expect(body.zones[0].points).toHaveLength(3);
-      // No band: every floor, as a floor plan zone means.
+      // No band: every floor.
       expect(body.zones[0].z_min).toBeNull();
       expect(body.zones[0].z_max).toBeNull();
       // Saved: the reminder goes and Save greys again.
@@ -618,7 +474,7 @@ test.describe("the editor's 3D view", () => {
         octomap: twoStoreys(),
         floors: { [MAP_NAME]: { detected: TWO_FLOORS } },
       });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       await page.getByRole("group", { name: "Floor" }).getByRole("button", { name: "2F" }).click();
       // Look at 2F, so the taps land on its ground.
@@ -670,7 +526,7 @@ test.describe("the editor's 3D view", () => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
       await mockBackend(page, { maps: [mapSummary(withOctomap())] });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       await chooseDraw(page, "Forbidden zone");
       await page.getByRole("button", { name: "Shape" }).click();
@@ -702,7 +558,7 @@ test.describe("the editor's 3D view", () => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
       await mockBackend(page, { maps: [mapSummary(withOctomap())] });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       await chooseDraw(page, "Forbidden zone");
       await page.getByRole("button", { name: "Shape" }).click();
@@ -755,7 +611,7 @@ test.describe("the editor's 3D view", () => {
           ],
         },
       });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       await chooseDraw(page, "Forbidden zone");
       await page.getByRole("button", { name: "Remove zone" }).click();
@@ -779,18 +635,11 @@ test.describe("the editor's 3D view", () => {
     });
   });
 
-  test.describe("waypoints on a map with no floor plan", () => {
+  test.describe("waypoints", () => {
     const verticesPath = `/api/v1/maps/${MAP_NAME}/vertices`;
-    /** A map the floor plan editor cannot open: a 3D map and no raster. */
+    /** A map with its 3D map built, not the one the robot runs. */
     const treeOnly = (over: Record<string, unknown> = {}) =>
-      mapSummary({
-        active: false,
-        grid: null,
-        thumbnail: null,
-        grid_status: "none",
-        ...withOctomap(),
-        ...over,
-      });
+      mapSummary({ active: false, ...over });
 
     /** Press, drag and release at the canvas's centre: a placement with Waypoint armed. */
     async function pressAndAim(page: Page) {
@@ -807,14 +656,8 @@ test.describe("the editor's 3D view", () => {
       await mockBackend(page, {
         maps: [
           treeOnly(),
-          // Neither a floor plan nor a 3D map: nothing for the pencil to open.
-          mapSummary({
-            name: "bare",
-            active: false,
-            grid: null,
-            thumbnail: null,
-            grid_status: "none",
-          }),
+          // No 3D map: nothing for the pencil to open.
+          mapSummary({ name: "bare", active: false, ...withoutOctomap() }),
         ],
         vertices: [],
       });
@@ -823,12 +666,11 @@ test.describe("the editor's 3D view", () => {
 
       await expect(page.getByRole("link", { name: "Edit bare" })).toHaveCount(0);
       const pencil = page.getByRole("link", { name: `Edit ${MAP_NAME}` });
-      // The 3D view, named: there is no floor plan view to open here.
-      await expect(pencil).toHaveAttribute("href", VIEW_3D);
+      await expect(pencil).toHaveAttribute("href", EDITOR);
       await pencil.click();
-      await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit\\?view=3d$`));
+      await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit$`));
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
-      // An editor opened to look round, as the floor plan's opens on Pan:
+      // An editor opened to look round opens on Orbit:
       // only a link that came to place waypoints arms the tool.
       await expect(page.getByRole("button", { name: "Orbit" })).toHaveAttribute(
         "aria-pressed",
@@ -859,7 +701,7 @@ test.describe("the editor's 3D view", () => {
         activeTasks,
         taskStates: states,
       });
-      await page.goto(`${VIEW_3D}&tool=waypoint`);
+      await page.goto(`${EDITOR}?tool=waypoint`);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
 
       const tool = page.getByRole("button", { name: "Place" });
@@ -883,7 +725,7 @@ test.describe("the editor's 3D view", () => {
       await page.goto("/tasks/editor");
       await page.getByRole("button", { name: "Add a Move stop" }).click();
 
-      const href = `${VIEW_3D}&tool=waypoint&from=tasks`;
+      const href = `${EDITOR}?tool=waypoint&from=tasks`;
       // The stop's hint names the 3D map, which is where they go on this map.
       const hint = page.getByRole("region", { name: "Stops" }).getByText(/has no waypoints yet/);
       await expect(hint).toContainText("place some on the 3D map first.");
@@ -891,7 +733,7 @@ test.describe("the editor's 3D view", () => {
 
       await page.getByRole("link", { name: "Add waypoints on the 3D map" }).click();
       await expect(page).toHaveURL(
-        new RegExp(`/maps/${MAP_NAME}/edit\\?view=3d&tool=waypoint&from=tasks$`),
+        new RegExp(`/maps/${MAP_NAME}/edit\\?tool=waypoint&from=tasks$`),
       );
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       await expect(drawList(page)).toContainText("Waypoint");
@@ -932,7 +774,7 @@ test.describe("the editor's 3D view", () => {
           },
         });
       });
-      await page.goto(`${VIEW_3D}&tool=waypoint`);
+      await page.goto(`${EDITOR}?tool=waypoint`);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
 
       await page.getByRole("heading", { name: new RegExp(`^${MAP_NAME} — `) }).dblclick();
@@ -940,8 +782,8 @@ test.describe("the editor's 3D view", () => {
       await input.fill("dp3f");
       await input.press("Enter");
 
-      // Not the floor plan view, which this map has no floor plan for.
-      await expect(page).toHaveURL(/\/maps\/dp3f\/edit\?view=3d&tool=waypoint$/);
+      // The query rides along, so Waypoint stays armed.
+      await expect(page).toHaveURL(/\/maps\/dp3f\/edit\?tool=waypoint$/);
       expect(sent).toEqual({ name: "dp3f" });
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       expect(errors, "the page logged errors").toEqual([]);
@@ -953,7 +795,7 @@ test.describe("the editor's 3D view", () => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
       const writes = await mockBackend(page, { maps: [treeOnly()], vertices: [] });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
 
       // Positive control: with no tool armed a press only turns the map.
@@ -1017,7 +859,7 @@ test.describe("the editor's 3D view", () => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
       await mockBackend(page, { maps: [treeOnly()], vertices: [] });
-      await page.goto(`${VIEW_3D}&tool=waypoint`);
+      await page.goto(`${EDITOR}?tool=waypoint`);
       await expect(page.getByRole("button", { name: "Place" })).toHaveAttribute(
         "aria-pressed",
         "true",
@@ -1038,7 +880,7 @@ test.describe("the editor's 3D view", () => {
       failOnConsoleErrors(page, errors);
       const stop = vertex({ name: "lobby", type: "MOVE", x: 0.2, y: 0.2, theta: 0, z: 0 });
       const writes = await mockBackend(page, { maps: [treeOnly()], vertices: [stop] });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
 
       const centre = await centreOnScreen(page);
@@ -1073,7 +915,7 @@ test.describe("the editor's 3D view", () => {
       failOnConsoleErrors(page, errors);
       const stop = vertex({ name: "lobby", type: "MOVE", x: 0.2, y: 0.2, theta: 0, z: 0 });
       const writes = await mockBackend(page, { maps: [treeOnly()], vertices: [stop] });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       await chooseDraw(page, "Waypoint");
       const remove = page.getByRole("button", { name: "Remove" });
@@ -1115,7 +957,7 @@ test.describe("the editor's 3D view", () => {
       failOnConsoleErrors(page, errors);
       const stop = vertex({ name: "lobby", type: "MOVE", x: 0.2, y: 0.2, theta: 45, z: 0 });
       const writes = await mockBackend(page, { maps: [treeOnly()], vertices: [stop] });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       await chooseDraw(page, "Waypoint");
       const move = page.getByRole("button", { name: "Move", exact: true });
@@ -1165,7 +1007,7 @@ test.describe("the editor's 3D view", () => {
         vertex({ id: "c", name: "dock-a", type: "CHARGE", x: 0.35, y: 0.05, theta: 0, z: 0 }),
       ];
       const writes = await mockBackend(page, { maps: [treeOnly()], vertices: stops });
-      await page.goto(VIEW_3D);
+      await page.goto(EDITOR);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
 
       // No list until Waypoint is chosen; then every name, for picking a new one.

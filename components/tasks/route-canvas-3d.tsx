@@ -53,11 +53,11 @@ export interface RouteCanvas3dProps {
  *
  * The waypoints are not the 3D pins the dashboard and the editor's 3D view
  * draw: those are metre-sized, and over a whole building they are a pixel or
- * two, which cannot be found, let alone tapped. They are the floor plan
- * preview's marks instead (drawStops), projected through the camera onto a
- * 2D canvas over the view, so they keep their size, their names and their
- * step numbers at any zoom, and a tap is tested in screen pixels with the
- * floor plan's slop. The route's legs join them there too. Drawn without depth, so a floor's stops show through the
+ * two, which cannot be found, let alone tapped. They are flat marks instead
+ * (drawStops), projected through the camera onto a 2D canvas over the view,
+ * so they keep their size, their names and their step numbers at any zoom,
+ * and a tap is tested in screen pixels. The route's legs join them there
+ * too. Drawn without depth, so a floor's stops show through the
  * storey over it with All picked; a floor picked shows that floor's alone.
  *
  * A drag orbits and two fingers pinch and pan, as OrbitControls has them;

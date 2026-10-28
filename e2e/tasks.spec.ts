@@ -1,30 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { vertexScreen } from "@/lib/map/draw";
-import { previewView } from "@/lib/map/preview";
-import type { MapMetadata } from "@/lib/types/robot";
-
 import {
   MAP_NAME,
   activeTask,
   failOnConsoleErrors,
-  floorPlanPng,
   mapSummary,
   mockBackend,
   octomapBt,
   taskSteps,
   taskTemplate,
   vertex,
-  withOctomap,
+  withoutOctomap,
 } from "./backend";
-
-/** mapSummary()'s grid, in the shape the preview's view transform takes. */
-const PREVIEW_META: MapMetadata = {
-  resolution: 0.05,
-  origin: [-12.3, -7.8, 0],
-  width: 400,
-  height: 300,
-};
 
 /**
  * Add an action where it says: "before setting off", "on arrival at stop 1" or
@@ -401,7 +388,7 @@ test.describe("the task console", () => {
     page,
   }) => {
     // Adding a missing waypoint mid-job must not throw the job away: the link
-    // opens that map's editor in Waypoints mode, back returns here, and the
+    // opens that map's editor with Waypoint armed, back returns here, and the
     // draft is as it was, across a reload too.
     await mockBackend(page);
     await page.goto("/tasks");
@@ -413,9 +400,9 @@ test.describe("the task console", () => {
     await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
 
     await page
-      .getByRole("link", { name: "Add waypoints on the floor plan" })
+      .getByRole("link", { name: "Add waypoints on the 3D map" })
       .click();
-    await expect(page).toHaveURL(/\/maps\/dp2f\/edit\?mode=vertex&from=tasks$/);
+    await expect(page).toHaveURL(/\/maps\/dp2f\/edit\?tool=waypoint&from=tasks$/);
     // Opened with Waypoint chosen to draw, not with nothing chosen as the
     // editor otherwise opens.
     await expect(page.getByRole("combobox", { name: "Draw" })).toContainText(
@@ -1596,51 +1583,25 @@ test.describe("the step editor", () => {
     ]);
   });
 
-  test("waits out a conversion before drawing the floor plan it produced", async ({
-    page,
-  }) => {
-    // A raster read mid-conversion is stale or half-written, and this cache
-    // never goes stale on its own, so it is not read until the catalogue says
-    // the conversion is over — including one another console started.
+  test("says when the map has no 3D map to pick waypoints on", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    const entry = mapSummary({
-      grid_status: "converting",
-      grid_converting: true,
-    });
-    await mockBackend(page, { maps: [entry] });
-    const imageReads: string[] = [];
+    const treeReads: string[] = [];
     page.on("request", (request) => {
       const { pathname } = new URL(request.url());
-      if (pathname.endsWith("/image")) imageReads.push(pathname);
+      if (pathname.endsWith("/octomap")) treeReads.push(pathname);
     });
+    await mockBackend(page, { maps: [mapSummary(withoutOctomap("converting"))] });
     await page.goto("/tasks/editor");
-    // The map beside the stops has nothing to show yet, and says so.
-    await expect(
-      page.getByText("This map has no floor plan or 3D map to pick waypoints on."),
-    ).toBeVisible();
-
-    // Two catalogue polls' worth, while it still says converting.
-    await page.waitForTimeout(4500);
-    expect(imageReads).toEqual([]);
-
-    entry.grid_status = "ok";
-    entry.grid_converting = false;
-    entry.modified_at = "2026-09-28T08:00:00Z";
-    await expect(
-      page.getByRole("img", { name: /^Floor plan of dp2f/ }),
-    ).toBeVisible({ timeout: 10_000 });
-    await expect
-      .poll(() => imageReads, { timeout: 10_000 })
-      .toEqual([`/api/v1/maps/${MAP_NAME}/image`]);
+    await expect(page.getByText("This map has no 3D map to pick waypoints on.")).toBeVisible();
+    await expect(page.getByTestId("route-canvas-3d")).toHaveCount(0);
+    // Nothing to place them on, so no link offers to.
+    await expect(page.getByRole("link", { name: "Add waypoints on the 3D map" })).toHaveCount(0);
+    expect(treeReads).toEqual([]);
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("lights the job's stops on the map beside them", async ({
-    page,
-  }) => {
-    // The map is beside the stops for the whole edit: every waypoint the job
-    // goes to is lit and named with its stop numbers, for a screen reader too.
+  test("says on the stop list which stops already go where", async ({ page }) => {
     const room = vertex({
       id: "44444444-4444-4444-4444-444444444444",
       name: "room-a",
@@ -1652,31 +1613,12 @@ test.describe("the step editor", () => {
     await mockBackend(page, { vertices: [vertex(), room] });
     await page.goto("/tasks/editor");
 
-    const plan = page.getByRole("img", {
-      name: /^Floor plan of dp2f with 2 waypoints/,
-    });
-    await expect(plan).toBeVisible();
-    // Nothing picked yet, so nothing is lit.
-    await expect(plan).toHaveAccessibleName(/waypoints\.$/);
-
-    // The pick is made on the card, and the map says where it went.
     await page.getByRole("button", { name: "Add a Move stop" }).click();
     await pickWaypoint(page, 1, "room-a");
-    await expect(plan).toHaveAccessibleName(/; room-a is stop 1\.$/);
-
-    // A second stop at the dock: both, in job order.
     await page.getByRole("button", { name: "Add a Move stop" }).click();
-    await pickWaypoint(page, 2, "dock");
-    await expect(plan).toHaveAccessibleName(/; room-a is stop 1, dock is stop 2\.$/);
-    // And the list a stop is picked from says which stops already go where.
     await page.getByRole("combobox", { name: "Waypoint for stop 2" }).click();
     await expect(page.getByRole("option", { name: "room-a stop 1" })).toBeVisible();
     await page.keyboard.press("Escape");
-
-    // A click on the map away from any waypoint adds nothing.
-    const box = (await plan.boundingBox())!;
-    await page.mouse.click(box.x + 8, box.y + box.height - 8);
-    await expect(page.locator("[data-stop]")).toHaveCount(2);
   });
 
   test("saves a Dock on the waypoint picked", async ({ page }) => {
@@ -1713,103 +1655,14 @@ test.describe("the step editor", () => {
     ]);
   });
 
-  test("builds the route by clicking its waypoints on the map, after the stop selected", async ({ page }) => {
-    // Each click on a waypoint is a stop, a charger a Dock — at the end, or
-    // after the stop selected. Asserted on the cards and on the saved body,
-    // whose order is the route.
-    const room = vertex({
-      id: "44444444-4444-4444-4444-444444444444",
-      name: "room-a",
-      type: "MOVE",
-      x: -3,
-      y: 4,
-      theta: 0,
-    });
-    const hall = vertex({
-      id: "55555555-5555-5555-5555-555555555555",
-      name: "hall",
-      type: "MOVE",
-      x: 4,
-      y: -3,
-      theta: 0,
-    });
-    await mockBackend(page, { vertices: [vertex(), room, hall] });
-    const posted: { steps: Record<string, unknown>[] }[] = [];
-    await page.route("**/api/v1/task_templates", (route) => {
-      if (route.request().method() !== "POST") return route.fallback();
-      const body = route.request().postDataJSON() as (typeof posted)[number] & { name: string };
-      posted.push(body);
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(
-          taskTemplate({ id: "77777777-7777-7777-7777-777777777777", name: body.name }),
-        ),
-      });
-    });
-    await page.goto("/tasks/editor");
-    await page.getByRole("textbox", { name: "Task name" }).fill("round");
-
-    const plan = page.getByRole("img", { name: /^Floor plan of dp2f/ });
-    await expect(plan).toBeVisible();
-    // Where each waypoint is drawn, by the preview's own view transform.
-    const box = (await plan.boundingBox())!;
-    const view = previewView({ width: box.width, height: box.height }, PREVIEW_META);
-    const screenOf = (stop: { x: number; y: number }) => {
-      const at = vertexScreen(view, PREVIEW_META, stop.x, stop.y);
-      return { x: box.x + at.cx, y: box.y + at.cy };
-    };
-    const roomAt = screenOf(room);
-    const cards = page.locator("[data-stop]");
-
-    // A drag that starts on a waypoint pans; it adds nothing.
-    await page.mouse.move(roomAt.x, roomAt.y);
-    await page.mouse.down();
-    await page.mouse.move(roomAt.x + 40, roomAt.y + 20, { steps: 4 });
-    await page.mouse.up();
-    await expect(cards).toHaveCount(0);
-    await page.getByRole("button", { name: "Fit to view" }).click();
-
-    await page.mouse.click(roomAt.x, roomAt.y);
-    const dockAt = screenOf(vertex());
-    await page.mouse.click(dockAt.x, dockAt.y);
-    await expect(cards).toHaveCount(2);
-    await expect(cards.nth(0)).toContainText("Move");
-    await expect(page.getByRole("combobox", { name: "Waypoint for stop 1" })).toHaveText("room-a");
-    await expect(cards.nth(1)).toContainText("Dock");
-    await expect(plan).toHaveAccessibleName(/; room-a is stop 1, dock is stop 2\.$/);
-
-    // With the first stop selected, the next click slots in after it.
-    await cards.nth(0).getByText("Move", { exact: true }).click();
-    await expect(page.getByText("Click a waypoint to add it as a stop after stop 1.")).toBeVisible();
-    const hallAt = screenOf(hall);
-    await page.mouse.click(hallAt.x, hallAt.y);
-    await expect(page.getByRole("combobox", { name: "Waypoint for stop 2" })).toHaveText("hall");
-
-    // Undo takes the click back.
-    await page.getByRole("button", { name: "Undo" }).click();
-    await expect(cards).toHaveCount(2);
-    await page.getByRole("button", { name: "Redo" }).click();
-    await expect(cards).toHaveCount(3);
-
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect.poll(() => posted).toHaveLength(1);
-    expect(posted[0]!.steps).toMatchObject([
-      { id: "1-move", type: "MOVE", vertex_id: room.id },
-      { id: "2-move", type: "MOVE", vertex_id: hall.id },
-      { id: "3-dock", type: "DOCK", vertex_id: vertex().id },
-    ]);
-  });
-
-  test("builds the route by tapping waypoints on a map with only a 3D map", async ({ page }) => {
-    // No floor plan to tap, so the map beside the stops is the 3D map. Both
-    // halves: the cards on screen and the saved body.
+  test("builds the route by tapping waypoints on the 3D map", async ({ page }) => {
+    // Both halves: the cards on screen and the saved body.
     // A 4 m tree rather than the doormat default: at a doormat's framing
     // the camera is so close that a mark's few centimetres over the ground
     // are more than a tap's slop on screen. The stop stands at its middle.
     const lobby = vertex({ id: "a", name: "lobby", type: "MOVE", x: 2, y: 2, theta: 0, z: 0 });
     await mockBackend(page, {
-      maps: [mapSummary({ grid: null, thumbnail: null, grid_status: "none", ...withOctomap() })],
+      maps: [mapSummary()],
       vertices: [lobby],
       octomap: octomapBt(40),
     });
@@ -1831,8 +1684,6 @@ test.describe("the step editor", () => {
 
     const view = page.getByTestId("route-canvas-3d");
     await expect(view).toBeVisible();
-    // Only the 3D map to show, so no switch.
-    await expect(page.getByRole("group", { name: "Show on" })).toHaveCount(0);
 
     // The stop stands where the opening view looks: the tree's middle.
     const box = (await view.boundingBox())!;
@@ -1862,57 +1713,6 @@ test.describe("the step editor", () => {
       { id: "2-move", type: "MOVE", vertex_id: "a" },
     ]);
   });
-
-  test("offers the floor plan and the 3D map to pick on, for a map with both", async ({ page }) => {
-    // The map editor's rule: the floor plan first, the 3D map a switch away.
-    await mockBackend(page, { maps: [mapSummary({ ...withOctomap() })] });
-    await page.goto("/tasks/editor");
-    const views = page.getByRole("group", { name: "Show on" });
-    await expect(views).toBeVisible();
-    await expect(page.getByRole("img", { name: /^Floor plan of dp2f/ })).toBeVisible();
-    await expect(page.getByTestId("route-canvas-3d")).toHaveCount(0);
-
-    await views.getByRole("button", { name: "3D map" }).click();
-    await expect(page.getByTestId("route-canvas-3d")).toBeVisible();
-    await expect(page.getByRole("img", { name: /^Floor plan of dp2f/ })).toHaveCount(0);
-  });
-
-  test("zooms the floor plan and comes back to fit", async ({ page }) => {
-    // At fit scale two waypoints a body length apart are one smear, so the
-    // wheel, the buttons and Fit zoom; the scale is read off data-zoom.
-    // A real 400 x 300 grid, so the raster has an extent to zoom into.
-    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
-    await page.goto("/tasks/editor");
-    const plan = page.getByRole("img", { name: /^Floor plan of dp2f/ });
-    await expect(plan).toBeVisible();
-    const zoom = page.locator("[data-zoom]");
-    const readZoom = async () => Number(await zoom.getAttribute("data-zoom"));
-    await expect.poll(readZoom).toBeGreaterThan(0);
-    const fitted = await readZoom();
-
-    // Wheel up over the map zooms in about the pointer.
-    const box = (await plan.boundingBox())!;
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.wheel(0, -240);
-    await expect.poll(readZoom).toBeGreaterThan(fitted);
-    const wheeled = await readZoom();
-
-    // The toolbar steps in and out, and Fit is the way back to the opening view.
-    await page.getByRole("button", { name: "Zoom out" }).click();
-    await expect.poll(readZoom).toBeLessThan(wheeled);
-    await page.getByRole("button", { name: "Fit to view" }).click();
-    await expect.poll(readZoom).toBe(fitted);
-    await page.getByRole("button", { name: "Zoom in" }).click();
-    await expect.poll(readZoom).toBeGreaterThan(fitted);
-
-    // Zooming out stops at the opening view, which already shows the whole
-    // floor plan.
-    for (let i = 0; i < 6; i += 1) {
-      await page.getByRole("button", { name: "Zoom out" }).click();
-    }
-    await expect.poll(readZoom).toBe(fitted);
-  });
-
 });
 
 test.describe("what a dispatch records about itself", () => {

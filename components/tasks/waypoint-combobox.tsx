@@ -112,10 +112,10 @@ export function WaypointCombobox({
                 >
                   place some
                 </Link>{" "}
-                on the {waypointLink.surface} first.
+                on the 3D map first.
               </>
             ) : (
-              ", and no floor plan or 3D map to place them on."
+              ", and no 3D map to place them on."
             )}
           </>
         ) : (

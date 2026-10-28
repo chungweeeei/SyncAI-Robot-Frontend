@@ -17,7 +17,7 @@ describe("decodeTelemetryFrame", () => {
     expect(onPath).not.toHaveBeenCalled();
     expect(onDockPath).toHaveBeenCalledOnce();
     const [{ points, stamp }] = onDockPath.mock.calls[0]!;
-    // On the ground floor, as the route's triples: a dock is on the floor plan.
+    // On the ground floor, as the route's triples: a dock is on the ground floor.
     expect(Array.from(points)).toEqual([1, 2, 0, 1.5, 2.25, 0]);
     expect(stamp).toBe(20);
   });

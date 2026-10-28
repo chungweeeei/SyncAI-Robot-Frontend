@@ -1,79 +1,20 @@
-// The task editor's floor plan preview: where each stop is and which steps go
-// there. Pure like lib/map/draw.ts, and drawn with the editor's own markers and
-// palette so it is recognisably the same map.
+// The task editor's route marks: where each stop is and which steps go
+// there, drawn over its 3D map (lib/scene/route-marks.ts places them). Pure
+// like lib/map/draw.ts, whose markers and palette it draws with.
 
 import {
   MARKER_HALO,
   VERTEX_DOT_RADIUS,
   drawMarker,
-  vertexScreen,
   type Palette,
 } from "@/lib/map/draw";
-import { stagingPose } from "@/lib/map/dock";
-import { fitView, type Size, type View } from "@/lib/map/view";
 import type { MapVertex } from "@/lib/types/map";
-import type { MapMetadata } from "@/lib/types/robot";
-
-/** Which markers the preview lights up, and what it says about them. */
-export interface PreviewMarks {
-  /**
-   * Vertex id → the 1-based numbers of the job's stops that go there, in job
-   * order (lib/task/stops.ts stopWaypointOrdinals). A waypoint with an entry
-   * is filled in the command hue and captioned with those numbers.
-   */
-  steps: ReadonlyMap<string, readonly number[]>;
-  /**
-   * Vertex ids a Dock row is picked on (stepDockVertices). Each gets its
-   * approach point drawn and joined to it: the robot goes there first, and no
-   * row says so.
-   */
-  docks?: ReadonlySet<string>;
-  /**
-   * The waypoint ids in the order the job visits them (stepRoute), joined
-   * leg by leg, so the map reads as a route and a stop added by a tap shows
-   * where it falls in it.
-   */
-  route?: readonly string[];
-  /**
-   * The waypoint the editor is pointing at (a stop card under the pointer or
-   * selected), ringed so the card and the map read as one thing.
-   */
-  highlight?: string | null;
-}
 
 /** The route's legs, thin enough to leave the markers and walls legible. */
 const ROUTE_LINE_PX = 2;
 
 /** The highlight's ring, clear of the marker's own halo. */
 const HIGHLIGHT_RING_RADIUS = VERTEX_DOT_RADIUS + 5;
-
-/** The approach point's ring, smaller than a stop's dot so it never reads as one. */
-const STAGING_RING_RADIUS = 3;
-
-/**
- * Room around the map, in CSS px, so a stop on the boundary keeps its arrow and
- * caption (up and right of the dot, hence the wider right) on screen at first
- * look, which is the look most operators stop at.
- */
-export const PREVIEW_INSET = { top: 20, right: 48, bottom: 20, left: 20 } as const;
-
-/**
- * The whole map, fitted and centred inside the inset: the view the preview
- * opens at, comes back to on Fit, and cannot zoom out past (its `scale` is the
- * floor the component hands `zoomAt`).
- */
-export function previewView(rect: Size, meta: MapMetadata): View {
-  const inner = {
-    width: Math.max(1, rect.width - PREVIEW_INSET.left - PREVIEW_INSET.right),
-    height: Math.max(1, rect.height - PREVIEW_INSET.top - PREVIEW_INSET.bottom),
-  };
-  const view = fitView(inner, { width: meta.width, height: meta.height });
-  return {
-    scale: view.scale,
-    ox: view.ox + PREVIEW_INSET.left,
-    oy: view.oy + PREVIEW_INSET.top,
-  };
-}
 
 /** A caption candidate: where the marker's `G · name` text would sit. */
 export interface CaptionCandidate {
@@ -90,7 +31,7 @@ const CAPTION_HEIGHT = 11;
 const CAPTION_GAP = 2;
 
 /**
- * Which stops keep their name. At preview scale captions would smear together,
+ * Which stops keep their name. Zoomed out, captions would smear together,
  * so they are placed greedily in priority order (the caller passes lit markers
  * first) and one overlapping an earlier box drops to its glyph. `measure` is
  * injected so this is testable without a canvas.
@@ -120,59 +61,6 @@ export function planCaptions(
   return kept;
 }
 
-/**
- * One frame: the well, the raster, its extent, then every marker, named where
- * there is room (`planCaptions`). The job's stops are lit and drawn last, the
- * earliest step on top.
- *
- * `image` may be null (loading or failed); the markers are still drawn, since
- * their relative positions are most of the answer.
- */
-export function drawWaypointPreview(
-  ctx: CanvasRenderingContext2D,
-  rect: Size,
-  view: View,
-  image: ImageBitmap | null,
-  meta: MapMetadata,
-  vertices: readonly MapVertex[],
-  marks: PreviewMarks,
-  palette: Palette,
-): void {
-  ctx.fillStyle = palette.well;
-  ctx.fillRect(0, 0, rect.width, rect.height);
-
-  const w = meta.width * view.scale;
-  const h = meta.height * view.scale;
-  if (image) {
-    // As in the editor: a filtered downscale keeps thin walls solid.
-    ctx.imageSmoothingEnabled = view.scale < 1;
-    ctx.drawImage(image, view.ox, view.oy, w, h);
-  }
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = palette.extent;
-  ctx.strokeRect(view.ox - 0.5, view.oy - 0.5, w + 1, h + 1);
-
-  const placed = new Map(
-    vertices.map((vertex) => [
-      vertex.id,
-      { ...vertexScreen(view, meta, vertex.x, vertex.y), theta: vertex.theta },
-    ]),
-  );
-
-  // Under everything else: a leg is context, the stops are the answer.
-  if (marks.route && marks.route.length > 1) {
-    drawRoute(ctx, marks.route, placed, palette.cmd);
-  }
-
-  // Under the markers: the leg ends at the dot, which must stay on top.
-  for (const vertex of vertices) {
-    if (!marks.docks?.has(vertex.id)) continue;
-    drawApproach(ctx, view, meta, vertex, placed.get(vertex.id)!, palette.cmd);
-  }
-
-  drawStops(ctx, vertices, placed, marks.steps, palette, marks.highlight ?? null);
-}
-
 /** Where a stop is drawn, CSS px, and its heading as the screen shows it. */
 export interface PlacedStop {
   cx: number;
@@ -182,9 +70,8 @@ export interface PlacedStop {
 }
 
 /**
- * The stops themselves, at wherever the caller put them on screen: the floor
- * plan's transform, or the 3D view's projection (lib/scene/route-marks.ts),
- * so both surfaces draw the same marks. A stop not in `placed` is not drawn.
+ * The stops themselves, at wherever the caller put them on screen: the 3D
+ * view's projection (lib/scene/route-marks.ts). A stop not in `placed` is not drawn.
  * The job's stops are lit and drawn last, the earliest stop on top, and
  * named first where captions would collide (`planCaptions`). `highlight`
  * rings one waypoint under everything, so its own marker stays legible.
@@ -286,7 +173,7 @@ export function drawRoute(
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
   // Over a halo, as a marker is: a bare line vanished over the 3D map's
-  // height colours and over a floor plan's black walls alike.
+  // height colours.
   ctx.strokeStyle = MARKER_HALO;
   ctx.lineWidth = ROUTE_LINE_PX + 2;
   ctx.stroke(path);
@@ -294,34 +181,5 @@ export function drawRoute(
   ctx.globalAlpha = 0.85;
   ctx.lineWidth = ROUTE_LINE_PX;
   ctx.stroke(path);
-  ctx.restore();
-}
-
-/**
- * A dock's last metre: a ring at the approach point and a dashed line from it
- * to the dock's dot, the straight walk the robot makes once it gets there.
- */
-function drawApproach(
-  ctx: CanvasRenderingContext2D,
-  view: View,
-  meta: MapMetadata,
-  dock: MapVertex,
-  at: { cx: number; cy: number },
-  colour: string,
-): void {
-  const stage = stagingPose(dock);
-  const from = vertexScreen(view, meta, stage.x, stage.y);
-  ctx.save();
-  ctx.strokeStyle = colour;
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([3, 3]);
-  ctx.beginPath();
-  ctx.moveTo(from.cx, from.cy);
-  ctx.lineTo(at.cx, at.cy);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.beginPath();
-  ctx.arc(from.cx, from.cy, STAGING_RING_RADIUS, 0, Math.PI * 2);
-  ctx.stroke();
   ctx.restore();
 }

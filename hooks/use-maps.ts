@@ -8,31 +8,21 @@ import type { MapSummary } from "@/lib/types/map";
 export type MapsStatus = "loading" | "ok" | "error";
 
 /**
- * Catalogue re-read interval while a floor plan conversion runs (tens of
- * seconds). There is no push channel for a conversion finishing, and a poll
- * also survives a reload where a one-shot event would not.
+ * Catalogue re-read interval while a 3D map is being built: the robot's map
+ * cleaning takes minutes, not seconds, and a listing walks every map
+ * directory. There is no push channel for a build finishing, and a poll also
+ * survives a reload where a one-shot event would not.
  */
-const CONVERTING_POLL_MS = 2000;
-
-/**
- * The same while only a 3D map is being built: the robot's map cleaning
- * takes minutes, not seconds, and a listing walks every map directory.
- */
-const BUILDING_3D_POLL_MS = 5000;
+const BUILDING_POLL_MS = 5000;
 
 /**
  * The poll policy for every observer of the maps query; it switches itself off
- * with the last running conversion. Shared so the poll cannot depend on which
- * of the two hooks below happens to be mounted. A floor plan conversion sets
- * the faster rate whichever else is running.
+ * with the last running build. Shared so the poll cannot depend on which of
+ * the two hooks below happens to be mounted.
  */
-function pollWhileConverting(
-  maps: MapSummary[] | undefined,
-): number | false {
+function pollWhileBuilding(maps: MapSummary[] | undefined): number | false {
   if (!maps) return false;
-  if (maps.some((map) => map.grid_status === "converting")) return CONVERTING_POLL_MS;
-  if (maps.some((map) => map.octomap_status === "converting")) return BUILDING_3D_POLL_MS;
-  return false;
+  return maps.some((map) => map.octomap_status === "converting") ? BUILDING_POLL_MS : false;
 }
 
 export interface UseMaps {
@@ -46,16 +36,16 @@ export interface UseMaps {
 /**
  * The map catalogue, through the shared query cache.
  *
- * Polled only while a conversion runs — the one server-side process that
- * changes the catalogue on its own. Otherwise it changes only on a deliberate
- * save or convert, and a fresh mount refetches (staleTime 0).
+ * Polled only while a 3D map is being built — the one server-side process
+ * that changes the catalogue on its own. Otherwise it changes only on a
+ * deliberate save, and a fresh mount refetches (staleTime 0).
  */
 export function useMaps(): UseMaps {
   const queryClient = useQueryClient();
   const { data, isPending, isError } = useQuery({
     queryKey: queryKeys.maps,
     queryFn: ({ signal }) => fetchMaps(signal),
-    refetchInterval: (query) => pollWhileConverting(query.state.data),
+    refetchInterval: (query) => pollWhileBuilding(query.state.data),
   });
 
   // Invalidate rather than refetch(): the entry is shared by every observer.
@@ -74,7 +64,7 @@ export function useMaps(): UseMaps {
 /**
  * One map's catalogue entry, or null (no name, no answer yet, not listed).
  * The per-map file caches read their version from it; as another observer of
- * the same query it inherits the converting poll.
+ * the same query it inherits the build poll.
  */
 export function useMapEntry(name: string | null): MapSummary | null {
   const { maps } = useMaps();
@@ -103,18 +93,18 @@ export function useActiveMap(): { map: MapSummary | null; status: MapsStatus } {
 }
 
 /**
- * Watch the floor plan conversion of a map this screen just saved.
+ * Watch the 3D map build of a map this screen just saved.
  *
  * The same query entry as useMaps (there is no per-map endpoint), so it shares
- * the request and the conversion poll. Disabled until a name is passed, so the
+ * the request and the build poll. Disabled until a name is passed, so the
  * mapping screen fetches no catalogue before a save. Null means "nothing to
  * say yet".
  */
-export function useMapConversion(name: string | null): MapSummary | null {
+export function useMapBuild(name: string | null): MapSummary | null {
   const { data } = useQuery({
     queryKey: queryKeys.maps,
     queryFn: ({ signal }) => fetchMaps(signal),
-    refetchInterval: (query) => pollWhileConverting(query.state.data),
+    refetchInterval: (query) => pollWhileBuilding(query.state.data),
     enabled: name !== null,
   });
 

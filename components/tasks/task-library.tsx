@@ -31,8 +31,6 @@ export interface TaskLibraryProps {
   activeMapName: string | null;
   /** True while a run this tab sent is in flight, the stop is engaged, or the robot is unknown. */
   runDisabled: boolean;
-  /** Why the loaded map holds its tasks' Run right now, or null; see dispatchMapLock. */
-  loadedMapHold: string | null;
   onRun: (template: TaskTemplate) => void;
   onEdit: (template: TaskTemplate) => void;
   onSchedule: (template: TaskTemplate) => void;
@@ -57,7 +55,6 @@ export function TaskLibrary({
   busy,
   activeMapName,
   runDisabled,
-  loadedMapHold,
   onRun,
   onEdit,
   onSchedule,
@@ -119,7 +116,6 @@ export function TaskLibrary({
       {groups.map((group) => {
         const open = isOpen(group);
         const other = group.mapName !== null && !group.loaded;
-        const hold = group.loaded ? loadedMapHold : null;
         return (
           <section
             key={group.mapName ?? NO_MAP}
@@ -164,9 +160,6 @@ export function TaskLibrary({
                 These move nowhere, so they run on any map.
               </p>
             )}
-            {hold && (
-              <p className="pl-5 text-[11px] leading-tight text-signal-caution">{hold}</p>
-            )}
 
             {open && (
               <ul className="space-y-1.5">
@@ -175,7 +168,7 @@ export function TaskLibrary({
                     key={template.id}
                     template={template}
                     busy={busy}
-                    runBlocked={other || runDisabled || hold !== null}
+                    runBlocked={other || runDisabled}
                     scheduleBlocked={other}
                     schedules={scheduledBy.get(template.id) ?? EMPTY_SCHEDULES}
                     scheduleActions={scheduleActions}

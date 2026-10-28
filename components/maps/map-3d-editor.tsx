@@ -80,27 +80,25 @@ const subscribeNoop = () => () => {};
 const NO_ZONES: ZonePolygon[] = [];
 
 /**
- * The editor's 3D view: the 3D map in 3D, and a brush that paints floor
+ * The map editor: the 3D map in 3D, and a brush that paints floor
  * into the holes the lidar never saw. A save records the patches on the
  * robot; the robot's own tool writes them into the tree, so the note after
  * a save says they wait to be applied.
  *
- * It is also where a map with no floor plan gets its waypoints, which the
- * floor plan editor cannot place without a raster to place them on. They are
- * staged as the floor plan's are (lib/map/vertex-stage.ts): placed, moved and
- * deleted on screen, a run of them, and sent by Save. Writing each as it was
+ * It is also where a map gets its waypoints. They are staged
+ * (lib/map/vertex-stage.ts): placed, moved and deleted on screen, a run of
+ * them, and sent by Save. Writing each as it was
  * placed, the dashboard's flow, made laying out a site a save per stop.
  * With Waypoint chosen, a list names every stop (2026-10-24, by request: an
  * operator naming the next one could not tell which names were taken), and
  * its rows and Select's taps make a set one Delete takes.
  *
- * And its forbidden zones (2026-10-23): the robot's 3D planner reads the same
- * keepout.json the floor plan editor writes, each zone optionally banded to
- * the floor it forbids. A zone drawn with a floor picked on a map of several
- * storeys forbids that floor only; with none picked, or on a map of one, it
- * forbids every floor, as a floor plan zone does. Drawn, merged and moved on
- * screen and sent by Save, beside the patches, as the floor plan's zones are
- * (Remove is sent at once there too, and here).
+ * And its forbidden zones (2026-10-23): the robot's 3D planner reads them
+ * from keepout.json, each zone optionally banded to the floor it forbids. A
+ * zone drawn with a floor picked on a map of several storeys forbids that
+ * floor only; with none picked, or on a map of one, it forbids every floor.
+ * Drawn, merged and moved on screen and sent by Save, beside the patches;
+ * Remove is sent at once.
  *
  * Loads the tree (shared with the dashboard's layer) and the saved patches,
  * and mounts the surface only once both are in: a record arriving after
@@ -120,8 +118,8 @@ export function Map3dEditor({
   const tree = useMapOctomap(name);
   const edits = useMapOctomapEdits(name);
   /**
-   * Read here, as the floor plan editor reads them: the surface remounts on
-   * a new tree, and its staged list starts from what the robot holds.
+   * Read here: the surface remounts on a new tree, and its staged list
+   * starts from what the robot holds.
    */
   const vertices = useMapVertices(name);
   // The status strip reads the catalogue too, so the entry can be cached
@@ -140,7 +138,7 @@ export function Map3dEditor({
           ? "The robot is still building this map's 3D map. Come back once it has finished."
           : entry.octomap_status === "failed"
             ? (entry.octomap_error ?? "The robot could not build this map's 3D map.")
-            : "This map has no 3D map. The robot builds one with the floor plan when it is set up to."}
+            : "This map has no 3D map, so there is nothing to edit."}
       </EditorNotice>
     );
   }
@@ -225,8 +223,8 @@ function Map3dSurface({
   );
 
   /**
-   * What a press works on, chosen in the Draw list as on the floor plan
-   * editor; the tools offered follow it. A link that came to place
+   * What a press works on, chosen in the Draw list; the tools offered
+   * follow it. A link that came to place
    * waypoints opens on Waypoint.
    */
   const [drawKind, setDrawKind] = React.useState<Map3dDrawKind | null>(
@@ -263,8 +261,8 @@ function Map3dSurface({
   const { mutate: save } = useSaveMapOctomapEdits();
   const keepout = useMapKeepout(name);
   /**
-   * The forbidden zones and the shape in flight, staged for Save as on the
-   * floor plan (hooks/use-zone-editing.ts). Null zones until the robot's list
+   * The forbidden zones and the shape in flight, staged for Save
+   * (hooks/use-zone-editing.ts). Null zones until the robot's list
    * is read: a save over an unread list would erase it.
    */
   const zoneEdit = useZoneEditing(name, keepout.zones, { clearNoteOnEdit: true });
@@ -375,7 +373,7 @@ function Map3dSurface({
 
 
   /**
-   * A new Draw choice starts on Orbit, as the floor plan's starts on Pan, and
+   * A new Draw choice starts on Orbit, and
    * puts the selection down: off Waypoint there is no list to show it in.
    */
   const chooseDraw = React.useCallback(
@@ -457,8 +455,7 @@ function Map3dSurface({
 
   /**
    * One Save for what changed: the ground patches, the forbidden zones and
-   * the waypoints, each written and reported apart (the floor plan's Save
-   * does the same with cells, zones and waypoints), so one refused leaves
+   * the waypoints, each written and reported apart, so one refused leaves
    * the others saved.
    */
   const onSave = React.useCallback(() => {
@@ -551,7 +548,7 @@ function Map3dSurface({
 
   // The floor a new forbidden zone forbids: the one picked, on a map of
   // several storeys (a map of one has nothing to pick, and its zones cover
-  // every floor, as the floor plan's do). Its ground is where the 3D map
+  // every floor). Its ground is where the 3D map
   // shows it, at the top face of the floor's cells -- the height the robot's
   // planner compares a zone's band with -- else a body height under its level.
   const zoneFloorBand = floorOptions.length > 1 ? floorBand : null;
@@ -562,8 +559,8 @@ function Map3dSurface({
   }, [voxels, zoneFloorBand, floorZ]);
 
   /**
-   * Close the shape in flight into a zone, on screen: Save sends it, as on
-   * the floor plan, banded to the floor picked on a map of several storeys.
+   * Close the shape in flight into a zone, on screen: Save sends it,
+   * banded to the floor picked on a map of several storeys.
    * An anchored shape does not close: it ends on its zone (mergeZone).
    */
   const closeZone = React.useCallback(() => {
@@ -589,7 +586,7 @@ function Map3dSurface({
   );
 
   /**
-   * Remove a zone, on the robot at once, as the floor plan's Remove does.
+   * Remove a zone, on the robot at once.
    * Asked once: a finger's tap on the wrong zone must not open an area to
    * the robot.
    */
@@ -604,8 +601,8 @@ function Map3dSurface({
   const placeLocked = placeLock !== null;
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      // A shape in flight takes Escape, Enter and Backspace first, as on the
-      // floor plan: Escape drops it rather than the whole Draw choice.
+      // A shape in flight takes Escape, Enter and Backspace first: Escape
+      // drops it rather than the whole Draw choice.
       if (zoneDraft.length > 0 && !isTypingTarget(event.target)) {
         if (event.key === "Escape") {
           event.preventDefault();
@@ -788,7 +785,7 @@ function Map3dSurface({
     setVertexNote({ kind: "idle" });
   }, [placeLock, selectedVertexIds, vertexList]);
 
-  // Delete or Backspace takes the selection, as on the floor plan; a zone
+  // Delete or Backspace takes the selection; a zone
   // shape in flight has Backspace first.
   const hasSelection = selectedVertexIds.length > 0;
   React.useEffect(() => {
@@ -871,7 +868,7 @@ function Map3dSurface({
       />
 
       {/* One row across the top, the tools left and Draw right, wrapping on a
-        * phone, as on the floor plan editor. */}
+        * phone. */}
       <div className="pointer-events-none absolute inset-x-3 top-3 flex max-h-[calc(100%-1.5rem)] flex-col gap-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <Map3dToolBar

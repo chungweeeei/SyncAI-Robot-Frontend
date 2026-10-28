@@ -13,7 +13,7 @@ import { voxelPositions } from "@/lib/scene/voxel-layer";
 /** The still's size in device pixels: twice the card's tile, so it stays sharp on a dense screen. */
 export const SNAPSHOT_WIDTH_PX = 640;
 export const SNAPSHOT_HEIGHT_PX = 480;
-/** The card's tile (the same light neutral the floor plan's thumbnail sits on). */
+/** The card's tile, a light neutral that reads the same in both themes. */
 const SNAPSHOT_BACKGROUND = 0xe4e4e4;
 /** Vertical field of view, degrees: the dashboard camera's. */
 const SNAPSHOT_FOV_DEG = 50;

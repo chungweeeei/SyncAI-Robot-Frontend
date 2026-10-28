@@ -12,7 +12,6 @@ import {
   moveStepDraft,
   newStepDraft,
   repeatSuffix,
-  stepDockVertices,
   stepDraftError,
   stepDraftsSubmittable,
   stepGroupError,
@@ -737,10 +736,9 @@ describe("dock steps", () => {
     ]);
   });
 
-  it("lights its waypoint like a Move's, and marks it for an approach point", () => {
+  it("lights its waypoint like a Move's", () => {
     const drafts = [move({ vertexId: "v-hall" }), dock(), move({ vertexId: null })];
     expect(stepWaypointOrdinals(drafts).get("v-dock")).toEqual([2]);
-    expect([...stepDockVertices(drafts)]).toEqual(["v-dock"]);
   });
 
 });

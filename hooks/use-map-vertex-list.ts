@@ -18,7 +18,7 @@ export interface UseMapVertexList {
  * One map's vertices, read-only, for a name that may not be known yet (the
  * task editor and the dashboard). Not useMapVertices: that needs a name at
  * first render, and carries writes a task screen should not have in reach.
- * The cache entry is the floor plan editor's, so its saves are current here.
+ * The cache entry is the map editor's, so its saves are current here.
  */
 export function useMapVertexList(name: string | null): UseMapVertexList {
   const query = useQuery({

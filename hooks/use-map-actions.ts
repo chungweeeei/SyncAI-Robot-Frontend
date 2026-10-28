@@ -5,22 +5,18 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
   activateMap,
-  ConvertConflictError,
-  convertMapGrid,
   deleteMap,
   exportMap,
   importMap,
   renameMap,
   saveMapFloors,
-  saveMapGrid,
   saveMapOctomapEdits,
 } from "@/lib/api/map";
 import { saveKeepout } from "@/lib/api/keepout";
 import { mapScopedKeys, queryKeys } from "@/lib/api/query-keys";
 import { downloadBlob } from "@/lib/download";
 import { exportFilename } from "@/lib/map/archive";
-import type { MapGrid } from "@/lib/map/grid";
-import type { GridRecipe, MapFloor, ZonePolygon } from "@/lib/types/map";
+import type { MapFloor, ZonePolygon } from "@/lib/types/map";
 
 /*
  * The writes against one map. Each hook owns the request and every cache key
@@ -89,65 +85,11 @@ export function useActivateMap() {
   });
 }
 
-export interface ConvertMapGridVariables {
-  name: string;
-  recipe: GridRecipe;
-  overwriteEdits: boolean;
-}
-
-/**
- * POST /api/v1/maps/{name}/grid/convert.
- *
- * The response only means "started". Invalidating the catalogue is what flips
- * the card to `grid_status: "converting"`, starts useMaps' poll, and carries
- * it through to `ok` or `failed` — the outcome never arrives here.
- */
-export function useConvertMapGrid() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ name, recipe, overwriteEdits }: ConvertMapGridVariables) =>
-      convertMapGrid(name, { recipe, overwriteEdits }),
-    onSuccess: (_result, { name }) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
-      // Dropped, not invalidated: an immediate refetch would race the
-      // conversion and cache the old raster as fresh.
-      queryClient.removeQueries({ queryKey: queryKeys.mapImage(name) });
-    },
-  });
-}
-
-/**
- * The grid holds hand edits and the request did not say to overwrite them.
- * Matched on the stable `code`, never on the sentence.
- */
-export function isHandEditConflict(error: unknown): error is ConvertConflictError {
-  return error instanceof ConvertConflictError && error.code === "gridmap_hand_edited";
-}
-
-/**
- * PUT /api/v1/maps/{name}/grid — the edited cell buffer, whole.
- *
- * The grid is not refetched: the caller's buffer is what was written, and a
- * reload would need a new GridSession and lose the undo history. The catalogue
- * (`modified_at`, size) and the task editor's preview raster go stale.
- */
-export function useSaveMapGrid() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ name, grid }: { name: string; grid: MapGrid }) =>
-      saveMapGrid(name, grid),
-    onSuccess: (_result, { name }) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.mapImage(name) });
-    },
-  });
-}
-
 /**
  * PUT /api/v1/maps/{name}/keepout — the map's forbidden zones, whole.
  *
  * The answer is the next zone read, so it is written into the cache. The
- * catalogue goes stale for its `modified_at`; neither raster includes zones.
+ * catalogue goes stale for its `modified_at`.
  */
 export function useSaveMapKeepout() {
   const queryClient = useQueryClient();
@@ -278,7 +220,6 @@ export function useImportMap() {
       // Keyed by the answer's `name`: the manifest names the map when the field
       // was left empty. A replaced map makes every per-map entry stale.
       queryClient.removeQueries({ queryKey: queryKeys.mapVertices(result.name) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapImage(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(result.name) });
       queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(result.name) });

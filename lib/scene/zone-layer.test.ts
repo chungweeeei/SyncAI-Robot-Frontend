@@ -29,7 +29,7 @@ describe("createZoneLayer", () => {
 
   it("lies under the route, so a route through a zone stays on top", () => {
     const { group } = createZoneLayer([triangle("a")], THEMES.dark);
-    // On the floor plan, which is the ground floor's real ground.
+    // On the ground floor's real ground.
     expect(group.position.z - GROUND_FLOOR_Z_M).toBeGreaterThan(0);
     expect(group.position.z - GROUND_FLOOR_Z_M).toBeLessThan(0.012);
   });

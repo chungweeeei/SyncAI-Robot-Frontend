@@ -61,7 +61,7 @@ interface DockPathMessage {
   type: "dock_path";
   /**
    * Map-frame [x, y] pairs, metres, flattened with the route's z of 0: a dock
-   * is on the floor plan, which is the ground floor. Empty means "the
+   * is on the ground floor. Empty means "the
    * approach is over".
    */
   points: [number, number, number?][];

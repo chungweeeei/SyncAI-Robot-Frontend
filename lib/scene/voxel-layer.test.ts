@@ -1,11 +1,9 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { THEMES } from "@/lib/scene/theme";
 import {
   createVoxelLayer,
   sortByHeight,
-  thinGroundUnderVoxels,
   voxelFrame,
   voxelPositions,
 } from "@/lib/scene/voxel-layer";
@@ -90,25 +88,6 @@ describe("createVoxelLayer", () => {
     };
     const colors = createVoxelLayer(flat).points.geometry.getAttribute("color").array;
     expect(Array.from(colors).every((c) => Number.isFinite(c))).toBe(true);
-  });
-});
-
-describe("thinGroundUnderVoxels", () => {
-  it("thins the plane and puts the theme's opacity back", () => {
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(1, 1),
-      new THREE.MeshBasicMaterial({ opacity: THEMES.light.groundOpacity, transparent: true }),
-    );
-    const restore = thinGroundUnderVoxels(ground, THEMES.light);
-    expect((ground.material as THREE.MeshBasicMaterial).opacity).toBe(
-      THEMES.light.groundOpacityUnderVoxels,
-    );
-    restore();
-    expect((ground.material as THREE.MeshBasicMaterial).opacity).toBe(THEMES.light.groundOpacity);
-  });
-
-  it("is a no-op for a map with no floor plan", () => {
-    expect(() => thinGroundUnderVoxels(null, THEMES.dark)()).not.toThrow();
   });
 });
 

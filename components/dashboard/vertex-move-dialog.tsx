@@ -33,7 +33,6 @@ export function VertexMoveDialog({
   busy = false,
   running = false,
   editLock = null,
-  dispatchLock = null,
   deleting,
   deleteError,
   deleteQuestion = immediateDeleteQuestion,
@@ -50,8 +49,6 @@ export function VertexMoveDialog({
   running?: boolean;
   /** Why the stop is read-only (a job drives on its map). Greys Reposition and Delete. */
   editLock?: string | null;
-  /** Why no goal can be sent onto this map right now, or null. Greys Move. */
-  dispatchLock?: string | null;
   /** The delete is in flight. */
   deleting: boolean;
   /** The backend's refusal of the delete, or null. Rendered verbatim. */
@@ -109,11 +106,6 @@ export function VertexMoveDialog({
                 goal at a time.
               </p>
             )}
-            {onConfirm && !running && dispatchLock && (
-              <p className="text-[11px] leading-snug text-signal-caution">
-                {dispatchLock}
-              </p>
-            )}
             {editLock && (
               <p className="text-[11px] leading-snug text-signal-caution">
                 {editLock}
@@ -157,7 +149,7 @@ export function VertexMoveDialog({
               {onConfirm && (
                 <Button
                   size="sm"
-                  disabled={busy || running || deleting || dispatchLock !== null}
+                  disabled={busy || running || deleting}
                   onClick={() => onConfirm(shown)}
                 >
                   <SendIcon data-icon="inline-start" />

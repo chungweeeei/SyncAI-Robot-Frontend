@@ -1,19 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { vertexScreen } from "@/lib/map/draw";
-import { previewView } from "@/lib/map/preview";
-
 import {
   MAP_NAME,
   activeTask,
   failOnConsoleErrors,
-  floorPlanPng,
   mapSummary,
   mockBackend,
   octomapBt,
   robotState,
   taskState,
-  vertex,
   withOctomap,
 } from "./backend";
 
@@ -443,7 +438,7 @@ test.describe("the console on a phone", () => {
     expect(body.kind).toBe("goal");
   });
 
-  test("zooms the editor's 3D view with two fingers, and places a waypoint with one", async ({
+  test("zooms the editor with two fingers, and places a waypoint with one", async ({
     page,
   }) => {
     // A 40×40 floor (4 m; see octomapBt). On a phone the heights panel hangs
@@ -454,7 +449,7 @@ test.describe("the console on a phone", () => {
       octomap: octomapBt(40),
       vertices: [],
     });
-    await page.goto(`/maps/${MAP_NAME}/edit?view=3d`);
+    await page.goto(`/maps/${MAP_NAME}/edit`);
     const canvas = page.getByTestId("map-3d-canvas");
     await expect(canvas).toHaveAttribute("data-distance", /\d+/);
     const box = (await canvas.boundingBox())!;
@@ -493,7 +488,7 @@ test.describe("the console on a phone", () => {
     await expect(dialog).toBeVisible();
   });
 
-  test("zooms the 3D view with two fingers, and paints with one", async ({
+  test("zooms the editor with two fingers, and paints with one", async ({
     page,
   }) => {
     // A 40×40 floor (4 m) with a 2×2 hole in the middle (see octomapBt). On
@@ -504,7 +499,7 @@ test.describe("the console on a phone", () => {
       maps: [mapSummary(withOctomap())],
       octomap: octomapBt(size),
     });
-    await page.goto(`/maps/${MAP_NAME}/edit?view=3d`);
+    await page.goto(`/maps/${MAP_NAME}/edit`);
     const canvas = page.getByTestId("map-3d-canvas");
     await expect(canvas).toHaveAttribute("data-distance", /\d+/);
     const box = (await canvas.boundingBox())!;
@@ -548,158 +543,5 @@ test.describe("the console on a phone", () => {
     await touch("touchEnd", []);
     await expect(page.locator("[data-patched]")).toHaveAttribute("data-patched", "4");
     await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
-  });
-
-  test("lays the floor plan editor's panels out without one covering the other", async ({
-    page,
-  }) => {
-    // At 375 px a 224 px toolbar and a 240 px waypoint panel hung from the
-    // top corners would overlap, covering the toolbar's Save.
-    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 254) });
-    await page.goto(`/maps/${MAP_NAME}/edit?mode=vertex`);
-    await expect(page.getByRole("toolbar", { name: "Draw" })).toBeVisible();
-
-    const save = await page.getByRole("button", { name: "Save" }).boundingBox();
-    // .last(): the list header is the last "Waypoints" on the page.
-    const waypoints = await page.getByText("Waypoints", { exact: true }).last().boundingBox();
-    await expectOnScreen(page, "Save", save);
-    await expectOnScreen(page, "the waypoint panel's heading", waypoints);
-    expect(
-      waypoints!.y,
-      "the waypoint panel starts above the toolbar's Save",
-    ).toBeGreaterThan(save!.y + save!.height);
-
-    // Compact icons under a finger: named, but no printed label (innerText
-    // skips what is not rendered; toContainText would not).
-    const place = page.getByRole("button", { name: "Place" });
-    await expect(place).toBeVisible();
-    expect(await place.evaluate((el) => (el as HTMLElement).innerText.trim())).toBe("");
-  });
-
-  test("zooms the floor plan with two fingers instead of painting between them", async ({
-    page,
-  }) => {
-    // With Brush armed, two fingers are a pinch, not a line painted from one
-    // finger to the other.
-    // A real 400 x 300 grid, since a pinch shrinks the 1 px default out from
-    // under the fingers. Unknown cells, so painting Floor is a real change.
-    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
-    await page.goto(`/maps/${MAP_NAME}/edit`);
-    await expect(page.getByRole("toolbar", { name: "Draw" })).toBeVisible();
-    await page.locator("canvas").waitFor();
-
-    const box = (await page.locator("canvas").boundingBox())!;
-    const cx = box.x + box.width / 2;
-    // Low in the canvas: on a phone the toolbar spans the top ~240 px, and a
-    // finger on it would reach neither the map nor this test's point.
-    const cy = box.y + box.height * 0.7;
-    const cdp = await page.context().newCDPSession(page);
-    const finger = (x: number, y: number, id: number) => ({ x, y, id });
-    const touch = (
-      type: "touchStart" | "touchMove" | "touchEnd",
-      touchPoints: { x: number; y: number; id: number }[],
-    ) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
-
-    // A pan press, then the pinch: how a phone looks around before painting.
-    // exact: "Manual drive panel" in the strip contains the word.
-    await page.getByRole("button", { name: "Pan", exact: true }).click();
-    await touch("touchStart", [finger(cx - 30, cy, 1)]);
-    await touch("touchStart", [finger(cx - 30, cy, 1), finger(cx + 30, cy, 2)]);
-    await touch("touchMove", [finger(cx - 80, cy, 1), finger(cx + 80, cy, 2)]);
-    await touch("touchEnd", [finger(cx - 80, cy, 1)]);
-    await touch("touchEnd", []);
-    // Nothing to save — and the map did zoom, or "nothing painted" would
-    // also be true of a canvas that ignored the second finger. The zoom is
-    // read off data-zoom, 94 at fit on this phone.
-    await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
-    const zoom = page.locator("[data-zoom]");
-    await expect.poll(async () => Number(await zoom.getAttribute("data-zoom"))).toBeGreaterThan(94);
-
-    // Positive control: one finger with Brush armed does paint. Brush is
-    // only offered once something is chosen to draw.
-    await page.getByRole("combobox", { name: "Draw" }).click();
-    await page.getByRole("option", { name: "Floor", exact: true }).click();
-    await page.getByRole("button", { name: "Brush" }).click();
-    await touch("touchStart", [finger(cx, cy, 1)]);
-    await touch("touchMove", [finger(cx + 20, cy + 20, 1)]);
-    await touch("touchEnd", []);
-    await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
-  });
-
-  test("zooms the task editor's floor plan with two fingers", async ({ page }) => {
-    // A phone has no wheel, so a pinch is how the floor plan is read up
-    // close. A real grid, as above.
-    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
-    await page.goto("/tasks/editor");
-    const plan = page.getByRole("img", { name: /^Floor plan of dp2f/ });
-    await expect(plan).toBeVisible();
-    const zoom = page.locator("[data-zoom]");
-    const readZoom = async () => Number(await zoom.getAttribute("data-zoom"));
-    await expect.poll(readZoom).toBeGreaterThan(0);
-    const fitted = await readZoom();
-
-    // Centred first: the plan opens low on a phone, and its middle can sit
-    // under the nav bar.
-    await plan.evaluate((element) => element.scrollIntoView({ block: "center" }));
-    const box = (await plan.boundingBox())!;
-    const cx = box.x + box.width / 2;
-    const cy = box.y + box.height / 2;
-    const cdp = await page.context().newCDPSession(page);
-    const finger = (x: number, y: number, id: number) => ({ x, y, id });
-    const touch = (
-      type: "touchStart" | "touchMove" | "touchEnd",
-      touchPoints: { x: number; y: number; id: number }[],
-    ) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
-
-    // Control for the pinch below: one finger pans and leaves the zoom alone.
-    await touch("touchStart", [finger(cx, cy, 1)]);
-    await touch("touchMove", [finger(cx + 30, cy + 20, 1)]);
-    await touch("touchEnd", []);
-    expect(await readZoom()).toBe(fitted);
-
-    // Two fingers spreading is a zoom.
-    await touch("touchStart", [finger(cx - 30, cy, 1)]);
-    await touch("touchStart", [finger(cx - 30, cy, 1), finger(cx + 30, cy, 2)]);
-    await touch("touchMove", [finger(cx - 80, cy, 1), finger(cx + 80, cy, 2)]);
-    await touch("touchEnd", [finger(cx - 80, cy, 1)]);
-    await touch("touchEnd", []);
-    await expect.poll(readZoom).toBeGreaterThan(fitted);
-  });
-  test("adds a stop for a finger's tap on a waypoint, and none for a pinch begun on one", async ({
-    page,
-  }) => {
-    // The editor's map under a finger: the tap is the pick, and a second
-    // finger turns the first into a pinch, which must not also be a pick.
-    await mockBackend(page, { gridImage: floorPlanPng(400, 300, 205) });
-    await page.goto("/tasks/editor");
-    const plan = page.getByRole("img", { name: /^Floor plan of dp2f/ });
-    await expect(plan).toBeVisible();
-    await plan.evaluate((element) => element.scrollIntoView({ block: "center" }));
-    const box = (await plan.boundingBox())!;
-    const meta = { resolution: 0.05, origin: [-12.3, -7.8, 0] as [number, number, number], width: 400, height: 300 };
-    const at = vertexScreen(previewView({ width: box.width, height: box.height }, meta), meta, vertex().x, vertex().y);
-    const sx = box.x + at.cx;
-    const sy = box.y + at.cy;
-    const cdp = await page.context().newCDPSession(page);
-    const finger = (x: number, y: number, id: number) => ({ x, y, id });
-    const touch = (
-      type: "touchStart" | "touchMove" | "touchEnd",
-      touchPoints: { x: number; y: number; id: number }[],
-    ) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
-    const rows = page.locator("[data-stop]");
-
-    // A pinch whose first finger is on the stop, ending where it began.
-    await touch("touchStart", [finger(sx, sy, 1)]);
-    await touch("touchStart", [finger(sx, sy, 1), finger(sx + 60, sy, 2)]);
-    await touch("touchEnd", [finger(sx, sy, 1)]);
-    await touch("touchEnd", []);
-    await page.getByRole("button", { name: "Fit to view" }).click();
-    await expect(rows).toHaveCount(0);
-
-    // Control: one finger's tap on the same stop does add it.
-    await touch("touchStart", [finger(sx, sy, 1)]);
-    await touch("touchEnd", []);
-    await expect(rows).toHaveCount(1);
-    await expect(page.getByRole("combobox", { name: "Waypoint for stop 1" })).toHaveText("dock");
   });
 });

@@ -77,8 +77,8 @@ export function createZoneLayer(
   }: { defaultZ?: number; visible?: (zone: ZonePolygon) => boolean } = {},
 ): { group: THREE.Group; dispose: () => void } {
   const group = new THREE.Group();
-  // A zone is drawn on the floor plan, which is the ground floor's; another
-  // height is each mesh's offset from it.
+  // A zone is drawn on the ground floor's ground; another height is each
+  // mesh's offset from it.
   group.position.z = GROUND_FLOOR_Z_M + ZONE_Z_M;
   const geometries: THREE.BufferGeometry[] = [];
 

@@ -10,9 +10,6 @@ import type { MapSummary } from "@/lib/types/map";
 
 const LOCKED_REASON =
   "The robot is working in this map right now, so it cannot be renamed. Switch it to another map first.";
-const CONVERTING_REASON =
-  "This map is still being prepared. Wait for it to finish.";
-
 /**
  * The card's title, and the card-side face of PATCH /api/v1/maps/{name}: press
  * Rename and the title becomes an inline input with Save and Cancel (no menu,
@@ -21,8 +18,7 @@ const CONVERTING_REASON =
  * **The map in use can't be renamed — the backend's rule** (409 `map_active`):
  * the running stack opened its files by path at launch. Switching to another
  * map frees the name, but a rename isn't entitled to do that swap itself.
- * Greyed on the active card and mid-conversion (the conversion holds the old
- * path), with the reason in the tooltip.
+ * Greyed on the active card, with the reason in the tooltip.
  *
  * On success the card remounts under the new name, so the sentence goes up
  * through `onRenamed` to MapLibrary's line. Cache keys are useRenameMap's.
@@ -40,7 +36,7 @@ export function MapRenameControl({
   const [name, setName] = React.useState(map.name);
 
   const busy = rename.isPending;
-  // 409 (taken, converting, in use) and 400 arrive as the backend's sentence.
+  // 409 (taken, in use) and 400 arrive as the backend's sentence.
   const error = rename.error?.message ?? null;
 
   const trimmed = name.trim();
@@ -137,10 +133,10 @@ export function MapRenameControl({
       </h2>
       {/* A look-alike span when blocked: `disabled` swallows the pointer
         * events the tooltip needs. */}
-      {locked || map.grid_status === "converting" ? (
+      {locked ? (
         <span
           aria-disabled="true"
-          title={locked ? LOCKED_REASON : CONVERTING_REASON}
+          title={LOCKED_REASON}
           className="instrument-label flex h-5 shrink-0 cursor-not-allowed items-center rounded-sm px-1 text-muted-foreground opacity-40"
         >
           Rename

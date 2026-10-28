@@ -1,6 +1,4 @@
-// The forbidden zones an editor is changing, and the shape being drawn: one
-// rule set for the floor plan editor and the 3D view, which used to each keep
-// their own copy of it. What a press means stays the canvas's
+// The forbidden zones an editor is changing, and the shape being drawn. What a press means stays the canvas's
 // (classifyZonePress); this is what the editor does with the verdict.
 
 import {

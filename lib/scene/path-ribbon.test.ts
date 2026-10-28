@@ -21,7 +21,7 @@ const heightsOf = (ribbon: NonNullable<ReturnType<typeof createPathRibbon>>) => 
   return Array.from({ length: position.count }, (_, i) => +position.getZ(i).toFixed(3));
 };
 
-/** The ground floor's band, just over the floor plan. */
+/** The ground floor's band, just over its ground. */
 const onGround = +(GROUND_FLOOR_Z_M + 0.012).toFixed(3);
 
 /** How many segments are drawn: two triangles, six indices, each. */
@@ -32,16 +32,16 @@ describe("createPathRibbon", () => {
   it("lays each stretch on its own ground, just over it", () => {
     const ribbon = createPathRibbon(upTheStair, THEMES.light)!;
     // Two vertices per point, both at the point's ground plus the lift; the
-    // ground floor's 0 is its real ground, where the floor plan is drawn.
+    // ground floor's 0 is its real ground.
     expect(heightsOf(ribbon)).toEqual([
       onGround, onGround, onGround, onGround, 1.512, 1.512, 3.012, 3.012, 3.012, 3.012,
     ]);
     expect(segmentsOf(ribbon)).toBe(4);
   });
 
-  it("never goes under the floor plan", () => {
-    // A planner's ground a few centimetres under the floor plan is still the
-    // ground floor; under the plan, the route would be hidden.
+  it("never goes under the ground floor", () => {
+    // A planner's ground a few centimetres under the ground floor is still
+    // the ground floor; under it, the route would be hidden.
     const under = GROUND_FLOOR_Z_M - 0.05;
     const ribbon = createPathRibbon(route([0, 0, under], [1, 0, under]), THEMES.light)!;
     expect(heightsOf(ribbon).every((z) => z === onGround)).toBe(true);

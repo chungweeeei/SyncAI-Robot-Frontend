@@ -3,8 +3,13 @@
 // Read by the editor's 3D view and the dashboard to stand a placed waypoint on
 // the floor it was placed on, and to frame a view on it.
 
-import type { GridSize } from "@/lib/map/grid";
 import { OCTREE_KEY_ORIGIN, type OccupiedVoxels } from "@/lib/types/octree";
+
+/** The xy extent of the 3D map's columns, in cells. */
+export interface GridSize {
+  width: number;
+  height: number;
+}
 
 /** `ColumnFloors.floor` for a column with no voxel in the band. */
 export const NO_FLOOR = -1;

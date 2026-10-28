@@ -135,7 +135,7 @@ export async function requestJson<T>(
 }
 
 /**
- * For a success body that is not JSON (the floor plan image); refusals are
+ * For a success body that is not JSON (a scan, a 3D map, an archive); refusals are
  * still `{detail}`, handled as in requestJson.
  */
 export async function requestRaw(

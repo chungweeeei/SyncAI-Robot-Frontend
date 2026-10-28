@@ -39,17 +39,15 @@ import type { Map3dTool } from "@/components/maps/map-3d-canvas";
 import { BRUSH_RADII_M } from "@/lib/map/ground-fill";
 
 /*
- * The 3D view's controls, as two strips along the top like the floor plan
- * editor's (grid-toolbar.tsx), so the two views of one map are worked the
- * same way: choose what to edit on the right, then the tool on the left.
+ * The editor's controls, as two strips along the top: choose what to edit
+ * on the right, then the tool on the left.
  *
  * Right, **Draw**: what a press on the map works on — nothing, ground
  * patches, waypoints or forbidden zones — beside the zoom. Left: fit and
  * shading, history, Save, then Orbit and the tools the Draw choice allows.
- * Save sends the patches and the forbidden zones drawn, merged or moved,
- * as the floor plan's Save does, and the waypoints placed, moved or deleted;
- * History is the patches' only. A zone is written as it is removed, as on
- * the floor plan.
+ * Save sends the patches, the forbidden zones drawn, merged or moved, and
+ * the waypoints placed, moved or deleted; History is the patches' only. A
+ * zone is written as it is removed.
  */
 
 /** What a press on the 3D map works on, once chosen in the Draw list. */
@@ -58,7 +56,7 @@ export type Map3dDrawKind = "ground" | "waypoint" | "zone";
 const DRAW_KINDS: readonly { value: Map3dDrawKind; label: string; icon: ToolIcon }[] = [
   { value: "ground", label: "Ground patch", icon: PaintbrushIcon },
   { value: "waypoint", label: "Waypoint", icon: MapPinIcon },
-  // The floor plan's sign for it: what the zone means, its shape is the operator's.
+  // What the zone means; its shape is the operator's.
   { value: "zone", label: "Forbidden zone", icon: BanIcon },
 ];
 
@@ -242,7 +240,7 @@ export function Map3dToolBar({
         )}
         {drawKind === "zone" && (
           <>
-            {/* A pentagon, not a square, as on the floor plan: the shape is whatever the corners make. */}
+            {/* A pentagon, not a square: the shape is whatever the corners make. */}
             <ToolButton
               label="Shape"
               hint={
@@ -289,9 +287,8 @@ export function Map3dToolBar({
 }
 
 /**
- * The right strip: what a press works on, and the zoom. A list, as on the
- * floor plan editor; "No type" is its own item so putting the choice down is
- * visible (Escape does the same).
+ * The right strip: what a press works on, and the zoom. A list; "No type" is
+ * its own item so putting the choice down is visible (Escape does the same).
  */
 export function Map3dDrawBar({
   drawKind,
@@ -324,7 +321,7 @@ export function Map3dDrawBar({
         >
           <SelectValue />
         </SelectTrigger>
-        {/* alignItemWithTrigger off, as on the floor plan editor: the default
+        {/* alignItemWithTrigger off: the default
           * lined the chosen item up over the trigger and grew the list upward. */}
         <SelectContent alignItemWithTrigger={false}>
           <SelectItem value={NONE}>

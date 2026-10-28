@@ -34,7 +34,7 @@ const ACCEPT =
  *
  * A pick opens a confirm rather than uploading, because **an import under an
  * existing name silently replaces that map and its waypoints** (the backend
- * refuses only in-use, converting or template-bound maps). The dialog shows
+ * refuses only in-use or template-bound maps). The dialog shows
  * the landing name, pre-filled and editable, and turns destructive (Replace)
  * when it matches a card. Left empty, the archive's own name is used, which
  * this console can't read — hence the general warning.

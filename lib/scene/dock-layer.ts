@@ -37,7 +37,7 @@ export function createDockLayer(
   theme: Theme,
 ): { group: THREE.Group; dispose: () => void } {
   const group = new THREE.Group();
-  // A dock is on the floor plan, which is the ground floor's.
+  // A dock is on the ground floor.
   group.position.z = GROUND_FLOOR_Z_M;
   const staging = stagingPose(dock);
 

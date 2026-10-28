@@ -4,7 +4,6 @@
 import * as THREE from "three";
 
 import type { MapFrame } from "@/lib/scene/camera";
-import type { Theme } from "@/lib/scene/theme";
 import { heightRange, rampColor } from "@/lib/theme/height-ramp";
 import { OCTREE_KEY_ORIGIN, type OccupiedVoxels } from "@/lib/types/octree";
 
@@ -17,7 +16,7 @@ export interface VoxelLayer {
    * (the editor's 3D view) simply does not add it.
    */
   ghost: THREE.Points;
-  /** The xy box the voxels cover, for framing a map that has no floor plan. */
+  /** The xy box the voxels cover, for framing the map. */
   frame: MapFrame;
   /**
    * Draw only the cells whose centre lies in `[lo, hi)` metres, recoloured
@@ -76,8 +75,8 @@ const GHOST_OPACITY = 0.14;
  * 16-bit keys and byte colours, 9 bytes a cell where float xyz and rgb were
  * 24.
  *
- * Opaque, which is what lets the translucent floor plan draw after it and
- * blend over it rather than hide it. Built wholesale and thrown away on any
+ * Opaque, which is what lets translucent marks draw after it and blend over
+ * it rather than hide it. Built wholesale and thrown away on any
  * change of map; `dispose` frees what it built, and the decoded keys stay
  * with the query cache.
  */
@@ -258,25 +257,4 @@ export function sortByHeight(voxels: OccupiedVoxels): {
   const order = new Uint32Array(voxels.count);
   for (let i = 0; i < voxels.count; i += 1) order[next[voxels.keys[i * 3 + 2]]++] = i;
   return { order, levelStart };
-}
-
-/**
- * Thin the floor plan's plane for as long as the 3D map is up, and return
- * what puts it back. The robot's floor lies about half a metre under the
- * plane (the map frame's zero is the body, not the ground), so at the
- * plane's usual opacity the whole map is hidden from every angle above it.
- * Thinned rather than lifted out of the way: the floor plan is still the
- * reference the stops and zones sit on. A no-op without a plane.
- *
- * The undo writes the theme's opacity rather than whatever was there before,
- * so two of these can never leave the plane stuck thin; after a scene
- * rebuild it lands on a disposed material, which is harmless.
- */
-export function thinGroundUnderVoxels(ground: THREE.Mesh | null, theme: Theme): () => void {
-  const material = ground?.material as THREE.MeshBasicMaterial | undefined;
-  if (!material) return () => {};
-  material.opacity = theme.groundOpacityUnderVoxels;
-  return () => {
-    material.opacity = theme.groundOpacity;
-  };
 }

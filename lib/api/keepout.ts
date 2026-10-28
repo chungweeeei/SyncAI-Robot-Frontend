@@ -1,9 +1,8 @@
 // Forbidden zones: GET and PUT /api/v1/maps/{name}/keepout.
 //
-// Zones travel only as polygons in map-frame metres; the robot rasterises the
-// planner's mask from them. So a GET answers what was last saved through this
-// API: a mask drawn any other way reads as no zones, and the next save
-// replaces it.
+// Zones travel only as polygons in map-frame metres (keepout.json beside the
+// map's octomap.bt), which the robot's 3D planner reads. A map with no 3D map
+// has nowhere to put them: the PUT answers 404.
 
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
@@ -33,8 +32,9 @@ export interface SaveKeepoutResult {
   zones: ZonePolygon[];
   active: boolean;
   /**
-   * Whether the running planner re-read the zones. False for an inactive map,
-   * and for an active one whose reload failed (worth telling the operator).
+   * Whether the running 3D planner re-read the zones. False for an inactive
+   * map, and for an active one whose reload failed (worth telling the
+   * operator).
    */
   reloaded: boolean;
   /** Operator-facing sentence; render it verbatim. */

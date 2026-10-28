@@ -1,4 +1,3 @@
-import type { GridStatus } from "@/lib/types/map";
 import type { RobotMode } from "@/lib/types/robot";
 
 /**
@@ -37,23 +36,6 @@ export function mapRunLock({ mapName, tasks, status }: RunLockInput): RunLock {
   if (status !== "ok") return { locked: true, reason: RUN_LOCK_UNKNOWN };
   if (tasks.some((task) => task.map_name === mapName)) {
     return { locked: true, reason: RUN_LOCK_RUNNING };
-  }
-  return UNLOCKED;
-}
-
-export const DISPATCH_LOCK_CONVERTING =
-  "This map's floor plan is being rebuilt. Wait for it to finish before sending the robot anywhere.";
-
-/**
- * The other direction: whether a moving job may be sent onto a map. Not while
- * its floor plan is being rebuilt, since a route planned now would be planned
- * on the outgoing one. Stand and Lie down use no map and do not ask.
- */
-export function dispatchMapLock(
-  map: { grid_status: GridStatus } | null,
-): RunLock {
-  if (map?.grid_status === "converting") {
-    return { locked: true, reason: DISPATCH_LOCK_CONVERTING };
   }
   return UNLOCKED;
 }

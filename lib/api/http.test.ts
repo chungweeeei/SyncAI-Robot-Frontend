@@ -47,11 +47,11 @@ describe("errorBody", () => {
   it("keeps the machine-readable code beside the sentence", async () => {
     // A body reads once, so sentence and `code` come out together.
     const body = await errorBody(
-      jsonResponse({ detail: "Hand edits present.", code: "gridmap_hand_edited" }, { status: 409 }),
+      jsonResponse({ detail: "A task still uses this map.", code: "template_bound" }, { status: 409 }),
     );
     expect(body).toEqual({
-      detail: "Hand edits present.",
-      code: "gridmap_hand_edited",
+      detail: "A task still uses this map.",
+      code: "template_bound",
     });
   });
 
@@ -104,7 +104,7 @@ describe("requestJson headers", () => {
   });
 
   it("lets an explicit Content-Type win", async () => {
-    // The floor plan PUT ships raw bytes the server must not parse as JSON.
+    // The map import ships raw bytes the server must not parse as JSON.
     fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
     await requestJson(URL_, {
       method: "PUT",
@@ -165,7 +165,7 @@ describe("requestJson failures", () => {
       }
     }
     fetchMock.mockResolvedValue(
-      jsonResponse({ detail: "busy", code: "conversion_running" }, { status: 409 }),
+      jsonResponse({ detail: "busy", code: "task_running" }, { status: 409 }),
     );
     await expect(
       requestJson(URL_, {
@@ -255,9 +255,9 @@ describe("requestRaw", () => {
 
   it("still surfaces the backend's sentence on a refusal", async () => {
     fetchMock.mockResolvedValue(
-      jsonResponse({ detail: "no gridmap yet" }, { status: 404 }),
+      jsonResponse({ detail: "no 3D map yet" }, { status: 404 }),
     );
-    await expect(requestRaw(URL_)).rejects.toThrow("no gridmap yet");
+    await expect(requestRaw(URL_)).rejects.toThrow("no 3D map yet");
   });
 
   it("sends no Content-Type", async () => {
