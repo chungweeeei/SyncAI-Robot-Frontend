@@ -408,6 +408,9 @@ export function scheduleDrift(
     if (step.type === "WAIT" && now.type === "WAIT") {
       return step.params.seconds === now.params.seconds ? count : count + 1;
     }
+    if (step.type === "DEMO" && now.type === "DEMO") {
+      return step.params.inspection === now.params.inspection ? count : count + 1;
+    }
     if (!isNavStep(step) || !isNavStep(now)) return count;
     const same =
       step.params.x.toFixed(3) === now.params.x.toFixed(3) &&

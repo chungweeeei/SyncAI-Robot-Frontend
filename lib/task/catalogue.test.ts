@@ -19,7 +19,7 @@ import {
   stepOccupiesBody,
 } from "@/lib/task/step";
 
-const ALL_TYPES: StepType[] = ["MOVE", "DOCK", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"];
+const ALL_TYPES: StepType[] = ["MOVE", "DOCK", "SPEAK", "WAIT", "STANDUP", "LIEDOWN", "DEMO"];
 
 describe("the local step catalogue", () => {
   it("describes every step type the backend takes", () => {
@@ -45,7 +45,7 @@ describe("the local step catalogue", () => {
     const claims = {
       steps: LOCAL_STEP_CATALOGUE.steps.map((spec) => ({ ...spec, while_walking: true })),
     };
-    expect(transitSpecs(claims).map((spec) => spec.type)).toEqual(["SPEAK", "WAIT"]);
+    expect(transitSpecs(claims).map((spec) => spec.type)).toEqual(["SPEAK", "WAIT", "DEMO"]);
   });
 
   it("splits the steps into stops and what is done at them", () => {
@@ -55,7 +55,31 @@ describe("the local step catalogue", () => {
       "WAIT",
       "STANDUP",
       "LIEDOWN",
+      "DEMO",
     ]);
+  });
+
+  it("reads DEMO's choice field off an answer", () => {
+    const answer = {
+      steps: [
+        {
+          type: "DEMO",
+          label: "Inspection",
+          hint: "h",
+          occupies_body: false,
+          while_walking: false,
+          params: [
+            {
+              kind: "choice",
+              key: "inspection",
+              label: "Result",
+              options: [{ value: "door_open", label: "Door: open" }],
+            },
+          ],
+        },
+      ],
+    };
+    expect(StepCatalogueSchema.parse(answer).steps.map((spec) => spec.type)).toEqual(["DEMO"]);
   });
 
   it("is the shape the endpoint's schema reads, and a field the backend adds is not a break", () => {

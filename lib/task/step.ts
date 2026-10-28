@@ -6,6 +6,7 @@ import { normalizeTheta } from "@/lib/angle";
 import type { TemplateStep, TemplateStepRequest } from "@/lib/api/task-template";
 import { moveParams as wireMoveParams } from "@/lib/api/task";
 import type {
+  DemoStepParams,
   MoveStepParams,
   NavStepType,
   StepType,
@@ -44,7 +45,31 @@ export const STEP_TYPES: readonly StepTypeSpec[] = [
   { value: "STANDUP", label: "Stand", hint: "Stand up. Nothing to set." },
   // "Lie down", as the history names the kind: the masthead reads this label.
   { value: "LIEDOWN", label: "Lie down", hint: "Lie down. Nothing to set." },
+  // Demo branch only.
+  {
+    value: "DEMO",
+    label: "Inspection",
+    hint: "Report what the robot saw to the capture service.",
+  },
 ];
+
+/**
+ * Demo branch only: what an Inspection step may report, as the backend's
+ * `InspectionId`. The catalogue says the same; this is the local fallback and
+ * what a saved row's summary reads.
+ */
+export const INSPECTION_OPTIONS: readonly { value: string; label: string }[] = [
+  { value: "hydrant_ok", label: "Fire hydrant: OK" },
+  { value: "light_on", label: "Light: on" },
+  { value: "light_off", label: "Light: off" },
+  { value: "door_open", label: "Door: open" },
+  { value: "door_closed", label: "Door: closed" },
+];
+
+/** An inspection result in operator words; an unknown one as sent. */
+export function inspectionLabel(value: string): string {
+  return INSPECTION_OPTIONS.find((each) => each.value === value)?.label ?? value;
+}
 
 /** Mirrors `SpeakParams.text`'s `max_length` — the backend 422s past this. */
 export const SPEAK_TEXT_MAX = 1000;
@@ -102,6 +127,8 @@ export interface StepDraft {
   repeat: string;
   /** WAIT only: the duration in seconds, as typed (see parseCoordinate). */
   seconds: string;
+  /** DEMO only: the picked inspection result, "" until one is. */
+  inspection: string;
   /**
    * The vertex the numbers were prefilled from, or null once hand edited.
    * **Saving** sends it, so a stored MOVE or DOCK can follow its vertex; **dispatching**
@@ -147,6 +174,7 @@ export function newStepDraft(type: StepType): StepDraft {
     text: "",
     repeat: "1",
     seconds: "",
+    inspection: "",
     vertexId: null,
     z: 0,
     withPrevious: false,
@@ -235,6 +263,8 @@ export function stepSummary(
       const seconds = draft.seconds.trim();
       return seconds ? `${seconds} s` : null;
     }
+    case "DEMO":
+      return draft.inspection ? inspectionLabel(draft.inspection) : null;
     default:
       return null;
   }
@@ -582,6 +612,9 @@ export function stepDraftError(
     }
     return null;
   }
+  if (draft.type === "DEMO") {
+    return draft.inspection ? null : "Pick a result.";
+  }
   if (!isNavStep(draft)) return null;
   // No theta range check: normalizeTheta folds 270° to -90°.
   return moveParams(draft) ? null : "Pick a waypoint.";
@@ -623,6 +656,11 @@ function toStepRequest(
     const params = waitParams(draft, limits);
     if (!params) throw new Error(`Step ${id} has no usable duration.`);
     return { id, type: "WAIT", params };
+  }
+  if (draft.type === "DEMO") {
+    if (!draft.inspection) throw new Error(`Step ${id} has no result.`);
+    const params: DemoStepParams = { inspection: draft.inspection };
+    return { id, type: "DEMO", params };
   }
   if (draft.type === "STANDUP" || draft.type === "LIEDOWN") {
     return { id, type: draft.type };
@@ -697,6 +735,9 @@ export function fromTemplateSteps(steps: readonly TemplateStep[]): StepDraft[] {
       const seconds = step.resolved_params?.seconds;
       return { ...draft, seconds: seconds === undefined ? draft.seconds : String(seconds) };
     }
+    if (step.type === "DEMO") {
+      return { ...draft, inspection: step.resolved_params?.inspection ?? draft.inspection };
+    }
     return draft;
   });
 }
@@ -729,6 +770,8 @@ function dispatchStep(step: TemplateStep): TaskStepRequest {
       return { id: step.id, type: "SPEAK", params: assertResolved(step, "no text") };
     case "WAIT":
       return { id: step.id, type: "WAIT", params: assertResolved(step, "no duration") };
+    case "DEMO":
+      return { id: step.id, type: "DEMO", params: assertResolved(step, "no result") };
     default:
       return { id: step.id, type: step.type };
   }

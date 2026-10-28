@@ -744,3 +744,37 @@ describe("dock steps", () => {
   });
 
 });
+
+// Demo branch only.
+describe("an Inspection step", () => {
+  const inspection = (value: string): StepDraft => ({ ...newStepDraft("DEMO"), inspection: value });
+  const saved: TemplateStep = {
+    id: "1-demo",
+    type: "DEMO",
+    params: { inspection: "door_open" },
+    resolved_params: { inspection: "door_open" },
+    vertex_id: null,
+    vertex_name: null,
+    vertex_status: "NONE",
+    group: null,
+  };
+
+  it("asks for a result before it can be sent", () => {
+    expect(stepDraftError(inspection(""))).toMatch(/Pick a result/);
+    expect(stepDraftError(inspection("light_on"))).toBeNull();
+  });
+
+  it("sends the picked result as its params", () => {
+    expect(toStepRequests([inspection("door_closed")])).toEqual([
+      { id: "1-demo", type: "DEMO", params: { inspection: "door_closed" } },
+    ]);
+  });
+
+  it("reads back in operator words and round-trips through a template", () => {
+    expect(stepSummary(inspection("hydrant_ok"))).toBe("Fire hydrant: OK");
+    expect(fromTemplateSteps([saved])[0]!.inspection).toBe("door_open");
+    expect(toDispatchSteps([saved])).toEqual([
+      { id: "1-demo", type: "DEMO", params: { inspection: "door_open" } },
+    ]);
+  });
+});

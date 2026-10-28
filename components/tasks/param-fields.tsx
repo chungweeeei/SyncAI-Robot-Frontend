@@ -3,6 +3,13 @@
 import * as React from "react";
 
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { StepParamField, StepSpec } from "@/lib/task/catalogue";
 import type { StepDraft } from "@/lib/task/step";
 import { cn } from "@/lib/utils";
@@ -74,6 +81,31 @@ function ParamField({
   onChange: (value: string) => void;
 }) {
   const unitId = React.useId();
+
+  // Demo branch only (DEMO's result). "" is no pick yet: the row error asks for one.
+  if (field.kind === "choice") {
+    return (
+      <Select
+        items={field.options}
+        value={value || null}
+        onValueChange={(next) => {
+          if (next !== null) onChange(next as string);
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger aria-label={label} size="sm" className="h-7 min-w-36 rounded-sm">
+          <SelectValue placeholder={field.label} />
+        </SelectTrigger>
+        <SelectContent alignItemWithTrigger={false}>
+          {field.options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
 
   if (field.kind === "text") {
     const length = value.trim().length;

@@ -14,12 +14,14 @@ import { apiUrl } from "@/lib/api/config";
 import { requestJson, type ErrorBody } from "@/lib/api/http";
 import type { ScheduleTrigger } from "@/lib/api/schedule";
 import {
+  DemoStepParamsSchema,
   MoveStepParamsSchema,
   SpeakStepParamsSchema,
   WaitStepParamsSchema,
 } from "@/lib/api/task";
 import type {
   BareStepType,
+  DemoStepParams,
   MoveStepParams,
   NavStepType,
   SpeakStepParams,
@@ -71,6 +73,11 @@ export type TemplateStep =
       type: "WAIT";
       params: WaitStepParams | null;
       resolved_params: WaitStepParams | null;
+    })
+  | (TemplateStepBase & {
+      type: "DEMO";
+      params: DemoStepParams | null;
+      resolved_params: DemoStepParams | null;
     })
   | (TemplateStepBase & {
       type: BareStepType;
@@ -135,6 +142,16 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     type: z.literal("WAIT"),
     params: WaitStepParamsSchema.nullable(),
     resolved_params: WaitStepParamsSchema.nullable(),
+  }),
+  z.object({
+    id: z.string(),
+    vertex_id: z.string().nullable(),
+    vertex_name: z.string().nullable(),
+    vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
+    group: z.string().nullish().transform((group) => group ?? null),
+    type: z.literal("DEMO"),
+    params: DemoStepParamsSchema.nullable(),
+    resolved_params: DemoStepParamsSchema.nullable(),
   }),
   z.object({
     id: z.string(),

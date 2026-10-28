@@ -18,6 +18,7 @@ import { z } from "zod";
 import type { StepType } from "@/lib/api/task";
 import {
   DEFAULT_STEP_LIMITS,
+  INSPECTION_OPTIONS,
   SPEAK_REPEAT_MAX,
   SPEAK_TEXT_MAX,
   STEP_TYPES,
@@ -70,7 +71,20 @@ export interface NumberField {
   placeholder?: string | null;
 }
 
-export type StepParamField = WaypointField | TextField | IntegerField | NumberField;
+/** Demo branch only, for DEMO: one of a fixed set of values, drawn as a select. */
+export interface ChoiceField {
+  kind: "choice";
+  key: string;
+  label: string;
+  options: { value: string; label: string }[];
+}
+
+export type StepParamField =
+  | WaypointField
+  | TextField
+  | IntegerField
+  | NumberField
+  | ChoiceField;
 
 export interface StepSpec {
   type: StepType;
@@ -130,14 +144,27 @@ const NumberFieldSchema: z.ZodType<NumberField> = z.object({
   placeholder: z.string().nullish(),
 });
 
+const ChoiceFieldSchema: z.ZodType<ChoiceField> = z.object({
+  kind: z.literal("choice"),
+  key: z.string(),
+  label: z.string(),
+  options: z.array(z.object({ value: z.string(), label: z.string() })),
+});
+
 const StepSpecSchema: z.ZodType<StepSpec> = z.object({
-  type: z.enum(["MOVE", "DOCK", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
+  type: z.enum(["MOVE", "DOCK", "SPEAK", "WAIT", "STANDUP", "LIEDOWN", "DEMO"]),
   label: z.string(),
   hint: z.string(),
   occupies_body: z.boolean(),
   while_walking: z.boolean(),
   params: z.array(
-    z.union([WaypointFieldSchema, TextFieldSchema, IntegerFieldSchema, NumberFieldSchema]),
+    z.union([
+      WaypointFieldSchema,
+      TextFieldSchema,
+      IntegerFieldSchema,
+      NumberFieldSchema,
+      ChoiceFieldSchema,
+    ]),
   ),
 });
 
@@ -216,6 +243,14 @@ export const LOCAL_STEP_CATALOGUE: StepCatalogue = {
     ]),
     spec("STANDUP", true, []),
     spec("LIEDOWN", true, []),
+    spec("DEMO", false, [
+      {
+        kind: "choice",
+        key: "inspection",
+        label: "Result",
+        options: INSPECTION_OPTIONS.map((option) => ({ ...option })),
+      },
+    ]),
   ],
 };
 
