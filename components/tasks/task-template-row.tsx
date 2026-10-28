@@ -36,7 +36,7 @@ import {
   taskSummary,
   type RouteStop,
 } from "@/lib/task/library";
-import { patrolRoute, repeatSuffix } from "@/lib/task/step";
+import { inspectionLabel, patrolRoute, repeatSuffix } from "@/lib/task/step";
 import { formatDuration } from "@/lib/task/stops";
 import { cn } from "@/lib/utils";
 
@@ -326,6 +326,9 @@ function ActionDetail({ step }: { step: TemplateStep }) {
   }
   if (step.type === "WAIT" && step.resolved_params) {
     return <span className="readout">{formatDuration(step.resolved_params.seconds)}</span>;
+  }
+  if (step.type === "DEMO" && step.resolved_params) {
+    return <span>{inspectionLabel(step.resolved_params.inspection)}</span>;
   }
   return null;
 }
