@@ -309,7 +309,10 @@ lib/
   ros/          WebSocket clients + frame decoders (telemetry, point cloud, teleop)
   map/          map rules: vertex helpers, name rule, the route map's flat
                 marks (draw.ts: palette and marker; preview.ts: stops,
-                route legs and which captions fit), the forbidden zone rules (zone.ts: corner count, close-on-first,
+                route legs — each kept right of its walk with a chevron,
+                so a walk back runs beside the walk out, none drawn across
+                a stop off screen, the leg into the card pointed at bold,
+                the last stop ringed twice — and which captions fit), the forbidden zone rules (zone.ts: corner count, close-on-first,
                 point-in-polygon pick, and a zone's floor band: zoneBandAround,
                 and what the editor does with a press's verdict, as a
                 reducer: zone-session.ts,

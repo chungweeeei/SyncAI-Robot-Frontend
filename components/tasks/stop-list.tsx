@@ -94,8 +94,8 @@ export interface StopListProps {
   onSelect: (selected: number | "start" | null) => void;
   /** The waypoint under the map's pointer, which lights its cards. */
   hoveredVertex: string | null;
-  /** The waypoint of the card under the pointer, which the map rings. */
-  onHoverVertex: (vertexId: string | null) => void;
+  /** The row of the stop card under the pointer, whose waypoint and leg the map lights. */
+  onHoverStop: (key: number | null) => void;
   edit: EditSteps;
 }
 
@@ -122,7 +122,7 @@ export function StopList({
   selected,
   onSelect,
   hoveredVertex,
-  onHoverVertex,
+  onHoverStop,
   edit,
 }: StopListProps) {
   const sensors = useSensors(
@@ -220,7 +220,7 @@ export function StopList({
                   lit={
                     hoveredVertex !== null && steps[block.index]!.vertexId === hoveredVertex
                   }
-                  onHoverVertex={onHoverVertex}
+                  onHoverStop={onHoverStop}
                 />
               ))}
             </ol>
@@ -267,7 +267,7 @@ function StopCard({
   selected,
   onSelect,
   lit,
-  onHoverVertex,
+  onHoverStop,
   edit,
 }: {
   block: StopBlock;
@@ -287,7 +287,7 @@ function StopCard({
   selected: number | "start" | null;
   onSelect: (selected: number | "start" | null) => void;
   lit: boolean;
-  onHoverVertex: (vertexId: string | null) => void;
+  onHoverStop: (key: number | null) => void;
   edit: EditSteps;
 }) {
   const stop = steps[block.index]!;
@@ -321,8 +321,8 @@ function StopCard({
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn("relative", isDragging && "z-10")}
-      onMouseEnter={() => onHoverVertex(stop.vertexId)}
-      onMouseLeave={() => onHoverVertex(null)}
+      onMouseEnter={() => onHoverStop(stop.key)}
+      onMouseLeave={() => onHoverStop(null)}
       data-stop={ordinal}
       data-row-key={stop.key}
     >

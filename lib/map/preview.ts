@@ -12,6 +12,24 @@ import type { MapVertex } from "@/lib/types/map";
 
 /** The route's legs, thin enough to leave the markers and walls legible. */
 const ROUTE_LINE_PX = 2;
+/** The leg of the stop the editor points at. */
+const ROUTE_FOCUS_LINE_PX = 3.5;
+/** Every other leg while a card is hovered: there, but out of the way. */
+const ROUTE_UNFOCUSED_ALPHA = 0.45;
+
+/**
+ * How far a leg sits to the right of the straight line between its stops,
+ * per lane: far enough that a walk out and back read as two lines, near
+ * enough that the first lane still leaves from its marker's ring.
+ */
+export const LANE_PX = 5;
+/** A leg shorter than this on screen has no room for its chevron. */
+export const CHEVRON_MIN_LEG_PX = 28;
+/** The chevron's barbs, back from its tip. */
+const CHEVRON_PX = 6;
+
+/** The end of the job: a second ring outside the last stop's marker. */
+const END_RING_RADIUS = VERTEX_DOT_RADIUS + 3.5;
 
 /** The highlight's ring, clear of the marker's own halo. */
 const HIGHLIGHT_RING_RADIUS = VERTEX_DOT_RADIUS + 5;
@@ -75,6 +93,9 @@ export interface PlacedStop {
  * The job's stops are lit and drawn last, the earliest stop on top, and
  * named first where captions would collide (`planCaptions`). `highlight`
  * rings one waypoint under everything, so its own marker stays legible.
+ * `end` is where the job ends, ringed twice: on a route that comes back
+ * through a stop, the arrows alone make the reader trace the whole line to
+ * find which of its visits is the last.
  */
 export function drawStops(
   ctx: CanvasRenderingContext2D,
@@ -83,6 +104,7 @@ export function drawStops(
   steps: ReadonlyMap<string, readonly number[]>,
   palette: Palette,
   highlight: string | null = null,
+  end: string | null = null,
 ): void {
   ctx.save();
   ctx.lineJoin = "round";
@@ -145,41 +167,152 @@ export function drawStops(
     });
   }
 
+  const ending = end === null ? undefined : placed.get(end);
+  if (ending) {
+    ctx.beginPath();
+    ctx.arc(ending.cx, ending.cy, END_RING_RADIUS, 0, Math.PI * 2);
+    ctx.strokeStyle = MARKER_HALO;
+    ctx.lineWidth = 3.5;
+    ctx.stroke();
+    ctx.strokeStyle = palette.cmd;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
   ctx.restore();
 }
 
+/** One point of the route: the stop's row and the waypoint it goes to. */
+export interface RoutePoint {
+  key: number;
+  vertexId: string;
+}
+
+/** A leg as drawn, CSS px, already moved into its lane. */
+export interface PlannedLeg {
+  /** The row of the stop this leg walks to. */
+  arrive: number;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  /** 0 for the first walk between two stops this way, 1 for the next, … */
+  lane: number;
+}
+
 /**
- * The job's legs, stop to stop. Straight lines, not the planner's path: the
- * order is what this answers, and a line through a wall says nothing about
- * where the robot will really walk. An id with no stop (deleted, or on a
- * floor not shown) is skipped.
+ * The job's legs on screen. Each sits to the right of the line between its
+ * stops, as the robot would keep right: a walk back the way it came runs on
+ * the other side of the one that went, so A → B → C → B shows the return
+ * instead of drawing it over the walk out. A walk repeated the same way takes
+ * the next lane out. A leg with either end not on screen (another floor,
+ * behind the camera) is left out rather than joined across the gap, which
+ * would draw a walk that never happens.
+ */
+export function planLegs(
+  route: readonly RoutePoint[],
+  placed: ReadonlyMap<string, { cx: number; cy: number }>,
+): PlannedLeg[] {
+  const legs: PlannedLeg[] = [];
+  const walked = new Map<string, number>();
+  for (let index = 1; index < route.length; index += 1) {
+    const from = route[index - 1]!;
+    const to = route[index]!;
+    const a = placed.get(from.vertexId);
+    const b = placed.get(to.vertexId);
+    if (!a || !b) continue;
+    const dx = b.cx - a.cx;
+    const dy = b.cy - a.cy;
+    const length = Math.hypot(dx, dy);
+    // Two waypoints on the same pixel have no direction to be right of.
+    if (length < 1) continue;
+    const pair = `${from.vertexId}\u0000${to.vertexId}`;
+    const lane = walked.get(pair) ?? 0;
+    walked.set(pair, lane + 1);
+    // Right of travel with screen y growing downward: (-dy, dx).
+    const shift = (LANE_PX * (lane + 1)) / length;
+    const ox = -dy * shift;
+    const oy = dx * shift;
+    legs.push({
+      arrive: to.key,
+      x0: a.cx + ox,
+      y0: a.cy + oy,
+      x1: b.cx + ox,
+      y1: b.cy + oy,
+      lane,
+    });
+  }
+  return legs;
+}
+
+/** Whether a leg is long enough on screen to carry its chevron. */
+export function legHasChevron(leg: PlannedLeg): boolean {
+  return Math.hypot(leg.x1 - leg.x0, leg.y1 - leg.y0) >= CHEVRON_MIN_LEG_PX;
+}
+
+function legPath(leg: PlannedLeg): Path2D {
+  const path = new Path2D();
+  path.moveTo(leg.x0, leg.y0);
+  path.lineTo(leg.x1, leg.y1);
+  if (!legHasChevron(leg)) return path;
+  const dx = leg.x1 - leg.x0;
+  const dy = leg.y1 - leg.y0;
+  const length = Math.hypot(dx, dy);
+  const ux = dx / length;
+  const uy = dy / length;
+  // Tip just past the middle, so the chevron is centred on the leg.
+  const tipX = (leg.x0 + leg.x1) / 2 + ux * (CHEVRON_PX / 2);
+  const tipY = (leg.y0 + leg.y1) / 2 + uy * (CHEVRON_PX / 2);
+  // Each barb goes back along the leg and out to one side of it.
+  for (const side of [1, -1]) {
+    path.moveTo(
+      tipX - (ux + uy * side) * CHEVRON_PX,
+      tipY - (uy - ux * side) * CHEVRON_PX,
+    );
+    path.lineTo(tipX, tipY);
+  }
+  return path;
+}
+
+/**
+ * The job's legs, stop to stop, each with a chevron for its direction.
+ * Straight lines, not the planner's path: the order is what this answers,
+ * and a line through a wall says nothing about where the robot will really
+ * walk. `focus` is the row of the stop the editor points at: its leg is
+ * drawn bold, so a stop the job visits twice can be told by the walk into
+ * it. With `fade` the rest fade too — for a hovered card, a glance; not for
+ * the selected stop, which every added stop becomes and which would keep
+ * the route dim for the whole build. A focus with no leg on screen (the
+ * first stop, a stop on another floor) fades nothing.
  */
 export function drawRoute(
   ctx: CanvasRenderingContext2D,
-  route: readonly string[],
+  route: readonly RoutePoint[],
   placed: ReadonlyMap<string, { cx: number; cy: number }>,
   colour: string,
+  focus: number | null = null,
+  fade = false,
 ): void {
-  const path = new Path2D();
-  let started = false;
-  for (const id of route) {
-    const at = placed.get(id);
-    if (!at) continue;
-    if (started) path.lineTo(at.cx, at.cy);
-    else path.moveTo(at.cx, at.cy);
-    started = true;
-  }
+  const legs = planLegs(route, placed);
+  const focused = legs.find((leg) => leg.arrive === focus) ?? null;
   ctx.save();
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  // Over a halo, as a marker is: a bare line vanished over the 3D map's
-  // height colours.
-  ctx.strokeStyle = MARKER_HALO;
-  ctx.lineWidth = ROUTE_LINE_PX + 2;
-  ctx.stroke(path);
-  ctx.strokeStyle = colour;
-  ctx.globalAlpha = 0.85;
-  ctx.lineWidth = ROUTE_LINE_PX;
-  ctx.stroke(path);
+  // The focused leg last, so it crosses over the faded ones.
+  for (const leg of focused ? [...legs.filter((each) => each !== focused), focused] : legs) {
+    const path = legPath(leg);
+    const bold = leg === focused;
+    const width = bold ? ROUTE_FOCUS_LINE_PX : ROUTE_LINE_PX;
+    ctx.globalAlpha = focused && fade && !bold ? ROUTE_UNFOCUSED_ALPHA : 1;
+    // Over a halo, as a marker is: a bare line vanished over the 3D map's
+    // height colours.
+    ctx.strokeStyle = MARKER_HALO;
+    ctx.lineWidth = width + 2;
+    ctx.stroke(path);
+    ctx.strokeStyle = colour;
+    ctx.globalAlpha *= bold ? 1 : 0.85;
+    ctx.lineWidth = width;
+    ctx.stroke(path);
+  }
   ctx.restore();
 }

@@ -256,12 +256,14 @@ describe("stepRoute", () => {
         move({ vertexId: null }),
         move({ vertexId: "room" }),
         move({ vertexId: "dock" }),
-      ]),
+      ]).map((stop) => stop.vertexId),
     ).toEqual(["dock", "room", "dock"]);
   });
 
-  it("draws a stop picked twice running as one point", () => {
-    expect(stepRoute([move({ vertexId: "a" }), move({ vertexId: "a" })])).toEqual(["a"]);
+  it("draws a stop picked twice running as one point, the first of them", () => {
+    const first = move({ vertexId: "a" });
+    const route = stepRoute([first, move({ vertexId: "a" })]);
+    expect(route).toEqual([{ key: first.key, vertexId: "a" }]);
   });
 });
 
