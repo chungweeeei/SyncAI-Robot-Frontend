@@ -101,6 +101,30 @@ export function drawnGround(z: number): number {
 }
 
 /**
+ * How far under `GROUND_FLOOR_Z_M` a ground still counts as the ground
+ * floor's, metres. The constant is one number for every site (the scans
+ * measured -0.43 and -0.45 m), and a planner's ground or the robot's own
+ * wanders a few centimetres around it with the odometry's drift; drawn there,
+ * a route or the costmap sinks under the floor's sprites and is lost. Well
+ * under it is a real lower ground — a site mapped from the top of a slope —
+ * and lifting that to the ground floor floated the route and the costmap up
+ * to two metres over the ground on outdoor_1027 (2026-10-28). A tenth of a
+ * metre covers the drift and stays under a kerb's step.
+ */
+export const GROUND_FLOOR_SNAP_M = 0.1;
+
+/**
+ * A drawn ground (`drawnGround`'s answer, or one taken off the pose) with the
+ * drift just under the ground floor lifted onto it; anything further down is
+ * kept, since it is ground the map really has.
+ */
+export function snapToGroundFloor(z: number): number {
+  return z < GROUND_FLOOR_Z_M && z >= GROUND_FLOOR_Z_M - GROUND_FLOOR_SNAP_M
+    ? GROUND_FLOOR_Z_M
+    : z;
+}
+
+/**
  * The floor a ground height is on, by the same bands the 3D map is drawn
  * in, or null for a map of one storey. Never stored with the waypoint: a
  * floor renamed or a list re-detected would leave a stored name pointing at

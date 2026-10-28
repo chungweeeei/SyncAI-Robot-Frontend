@@ -47,6 +47,13 @@ describe("createPathRibbon", () => {
     expect(heightsOf(ribbon).every((z) => z === onGround)).toBe(true);
   });
 
+  it("follows a ground well under the ground floor down to it", () => {
+    // A site mapped from the top of a slope: lifted onto the ground floor,
+    // this route floated 1.5 m over the ground it crosses.
+    const ribbon = createPathRibbon(route([0, 0, -1.0], [1, 0, -2.0]), THEMES.light)!;
+    expect(heightsOf(ribbon)).toEqual([-0.988, -0.988, -1.988, -1.988]);
+  });
+
   it("draws only the floor shown, and the whole route again with none", () => {
     const ribbon = createPathRibbon(upTheStair, THEMES.light)!;
 
