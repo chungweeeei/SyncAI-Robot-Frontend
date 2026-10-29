@@ -12,13 +12,13 @@ import type { TelemetryFeed } from "@/hooks/use-telemetry";
 import { cn } from "@/lib/utils";
 import { G23_JOINTS } from "@/lib/robot/g23-joints";
 import {
-  DEFAULT_SPAN_M,
   FLOOR_LIFT_MS,
   FRONT_DEFAULT_Z,
   TOP_DOWN_TILT,
   applyCameraMode,
   dollyStep,
   easeInOut,
+  fallbackFrame,
   fitDollyRange,
   frameMap,
   frontView,
@@ -103,6 +103,16 @@ interface PointCloudCanvasProps {
    * Omitted leaves the robot hidden.
    */
   telemetry?: TelemetryFeed;
+  /**
+   * The frame the reported pose is in, where the page knows it can change
+   * under the canvas: the mapping screen passes the robot's mode, since
+   * Navigation reports on the loaded map and a mapping run from where it
+   * started. A change starts the robot over: hidden until the next pose (the
+   * feed still holds the old frame's), snapped there rather than eased
+   * across the map, and the view brought to it as on the first. Null is
+   * unknown, never a change. Omitted, the frame is taken to be fixed.
+   */
+  poseFrame?: string | null;
   /**
    * A stored map's scan to draw under the live one; null draws none. Fetched by
    * useMapPointCloud so its refusal reaches a screen.
@@ -253,6 +263,7 @@ interface PointCloudCanvasProps {
 
 export function PointCloudCanvas({
   telemetry,
+  poseFrame = null,
   mapCloud = null,
   voxels = null,
   voxelBand = null,
@@ -340,6 +351,13 @@ export function PointCloudCanvas({
    */
   const liftRef = React.useRef(0);
   const liftFrameRef = React.useRef<number | null>(null);
+  /**
+   * Whether the view is still the one the canvas opened on, which the
+   * robot's first fix carries to it: before that the opening view can only
+   * guess the origin. Cleared by anything that moves the view on purpose, so
+   * a late fix never takes a view the operator chose.
+   */
+  const openingViewRef = React.useRef(false);
   /** The lift the floor on show asks for, read by the framings. */
   const liftFor = (ground: number) => drawnGround(ground) - drawnGround(0);
   const viewLiftRef = React.useRef(liftFor(viewGround));
@@ -565,8 +583,15 @@ export function PointCloudCanvas({
 
     // Shared with Recenter so the two agree on the opening view. At the
     // ground floor: the lift effect, after this one, carries it to the floor
-    // on show.
-    frameMap(camera, controls, { cx: 0, cy: 0, widthM: DEFAULT_SPAN_M, heightM: DEFAULT_SPAN_M });
+    // on show. Around the robot after a rebuild; before its first fix, the
+    // fix itself moves the view (stepPose).
+    frameMap(camera, controls, fallbackFrame(renderedPoseRef.current));
+    openingViewRef.current = renderedPoseRef.current === null;
+    // A drag, a wheel notch or a pinch makes the view the operator's.
+    const claimView = () => {
+      openingViewRef.current = false;
+    };
+    controls.addEventListener("start", claimView);
     if (liftFrameRef.current !== null) cancelAnimationFrame(liftFrameRef.current);
     liftFrameRef.current = null;
     liftRef.current = 0;
@@ -715,6 +740,15 @@ export function PointCloudCanvas({
         } else {
           // First fix: snap, so the robot does not fly in from the world origin.
           cur = renderedPoseRef.current = { ...target };
+          // And bring the opening view to it, which until now looked at the
+          // origin: in Navigation the robot and its scan can be tens of metres
+          // from there, off screen.
+          if (openingViewRef.current) {
+            openingViewRef.current = false;
+            frameMap(camera, controls, fallbackFrame(cur), settleLift());
+            // The wheel stays fitted to a 3D map that came up first.
+            if (voxelFrameRef.current) fitDollyRange(controls, voxelFrameRef.current);
+          }
         }
       }
 
@@ -734,7 +768,10 @@ export function PointCloudCanvas({
       // An initial-pose drag draws the robot at the dragged pose, un-eased so
       // it tracks the pointer 1:1.
       const drawn = posePreviewRef.current ?? cur;
-      if (!drawn) return;
+      if (!drawn) {
+        robotGroup.visible = false;
+        return;
+      }
       robotGroup.position.set(drawn.x, drawn.y, drawn.z);
       robotGroup.rotation.z = drawn.yaw;
       robotGroup.visible = true;
@@ -760,6 +797,7 @@ export function PointCloudCanvas({
     const dispose = () => {
       cancelled = true;
       window.removeEventListener("scroll", invalidateRect, { capture: true });
+      controls.removeEventListener("start", claimView);
       // Detach the cached robot model first, or the sweep would dispose it for
       // every later mount.
       robotGroup.clear();
@@ -859,6 +897,22 @@ export function PointCloudCanvas({
     (s) => onMapStatusRef.current?.(s),
   );
 
+  // ---- A new pose frame (see `poseFrame`) -------------------------------
+  // The view goes back to opening too: wherever it looked was in the old
+  // frame, and the robot is now somewhere else in the new one.
+  const poseFrameRef = React.useRef(poseFrame);
+  React.useEffect(() => {
+    if (poseFrame === null) return;
+    const before = poseFrameRef.current;
+    poseFrameRef.current = poseFrame;
+    if (before === null || before === poseFrame) return;
+    targetPoseRef.current = null;
+    renderedPoseRef.current = null;
+    // Taken already, so only the next message is a fix.
+    feedPoseRef.current = telemetryRef.current?.pose.current;
+    openingViewRef.current = true;
+  }, [poseFrame]);
+
   // ---- Camera mode (move / focus) --------------------------------------
   // Re-runs on a scene rebuild too, so the mode survives it.
   React.useEffect(() => {
@@ -918,6 +972,7 @@ export function PointCloudCanvas({
     if (!topDownNonce) return;
     const ctx = sceneRef.current;
     if (!ctx) return;
+    openingViewRef.current = false;
     const { camera, controls } = ctx;
 
     // In focus the target is the robot, so keep it and the operator's zoom.
@@ -948,6 +1003,7 @@ export function PointCloudCanvas({
     if (!frontNonce) return;
     const ctx = sceneRef.current;
     if (!ctx) return;
+    openingViewRef.current = false;
     // It frames the floor's own heights; a lift under way would carry it off them.
     settleLift();
     if (cameraModeRef.current === "focus") {
@@ -961,12 +1017,7 @@ export function PointCloudCanvas({
     frontView(
       ctx.camera,
       ctx.controls,
-      voxelFrameRef.current ?? {
-        cx: 0,
-        cy: 0,
-        widthM: DEFAULT_SPAN_M,
-        heightM: DEFAULT_SPAN_M,
-      },
+      voxelFrameRef.current ?? fallbackFrame(renderedPoseRef.current),
       z,
     );
   }, [frontNonce]);
@@ -979,17 +1030,13 @@ export function PointCloudCanvas({
     if (!recenterNonce) return;
     const ctx = sceneRef.current;
     if (!ctx) return;
+    openingViewRef.current = false;
     frameMap(
       ctx.camera,
       ctx.controls,
       // The 3D map's box if its layer is up, else the setup effect's
-      // fallback box around the origin.
-      voxelFrameRef.current ?? {
-        cx: 0,
-        cy: 0,
-        widthM: DEFAULT_SPAN_M,
-        heightM: DEFAULT_SPAN_M,
-      },
+      // fallback box around the robot.
+      voxelFrameRef.current ?? fallbackFrame(renderedPoseRef.current),
       // At the floor on show, not back down on the ground floor.
       settleLift(),
     );
@@ -1000,6 +1047,7 @@ export function PointCloudCanvas({
     if (!zoomStep) return;
     const ctx = sceneRef.current;
     if (!ctx) return;
+    openingViewRef.current = false;
     dollyStep(ctx.camera, ctx.controls, zoomStep.factor);
   }, [zoomStep]);
 
