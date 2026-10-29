@@ -184,6 +184,8 @@ export interface MapFloors {
 const MapFloorSchema: z.ZodType<MapFloor> = z.object({
   name: z.string(),
   level: z.number(),
+  low: z.number().nullish(),
+  high: z.number().nullish(),
 });
 
 const MapFloorsSchema: z.ZodType<MapFloors> = z.object({
@@ -228,7 +230,12 @@ export function saveMapFloors(
   return requestJson<SaveMapFloorsResult>(floorsPath(name), {
     method: "PUT",
     body: JSON.stringify({
-      floors: floors.map((floor) => ({ name: floor.name, level: floor.level })),
+      floors: floors.map((floor) => ({
+        name: floor.name,
+        level: floor.level,
+        low: floor.low ?? null,
+        high: floor.high ?? null,
+      })),
     }),
     schema: SaveMapFloorsResultSchema,
   });

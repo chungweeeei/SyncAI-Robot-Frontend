@@ -146,4 +146,12 @@ export const ZonePolygonSchema: z.ZodType<ZonePolygon> = z.object({
 export interface MapFloor {
   name: string;
   level: number;
+  /**
+   * The lowest and highest body heights the robot walked on this floor,
+   * metres: a floor that is not flat — a slope, a ramp down to a bay — spans
+   * more than its level. Null or absent on a floor named by hand, which is
+   * drawn around its level alone.
+   */
+  low?: number | null;
+  high?: number | null;
 }

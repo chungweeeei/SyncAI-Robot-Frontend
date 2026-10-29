@@ -10,11 +10,22 @@ import { FLOOR_NAME_MAX, floorsProblem, nextFloor, sameFloors } from "@/lib/map/
 import { cn } from "@/lib/utils";
 import type { MapFloor } from "@/lib/types/map";
 
-/** A row as typed: the height stays text so "-" and "5." survive the keystroke. */
+/**
+ * A row as typed: the height stays text so "-" and "5." survive the
+ * keystroke. The heights walked on the floor ride along untouched, so a
+ * detected floor renamed keeps drawing whole; a height typed by hand drops
+ * them, since they were walked around the level it replaces.
+ */
 interface DraftRow {
   id: number;
   name: string;
   level: string;
+  low?: number | null;
+  high?: number | null;
+}
+
+function toRow(id: number, floor: MapFloor): DraftRow {
+  return { id, name: floor.name, level: String(floor.level), low: floor.low, high: floor.high };
 }
 
 /**
@@ -36,18 +47,18 @@ export function FloorListEditor({ name, className }: { name: string; className?:
 
   const toRows = React.useCallback(
     (list: readonly MapFloor[]): DraftRow[] =>
-      list.map((floor) => ({ id: nextId.current++, name: floor.name, level: String(floor.level) })),
+      list.map((floor) => toRow(nextId.current++, floor)),
     [],
   );
   // Untouched, the rows are the read's and keyed by place; a draft's get
   // fresh ids from the handler that starts it, so a removed row's inputs do
   // not slide onto its neighbour.
-  const rows: DraftRow[] =
-    draft ??
-    floors.map((floor, i) => ({ id: -1 - i, name: floor.name, level: String(floor.level) }));
+  const rows: DraftRow[] = draft ?? floors.map((floor, i) => toRow(-1 - i, floor));
   const parsed: MapFloor[] = rows.map((row) => ({
     name: row.name,
     level: row.level.trim() === "" ? Number.NaN : Number(row.level),
+    low: row.low,
+    high: row.high,
   }));
   const dirty = draft !== null && !sameFloors(parsed, floors);
   const problem = dirty ? floorsProblem(parsed) : null;
@@ -102,7 +113,9 @@ export function FloorListEditor({ name, className }: { name: string; className?:
                   inputMode="decimal"
                   className="readout h-6 w-16 min-w-0 rounded-sm border border-hairline bg-transparent px-1 text-right pointer-coarse:h-10"
                   value={row.level}
-                  onChange={(event) => update(row.id, { level: event.target.value })}
+                  onChange={(event) =>
+                    update(row.id, { level: event.target.value, low: null, high: null })
+                  }
                 />
                 <span className="text-muted-foreground">m</span>
                 <button

@@ -38,6 +38,12 @@ describe("snapshotBands", () => {
     ]);
   });
 
+  it("cuts a sloping storey over the highest height walked on it, not its level", () => {
+    expect(snapshotBands([{ name: "1F", level: -1.5, low: -2.3, high: 0.05 }])).toEqual([
+      { lo: -Infinity, hi: 0.05 + FLOOR_BAND_ABOVE_M },
+    ]);
+  });
+
   it("keeps each floor's band as the dashboard cuts it", () => {
     const bands = snapshotBands(TWO_FLOORS);
     expect(bands).toHaveLength(2);
