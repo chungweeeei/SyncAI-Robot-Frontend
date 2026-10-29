@@ -43,12 +43,28 @@ export interface FloorBand extends MapFloor {
 }
 
 /**
- * The bands the floors cut the map into, lowest first: from a metre under a
- * floor's level (the lowest takes everything under it — a pit, a stray
- * return under the slab) to its cut, `FLOOR_BAND_ABOVE_M` over the level, or
- * the next floor's start if that comes first. What is over the cut — the
- * ceiling, the void over it — is on no floor, and only All shows it. A map
- * of one storey is one band of everything: there is nothing to pick.
+ * The lowest and highest body heights a floor is drawn around: the heights
+ * walked on it, else its level alone. A level is where most of the walk
+ * was, and on a floor that is not flat the rest of it is not there — a band
+ * cut around the level alone dropped the foot of dp_1028's ramp onto the
+ * floor below and the low end of its upper deck out of its own floor
+ * (2026-10-29).
+ */
+export function floorSpan(floor: MapFloor): { bottom: number; top: number } {
+  const { low, high, level } = floor;
+  return low != null && high != null && low <= level && level <= high
+    ? { bottom: low, top: high }
+    : { bottom: level, top: level };
+}
+
+/**
+ * The bands the floors cut the map into, lowest first: from a metre under
+ * the lowest height walked on a floor (the lowest floor takes everything
+ * under it — a pit, a stray return under the slab) to its cut,
+ * `FLOOR_BAND_ABOVE_M` over the highest, or the next floor's start if that
+ * comes first. What is over the cut — the ceiling, the void over it — is on
+ * no floor, and only All shows it. A map of one storey is one band of
+ * everything: there is nothing to pick.
  */
 export function floorBands(floors: readonly MapFloor[]): FloorBand[] {
   const ordered = [...floors].sort((a, b) => a.level - b.level);
@@ -56,13 +72,14 @@ export function floorBands(floors: readonly MapFloor[]): FloorBand[] {
     return [{ ...ordered[0], lo: -Infinity, hi: Infinity }];
   }
   return ordered.map((floor, i) => {
-    const cut = floor.level + FLOOR_BAND_ABOVE_M;
+    const { bottom, top } = floorSpan(floor);
+    const cut = top + FLOOR_BAND_ABOVE_M;
     const next = ordered[i + 1];
     return {
       name: floor.name,
       level: floor.level,
-      lo: i === 0 ? -Infinity : floor.level - FLOOR_BAND_BELOW_M,
-      hi: next ? Math.min(cut, next.level - FLOOR_BAND_BELOW_M) : cut,
+      lo: i === 0 ? -Infinity : bottom - FLOOR_BAND_BELOW_M,
+      hi: next ? Math.min(cut, floorSpan(next).bottom - FLOOR_BAND_BELOW_M) : cut,
     };
   });
 }

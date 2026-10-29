@@ -4,7 +4,7 @@
 
 import * as THREE from "three";
 
-import { FLOOR_BAND_ABOVE_M, floorBands } from "@/lib/map/floors";
+import { FLOOR_BAND_ABOVE_M, floorBands, floorSpan } from "@/lib/map/floors";
 import { heightRange, rampColor } from "@/lib/theme/height-ramp";
 import type { MapFloor } from "@/lib/types/map";
 import type { OccupiedVoxels } from "@/lib/types/octree";
@@ -30,7 +30,9 @@ const SNAPSHOT_FILL = 0.92;
  */
 export function snapshotBands(floors: readonly MapFloor[]): Array<{ lo: number; hi: number }> {
   if (floors.length === 0) return [{ lo: -Infinity, hi: Infinity }];
-  if (floors.length === 1) return [{ lo: -Infinity, hi: floors[0].level + FLOOR_BAND_ABOVE_M }];
+  if (floors.length === 1) {
+    return [{ lo: -Infinity, hi: floorSpan(floors[0]).top + FLOOR_BAND_ABOVE_M }];
+  }
   return floorBands(floors).map(({ lo, hi }) => ({ lo, hi }));
 }
 

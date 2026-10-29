@@ -52,6 +52,38 @@ describe("floorBands", () => {
     expect(5.5 - 0.5).toBeGreaterThanOrEqual(first.hi);
   });
 
+  it("draws a floor that is not flat whole, from the lowest height walked on it to the highest", () => {
+    // dp_1028 (2026-10-29): a ground floor with a ramp down to a bay, and a
+    // deck over it whose low end was walked less than its level.
+    const [ground, deck] = floorBands([
+      { name: "1F", level: -0.19, low: -3.03, high: 0.43 },
+      { name: "2F", level: 3.94, low: 2.97, high: 4.46 },
+    ]);
+    const groundUnder = (body: number) => body - FLOOR_GROUND_BELOW_LEVEL_M;
+    // The deck's low end is on the deck, not cut off under it.
+    expect(groundUnder(2.97)).toBeGreaterThanOrEqual(deck.lo);
+    expect(groundUnder(2.97)).toBeLessThan(deck.hi);
+    // The deck's high end keeps its walls.
+    expect(deck.hi).toBeCloseTo(4.46 + FLOOR_BAND_ABOVE_M);
+    // The ramp's foot and the ground floor's high end are both on 1F.
+    expect(groundUnder(-3.03)).toBeLessThan(ground.hi);
+    expect(ground.hi).toBeCloseTo(0.43 + FLOOR_BAND_ABOVE_M);
+    expect(ground.hi).toBeLessThanOrEqual(deck.lo);
+  });
+
+  it("draws a floor named by hand, or with heights that miss its level, around its level", () => {
+    const [, byHand] = floorBands([
+      { name: "1F", level: 0 },
+      { name: "2F", level: 5, low: null, high: null },
+    ]);
+    const [, missed] = floorBands([
+      { name: "1F", level: 0 },
+      { name: "2F", level: 5, low: 6, high: 7 },
+    ]);
+    expect(byHand.lo).toBeCloseTo(5 - FLOOR_BAND_BELOW_M);
+    expect(missed).toEqual(byHand);
+  });
+
   it("gives one floor the whole map", () => {
     expect(floorBands([{ name: "1F", level: 0 }])).toEqual([
       { name: "1F", level: 0, lo: -Infinity, hi: Infinity },

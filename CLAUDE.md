@@ -354,9 +354,12 @@ lib/
                 picked, a re-placed stop's own with none, else the ground
                 floor's 0 — the rule the dashboard and the editor share), and the floors of a
                 map that spans storeys (floors.ts: the band each floor owns —
-                from a metre under its level, so a slab's top is in the
-                floor above, to a cut 1.5 m over it, under the ceiling that
-                would hide the floor from above — the ground a waypoint
+                from a metre under the lowest height walked on it, so a
+                slab's top is in the floor above, to a cut 1.5 m over the
+                highest, under the ceiling that would hide the floor from
+                above; the walked heights are the backend's `low` / `high`,
+                so a floor with a slope or a ramp is drawn whole, and a
+                floor named by hand has only its level — the ground a waypoint
                 on a floor stands at, which floor a height is on, the
                 rules a saved list keeps, mirrored from the backend, and
                 where a ground height is drawn: the map frame's 0 is a

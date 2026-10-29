@@ -377,6 +377,8 @@ export interface BackendOverrides {
 export interface MapFloorFixture {
   name: string;
   level: number;
+  low?: number | null;
+  high?: number | null;
 }
 
 /** A building of two storeys, as the robot's walk finds them. */
@@ -715,7 +717,12 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       const name = decodeURIComponent(floorsMatch[1]);
       const body = parseBody(route.request().postData()) as { floors?: MapFloorFixture[] } | null;
       const saved = [...(body?.floors ?? [])]
-        .map((floor) => ({ name: floor.name.trim(), level: floor.level }))
+        .map((floor) => ({
+          name: floor.name.trim(),
+          level: floor.level,
+          low: floor.low ?? null,
+          high: floor.high ?? null,
+        }))
         .sort((a, b) => a.level - b.level);
       floors[name] = { ...floors[name], saved };
       return json(route, {
