@@ -11,6 +11,7 @@ import {
   frameGround,
   dollyStep,
   easeInOut,
+  fallbackFrame,
   frameMap,
   frontView,
   frontViewAround,
@@ -86,6 +87,41 @@ describe("frameMap", () => {
 
     expect(camera.position.toArray()).toEqual(opening.toArray());
     expect(controls.target.toArray()).toEqual([0, 0, 0]);
+  });
+});
+
+describe("fallbackFrame", () => {
+  /** Whether a point is on screen once the camera has framed. */
+  const inView = (camera: THREE.PerspectiveCamera, point: THREE.Vector3) => {
+    camera.updateMatrixWorld();
+    const ndc = point.clone().project(camera);
+    return Math.abs(ndc.x) <= 1 && Math.abs(ndc.y) <= 1 && ndc.z < 1;
+  };
+
+  it("opens on the robot, which in Navigation stands far from the origin", () => {
+    // Where a robot on a loaded map reported: it and its scan were off
+    // screen when the opening view looked at the origin.
+    const robot = new THREE.Vector3(-22.6, -18.8, -0.4);
+    for (const aspect of [16 / 9, 9 / 16]) {
+      const { camera, controls } = rig();
+      camera.aspect = aspect;
+      camera.updateProjectionMatrix();
+
+      frameMap(camera, controls, fallbackFrame(null));
+      expect(inView(camera, robot)).toBe(false);
+
+      frameMap(camera, controls, fallbackFrame(robot));
+      expect(inView(camera, robot)).toBe(true);
+    }
+  });
+
+  it("is the default box at the origin before the robot has reported", () => {
+    expect(fallbackFrame(null)).toEqual({
+      cx: 0,
+      cy: 0,
+      widthM: DEFAULT_SPAN_M,
+      heightM: DEFAULT_SPAN_M,
+    });
   });
 });
 

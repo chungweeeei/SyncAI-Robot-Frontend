@@ -282,8 +282,11 @@ export function MappingView() {
         className="relative h-[55svh] shrink-0 lg:h-full lg:flex-1"
       >
         <ViewportBoundary>
+          {/* The mode is the pose's frame: a switch moves the robot from the
+            * loaded map's to a mapping run's, or back, and the view follows. */}
           <PointCloudCanvas
             telemetry={feed}
+            poseFrame={reported}
             topDownNonce={topDownNonce}
             mapCloudStream
           />

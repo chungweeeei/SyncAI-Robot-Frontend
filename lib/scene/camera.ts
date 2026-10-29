@@ -42,7 +42,7 @@ export function applyCameraMode(
   };
 }
 
-// Fallback framing with no 3D map up: points arrive near the odom origin.
+// Fallback framing with no 3D map up, around the robot (see fallbackFrame).
 export const DEFAULT_SPAN_M = 20;
 
 /** The rectangle a scene was built around, in metres on the z=0 floor. */
@@ -51,6 +51,22 @@ export interface MapFrame {
   cy: number;
   widthM: number;
   heightM: number;
+}
+
+/**
+ * The box a view frames with no 3D map to frame: DEFAULT_SPAN_M around the
+ * robot, or around the origin before it has reported. Not the origin always:
+ * the scan is drawn in the frame the pose is, which in Navigation is the
+ * loaded map's, where the robot can stand tens of metres from the origin —
+ * only a mapping run starts it there.
+ */
+export function fallbackFrame(robot: { x: number; y: number } | null): MapFrame {
+  return {
+    cx: robot?.x ?? 0,
+    cy: robot?.y ?? 0,
+    widthM: DEFAULT_SPAN_M,
+    heightM: DEFAULT_SPAN_M,
+  };
 }
 
 /**
