@@ -1009,6 +1009,18 @@ test.describe("the editor's 3D view", () => {
       const centre = await centreOnScreen(page);
       await page.mouse.click(centre.x, centre.y);
       const dialog = page.getByRole("alertdialog", { name: "lobby" });
+      // A tap reads the stop; its fields wait for Edit pose.
+      await expect(dialog.getByLabel("X")).toHaveCount(0);
+      const edit = dialog.getByRole("button", { name: "Edit pose" });
+      await edit.click();
+      await expect(edit).toHaveAttribute("aria-pressed", "true");
+      // Closed and opened again, it is back on the readouts.
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await expect(dialog).toHaveCount(0);
+      await page.mouse.click(centre.x, centre.y);
+      await expect(edit).toHaveAttribute("aria-pressed", "false");
+      await expect(dialog.getByLabel("X")).toHaveCount(0);
+      await edit.click();
       const apply = dialog.getByRole("button", { name: "Apply" });
       // Nothing changed yet, and a blank is not the origin.
       await expect(apply).toBeDisabled();
@@ -1051,6 +1063,7 @@ test.describe("the editor's 3D view", () => {
       const centre = await centreOnScreen(page);
       await page.mouse.click(centre.x, centre.y);
       const dialog = page.getByRole("alertdialog", { name: "lobby" });
+      await dialog.getByRole("button", { name: "Edit pose" }).click();
       await dialog.getByRole("button", { name: "Use robot position" }).click();
       await expect(dialog.getByLabel("X")).toHaveValue("1.25");
       await expect(dialog.getByLabel("Orientation")).toHaveValue("90.0");
@@ -1079,6 +1092,7 @@ test.describe("the editor's 3D view", () => {
       const centre = await centreOnScreen(page);
       await page.mouse.click(centre.x, centre.y);
       const dialog = page.getByRole("alertdialog", { name: "lobby" });
+      await dialog.getByRole("button", { name: "Edit pose" }).click();
       await expect(dialog.getByRole("button", { name: "Use robot position" })).toBeDisabled();
       await expect(dialog.getByText(`The robot is running on "other", not this map.`)).toBeVisible();
       expect(errors, "the page logged errors").toEqual([]);
