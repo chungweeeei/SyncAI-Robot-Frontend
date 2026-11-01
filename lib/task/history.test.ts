@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_HISTORY_FILTER,
   customRangeSeed,
+  countReportJobs,
+  dateInputValue,
+  describeExportWindow,
   describeRun,
+  exportDatesSeed,
   exportFilename,
   formatPercent,
   historyNameOptions,
@@ -18,6 +22,7 @@ import {
   runSeconds,
   serializeHistoryFilter,
   stepSeconds,
+  toExportQuery,
   toHistoryQuery,
   toHistoryStatsQuery,
   type HistoryFilter,
@@ -372,3 +377,97 @@ describe("historyNameOptions", () => {
     ]);
   });
 });
+
+describe("the report's window", () => {
+  // Local noon on 2026-11-01, so calendar days are the same in any test zone.
+  const today = new Date(2026, 10, 1, 12, 0).getTime();
+  const localMidnight = (y: number, m: number, d: number) =>
+    new Date(y, m - 1, d).toISOString();
+  const narrowed: HistoryFilter = {
+    ...DEFAULT_HISTORY_FILTER,
+    status: "FAILED",
+    kind: "task",
+    name: "Patrol",
+  };
+
+  it("same as the list keeps the list's query whole", () => {
+    expect(toExportQuery(narrowed, "filters", exportDatesSeed(today), today)).toEqual(
+      toHistoryQuery(narrowed, today),
+    );
+  });
+
+  it("the last N days are whole calendar days, today included, open at now", () => {
+    const week = toExportQuery(narrowed, "7d", exportDatesSeed(today), today);
+    expect(week).toEqual({
+      status: "FAILED",
+      kind: "task",
+      name: "Patrol",
+      since: localMidnight(2026, 10, 26),
+      until: undefined,
+    });
+    expect(toExportQuery(narrowed, "30d", exportDatesSeed(today), today)?.since).toBe(
+      localMidnight(2026, 10, 3),
+    );
+  });
+
+  it("picked dates cover both whole days", () => {
+    const query = toExportQuery(
+      DEFAULT_HISTORY_FILTER,
+      "custom",
+      { from: "2026-10-10", to: "2026-10-12" },
+      today,
+    );
+    expect(query?.since).toBe(localMidnight(2026, 10, 10));
+    expect(Date.parse(query!.until!)).toBe(Date.parse(localMidnight(2026, 10, 13)) - 1);
+  });
+
+  it("refuses reversed or half-typed dates", () => {
+    const dates = (from: string, to: string) =>
+      toExportQuery(DEFAULT_HISTORY_FILTER, "custom", { from, to }, today);
+    expect(dates("2026-10-12", "2026-10-10")).toBeNull();
+    expect(dates("", "2026-10-10")).toBeNull();
+  });
+
+  it("seeds the dates with the last 7 days", () => {
+    expect(exportDatesSeed(today)).toEqual({ from: "2026-10-26", to: "2026-11-01" });
+    expect(dateInputValue(today)).toBe("2026-11-01");
+  });
+
+  it("describes the window by its days", () => {
+    expect(
+      describeExportWindow({ since: localMidnight(2026, 10, 26) }, today),
+    ).toBe("2026-10-26 → 2026-11-01");
+    expect(describeExportWindow({ since: localMidnight(2026, 11, 1) }, today)).toBe(
+      "2026-11-01",
+    );
+    expect(describeExportWindow({}, today)).toBe("up to 2026-11-01");
+  });
+});
+
+describe("countReportJobs", () => {
+  const header =
+    "\ufefftask_id,run_id,task_name,kind,schedule_id,map_name,task_status,error_msg\r\n";
+
+  it("counts runs, not steps", () => {
+    const csv =
+      header +
+      "t1,run-a,,,,,COMPLETED,\r\n" +
+      "t1,run-a,,,,,COMPLETED,\r\n" +
+      "t2,run-b,,,,,FAILED,boom\r\n";
+    expect(countReportJobs(csv)).toBe(2);
+  });
+
+  it("reads quoted commas, quotes and newlines as one field", () => {
+    const csv =
+      header +
+      't1,run-a,"Patrol, east",,,,FAILED,"said ""no""\nthen stopped"\r\n' +
+      "t2,run-b,,,,,COMPLETED,\r\n";
+    expect(countReportJobs(csv)).toBe(2);
+  });
+
+  it("is 0 for a header-only report", () => {
+    expect(countReportJobs(header)).toBe(0);
+    expect(countReportJobs("")).toBe(0);
+  });
+});
+
