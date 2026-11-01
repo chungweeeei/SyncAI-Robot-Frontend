@@ -4,6 +4,7 @@ import {
   DEFAULT_HISTORY_FILTER,
   customRangeSeed,
   describeRun,
+  exportFilename,
   formatPercent,
   historyNameOptions,
   historyQueryKey,
@@ -16,6 +17,7 @@ import {
   resolveTimeRange,
   runSeconds,
   serializeHistoryFilter,
+  stepSeconds,
   toHistoryQuery,
   toHistoryStatsQuery,
   type HistoryFilter,
@@ -39,6 +41,55 @@ describe("runSeconds", () => {
 
   it("never reports a negative duration", () => {
     expect(runSeconds("2026-09-18T09:40:05Z", "2026-09-18T09:40:00Z")).toBe(0);
+  });
+});
+
+describe("stepSeconds", () => {
+  it("is the wall time less the hold", () => {
+    expect(
+      stepSeconds({
+        started_at: "2026-09-18T09:40:00Z",
+        ended_at: "2026-09-18T09:42:00Z",
+        paused_seconds: 30.4,
+      }),
+    ).toEqual({ active: 89, paused: 30 });
+  });
+
+  it("is null, not zero, for a step that has not both started and ended", () => {
+    expect(stepSeconds({ started_at: "2026-09-18T09:40:00Z", ended_at: null })).toBeNull();
+    expect(stepSeconds({ started_at: null, ended_at: null })).toBeNull();
+    // An older backend sends neither.
+    expect(stepSeconds({})).toBeNull();
+  });
+
+  it("never reports a negative duration", () => {
+    expect(
+      stepSeconds({ started_at: "2026-09-18T09:40:05Z", ended_at: "2026-09-18T09:40:00Z" }),
+    ).toEqual({ active: 0, paused: 0 });
+  });
+});
+
+describe("exportFilename", () => {
+  // Midday, so the operator's calendar day is the UTC one in any test zone.
+  const noon = Date.parse("2026-10-31T12:00:00Z");
+
+  it("names the window's two days", () => {
+    expect(
+      exportFilename(
+        { since: "2026-10-01T12:00:00Z", until: "2026-10-30T12:00:00Z" },
+        noon,
+      ),
+    ).toBe("task-report-20261001-20261030.csv");
+  });
+
+  it("runs a preset's window to now", () => {
+    expect(exportFilename({ since: "2026-10-30T12:00:00Z" }, noon)).toBe(
+      "task-report-20261030-20261031.csv",
+    );
+  });
+
+  it("is just today without a since", () => {
+    expect(exportFilename({}, noon)).toBe("task-report-20261031.csv");
   });
 });
 

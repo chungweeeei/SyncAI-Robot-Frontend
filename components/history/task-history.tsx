@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 
+import { ExportReport } from "@/components/history/export-report";
 import { HistoryDashboard } from "@/components/history/history-dashboard";
 import { HistoryFilters } from "@/components/history/history-filters";
 import { HistoryRow } from "@/components/history/history-row";
@@ -75,6 +76,9 @@ export function TaskHistory() {
       />
 
       <HistoryDashboard stats={stats} outcome={filter.status} />
+
+      {/* The list's own filter, outcome included: the report is of these rows. */}
+      <ExportReport query={query} timeZone={timeZone} />
 
       <HistoryList
         history={history}

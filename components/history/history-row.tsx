@@ -10,7 +10,7 @@ import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";
 import { useTaskRun } from "@/hooks/use-task-run";
 import type { TaskHistoryEntry } from "@/lib/api/task";
 import { formatDuration } from "@/lib/recording/format";
-import { describeRun, runSeconds } from "@/lib/task/history";
+import { describeRun, runSeconds, stepSeconds } from "@/lib/task/history";
 import { formatLocalRunTime, formatUtcRunTime } from "@/lib/task/schedule";
 import { wireGroupPlaces } from "@/lib/task/step";
 import { cn } from "@/lib/utils";
@@ -91,25 +91,36 @@ function RunSteps({ id }: { id: string }) {
   const railed = groupPlaces.some(Boolean);
   return (
     <ol className="space-y-1">
-      {steps.map((step, index) => (
-        <li key={step.id} className={cn("space-y-0.5", railed && "relative pl-2.5")}>
-          <GroupRail place={groupPlaces[index] ?? null} gap="1" />
-          <div className="flex items-center gap-2">
-            <span className="readout w-5 shrink-0 text-right text-[11px] text-muted-foreground">
-              {index + 1}
-            </span>
-            <span className="readout min-w-0 flex-1 truncate text-[12px]">
-              {step.id}
-            </span>
-            <TaskStatusChip status={step.status} />
-          </div>
-          {step.error_msg && (
-            <p className="pl-7 text-[11px] leading-snug break-words text-signal-warn">
-              {step.error_msg}
-            </p>
-          )}
-        </li>
-      ))}
+      {steps.map((step, index) => {
+        const took = stepSeconds(step);
+        return (
+          <li key={step.id} className={cn("space-y-0.5", railed && "relative pl-2.5")}>
+            <GroupRail place={groupPlaces[index] ?? null} gap="1" />
+            <div className="flex items-center gap-2">
+              <span className="readout w-5 shrink-0 text-right text-[11px] text-muted-foreground">
+                {index + 1}
+              </span>
+              <span className="readout min-w-0 flex-1 truncate text-[12px]">
+                {step.id}
+              </span>
+              {/* The step's own time; a hold while it ran is said beside it,
+                * not counted in it. Nothing for a step that never ran. */}
+              {took && (
+                <span className="readout shrink-0 text-[11px] text-muted-foreground">
+                  {formatDuration(took.active)}
+                  {took.paused > 0 && ` · held ${formatDuration(took.paused)}`}
+                </span>
+              )}
+              <TaskStatusChip status={step.status} />
+            </div>
+            {step.error_msg && (
+              <p className="pl-7 text-[11px] leading-snug break-words text-signal-warn">
+                {step.error_msg}
+              </p>
+            )}
+          </li>
+        );
+      })}
     </ol>
   );
 }
