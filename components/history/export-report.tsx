@@ -1,8 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { CheckIcon, DownloadIcon } from "lucide-react";
+import {
+  ArrowRightIcon,
+  CheckIcon,
+  DownloadIcon,
+  FileSpreadsheetIcon,
+  InfoIcon,
+} from "lucide-react";
 
+import { Segmented } from "@/components/console/instrument";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,6 +28,7 @@ import {
   dateInputValue,
   describeExportWindow,
   exportDatesSeed,
+  exportFilename,
   kindLabel,
   toExportQuery,
   type ExportRangeChoice,
@@ -28,21 +36,34 @@ import {
 } from "@/lib/task/history";
 import { cn } from "@/lib/utils";
 
-const OUTCOME_LABELS: Record<HistoryFilter["status"], string> = {
-  ALL: "All outcomes",
+const DAY_MS = 86_400_000;
+
+const OUTCOME_LABELS: Record<Exclude<HistoryFilter["status"], "ALL">, string> = {
   COMPLETED: "Completed",
   FAILED: "Failed",
   CANCELED: "Canceled",
 };
 
+/** The list's narrowing, as chips; empty when it narrows nothing. */
+function filterChips(filter: HistoryFilter): string[] {
+  const chips: string[] = [];
+  if (filter.status !== "ALL") chips.push(OUTCOME_LABELS[filter.status]);
+  if (filter.kind) chips.push(kindLabel(filter.kind));
+  if (filter.name) chips.push(filter.name);
+  return chips;
+}
+
+const DATE_INPUT =
+  "h-8 w-auto min-w-0 flex-1 rounded-sm text-[13px] md:text-[13px] pointer-coarse:h-10";
+
 /**
  * The page header's "Export report": a dialog that picks the report's window
- * and says what it will hold before anything is downloaded.
+ * and shows the file it will produce before anything is downloaded.
  *
  * The window is the report's own (the list's presets stop at a day); outcome,
- * kind and name are the list's, shown read-only so the operator sees them
- * without hunting back through the toolbar. The filter is read off the
- * address bar like the list's, so this sits apart from it in the header.
+ * kind and name are the list's, shown as chips on the file so the operator
+ * sees them without hunting back through the toolbar. The filter is read off
+ * the address bar like the list's, so this sits apart from it in the header.
  */
 export function ExportReport() {
   const { filter } = useHistoryFilter();
@@ -60,10 +81,10 @@ export function ExportReport() {
   const query = toExportQuery(filter, choice, dates, nowMs);
   const busy = exportReport.isPending;
   const result = exportReport.data;
-  const datesId = React.useId();
+  const chips = filterChips(filter);
 
-  const pick = (next: ExportRangeChoice) => {
-    setChoice(next);
+  const setDate = (bound: "from" | "to", value: string) => {
+    setDates({ ...dates, [bound]: value });
     reset();
   };
 
@@ -92,139 +113,154 @@ export function ExportReport() {
           setOpen(next);
         }}
       >
-        <DialogContent closeLabel="Close export">
+        <DialogContent closeLabel="Close export" className="gap-5 p-5">
           <DialogHeader>
             <DialogTitle>Export report</DialogTitle>
             <DialogDescription>
-              A CSV of the finished jobs, one row per step, with how long each
-              step took. Opens in Excel or Google Sheets.
+              Finished jobs as a CSV, one row per step, with how long each step
+              took.
             </DialogDescription>
           </DialogHeader>
 
-          <fieldset className="space-y-2">
-            <legend className="instrument-label mb-1.5 text-muted-foreground">Range</legend>
-            <div role="radiogroup" className="grid grid-cols-2 gap-1.5">
-              {EXPORT_RANGE_CHOICES.map((item) => (
-                <button
-                  key={item.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={choice === item.value}
-                  disabled={busy}
-                  onClick={() => pick(item.value)}
-                  className={cn(
-                    "h-8 rounded-sm border px-2.5 text-left text-[13px] transition-colors pointer-coarse:h-10",
-                    choice === item.value
-                      ? "border-signal-cmd bg-signal-cmd/10 font-medium text-foreground"
-                      : "border-hairline text-muted-foreground hover:bg-elevated/60 hover:text-foreground",
-                  )}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-
+          <div className="space-y-2">
+            <span className="instrument-label text-muted-foreground">Range</span>
+            <Segmented
+              label="Range"
+              value={choice}
+              options={EXPORT_RANGE_CHOICES}
+              stretch
+              disabled={busy}
+              className="[&>button]:h-8"
+              onChange={(next) => {
+                setChoice(next);
+                reset();
+              }}
+            />
             {choice === "custom" && (
-              <div
-                id={datesId}
-                className="flex flex-wrap items-end gap-x-3 gap-y-2 rounded-sm border border-hairline px-3 py-2"
-              >
-                <label className="flex flex-col gap-1">
-                  <span className="instrument-label text-muted-foreground">From</span>
-                  <Input
-                    type="date"
-                    value={dates.from}
-                    // Older than the record reaches would only ever be empty.
-                    min={dateInputValue(nowMs - EXPORT_RETENTION_DAYS * 86_400_000)}
-                    max={dates.to}
-                    onChange={(event) => {
-                      setDates({ ...dates, from: event.target.value });
-                      reset();
-                    }}
-                    className="h-8 w-auto rounded-sm text-[13px] md:text-[13px] pointer-coarse:h-10"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="instrument-label text-muted-foreground">To</span>
-                  <Input
-                    type="date"
-                    value={dates.to}
-                    min={dates.from}
-                    max={dateInputValue(nowMs)}
-                    onChange={(event) => {
-                      setDates({ ...dates, to: event.target.value });
-                      reset();
-                    }}
-                    className="h-8 w-auto rounded-sm text-[13px] md:text-[13px] pointer-coarse:h-10"
-                  />
-                </label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="date"
+                  aria-label="From"
+                  value={dates.from}
+                  // Older than the record reaches would only ever be empty.
+                  min={dateInputValue(nowMs - EXPORT_RETENTION_DAYS * DAY_MS)}
+                  max={dates.to}
+                  onChange={(event) => setDate("from", event.target.value)}
+                  className={DATE_INPUT}
+                />
+                <ArrowRightIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                <Input
+                  type="date"
+                  aria-label="To"
+                  value={dates.to}
+                  min={dates.from}
+                  max={dateInputValue(nowMs)}
+                  onChange={(event) => setDate("to", event.target.value)}
+                  className={DATE_INPUT}
+                />
               </div>
             )}
-          </fieldset>
+          </div>
 
-          {/* What the file will hold, before it is fetched. */}
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-sm border border-hairline bg-panel px-3 py-2.5 text-[13px]">
-            <dt className="text-muted-foreground">Window</dt>
-            <dd className="readout">
-              {query ? describeExportWindow(query, nowMs) : "Pick a start no later than the end"}
-            </dd>
-            <dt className="text-muted-foreground">Jobs</dt>
-            <dd>
-              {[
-                OUTCOME_LABELS[filter.status],
-                filter.kind ? kindLabel(filter.kind) : "All kinds",
-                filter.name ?? "All names",
-              ].join(" · ")}
-            </dd>
-            <dt className="text-muted-foreground">Times in</dt>
-            <dd className="readout">{timeZone || "UTC"}</dd>
-          </dl>
-
-          <p className="text-[11px] leading-snug text-muted-foreground">
-            The robot keeps this record for {EXPORT_RETENTION_DAYS} days. Jobs that
-            ended before it started keeping one are listed on this page but are
-            not in the report.
-          </p>
-
-          {result && result.jobs > 0 && (
-            <p role="status" className="flex items-start gap-1.5 text-[13px] text-signal-live">
-              <CheckIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <span>
-                Saved <span className="readout break-all">{result.filename}</span> ·{" "}
-                {result.jobs} {result.jobs === 1 ? "job" : "jobs"}
+          {/* The file it will produce: name, window, zone, and the list's
+            * narrowing. The outcome of the last download lands on it. */}
+          <div
+            className={cn(
+              "rounded-md border bg-panel transition-colors",
+              result?.jobs ? "border-signal-live/50" : "border-hairline",
+            )}
+          >
+            <div className="flex items-start gap-3 p-3">
+              <span
+                className={cn(
+                  "flex size-9 shrink-0 items-center justify-center rounded-sm",
+                  result?.jobs
+                    ? "bg-signal-live/12 text-signal-live"
+                    : "bg-elevated text-muted-foreground",
+                )}
+              >
+                {result?.jobs ? (
+                  <CheckIcon className="size-4.5" aria-hidden />
+                ) : (
+                  <FileSpreadsheetIcon className="size-4.5" aria-hidden />
+                )}
               </span>
-            </p>
-          )}
-          {result && result.jobs === 0 && (
-            <p role="status" className="text-[13px] text-signal-caution">
-              No recorded jobs in this window, so nothing was saved. Try a wider
-              range, or check the outcome, kind and name filters.
-            </p>
-          )}
-          {exportReport.error && (
-            <p role="alert" className="text-[13px] text-signal-warn">
-              {exportReport.error.message}
-            </p>
-          )}
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="readout truncate text-[13px] font-medium">
+                  {query ? exportFilename(query, nowMs) : "task-report.csv"}
+                </p>
+                <p className="readout text-[12px] text-muted-foreground">
+                  {query ? describeExportWindow(query, nowMs) : "Pick a start no later than the end"}
+                  {" · "}
+                  {timeZone || "UTC"}
+                </p>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {chips.length ? (
+                    chips.map((chip) => (
+                      <span
+                        key={chip}
+                        className="rounded-sm border border-hairline bg-background px-1.5 py-0.5 text-[11px] leading-none"
+                      >
+                        {chip}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[11px] leading-none text-muted-foreground">
+                      Every outcome, kind and name
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
 
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={() => setOpen(false)}
-            >
-              {result?.jobs ? "Done" : "Cancel"}
-            </Button>
-            <Button
-              type="button"
-              disabled={busy || query === null}
-              aria-busy={busy || undefined}
-              onClick={() => query && exportReport.mutate({ query, timeZone })}
-            >
-              <DownloadIcon aria-hidden />
-              {busy ? "Exporting…" : result?.jobs ? "Download again" : "Download CSV"}
-            </Button>
+            {(result || exportReport.error) && (
+              <p
+                role={exportReport.error ? "alert" : "status"}
+                className={cn(
+                  "border-t px-3 py-2 text-[12px] leading-snug",
+                  exportReport.error
+                    ? "border-hairline text-signal-warn"
+                    : result?.jobs
+                      ? "border-signal-live/30 text-signal-live"
+                      : "border-hairline text-signal-caution",
+                )}
+              >
+                {exportReport.error
+                  ? exportReport.error.message
+                  : result?.jobs
+                    ? `Saved · ${result.jobs} ${result.jobs === 1 ? "job" : "jobs"}`
+                    : "No recorded jobs in this window, so nothing was saved. Try a wider range or fewer filters."}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground sm:max-w-64">
+              <InfoIcon className="mt-px size-3.5 shrink-0" aria-hidden />
+              Kept {EXPORT_RETENTION_DAYS} days on the robot. Jobs from before it
+              began keeping them are not included.
+            </p>
+            <div className="flex gap-2 sm:shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 sm:flex-none"
+                disabled={busy}
+                onClick={() => setOpen(false)}
+              >
+                {result?.jobs ? "Done" : "Cancel"}
+              </Button>
+              <Button
+                type="button"
+                className="flex-1 sm:flex-none"
+                disabled={busy || query === null}
+                aria-busy={busy || undefined}
+                onClick={() => query && exportReport.mutate({ query, timeZone })}
+              >
+                <DownloadIcon aria-hidden />
+                {busy ? "Exporting…" : result?.jobs ? "Download again" : "Download"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
