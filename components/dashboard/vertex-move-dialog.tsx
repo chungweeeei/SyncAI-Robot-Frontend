@@ -1,7 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { CheckIcon, LocateFixedIcon, MapPinIcon, SendIcon, Trash2Icon } from "lucide-react";
+import {
+  CheckIcon,
+  LocateFixedIcon,
+  MapPinIcon,
+  PencilIcon,
+  SendIcon,
+  Trash2Icon,
+} from "lucide-react";
 
 import { Readout } from "@/components/console/instrument";
 import {
@@ -40,11 +47,14 @@ export interface TypedPose extends PlanarPose {
  * is not running on, where a goal would only be refused, and is an editor
  * rather than somewhere to send the robot from.
  *
- * With `onSetPose` the pose is a form — X, Y and the heading typed, or the
- * robot's own position taken — for a stop that has to sit on a known spot,
- * which a tap or a drag only gets near. Only the editor passes it: it stages
- * the change for its Save, where the dashboard would write the robot's row on
- * a keystroke's typo. Z stays a readout, since the ground sets it.
+ * With `onSetPose` an Edit pose button turns the readouts into a form — X, Y
+ * and the heading typed, or the robot's own position taken — for a stop that
+ * has to sit on a known spot, which a tap or a drag only gets near. Asked for,
+ * not open on every tap (2026-11-01, by request): a tap is mostly to read a
+ * stop, and a field under the cursor invites an edit nobody meant. Only the
+ * editor passes it: it stages the change for its Save, where the dashboard
+ * would write the robot's row on a keystroke's typo. Z stays a readout, since
+ * the ground sets it.
  */
 export function VertexMoveDialog({
   vertex,
@@ -94,6 +104,11 @@ export function VertexMoveDialog({
   // render, since an effect would paint one empty frame first.
   const [shown, setShown] = React.useState<MapVertex | null>(vertex);
   if (vertex && vertex !== shown) setShown(vertex);
+  // The stop whose pose is being typed. By id, and dropped on close, so the
+  // next tap opens on the readouts again.
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  if (vertex === null && editingId !== null) setEditingId(null);
+  const editing = onSetPose !== undefined && shown !== null && editingId === shown.id;
 
   return (
     <AlertDialog
@@ -112,7 +127,7 @@ export function VertexMoveDialog({
               {/* No description, by request. */}
             </AlertDialogHeader>
 
-            {onSetPose ? (
+            {editing ? (
               // Remounted per stop and per edit, so the fields start from its pose.
               <PoseForm
                 key={`${shown.id}:${shown.x}:${shown.y}:${shown.theta}`}
@@ -120,7 +135,7 @@ export function VertexMoveDialog({
                 disabled={editLock !== null}
                 robotPose={robotPose}
                 robotPoseReason={robotPoseReason}
-                onApply={(pose) => onSetPose(shown, pose)}
+                onApply={(pose) => onSetPose?.(shown, pose)}
               />
             ) : (
               // The same readouts as GoalControl's: the same kind of pose.
@@ -156,19 +171,33 @@ export function VertexMoveDialog({
               </p>
             )}
 
-            <AlertDialogFooter>
-              <Button
-                variant="ghost"
-                size="sm"
-                // Live while this tab's goal is in flight; greyed only while a
-                // job drives on the stop's map.
-                className="mr-auto"
-                disabled={editLock !== null}
-                onClick={() => onReplace(shown)}
-              >
-                <MapPinIcon data-icon="inline-start" />
-                Reposition
-              </Button>
+            {/* Wraps: four buttons are wider than a phone. */}
+            <AlertDialogFooter className="flex-wrap">
+              <div className="mr-auto flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  // Live while this tab's goal is in flight; greyed only while a
+                  // job drives on the stop's map.
+                  disabled={editLock !== null}
+                  onClick={() => onReplace(shown)}
+                >
+                  <MapPinIcon data-icon="inline-start" />
+                  Reposition
+                </Button>
+                {onSetPose && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-pressed={editing}
+                    disabled={editLock !== null}
+                    onClick={() => setEditingId(editing ? null : shown.id)}
+                  >
+                    <PencilIcon data-icon="inline-start" />
+                    Edit pose
+                  </Button>
+                )}
+              </div>
               <Button variant="outline" size="sm" disabled={deleting} onClick={onClose}>
                 Cancel
               </Button>
