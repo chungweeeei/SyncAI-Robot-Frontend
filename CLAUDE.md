@@ -247,7 +247,8 @@ components/
                 links open it with Waypoint chosen and Place armed. A
                 waypoint's name and type are set when it is placed; there
                 is no form to rename or retype it. Its pose is: a tap opens
-                the stop, whose X, Y and heading are typed or taken from
+                the stop on its readouts, and its Edit pose turns X, Y and
+                the heading into fields, typed or taken from
                 Use robot position (its z from the ground, by the rule of
                 where the numbers came from) and staged for Save like a
                 drag — the dashboard's same dialog stays read-only, since
