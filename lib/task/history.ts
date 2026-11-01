@@ -25,6 +25,43 @@ export function runSeconds(
   return Math.max(0, Math.floor((close - start) / 1000));
 }
 
+/**
+ * What one step took: `active` is its wall time less the hold while it was
+ * under way, both whole seconds. Null for a step that has not both started and
+ * ended (or a backend without the times) — 0 would be a claim about the step.
+ */
+export function stepSeconds(step: {
+  started_at?: string | null;
+  ended_at?: string | null;
+  paused_seconds?: number;
+}): { active: number; paused: number } | null {
+  if (!step.started_at || !step.ended_at) return null;
+  const start = Date.parse(step.started_at);
+  const end = Date.parse(step.ended_at);
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  const paused = Math.max(0, step.paused_seconds ?? 0);
+  return {
+    active: Math.max(0, Math.floor((end - start) / 1000 - paused)),
+    paused: Math.floor(paused),
+  };
+}
+
+/**
+ * The report's file name, for the window it covers on the operator's calendar:
+ * `task-report-20261001-20261031.csv`. The caller names it because CORS hides
+ * `Content-Disposition` (see exportMap). A preset has no `until`: it runs to now.
+ */
+export function exportFilename(query: TaskHistoryFilterQuery, nowMs: number): string {
+  const day = (ms: number) => {
+    const d = new Date(ms);
+    return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+  };
+  const since = query.since ? Date.parse(query.since) : NaN;
+  const until = query.until ? Date.parse(query.until) : nowMs;
+  const span = Number.isNaN(since) ? [day(until)] : [day(since), day(until)];
+  return `task-report-${span.join("-")}.csv`;
+}
+
 // ---------------------------------------------------------------------------
 // The filter
 

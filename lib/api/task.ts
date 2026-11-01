@@ -10,7 +10,7 @@ import { z } from "zod";
 
 import { normalizeTheta } from "@/lib/angle";
 import { apiUrl } from "@/lib/api/config";
-import { requestJson } from "@/lib/api/http";
+import { requestJson, requestRaw } from "@/lib/api/http";
 import type { PlanarPose } from "@/lib/types/robot";
 
 /**
@@ -68,6 +68,15 @@ export interface TaskStepState {
    * derives the staging point from while the dock runs.
    */
   dock?: PlanarPose | null;
+  /** ISO 8601 UTC; null until the step starts. Absent from older backends. */
+  started_at?: string | null;
+  /** ISO 8601 UTC; null until the step ends, however it ends. */
+  ended_at?: string | null;
+  /**
+   * Seconds the job was held while this step was under way; the step's own
+   * time is `ended_at − started_at − paused_seconds`.
+   */
+  paused_seconds?: number;
 }
 
 export interface TaskStateResponse {
@@ -87,6 +96,9 @@ const TaskStateResponseSchema: z.ZodType<TaskStateResponse> = z.object({
       message: z.string().optional(),
       group: z.string().nullish(),
       dock: z.object({ x: z.number(), y: z.number(), theta: z.number() }).nullish(),
+      started_at: z.string().nullish(),
+      ended_at: z.string().nullish(),
+      paused_seconds: z.number().optional(),
     }),
   ),
 });
@@ -552,4 +564,23 @@ export function fetchTaskHistoryStats(
     apiUrl(`/api/v1/task_history/stats${query ? `?${query}` : ""}`),
     { signal, schema: TaskHistoryStatsSchema },
   );
+}
+
+/**
+ * The report: every finished run matching `filter` as CSV, one row per step,
+ * with times written in `timeZone` (UTC when ""). Read from the robot's own
+ * record, which keeps 30 days — not the orchestrator's index the list reads —
+ * so it holds only jobs that ended since the robot started keeping it.
+ */
+export async function exportTaskHistory(
+  filter: TaskHistoryFilterQuery,
+  timeZone: string,
+): Promise<Blob> {
+  const params = historyFilterParams(filter);
+  if (timeZone) params.set("tz", timeZone);
+  const query = params.toString();
+  const res = await requestRaw(
+    apiUrl(`/api/v1/task_history/export${query ? `?${query}` : ""}`),
+  );
+  return res.blob();
 }
