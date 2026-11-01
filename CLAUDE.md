@@ -246,7 +246,12 @@ components/
                 which is where a map gets its waypoints: the task editor's
                 links open it with Waypoint chosen and Place armed. A
                 waypoint's name and type are set when it is placed; there
-                is no form to rename, retype or type in a pose)
+                is no form to rename or retype it. Its pose is: a tap opens
+                the stop, whose X, Y and heading are typed or taken from
+                Use robot position (its z from the ground, by the rule of
+                where the numbers came from) and staged for Save like a
+                drag — the dashboard's same dialog stays read-only, since
+                it would write at once)
   recordings/   bag recorder and list
   tasks/        the /tasks overview: the saved tasks grouped by map (the
                 loaded one first, then the tasks bound to no map, then the
