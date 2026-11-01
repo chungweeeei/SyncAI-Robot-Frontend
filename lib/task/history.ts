@@ -404,20 +404,19 @@ export function historyNameOptions(
 // The report's own window
 //
 // The list's presets stop at a day, and a soak test's report spans weeks, so
-// the export dialog picks its range separately: the list's filters as they
-// stand, the last 7 or 30 calendar days, or two dates. Outcome, kind and name
-// always come from the list's filter — the report is of those jobs.
+// the export dialog picks its range separately: the last 7 or 30 calendar
+// days, or two dates. Outcome, kind and name always come from the list's
+// filter — the report is of those jobs.
 
-export type ExportRangeChoice = "filters" | "7d" | "30d" | "custom";
+export type ExportRangeChoice = "7d" | "30d" | "custom";
 
 /** How far back the robot keeps its record (the backend's TASK_RECORD_RETENTION_DAYS). */
 export const EXPORT_RETENTION_DAYS = 30;
 
 export const EXPORT_RANGE_CHOICES: readonly { value: ExportRangeChoice; label: string }[] = [
-  { value: "filters", label: "Same as the list" },
   { value: "7d", label: "Last 7 days" },
   { value: "30d", label: "Last 30 days" },
-  { value: "custom", label: "Pick dates" },
+  { value: "custom", label: "Custom" },
 ];
 
 /** Local midnight `days` calendar days before `nowMs`'s day (0: today's). */
@@ -458,7 +457,6 @@ export function toExportQuery(
   nowMs: number,
 ): TaskHistoryFilterQuery | null {
   const list = toHistoryQuery(filter, nowMs);
-  if (choice === "filters") return list;
   if (choice === "7d" || choice === "30d") {
     const days = choice === "7d" ? 7 : 30;
     return { ...list, since: new Date(dayStartMs(nowMs, days - 1)).toISOString(), until: undefined };

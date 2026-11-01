@@ -390,12 +390,6 @@ describe("the report's window", () => {
     name: "Patrol",
   };
 
-  it("same as the list keeps the list's query whole", () => {
-    expect(toExportQuery(narrowed, "filters", exportDatesSeed(today), today)).toEqual(
-      toHistoryQuery(narrowed, today),
-    );
-  });
-
   it("the last N days are whole calendar days, today included, open at now", () => {
     const week = toExportQuery(narrowed, "7d", exportDatesSeed(today), today);
     expect(week).toEqual({
