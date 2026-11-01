@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { ExportReport } from "@/components/history/export-report";
 import { TaskHistory } from "@/components/history/task-history";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { RobotName } from "@/components/console/robot-name";
@@ -18,13 +19,20 @@ export default function HistoryPage() {
     <div className="h-full overflow-y-auto">
       {/* /tasks' width: a row carries its outcome, source and times on one line. */}
       <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:py-8">
-        <header className="mb-6">
-          <h1 className="text-xl font-semibold tracking-tight">History</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Jobs <RobotName id={state?.robot_id} />{" "}
-            has finished, newest first, over the window you pick. The robot
-            keeps them for a limited time, so older ones no longer appear here.
-          </p>
+        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">History</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Jobs <RobotName id={state?.robot_id} />{" "}
+              has finished, newest first, over the window you pick. The robot
+              keeps them for a limited time, so older ones no longer appear here.
+            </p>
+          </div>
+          {/* Reads the filter off the address bar, which suspends during a
+            * static prerender like the list below. */}
+          <React.Suspense fallback={null}>
+            <ExportReport />
+          </React.Suspense>
         </header>
 
         {/* The filter's useSearchParams suspends during a static prerender,

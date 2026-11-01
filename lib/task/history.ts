@@ -399,3 +399,133 @@ export function historyNameOptions(
   if (selected) names.add(selected);
   return [...names].sort((a, b) => a.localeCompare(b));
 }
+
+// ---------------------------------------------------------------------------
+// The report's own window
+//
+// The list's presets stop at a day, and a soak test's report spans weeks, so
+// the export dialog picks its range separately: the list's filters as they
+// stand, the last 7 or 30 calendar days, or two dates. Outcome, kind and name
+// always come from the list's filter — the report is of those jobs.
+
+export type ExportRangeChoice = "filters" | "7d" | "30d" | "custom";
+
+/** How far back the robot keeps its record (the backend's TASK_RECORD_RETENTION_DAYS). */
+export const EXPORT_RETENTION_DAYS = 30;
+
+export const EXPORT_RANGE_CHOICES: readonly { value: ExportRangeChoice; label: string }[] = [
+  { value: "filters", label: "Same as the list" },
+  { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
+  { value: "custom", label: "Pick dates" },
+];
+
+/** Local midnight `days` calendar days before `nowMs`'s day (0: today's). */
+function dayStartMs(nowMs: number, days: number): number {
+  const d = new Date(nowMs);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - days).getTime();
+}
+
+/** `<input type="date">`'s value for the local day `ms` falls on. */
+export function dateInputValue(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Local midnight of a `YYYY-MM-DD` date input, or null for a half-typed one. */
+function dateInputMs(value: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  return new Date(Number(year), Number(month) - 1, Number(day)).getTime();
+}
+
+/** The custom range's starting dates: the last 7 days, today included. */
+export function exportDatesSeed(nowMs: number): { from: string; to: string } {
+  return { from: dateInputValue(dayStartMs(nowMs, 6)), to: dateInputValue(nowMs) };
+}
+
+/**
+ * The wire filter for a report: the list's outcome, kind and name over the
+ * chosen window. "Last N days" is N whole calendar days, today included, open
+ * at now. Dates are whole local days, both ends included. Null when the dates
+ * are unreadable or reversed — the dialog refuses to download then.
+ */
+export function toExportQuery(
+  filter: HistoryFilter,
+  choice: ExportRangeChoice,
+  dates: { from: string; to: string },
+  nowMs: number,
+): TaskHistoryFilterQuery | null {
+  const list = toHistoryQuery(filter, nowMs);
+  if (choice === "filters") return list;
+  if (choice === "7d" || choice === "30d") {
+    const days = choice === "7d" ? 7 : 30;
+    return { ...list, since: new Date(dayStartMs(nowMs, days - 1)).toISOString(), until: undefined };
+  }
+  const from = dateInputMs(dates.from);
+  const to = dateInputMs(dates.to);
+  if (from === null || to === null || from > to) return null;
+  const toEnd = dayStartMs(to, -1) - 1;
+  return {
+    ...list,
+    since: new Date(from).toISOString(),
+    until: new Date(toEnd).toISOString(),
+  };
+}
+
+/** The window a report covers, as the operator reads it: `2026-10-26 → 2026-11-01`. */
+export function describeExportWindow(query: TaskHistoryFilterQuery, nowMs: number): string {
+  const day = (ms: number) => dateInputValue(ms);
+  const since = query.since ? Date.parse(query.since) : NaN;
+  const until = query.until ? Date.parse(query.until) : nowMs;
+  if (Number.isNaN(since)) return `up to ${day(until)}`;
+  const from = day(since);
+  const to = day(until);
+  return from === to ? from : `${from} → ${to}`;
+}
+
+/**
+ * How many jobs a report holds: distinct `run_id`s (the second column) under
+ * the header. A real CSV read, since an error message may carry a comma, a
+ * quote or a newline. 0 for a header-only file.
+ */
+export function countReportJobs(csv: string): number {
+  const runs = new Set<string>();
+  let field = "";
+  let column = 0;
+  let row = 0;
+  let quoted = false;
+  const text = csv.startsWith("﻿") ? csv.slice(1) : csv;
+  const endField = () => {
+    if (column === 1 && row > 0 && field) runs.add(field);
+    field = "";
+    column += 1;
+  };
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') {
+        field += '"';
+        i += 1;
+      } else if (ch === '"') {
+        quoted = false;
+      } else {
+        field += ch;
+      }
+    } else if (ch === '"') {
+      quoted = true;
+    } else if (ch === ",") {
+      endField();
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i += 1;
+      endField();
+      row += 1;
+      column = 0;
+    } else {
+      field += ch;
+    }
+  }
+  if (field || column > 0) endField();
+  return runs.size;
+}
