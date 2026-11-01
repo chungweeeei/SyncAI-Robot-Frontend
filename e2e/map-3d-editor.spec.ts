@@ -996,6 +996,94 @@ test.describe("the editor's 3D view", () => {
       expect(errors, "the page logged errors").toEqual([]);
     });
 
+    test("takes a typed pose for a tapped stop, folds its heading, and sends it on Save", async ({
+      page,
+    }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const stop = vertex({ name: "lobby", type: "MOVE", x: 0.2, y: 0.2, theta: 0, z: 0 });
+      const writes = await mockBackend(page, { maps: [treeOnly()], vertices: [stop] });
+      await page.goto(EDITOR);
+      await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+
+      const centre = await centreOnScreen(page);
+      await page.mouse.click(centre.x, centre.y);
+      const dialog = page.getByRole("alertdialog", { name: "lobby" });
+      const apply = dialog.getByRole("button", { name: "Apply" });
+      // Nothing changed yet, and a blank is not the origin.
+      await expect(apply).toBeDisabled();
+      await dialog.getByLabel("X").fill("");
+      await expect(apply).toBeDisabled();
+
+      await dialog.getByLabel("X").fill("1.5");
+      await dialog.getByLabel("Y").fill("-2");
+      await dialog.getByLabel("Orientation").fill("270");
+      await apply.click();
+      await expect(dialog).toHaveCount(0);
+      await expect(page.getByText("Unsaved: 1 moved")).toBeVisible();
+      // Staged, not written.
+      expect(writes.filter((w) => w.path.startsWith(verticesPath))).toEqual([]);
+
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect
+        .poll(() => writes.filter((w) => w.method === "PUT").map((w) => w.path))
+        .toEqual([`${verticesPath}/${stop.id}`]);
+      const body = writes.find((w) => w.method === "PUT")!.body as Record<string, number>;
+      // 270° goes out as -90°: the backend takes (-180, 180].
+      expect(body).toMatchObject({ x: 1.5, y: -2, theta: -90 });
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("puts a tapped stop where the robot stands, and sends it on Save", async ({
+      page,
+    }) => {
+      // The fake's robot stands at (1.25, -3.5, 90°) on the active map.
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const stop = vertex({ name: "lobby", type: "MOVE", x: 0.2, y: 0.2, theta: 0, z: 0 });
+      const writes = await mockBackend(page, {
+        maps: [treeOnly({ active: true })],
+        vertices: [stop],
+      });
+      await page.goto(EDITOR);
+      await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+
+      const centre = await centreOnScreen(page);
+      await page.mouse.click(centre.x, centre.y);
+      const dialog = page.getByRole("alertdialog", { name: "lobby" });
+      await dialog.getByRole("button", { name: "Use robot position" }).click();
+      await expect(dialog.getByLabel("X")).toHaveValue("1.25");
+      await expect(dialog.getByLabel("Orientation")).toHaveValue("90.0");
+      await dialog.getByRole("button", { name: "Apply" }).click();
+
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect
+        .poll(() => writes.filter((w) => w.method === "PUT").map((w) => w.path))
+        .toEqual([`${verticesPath}/${stop.id}`]);
+      const body = writes.find((w) => w.method === "PUT")!.body as Record<string, number>;
+      expect(body).toMatchObject({ x: 1.25, y: -3.5, theta: 90 });
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("greys Use robot position on a map the robot is not running", async ({ page }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const stop = vertex({ name: "lobby", type: "MOVE", x: 0.2, y: 0.2, theta: 0, z: 0 });
+      await mockBackend(page, {
+        maps: [treeOnly(), mapSummary({ name: "other", active: true })],
+        vertices: [stop],
+      });
+      await page.goto(EDITOR);
+      await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+
+      const centre = await centreOnScreen(page);
+      await page.mouse.click(centre.x, centre.y);
+      const dialog = page.getByRole("alertdialog", { name: "lobby" });
+      await expect(dialog.getByRole("button", { name: "Use robot position" })).toBeDisabled();
+      await expect(dialog.getByText(`The robot is running on "other", not this map.`)).toBeVisible();
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
     test("lists every stop's name, and deletes a selection from the list and the map together on Save", async ({
       page,
     }) => {

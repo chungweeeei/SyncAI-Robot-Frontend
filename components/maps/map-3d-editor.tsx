@@ -9,7 +9,7 @@ import {
   VertexCreateDialog,
   type Placement,
 } from "@/components/dashboard/vertex-create-dialog";
-import { VertexMoveDialog } from "@/components/dashboard/vertex-move-dialog";
+import { type TypedPose, VertexMoveDialog } from "@/components/dashboard/vertex-move-dialog";
 import { VertexPlaceControl } from "@/components/dashboard/vertex-place-control";
 import { Map3dCanvas, type Map3dTool } from "@/components/maps/map-3d-canvas";
 import { Map3dWaypointPanel } from "@/components/maps/map-3d-waypoint-panel";
@@ -765,6 +765,31 @@ function Map3dSurface({
     setVertexNote({ kind: "idle" });
   };
 
+  /**
+   * A pose typed into the stop's dialog. Its height follows the rule of where
+   * the numbers came from: the robot's floor for Use robot position, as a new
+   * stop put where the robot stands; else a re-place's, as Move's.
+   */
+  const setVertexPose = (vertex: MapVertex, { x, y, theta, robotZ }: TypedPose) => {
+    if (placeLock !== null) return;
+    const z =
+      robotZ !== null
+        ? robotGround(voxels, floorBands(floors), { x, y, z: robotZ })
+        : placedGround({
+            voxels,
+            band: floorBand,
+            hasFloors: floors.length > 0,
+            x,
+            y,
+            moving: vertex.z,
+          });
+    setVertexList((current) =>
+      current.map((stop) => (stop.id === vertex.id ? { ...stop, x, y, theta, z } : stop)),
+    );
+    setVertexNote({ kind: "idle" });
+    setAskedVertex(null);
+  };
+
   const toggleSelected = React.useCallback((id: string) => {
     setSelectedIds((current) =>
       current.includes(id) ? current.filter((other) => other !== id) : [...current, id],
@@ -864,6 +889,9 @@ function Map3dSurface({
         deleteQuestion={deleteQuestion}
         onReplace={armReplace}
         onDelete={deleteAsked}
+        onSetPose={setVertexPose}
+        robotPose={robotPose}
+        robotPoseReason={robotPoseReason}
         onClose={() => setAskedVertex(null)}
       />
 
