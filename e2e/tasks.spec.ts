@@ -1750,7 +1750,7 @@ test.describe("the step editor", () => {
     ]);
   });
 
-  test("saves a Patrol through the waypoints picked, with only the last one's heading", async ({
+  test("saves a Patrol through the waypoints picked, facing the last one's own heading", async ({
     page,
   }) => {
     // Both halves: the card's pass-through and arrival rows on screen, and
@@ -1792,12 +1792,9 @@ test.describe("the step editor", () => {
     await expect(card.getByText("pass through, no stop")).toHaveCount(2);
     await expect(page.getByLabel("Job summary")).toHaveText(/1 stop · ends at room-c/);
 
-    // Only the last waypoint has a heading to face, and typing one lets it
-    // go of its waypoint, keeping the spot.
-    const heading = card.getByRole("textbox", { name: "Arrival heading" });
-    await expect(heading).toHaveCount(1);
-    await expect(heading).toHaveValue("30");
-    await heading.fill("180");
+    // The robot faces the last waypoint's own heading; the card has nothing
+    // to type for it.
+    await expect(card.getByRole("textbox", { name: "Arrival heading" })).toHaveCount(0);
 
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect.poll(() => posted).toHaveLength(1);
@@ -1810,10 +1807,10 @@ test.describe("the step editor", () => {
           waypoints: [
             { x: -6, y: 2, theta: 30, z: 0 },
             { x: -2, y: 2, theta: 30, z: 0 },
-            { x: 2, y: 2, theta: 180, z: 0 },
+            { x: 2, y: 2, theta: 30, z: 0 },
           ],
         },
-        vertex_ids: [a.id, b.id, null],
+        vertex_ids: [a.id, b.id, c.id],
       },
     ]);
   });

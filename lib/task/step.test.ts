@@ -25,7 +25,6 @@ import {
   removePatrolWaypoint,
   repeatSuffix,
   repickPatrolWaypoint,
-  setPatrolHeading,
   stepDraftError,
   stepDraftsSubmittable,
   stepGroupError,
@@ -797,12 +796,12 @@ describe("patrol steps", () => {
     expect(stepDraftError(patrol(at("1", "2"), at("3", "4")), limits)).toMatch(/at least 3/);
   });
 
-  it("names the waypoint that is missing its pick or its arrival heading", () => {
+  it("names the waypoint that is missing its pick or its final heading", () => {
     const row = patrol(at("1", "2"), newPatrolWaypoint(), at("5", "6", { theta: "" }));
     expect(patrolWaypointErrors(row)).toEqual([
       null,
       "Pick a waypoint.",
-      "Needs an arrival heading in degrees.",
+      "Has no heading to face at the end; pick it again.",
     ]);
     expect(stepDraftError(row)).toBe("Waypoint 2: Pick a waypoint.");
     expect(stepDraftsSubmittable([row])).toBe(false);
@@ -986,19 +985,6 @@ describe("patrol steps", () => {
     expect(addPatrolWaypoint(move(), newPatrolWaypoint())).toEqual(
       expect.objectContaining({ waypoints: [] }),
     );
-  });
-
-  // The backend swaps a followed vertex's pose back in on every read.
-  it("lets a waypoint go of its vertex when its heading is typed", () => {
-    const point = at("1", "2", { vertexId: "a", vertexMissing: true });
-    const row = setPatrolHeading(patrol(at("0", "0"), point), point.key, "135");
-    expect(row.waypoints[1]).toMatchObject({
-      x: "1",
-      y: "2",
-      theta: "135",
-      vertexId: null,
-      vertexMissing: false,
-    });
   });
 
   it("changes to and from a Move without losing where it goes", () => {

@@ -25,7 +25,6 @@ import { Chip } from "@/components/console/instrument";
 import type { EditSteps } from "@/components/tasks/action-section";
 import { IconButton } from "@/components/tasks/icon-button";
 import { WaypointCombobox } from "@/components/tasks/waypoint-combobox";
-import { Input } from "@/components/ui/input";
 import type { ActiveVerticesStatus } from "@/hooks/use-active-map-vertices";
 import type { WaypointEditor } from "@/lib/map/links";
 import {
@@ -35,7 +34,6 @@ import {
   patrolWaypointFromVertex,
   removePatrolWaypoint,
   repickPatrolWaypoint,
-  setPatrolHeading,
   type PatrolWaypointDraft,
   type StepDraft,
 } from "@/lib/task/step";
@@ -73,8 +71,8 @@ const dragId = (key: number) => `waypoint-${key}`;
  * A Patrol's waypoints in the order it drives through them, drawn as the
  * stop card draws a walk: a dashed rail through rings the robot passes
  * without stopping, ending at a solid dot — the one waypoint it stops at,
- * and the only one whose heading means anything, so the only one that shows
- * it. Dragged by their grips within the patrol, never out of it: a waypoint
+ * facing that waypoint's own heading (the vertex's, as a Move's is; nothing
+ * here to type, so the card says nothing about it). Dragged by their grips within the patrol, never out of it: a waypoint
  * moved to another stop would be a different job, which Remove and the
  * other stop's Add say more plainly.
  */
@@ -155,12 +153,6 @@ export function PatrolWaypoints({
                   onRepick={(vertex) =>
                     change((current) => repickPatrolWaypoint(current, waypoint.key, vertex))
                   }
-                  onHeading={(theta) =>
-                    change(
-                      (current) => setPatrolHeading(current, waypoint.key, theta),
-                      `${row.key}:heading:${waypoint.key}`,
-                    )
-                  }
                   onRemove={() =>
                     change((current) => removePatrolWaypoint(current, waypoint.key))
                   }
@@ -217,7 +209,6 @@ function PatrolWaypointRow({
   stopMarks,
   disabled,
   onRepick,
-  onHeading,
   onRemove,
 }: {
   waypoint: PatrolWaypointDraft;
@@ -233,12 +224,9 @@ function PatrolWaypointRow({
   stopMarks: ReadonlyMap<string, readonly number[]>;
   disabled: boolean;
   onRepick: (vertex: MapVertex) => void;
-  onHeading: (theta: string) => void;
   onRemove: () => void;
 }) {
-  const headingId = React.useId();
   const errorId = React.useId();
-  const noteId = React.useId();
   const label = `waypoint ${ordinal} of ${name}`;
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
     useSortable({ id: dragId(waypoint.key), disabled });
@@ -322,42 +310,7 @@ function PatrolWaypointRow({
         </IconButton>
       </div>
       <div className={cn("min-w-0 pb-1", INDENT)}>
-        {last ? (
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <label htmlFor={headingId} className="instrument-label text-signal-cmd">
-              Arrival heading
-            </label>
-            <span className="flex items-center gap-1">
-              <Input
-                id={headingId}
-                value={waypoint.theta}
-                disabled={disabled}
-                // Not type="number": it reports "" for "-" and "1.", erasing
-                // what is halfway typed. Folded into (-180, 180] on the way out.
-                inputMode="decimal"
-                onChange={(event) => onHeading(event.target.value)}
-                aria-invalid={error !== null}
-                aria-describedby={
-                  [error ? errorId : null, waypoint.vertexId !== null ? noteId : null]
-                    .filter(Boolean)
-                    .join(" ") || undefined
-                }
-                className="h-7 w-16 rounded-sm md:text-[13px]"
-              />
-              <span className="text-[11px] text-muted-foreground" aria-hidden>
-                °
-              </span>
-            </span>
-            <span className="text-[11px] text-muted-foreground">stops here, facing this way</span>
-            {waypoint.vertexId !== null && (
-              <span id={noteId} className="basis-full text-[11px] leading-snug text-muted-foreground">
-                Typing a heading keeps this spot but no longer follows the waypoint if it is moved.
-              </span>
-            )}
-          </div>
-        ) : (
-          <span className="text-[11px] text-muted-foreground">pass through, no stop</span>
-        )}
+        {!last && <span className="text-[11px] text-muted-foreground">pass through, no stop</span>}
         {error && (
           <p id={errorId} role="alert" className="text-[11px] leading-snug text-signal-warn">
             {error}

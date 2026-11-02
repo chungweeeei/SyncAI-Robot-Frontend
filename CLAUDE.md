@@ -282,9 +282,8 @@ components/
                 by search, or by a click on the map while the Patrol's card
                 is the selection; dragged within it; a dashed rail through
                 rings marked "pass through, no stop", ending at a dot, the
-                last, the only one with a heading — its Arrival heading,
-                which once typed lets the waypoint go of its vertex, since
-                the backend swaps a followed vertex's pose back in), then in the order it
+                last, which the robot faces with that waypoint's own heading —
+                no heading field on the card), then in the order it
                 happens what is done on the way there and at it, each
                 headed with the waypoint's name, and one Add for both
                 (action-section: drag within a run, boxes

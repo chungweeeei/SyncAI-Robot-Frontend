@@ -327,23 +327,6 @@ export function repickPatrolWaypoint(row: StepDraft, key: number, vertex: MapVer
 }
 
 /**
- * The Patrol with one waypoint's heading typed. A typed heading is no longer
- * the vertex's, and the backend swaps a followed vertex's pose back in on
- * every read, so the waypoint is let go of its vertex here — a free point at
- * the same spot — or the heading would come back as the vertex's after a save.
- */
-export function setPatrolHeading(row: StepDraft, key: number, theta: string): StepDraft {
-  return withWaypoints(
-    row,
-    row.waypoints.map((waypoint) =>
-      waypoint.key === key
-        ? { ...waypoint, theta, vertexId: null, vertexMissing: false }
-        : waypoint,
-    ),
-  );
-}
-
-/**
  * The Patrol's waypoints picked from vertices emptied, for a map
  * switch: a vertex means nothing on another map. The slots stay, so the row
  * keeps its length and says which to pick again; free points are kept, as a
@@ -760,7 +743,9 @@ function patrolParams(draft: StepDraft): PatrolStepParams | null {
 /**
  * Why each of a Patrol's waypoints cannot be sent, index for index, null for
  * one that can. Only the last needs a heading: it is the only one the robot
- * turns to.
+ * turns to. The card has no field for it (the waypoint's own heading is
+ * used), so a last waypoint without one — a free point loaded with no theta —
+ * can only be fixed by picking it again, which is what the message says.
  */
 export function patrolWaypointErrors(draft: StepDraft): (string | null)[] {
   return draft.waypoints.map((waypoint, at) => {
@@ -768,7 +753,7 @@ export function patrolWaypointErrors(draft: StepDraft): (string | null)[] {
       return "Pick a waypoint.";
     }
     if (at === draft.waypoints.length - 1 && parseCoordinate(waypoint.theta) === null) {
-      return "Needs an arrival heading in degrees.";
+      return "Has no heading to face at the end; pick it again.";
     }
     return null;
   });
