@@ -43,11 +43,14 @@ uploads its html report and traces as an artifact.
 runners (arm64 for the Jetson, amd64) and publishes one multi-platform
 manifest to `ghcr.io/chungweeeei/syncai-robot-frontend`: every push to `main`
 moves the `main` tag, a `v*` tag on `main` publishes the semver tags and
-`latest`. It passes no `NEXT_PUBLIC_*` build args on purpose, so the image
-works on any robot. It is separate from CI because a container build is
-minutes long and only matters after the gate has passed. Like every workflow
-here it first runs once it is on `main`, and `main` is still at the initial
-commit: the first `dev` → `main` release PR is what starts publishing.
+`latest`. A push to `dev` moves the `dev` tag, and a prerelease tag on `dev`
+(`v0.1.0-dev.1`) publishes that version alone — never `X.Y` or `latest` —
+which is how a robot tries a build before it is released. A plain `vX.Y.Z`
+on a commit `main` does not contain fails the workflow's first job. It
+passes no `NEXT_PUBLIC_*` build args on purpose, so the image works on any
+robot. It is separate from CI and does not wait for it, because a container
+build is minutes long: a `dev` push is published even when its CI is red, so
+check the commit's CI before tagging it.
 
 `.github/workflows/claude-review.yml` reviews each PR against the conventions
 CI cannot check — it reads this file and `.claude/skills/` from the checkout,

@@ -90,7 +90,7 @@ Or pull the published image (arm64 + amd64) by setting it in `.env`:
 
 ```bash
 FRONTEND_IMAGE=ghcr.io/chungweeeei/syncai-robot-frontend
-FRONTEND_TAG=1.2.0          # or `main` to track the release branch
+FRONTEND_TAG=1.2.0          # or `main` / `dev` to track a branch, or a prerelease like 0.1.0-dev.1
 ```
 
 ```bash
@@ -101,7 +101,8 @@ docker compose pull frontend && docker compose up -d frontend
 them — so pointing at a backend on another host means setting them and
 rebuilding. Leave them empty for the same-host case. Every push to `main`
 moves the `main` tag; a `vX.Y.Z` tag on `main` publishes `X.Y.Z`, `X.Y` and
-`latest` (`.github/workflows/release.yml`). GHCR creates the package
+`latest`. Every push to `dev` moves the `dev` tag; a `vX.Y.Z-dev.N` tag on
+`dev` publishes that version only (`.github/workflows/release.yml`). GHCR creates the package
 private: make it public on GitHub, or every robot has to `docker login`.
 
 On the robot today, this repo sits inside the `SyncAI-Robot-Workspace` tree
