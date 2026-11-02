@@ -1789,7 +1789,6 @@ test.describe("the step editor", () => {
     }
     const card = page.locator("[data-stop='1']");
     await expect(card.getByText("3 waypoints → room-c")).toBeVisible();
-    await expect(card.getByText("pass through, no stop")).toHaveCount(2);
     await expect(page.getByLabel("Job summary")).toHaveText(/1 stop · ends at room-c/);
 
     // The robot faces the last waypoint's own heading; the card has nothing

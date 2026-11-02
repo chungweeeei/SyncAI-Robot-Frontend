@@ -310,7 +310,6 @@ function PatrolWaypointRow({
         </IconButton>
       </div>
       <div className={cn("min-w-0 pb-1", INDENT)}>
-        {!last && <span className="text-[11px] text-muted-foreground">pass through, no stop</span>}
         {error && (
           <p id={errorId} role="alert" className="text-[11px] leading-snug text-signal-warn">
             {error}

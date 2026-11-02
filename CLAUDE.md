@@ -281,7 +281,7 @@ components/
                 waypoints in the order driven (patrol-waypoints: each picked
                 by search, or by a click on the map while the Patrol's card
                 is the selection; dragged within it; a dashed rail through
-                rings marked "pass through, no stop", ending at a dot, the
+                rings (no text: the ring itself says "passed, not stopped at"), ending at a dot, the
                 last, which the robot faces with that waypoint's own heading —
                 no heading field on the card), then in the order it
                 happens what is done on the way there and at it, each
