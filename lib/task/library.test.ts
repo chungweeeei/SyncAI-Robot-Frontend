@@ -6,6 +6,7 @@ import {
   groupTasks,
   routeLine,
   routeStops,
+  stopPlace,
   taskStops,
   taskSummary,
 } from "@/lib/task/library";
@@ -181,5 +182,42 @@ describe("taskStops", () => {
     const read = taskStops([speak("a"), wait("b", 1)]);
     expect(read.stops).toEqual([]);
     expect(read.start).toHaveLength(2);
+  });
+});
+
+describe("a saved patrol", () => {
+  const patrolT = (id: string, names: (string | null)[], missing: number[] = []): TemplateStep => ({
+    id,
+    type: "PATROL",
+    vertex_id: null,
+    vertex_name: null,
+    vertex_status: "NONE",
+    group: null,
+    params: { waypoints: names.map((_, at) => ({ x: at, y: 0, theta: 0, z: 0 })) },
+    resolved_params: { waypoints: names.map((_, at) => ({ x: at, y: 0, theta: 0, z: 0 })) },
+    vertex_ids: names.map((name) => (name === null ? null : `v-${name}`)),
+    vertex_names: names,
+    vertex_statuses: names.map((name, at) =>
+      missing.includes(at) ? "MISSING" : name === null ? "NONE" : "CURRENT",
+    ),
+  });
+
+  it("puts every waypoint it drives through on the route line, as one stop", () => {
+    const steps = [nav("1-move", "dock"), patrolT("2-patrol", ["a", null, "b"], [2])];
+    expect(routeStops(steps)).toEqual([
+      { name: "dock", missing: false, dock: false },
+      { name: "a", missing: false, dock: false },
+      { name: null, missing: false, dock: false },
+      { name: "b", missing: true, dock: false },
+    ]);
+    expect(taskSummary(steps)).toEqual({ stops: 2, waitSeconds: 0, endsDocked: false });
+  });
+
+  it("is a stop its actions belong to, named for its last waypoint", () => {
+    const steps = [patrolT("1-patrol", ["a", "b"]), wait("2-wait", 5)];
+    const read = taskStops(steps);
+    expect(read.stops).toHaveLength(1);
+    expect(read.stops[0]!.arrival.map((step) => step.id)).toEqual(["2-wait"]);
+    expect(stopPlace(steps[0]!)).toEqual({ name: "b", missing: false, dock: false });
   });
 });

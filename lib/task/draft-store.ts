@@ -47,7 +47,7 @@ export function isEmptyTaskDraft(draft: TaskDraft): boolean {
 // are stripped, so a draft written by a newer build still restores.
 const StepDraftSchema: z.ZodType<StepDraft> = z.object({
   key: z.number(),
-  type: z.enum(["MOVE", "DOCK", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
+  type: z.enum(["MOVE", "DOCK", "PATROL", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
   x: z.string(),
   y: z.string(),
   theta: z.string(),
@@ -57,6 +57,20 @@ const StepDraftSchema: z.ZodType<StepDraft> = z.object({
   seconds: z.string().default(""),
   // Defaulted likewise: a draft from before the count says every line once.
   repeat: z.string().default("1"),
+  // Defaulted likewise: a draft from before PATROL has no row with waypoints.
+  waypoints: z
+    .array(
+      z.object({
+        key: z.number(),
+        x: z.string(),
+        y: z.string(),
+        theta: z.string(),
+        z: z.number(),
+        vertexId: z.string().nullable(),
+        vertexMissing: z.boolean().optional(),
+      }),
+    )
+    .default([]),
   vertexId: z.string().nullable(),
   // Defaulted likewise: a draft from before floors is on the ground floor.
   z: z.number().default(0),
@@ -108,6 +122,16 @@ function stepContent(step: StepDraft): string {
       return step.vertexId !== null
         ? `${step.type}@${step.vertexId}`
         : `${step.type} ${step.x} ${step.y} ${step.theta}`;
+    case "PATROL":
+      // Each waypoint as a Move's would read: a followed vertex is its id
+      // alone, a free point its numbers. The order is part of the job.
+      return `PATROL ${step.waypoints
+        .map((waypoint) =>
+          waypoint.vertexId !== null
+            ? `@${waypoint.vertexId}`
+            : `${waypoint.x} ${waypoint.y} ${waypoint.theta}`,
+        )
+        .join(" > ")}`;
     case "SPEAK":
       // Trimmed because Save trims: trailing spaces are not a change to the job.
       return `SPEAK ${step.repeat.trim()} ${step.text.trim()}`;

@@ -15,6 +15,7 @@ import { requestJson, type ErrorBody } from "@/lib/api/http";
 import type { ScheduleTrigger } from "@/lib/api/schedule";
 import {
   MoveStepParamsSchema,
+  PatrolStepParamsSchema,
   SpeakStepParamsSchema,
   WaitStepParamsSchema,
 } from "@/lib/api/task";
@@ -22,6 +23,7 @@ import type {
   BareStepType,
   MoveStepParams,
   NavStepType,
+  PatrolStepParams,
   SpeakStepParams,
   TaskStepRequest,
   WaitStepParams,
@@ -31,6 +33,12 @@ import type {
 export type TemplateStepRequest = TaskStepRequest & {
   /** MOVE / DOCK only — the backend 422s any other step carrying one. */
   vertex_id?: string | null;
+  /**
+   * PATROL only, and never beside `vertex_id`: each waypoint's vertex, aligned
+   * index for index with `params.waypoints`, null for one not picked from a
+   * vertex.
+   */
+  vertex_ids?: (string | null)[];
 };
 
 /**
@@ -63,6 +71,22 @@ export type TemplateStep =
       resolved_params: MoveStepParams | null;
     })
   | (TemplateStepBase & {
+      type: "PATROL";
+      params: PatrolStepParams | null;
+      /** Each CURRENT waypoint's vertex pose swapped in, as a MOVE's is. */
+      resolved_params: PatrolStepParams | null;
+      /**
+       * MOVE's `vertex_id` / `vertex_name` / `vertex_status` once per
+       * waypoint, aligned with `params.waypoints`. On a PATROL the singular
+       * `vertex_id` / `vertex_name` are null and `vertex_status` is the worst
+       * of these (MISSING over CURRENT over NONE). A save whose `vertex_ids`
+       * is not as long as its waypoints, or that sends `vertex_id`, is a 422.
+       */
+      vertex_ids: (string | null)[];
+      vertex_names: (string | null)[];
+      vertex_statuses: VertexRefStatus[];
+    })
+  | (TemplateStepBase & {
       type: "SPEAK";
       params: SpeakStepParams | null;
       resolved_params: SpeakStepParams | null;
@@ -83,7 +107,7 @@ export interface TaskTemplate {
   id: string;
   name: string;
   description: string;
-  /** Null when the template has no MOVE / DOCK step and so runs anywhere. */
+  /** Null when the template has no MOVE / DOCK / PATROL step and so runs anywhere. */
   map_name: string | null;
   steps: TemplateStep[];
   /** False only when it names a map other than the robot's. */
@@ -96,7 +120,7 @@ export interface TaskTemplate {
 export interface TaskTemplateDraft {
   name: string;
   description?: string;
-  /** Required when any step is a MOVE or DOCK; must be omitted otherwise. */
+  /** Required when any step is a MOVE, DOCK or PATROL; must be omitted otherwise. */
   map_name?: string | null;
   steps: readonly TemplateStepRequest[];
 }
@@ -105,6 +129,8 @@ export interface TaskTemplateDraft {
 export type TaskTemplateChanges = Partial<TaskTemplateDraft>;
 
 /** A plain union, as for TaskStepRequestSchema: a bare step's discriminator is three literals. */
+const VertexRefStatusSchema = z.enum(["NONE", "CURRENT", "MISSING"]);
+
 const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
   z.object({
     id: z.string(),
@@ -115,6 +141,22 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     type: z.enum(["MOVE", "DOCK"]),
     params: MoveStepParamsSchema.nullable(),
     resolved_params: MoveStepParamsSchema.nullable(),
+  }),
+  z.object({
+    id: z.string(),
+    // On a PATROL the backend sends the singular id and name as null and the
+    // status as the worst waypoint's; read leniently, so one that leaves them
+    // out does not drop the template list.
+    vertex_id: z.string().nullish().transform((id) => id ?? null),
+    vertex_name: z.string().nullish().transform((name) => name ?? null),
+    vertex_status: VertexRefStatusSchema.default("NONE"),
+    group: z.string().nullish().transform((group) => group ?? null),
+    type: z.literal("PATROL"),
+    params: PatrolStepParamsSchema.nullable(),
+    resolved_params: PatrolStepParamsSchema.nullable(),
+    vertex_ids: z.array(z.string().nullable()).default([]),
+    vertex_names: z.array(z.string().nullable()).default([]),
+    vertex_statuses: z.array(VertexRefStatusSchema).default([]),
   }),
   z.object({
     id: z.string(),

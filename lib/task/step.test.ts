@@ -2,16 +2,30 @@ import { describe, expect, it } from "vitest";
 
 import type { TemplateStep } from "@/lib/api/task-template";
 import {
+  DEFAULT_STEP_LIMITS,
   SPEAK_TEXT_MAX,
   WAIT_SECONDS_MAX,
+  addPatrolWaypoint,
+  changeStopType,
+  clearPatrolVertices,
   formatDraftAngle,
   formatDraftPosition,
   fromTemplateSteps,
   isNavStep,
+  isStopStep,
+  movePatrolWaypoint,
   moveStep,
   moveStepDraft,
+  newPatrolWaypoint,
   newStepDraft,
+  patrolSummary,
+  patrolWaypointErrors,
+  patrolWaypointFromVertex,
+  reissueStepKeys,
+  removePatrolWaypoint,
   repeatSuffix,
+  repickPatrolWaypoint,
+  setPatrolHeading,
   stepDraftError,
   stepDraftsSubmittable,
   stepGroupError,
@@ -552,7 +566,7 @@ describe("step groups", () => {
     const drafts = [move(), linked(speak("hi")), linked(newStepDraft("STANDUP"))];
     expect(stepGroupError(drafts, 0)).toBeNull();
     expect(stepGroupError(drafts, 1)).toBeNull();
-    expect(stepGroupError(drafts, 2)).toMatch(/one Move, Dock, Stand or Lie down at a time/);
+    expect(stepGroupError(drafts, 2)).toMatch(/one Move, Dock, Patrol, Stand or Lie down at a time/);
     expect(stepDraftsSubmittable(drafts)).toBe(false);
   });
 
@@ -664,7 +678,7 @@ describe("step groups", () => {
       // Move with Stand, Move with Lie, Move with Move: the robot has one body.
       for (const type of ["MOVE", "DOCK", "STANDUP", "LIEDOWN"] as const) {
         expect(stepLinkProblem([move(), newStepDraft(type)], 1)).toMatch(
-          /one Move, Dock, Stand or Lie down at a time/,
+          /one Move, Dock, Patrol, Stand or Lie down at a time/,
         );
       }
     });
@@ -743,4 +757,279 @@ describe("dock steps", () => {
     expect(stepWaypointOrdinals(drafts).get("v-dock")).toEqual([2]);
   });
 
+});
+
+/**
+ * A Patrol: one stop, many waypoints. What it guards is the contract with the
+ * robot — at least two poses, every heading sent but only the last one asked
+ * for, a template's vertices aligned index for index with the poses and never
+ * the single `vertex_id`.
+ */
+describe("patrol steps", () => {
+  const vertexAt = (id: string, x: number, y: number, theta = 0, z = 0): MapVertex => ({
+    id,
+    map_name: "lab",
+    name: id,
+    type: "MOVE",
+    x,
+    y,
+    theta,
+    z,
+  });
+  const patrol = (...points: ReturnType<typeof newPatrolWaypoint>[]): StepDraft => ({
+    ...newStepDraft("PATROL"),
+    waypoints: points,
+  });
+  const at = (x: string, y: string, over: Parameters<typeof newPatrolWaypoint>[0] = {}) =>
+    newPatrolWaypoint({ x, y, ...over });
+
+  it("is a stop with its body taken, but not a single-pose step", () => {
+    const row = newStepDraft("PATROL");
+    expect(isStopStep(row)).toBe(true);
+    expect(isNavStep(row)).toBe(false);
+    expect(row.waypoints).toEqual([]);
+  });
+
+  it("refuses fewer than two waypoints, and holds to the robot's floor", () => {
+    expect(stepDraftError(patrol(at("1", "2")))).toMatch(/at least 2 waypoints/);
+    expect(stepDraftError(patrol(at("1", "2"), at("3", "4")))).toBeNull();
+    const limits = { ...DEFAULT_STEP_LIMITS, patrolWaypointsMin: 3 };
+    expect(stepDraftError(patrol(at("1", "2"), at("3", "4")), limits)).toMatch(/at least 3/);
+  });
+
+  it("names the waypoint that is missing its pick or its arrival heading", () => {
+    const row = patrol(at("1", "2"), newPatrolWaypoint(), at("5", "6", { theta: "" }));
+    expect(patrolWaypointErrors(row)).toEqual([
+      null,
+      "Pick a waypoint.",
+      "Needs an arrival heading in degrees.",
+    ]);
+    expect(stepDraftError(row)).toBe("Waypoint 2: Pick a waypoint.");
+    expect(stepDraftsSubmittable([row])).toBe(false);
+  });
+
+  // Only the last heading is the robot's to face; the others pass through.
+  it("asks for a heading only on the last waypoint", () => {
+    const row = patrol(at("1", "2", { theta: "" }), at("3", "4", { theta: "90" }));
+    expect(patrolWaypointErrors(row)).toEqual([null, null]);
+  });
+
+  it("sends every waypoint in order with its floor, the last heading folded", () => {
+    const row = patrol(
+      at("1", "2", { theta: "", z: 3.2 }),
+      at("3", "4", { theta: "45" }),
+      at("5", "6", { theta: "270" }),
+    );
+    expect(toStepRequests([row])).toEqual([
+      {
+        id: "1-patrol",
+        type: "PATROL",
+        params: {
+          waypoints: [
+            { x: 1, y: 2, theta: 0, z: 3.2 },
+            { x: 3, y: 4, theta: 45, z: 0 },
+            { x: 5, y: 6, theta: -90, z: 0 },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("throws rather than send a patrol the editor should have held back", () => {
+    expect(() => toStepRequests([patrol(at("1", "2"))])).toThrow(/no usable waypoints/);
+  });
+
+  it("stores one vertex id per waypoint and never the single one", () => {
+    const [step] = toTemplateSteps([
+      patrol(at("1", "2", { vertexId: "a" }), at("3", "4"), at("5", "6", { vertexId: "c" })),
+    ]);
+    expect(step).toMatchObject({ type: "PATROL", vertex_ids: ["a", null, "c"] });
+    expect(step).not.toHaveProperty("vertex_id");
+  });
+
+  const storedPatrol = (over: Partial<TemplateStep> = {}): TemplateStep =>
+    ({
+      id: "2-patrol",
+      vertex_id: null,
+      vertex_name: null,
+      vertex_status: "NONE",
+      group: null,
+      type: "PATROL",
+      params: {
+        waypoints: [
+          { x: 0, y: 0, theta: 0, z: 0 },
+          { x: 1, y: 1, theta: 0, z: 0 },
+          { x: 2, y: 2, theta: 0, z: 0 },
+        ],
+      },
+      resolved_params: {
+        waypoints: [
+          { x: 0.5, y: 0.25, theta: 10, z: 0 },
+          { x: 1.123456, y: 1, theta: 0, z: 3 },
+          { x: 2, y: 2, theta: 180, z: 3 },
+        ],
+      },
+      vertex_ids: ["a", null, "c"],
+      vertex_names: ["lobby", null, "lab"],
+      vertex_statuses: ["CURRENT", "NONE", "MISSING"],
+      ...over,
+    }) as TemplateStep;
+
+  it("loads each waypoint's resolved pose with its own vertex and deletion flag", () => {
+    const [draft] = fromTemplateSteps([storedPatrol()]);
+    expect(draft!.type).toBe("PATROL");
+    expect(
+      draft!.waypoints.map(({ x, y, theta, z, vertexId, vertexMissing }) => ({
+        x,
+        y,
+        theta,
+        z,
+        vertexId,
+        vertexMissing,
+      })),
+    ).toEqual([
+      { x: "0.5", y: "0.25", theta: "10", z: 0, vertexId: "a", vertexMissing: false },
+      { x: "1.123", y: "1", theta: "0", z: 3, vertexId: null, vertexMissing: false },
+      { x: "2", y: "2", theta: "180", z: 3, vertexId: "c", vertexMissing: true },
+    ]);
+    expect(new Set(draft!.waypoints.map((waypoint) => waypoint.key)).size).toBe(3);
+  });
+
+  it("round-trips through a save and a load", () => {
+    const row = patrol(
+      at("1", "2", { vertexId: "a", theta: "30" }),
+      at("3.5", "-4", { theta: "-90", z: 3 }),
+    );
+    const [saved] = toTemplateSteps([row]);
+    const params = (saved as { params: TemplateStep["params"] }).params;
+    const [loaded] = fromTemplateSteps([
+      storedPatrol({
+        id: saved!.id,
+        params,
+        resolved_params: params,
+        vertex_ids: (saved as { vertex_ids: (string | null)[] }).vertex_ids,
+        vertex_names: ["lobby", null],
+        vertex_statuses: ["CURRENT", "NONE"],
+      } as Partial<TemplateStep>),
+    ]);
+    expect(toTemplateSteps([loaded!])).toEqual([saved]);
+  });
+
+  it("dispatches a saved patrol's resolved waypoints, and refuses one with none", () => {
+    expect(toDispatchSteps([storedPatrol()])).toEqual([
+      {
+        id: "2-patrol",
+        type: "PATROL",
+        params: storedPatrol().resolved_params,
+      },
+    ]);
+    expect(() => toDispatchSteps([storedPatrol({ resolved_params: null })])).toThrow(
+      /no waypoints/,
+    );
+  });
+
+  it("is one body step: it cannot start together with a Move", () => {
+    const drafts = [move(), { ...patrol(at("1", "2"), at("3", "4")), withPrevious: true }];
+    expect(stepGroupError(drafts, 1)).toMatch(/one Move, Dock, Patrol/);
+    expect(stepLinkProblem([move(), patrol(at("1", "2"), at("3", "4"))], 1)).toMatch(
+      /one Move, Dock, Patrol/,
+    );
+  });
+
+  it("reads its summary as its count and where it ends", () => {
+    const row = patrol(at("1", "2"), at("3", "4"), at("5", "6"));
+    expect(stepSummary(row, "dock")).toBe("Patrol · 3 waypoints → dock");
+    expect(stepSummary(row)).toBe("Patrol · 3 waypoints → (5, 6)");
+    expect(patrolSummary(1, null)).toBe("Patrol · 1 waypoint");
+    expect(stepSummary(newStepDraft("PATROL"))).toBeNull();
+  });
+
+  it("draws its waypoints into the route in order, under its one row", () => {
+    const first = move({ vertexId: "dock" });
+    const row = patrol(
+      at("1", "2", { vertexId: "a" }),
+      at("1", "2", { vertexId: "a" }),
+      at("3", "4"),
+      at("5", "6", { vertexId: "b" }),
+    );
+    expect(stepRoute([first, row])).toEqual([
+      { key: first.key, vertexId: "dock" },
+      { key: row.key, vertexId: "a" },
+      { key: row.key, vertexId: "b" },
+    ]);
+    expect(stepWaypointOrdinals([first, row])).toEqual(
+      new Map([
+        ["dock", [1]],
+        ["a", [2]],
+        ["b", [2]],
+      ]),
+    );
+  });
+
+  it("edits its list: add, re-pick, reorder, remove", () => {
+    let row = patrol();
+    row = addPatrolWaypoint(row, patrolWaypointFromVertex(vertexAt("a", 1, 2, 30, 3)));
+    row = addPatrolWaypoint(row, patrolWaypointFromVertex(vertexAt("b", 3, 4)));
+    expect(row.waypoints.map((waypoint) => [waypoint.vertexId, waypoint.z])).toEqual([
+      ["a", 3],
+      ["b", 0],
+    ]);
+    const [a, b] = row.waypoints;
+    row = movePatrolWaypoint(row, 1, 0);
+    expect(row.waypoints.map((waypoint) => waypoint.key)).toEqual([b!.key, a!.key]);
+    expect(movePatrolWaypoint(row, 0, 0)).toBe(row);
+    row = repickPatrolWaypoint(row, a!.key, vertexAt("c", 9, 9));
+    expect(row.waypoints[1]).toMatchObject({ key: a!.key, vertexId: "c", x: "9" });
+    row = removePatrolWaypoint(row, b!.key);
+    expect(row.waypoints.map((waypoint) => waypoint.vertexId)).toEqual(["c"]);
+    // A Move is not a list to edit.
+    expect(addPatrolWaypoint(move(), newPatrolWaypoint())).toEqual(
+      expect.objectContaining({ waypoints: [] }),
+    );
+  });
+
+  // The backend swaps a followed vertex's pose back in on every read.
+  it("lets a waypoint go of its vertex when its heading is typed", () => {
+    const point = at("1", "2", { vertexId: "a", vertexMissing: true });
+    const row = setPatrolHeading(patrol(at("0", "0"), point), point.key, "135");
+    expect(row.waypoints[1]).toMatchObject({
+      x: "1",
+      y: "2",
+      theta: "135",
+      vertexId: null,
+      vertexMissing: false,
+    });
+  });
+
+  it("changes to and from a Move without losing where it goes", () => {
+    const fromMove = changeStopType(move({ vertexId: "v", z: 3 }), "PATROL");
+    expect(fromMove.type).toBe("PATROL");
+    expect(fromMove.waypoints).toHaveLength(1);
+    expect(fromMove.waypoints[0]).toMatchObject({ x: "1.5", y: "-2", theta: "90", z: 3, vertexId: "v" });
+    expect(changeStopType(newStepDraft("MOVE"), "PATROL").waypoints).toEqual([]);
+
+    const back = changeStopType(patrol(at("0", "0"), at("7", "8", { vertexId: "end", theta: "45" })), "DOCK");
+    expect(back).toMatchObject({ type: "DOCK", x: "7", y: "8", theta: "45", vertexId: "end", waypoints: [] });
+  });
+
+  it("empties only the waypoints picked from vertices on a map switch", () => {
+    const row = patrol(at("1", "2", { vertexId: "a" }), at("3", "4"));
+    const cleared = clearPatrolVertices(row);
+    expect(cleared.waypoints.map((waypoint) => [waypoint.x, waypoint.vertexId])).toEqual([
+      ["", null],
+      ["3", null],
+    ]);
+    const free = patrol(at("3", "4"));
+    expect(clearPatrolVertices(free)).toBe(free);
+  });
+
+  it("gets fresh waypoint keys with fresh row keys", () => {
+    const row = patrol(at("1", "2"), at("3", "4"));
+    const [again] = reissueStepKeys([row]);
+    expect(again!.key).not.toBe(row.key);
+    expect(again!.waypoints.map((waypoint) => waypoint.key)).not.toEqual(
+      row.waypoints.map((waypoint) => waypoint.key),
+    );
+    expect(again!.waypoints.map((waypoint) => waypoint.x)).toEqual(["1", "3"]);
+  });
 });

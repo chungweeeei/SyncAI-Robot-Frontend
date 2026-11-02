@@ -56,8 +56,10 @@ export interface TaskStepState {
   status: TaskStatus;
   error_msg: string;
   /**
-   * A running MOVE's navigator sentence ("Path blocked; replanning"), else "".
-   * Display only. Optional for older backends.
+   * A running MOVE's navigator sentence ("Path blocked; replanning"), or a
+   * running PATROL's progress the backend words from the robot's feedback
+   * ("Patrolling: 3 of 5 waypoints left, 12.4 m to go"), else "". Display
+   * only. Optional for older backends.
    */
   message?: string;
   /** Steps sharing a group ran side by side; null on its own (or absent). */
@@ -126,11 +128,18 @@ export type Posture = "STANDUP" | "LIEDOWN";
  */
 export type NavStepType = "MOVE" | "DOCK";
 
+/**
+ * Every step set by poses in the map frame: a Move or a Dock (one pose) and a
+ * Patrol (an ordered list of them). Each is a stop in the editor, ties a job
+ * to its map and occupies the robot's body.
+ */
+export type StopStepType = NavStepType | "PATROL";
+
 /** The steps that carry no params; sending any is refused. */
 export type BareStepType = Posture;
 
 /** The backend's full `StepType` vocabulary. */
-export type StepType = NavStepType | "SPEAK" | "WAIT" | BareStepType;
+export type StepType = StopStepType | "SPEAK" | "WAIT" | BareStepType;
 
 /** `theta` in degrees, folded into (-180, 180] on the way out. */
 export interface MoveStepParams {
@@ -142,6 +151,29 @@ export interface MoveStepParams {
    * goal at the walkable surface nearest it; absent is the ground floor.
    */
   z?: number;
+}
+
+/**
+ * One pose a Patrol drives through, `theta` in degrees folded into
+ * (-180, 180]. Unlike a Move's, `z` is always sent: the contract defaults it
+ * to 0 but a patrol is new, so there is no older request shape to keep.
+ */
+export interface PatrolWaypoint {
+  x: number;
+  y: number;
+  theta: number;
+  /** Ground height of the waypoint's floor, metres. */
+  z: number;
+}
+
+/**
+ * The robot drives through the waypoints in order without stopping or
+ * turning at any but the last, which it reaches as a Move: only the last
+ * `theta` is honoured, the others are sent and ignored. At least two
+ * (`PATROL_WAYPOINTS_MIN` in lib/task/step.ts); a single pose is a Move.
+ */
+export interface PatrolStepParams {
+  waypoints: PatrolWaypoint[];
 }
 
 /**
@@ -168,6 +200,7 @@ export interface WaitStepParams {
  */
 export type TaskStepRequest = (
   | { id: string; type: NavStepType; params: MoveStepParams }
+  | { id: string; type: "PATROL"; params: PatrolStepParams }
   | { id: string; type: "SPEAK"; params: SpeakStepParams }
   | { id: string; type: "WAIT"; params: WaitStepParams }
   | { id: string; type: BareStepType }
@@ -184,6 +217,18 @@ export const MoveStepParamsSchema: z.ZodType<MoveStepParams> = z.object({
   y: z.number(),
   theta: z.number(),
   z: z.number().optional(),
+});
+
+export const PatrolStepParamsSchema: z.ZodType<PatrolStepParams> = z.object({
+  waypoints: z.array(
+    z.object({
+      x: z.number(),
+      y: z.number(),
+      theta: z.number(),
+      // Defaulted as the contract defaults it, so a read without it is the ground floor.
+      z: z.number().default(0),
+    }),
+  ),
 });
 
 export const SpeakStepParamsSchema: z.ZodType<SpeakStepParams> = z.object({
@@ -206,6 +251,12 @@ export const TaskStepRequestSchema: z.ZodType<TaskStepRequest> = z.union([
     id: z.string(),
     type: z.enum(["MOVE", "DOCK"]),
     params: MoveStepParamsSchema,
+    group: z.string().nullish(),
+  }),
+  z.object({
+    id: z.string(),
+    type: z.literal("PATROL"),
+    params: PatrolStepParamsSchema,
     group: z.string().nullish(),
   }),
   z.object({
@@ -293,6 +344,11 @@ async function postTask(
 export function moveParams(x: number, y: number, theta: number, z = 0): MoveStepParams {
   const params = { x, y, theta: normalizeTheta(theta) };
   return z ? { ...params, z } : params;
+}
+
+/** A Patrol waypoint's wire shape: the heading folded, `z` always present. */
+export function patrolWaypoint(x: number, y: number, theta: number, z = 0): PatrolWaypoint {
+  return { x, y, theta: normalizeTheta(theta), z };
 }
 
 /**
@@ -419,7 +475,7 @@ export function cancelTask(id: string): Promise<void> {
 /**
  * Hold or release a running task. The ack's PAUSING / IN_PROGRESS is a claim
  * about the request, so it is dropped like `cancelTask`'s: PAUSED is read from
- * `fetchTaskState`. A pause lands at once on a MOVE or WAIT, but only after a
+ * `fetchTaskState`. A pause lands at once on a MOVE, PATROL or WAIT, but only after a
  * SPEAK or posture finishes.
  */
 export function pauseTask(id: string): Promise<void> {

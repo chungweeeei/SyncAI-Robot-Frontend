@@ -377,6 +377,8 @@ export function schedulesByTemplate(
  *
  * - A MOVE compares at the precision dispatched (3 decimals x/y, 1 heading),
  *   so float noise is not drift.
+ * - A PATROL compares each waypoint the same way, and its count; every
+ *   heading counts, the ignored ones included, since they are dispatched.
  * - A SPEAK drifts on its line or count, a WAIT on its duration, any step on
  *   its type.
  * - A step linked to (or unlinked from) the one above drifts. Compared as
@@ -408,13 +410,30 @@ export function scheduleDrift(
     if (step.type === "WAIT" && now.type === "WAIT") {
       return step.params.seconds === now.params.seconds ? count : count + 1;
     }
+    if (step.type === "PATROL" && now.type === "PATROL") {
+      // One step, however many of its waypoints moved: the badge counts steps.
+      const before = step.params.waypoints;
+      const after = now.params.waypoints;
+      const same =
+        before.length === after.length &&
+        before.every((pose, at) => samePose(pose, after[at]!));
+      return same ? count : count + 1;
+    }
     if (!isNavStep(step) || !isNavStep(now)) return count;
-    const same =
-      step.params.x.toFixed(3) === now.params.x.toFixed(3) &&
-      step.params.y.toFixed(3) === now.params.y.toFixed(3) &&
-      step.params.theta.toFixed(1) === now.params.theta.toFixed(1);
-    return same ? count : count + 1;
+    return samePose(step.params, now.params) ? count : count + 1;
   }, 0);
+}
+
+/** Two poses at the precision dispatched: 3 decimals x / y, 1 on the heading. */
+function samePose(
+  a: { x: number; y: number; theta: number },
+  b: { x: number; y: number; theta: number },
+): boolean {
+  return (
+    a.x.toFixed(3) === b.x.toFixed(3) &&
+    a.y.toFixed(3) === b.y.toFixed(3) &&
+    a.theta.toFixed(1) === b.theta.toFixed(1)
+  );
 }
 
 /**

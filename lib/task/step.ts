@@ -4,11 +4,16 @@
 
 import { normalizeTheta } from "@/lib/angle";
 import type { TemplateStep, TemplateStepRequest } from "@/lib/api/task-template";
-import { moveParams as wireMoveParams } from "@/lib/api/task";
+import {
+  moveParams as wireMoveParams,
+  patrolWaypoint as wirePatrolWaypoint,
+} from "@/lib/api/task";
 import type {
   MoveStepParams,
   NavStepType,
+  PatrolStepParams,
   StepType,
+  StopStepType,
   TaskStepRequest,
   WaitStepParams,
 } from "@/lib/api/task";
@@ -31,6 +36,13 @@ export interface StepTypeSpec {
  */
 export const STEP_TYPES: readonly StepTypeSpec[] = [
   { value: "MOVE", label: "Move", hint: "Walk to a waypoint." },
+  // One stop with many waypoints: the robot does not stop or turn at any but
+  // the last, so it is not a run of Moves, which would stop at each.
+  {
+    value: "PATROL",
+    label: "Patrol",
+    hint: "Drive through the waypoints in order without stopping; face the last one\u2019s heading.",
+  },
   // Named for what the operator asks of the robot. The drive to the approach
   // point in front of the waypoint is part of it, and the hint says so.
   {
@@ -56,6 +68,12 @@ export const SPEAK_REPEAT_MAX = 50;
 export const WAIT_SECONDS_MAX = 3600;
 
 /**
+ * Mirrors the Patrol's `waypoints` `min_items`: one waypoint is a Move, and
+ * the robot is only asked to drive *through* poses when there are several.
+ */
+export const PATROL_WAYPOINTS_MIN = 2;
+
+/**
  * The bounds a draft is checked against before it is sent. The robot says
  * them in its step catalogue (lib/task/catalogue.ts stepLimits); these
  * constants are what a robot without one is held to, and the default
@@ -65,12 +83,14 @@ export interface StepLimits {
   speakTextMax: number;
   speakRepeatMax: number;
   waitSecondsMax: number;
+  patrolWaypointsMin: number;
 }
 
 export const DEFAULT_STEP_LIMITS: StepLimits = {
   speakTextMax: SPEAK_TEXT_MAX,
   speakRepeatMax: SPEAK_REPEAT_MAX,
   waitSecondsMax: WAIT_SECONDS_MAX,
+  patrolWaypointsMin: PATROL_WAYPOINTS_MIN,
 };
 
 const NAV_STEP_TYPES: ReadonlySet<StepType> = new Set<NavStepType>(["MOVE", "DOCK"]);
@@ -83,6 +103,38 @@ export function isNavStep<T extends { type: StepType }>(
   step: T,
 ): step is T & { type: NavStepType } {
   return NAV_STEP_TYPES.has(step.type);
+}
+
+const STOP_STEP_TYPES: ReadonlySet<StepType> = new Set<StopStepType>(["MOVE", "DOCK", "PATROL"]);
+
+/**
+ * Whether a step is a stop: a Move or a Dock, or a Patrol, which is one stop
+ * however many waypoints it drives through. Every one is set in the map's
+ * frame and ties the job to its map; only isNavStep's two carry one pose.
+ */
+export function isStopStep<T extends { type: StepType }>(
+  step: T,
+): step is T & { type: StopStepType } {
+  return STOP_STEP_TYPES.has(step.type);
+}
+
+/**
+ * One waypoint of a Patrol row: a Move's pose fields, as typed, with its own
+ * provenance. A list of these rather than the row's flat fields, because a
+ * Patrol is one step with many poses.
+ */
+export interface PatrolWaypointDraft {
+  /** Client-only identity, for the waypoint list's React key and drag. */
+  key: number;
+  x: string;
+  y: string;
+  /** Sent for every waypoint, honoured by the robot only on the last. */
+  theta: string;
+  z: number;
+  /** The vertex it was picked from, or null for a free point. */
+  vertexId: string | null;
+  /** Its vertex was deleted since the save: the numbers are the snapshot. */
+  vertexMissing?: boolean;
 }
 
 export interface StepDraft {
@@ -102,6 +154,8 @@ export interface StepDraft {
   repeat: string;
   /** WAIT only: the duration in seconds, as typed (see parseCoordinate). */
   seconds: string;
+  /** PATROL only: the poses to drive through, in order. Empty on every other type. */
+  waypoints: PatrolWaypointDraft[];
   /**
    * The vertex the numbers were prefilled from, or null once hand edited.
    * **Saving** sends it, so a stored MOVE or DOCK can follow its vertex; **dispatching**
@@ -147,10 +201,22 @@ export function newStepDraft(type: StepType): StepDraft {
     text: "",
     repeat: "1",
     seconds: "",
+    waypoints: [],
     vertexId: null,
     z: 0,
     withPrevious: false,
   };
+}
+
+/** A Patrol waypoint under a key minted now, blank unless `patch` fills it. */
+export function newPatrolWaypoint(patch: Partial<Omit<PatrolWaypointDraft, "key">> = {}): PatrolWaypointDraft {
+  nextKey += 1;
+  return { key: nextKey, x: "", y: "", theta: "0", z: 0, vertexId: null, ...patch };
+}
+
+/** A Patrol waypoint picked from a vertex, as stepPatchFromVertex sets a Move. */
+export function patrolWaypointFromVertex(vertex: MapVertex): PatrolWaypointDraft {
+  return newPatrolWaypoint(stepPatchFromVertex(vertex));
 }
 
 /**
@@ -158,7 +224,11 @@ export function newStepDraft(type: StepType): StepDraft {
  * restarts with the module, so stored keys would collide with the next row added.
  */
 export function reissueStepKeys(drafts: readonly StepDraft[]): StepDraft[] {
-  return drafts.map((draft) => ({ ...draft, key: newStepDraft(draft.type).key }));
+  return drafts.map((draft) => ({
+    ...draft,
+    key: newStepDraft(draft.type).key,
+    waypoints: draft.waypoints.map((waypoint) => ({ ...waypoint, key: newPatrolWaypoint().key })),
+  }));
 }
 
 /**
@@ -186,6 +256,109 @@ export function stepPatchFromVertex(
  */
 export function stepTypeForVertex(vertex: MapVertex): NavStepType {
   return vertex.type === "CHARGE" ? "DOCK" : "MOVE";
+}
+
+/**
+ * A stop row changed to another kind of stop, keeping where it goes: a Move
+ * or Dock becomes a Patrol that starts at its waypoint, and a Patrol becomes
+ * a Move or Dock to its last waypoint, where it would have ended. Anything
+ * else only changes the type.
+ */
+export function changeStopType(row: StepDraft, type: StopStepType): StepDraft {
+  if (row.type === type) return row;
+  if (type === "PATROL" && isNavStep(row)) {
+    const picked = row.x.trim() !== "" || row.vertexId !== null;
+    const { x, y, theta, z, vertexId, vertexMissing } = row;
+    return {
+      ...row,
+      type,
+      waypoints: picked ? [newPatrolWaypoint({ x, y, theta, z, vertexId, vertexMissing })] : [],
+    };
+  }
+  if (row.type === "PATROL") {
+    const last = row.waypoints[row.waypoints.length - 1];
+    const pose = last
+      ? {
+          x: last.x,
+          y: last.y,
+          theta: last.theta,
+          z: last.z,
+          vertexId: last.vertexId,
+          vertexMissing: last.vertexMissing,
+        }
+      : { x: "", y: "", theta: "0", z: 0, vertexId: null, vertexMissing: false };
+    return { ...row, type, ...pose, waypoints: [] };
+  }
+  return { ...row, type };
+}
+
+/** A Patrol row with its waypoints replaced; any other row unchanged. */
+function withWaypoints(row: StepDraft, waypoints: PatrolWaypointDraft[]): StepDraft {
+  return row.type === "PATROL" ? { ...row, waypoints } : row;
+}
+
+/** The Patrol with a waypoint added at the end. */
+export function addPatrolWaypoint(row: StepDraft, waypoint: PatrolWaypointDraft): StepDraft {
+  return withWaypoints(row, [...row.waypoints, waypoint]);
+}
+
+/** The Patrol without one waypoint. Below the minimum is allowed: the row says so. */
+export function removePatrolWaypoint(row: StepDraft, key: number): StepDraft {
+  return withWaypoints(
+    row,
+    row.waypoints.filter((waypoint) => waypoint.key !== key),
+  );
+}
+
+/** The Patrol with waypoint `from` put back at `to`, as moveStep moves rows. */
+export function movePatrolWaypoint(row: StepDraft, from: number, to: number): StepDraft {
+  const moved = moveStep(row.waypoints, from, to);
+  return moved === row.waypoints ? row : withWaypoints(row, moved);
+}
+
+/** The Patrol with one waypoint re-picked from a vertex, under its own key. */
+export function repickPatrolWaypoint(row: StepDraft, key: number, vertex: MapVertex): StepDraft {
+  return withWaypoints(
+    row,
+    row.waypoints.map((waypoint) =>
+      waypoint.key === key ? { ...waypoint, ...stepPatchFromVertex(vertex) } : waypoint,
+    ),
+  );
+}
+
+/**
+ * The Patrol with one waypoint's heading typed. A typed heading is no longer
+ * the vertex's, and the backend swaps a followed vertex's pose back in on
+ * every read, so the waypoint is let go of its vertex here — a free point at
+ * the same spot — or the heading would come back as the vertex's after a save.
+ */
+export function setPatrolHeading(row: StepDraft, key: number, theta: string): StepDraft {
+  return withWaypoints(
+    row,
+    row.waypoints.map((waypoint) =>
+      waypoint.key === key
+        ? { ...waypoint, theta, vertexId: null, vertexMissing: false }
+        : waypoint,
+    ),
+  );
+}
+
+/**
+ * The Patrol's waypoints picked from vertices emptied, for a map
+ * switch: a vertex means nothing on another map. The slots stay, so the row
+ * keeps its length and says which to pick again; free points are kept, as a
+ * Move's typed numbers are.
+ */
+export function clearPatrolVertices(row: StepDraft): StepDraft {
+  if (!row.waypoints.some((waypoint) => waypoint.vertexId !== null)) return row;
+  return withWaypoints(
+    row,
+    row.waypoints.map((waypoint) =>
+      waypoint.vertexId === null
+        ? waypoint
+        : { ...waypoint, x: "", y: "", theta: "0", z: 0, vertexId: null, vertexMissing: false },
+    ),
+  );
 }
 
 /**
@@ -220,6 +393,13 @@ export function stepSummary(
   waypointName: string | null = null,
 ): string | null {
   switch (draft.type) {
+    case "PATROL": {
+      // `waypointName` is the last waypoint's: where the patrol leaves the robot.
+      const last = draft.waypoints[draft.waypoints.length - 1];
+      if (!last) return null;
+      const [x, y] = [last.x, last.y].map((v) => v.trim());
+      return patrolSummary(draft.waypoints.length, waypointName ?? (x && y ? `(${x}, ${y})` : null));
+    }
     case "MOVE":
     case "DOCK": {
       const [x, y, theta] = [draft.x, draft.y, draft.theta].map((v) => v.trim());
@@ -241,6 +421,21 @@ export function stepSummary(
 }
 
 /**
+ * A Patrol in one line, as its folded row and its saved card read it:
+ * `Patrol · 5 waypoints → dock`. Only the last is named, since it is the one
+ * the robot stops at; the count says how much driving there is before it.
+ */
+export function patrolSummary(count: number, lastName: string | null): string {
+  return `Patrol · ${patrolRoute(count, lastName)}`;
+}
+
+/** patrolSummary without the step's name, for beside its label: `5 waypoints → dock`. */
+export function patrolRoute(count: number, lastName: string | null): string {
+  const words = `${count} ${count === 1 ? "waypoint" : "waypoints"}`;
+  return lastName ? `${words} → ${lastName}` : words;
+}
+
+/**
  * Which waypoints the job goes to, as which steps: vertex id → the 1-based
  * ordinals of the rows picked from it (Move or dock), for the editor's floor
  * plan. A list because a patrol returns to `dock` ("steps 1, 4"). A
@@ -251,15 +446,34 @@ export function stepWaypointOrdinals(
 ): ReadonlyMap<string, readonly number[]> {
   const marks = new Map<string, number[]>();
   drafts.forEach((draft, index) => {
-    if (!isNavStep(draft) || draft.vertexId === null) return;
-    const ordinals = marks.get(draft.vertexId) ?? [];
-    ordinals.push(index + 1);
-    marks.set(draft.vertexId, ordinals);
+    for (const vertexId of stopVertexIds(draft)) {
+      const ordinals = marks.get(vertexId) ?? [];
+      // A patrol through one waypoint twice is still one step there.
+      if (ordinals[ordinals.length - 1] !== index + 1) ordinals.push(index + 1);
+      marks.set(vertexId, ordinals);
+    }
   });
   return marks;
 }
 
-/** One point of the route map's line: the stop's row and the waypoint it goes to. */
+/**
+ * The vertices a stop row goes to, in the order it drives them: a Move's or
+ * Dock's one, a Patrol's each. Free points (no vertex) are left out.
+ */
+export function stopVertexIds(draft: StepDraft): string[] {
+  if (draft.type === "PATROL") {
+    return draft.waypoints.flatMap((waypoint) =>
+      waypoint.vertexId === null ? [] : [waypoint.vertexId],
+    );
+  }
+  return isNavStep(draft) && draft.vertexId !== null ? [draft.vertexId] : [];
+}
+
+/**
+ * One point of the route map's line: the stop's row and the waypoint it goes
+ * to. A Patrol is a point per waypoint, all under the Patrol's row, so the
+ * whole drive through them is the leg the map draws bold for its card.
+ */
 export interface RouteStop {
   key: number;
   vertexId: string;
@@ -274,9 +488,10 @@ export interface RouteStop {
 export function stepRoute(drafts: readonly StepDraft[]): RouteStop[] {
   const route: RouteStop[] = [];
   for (const draft of drafts) {
-    if (!isNavStep(draft) || draft.vertexId === null) continue;
-    if (route[route.length - 1]?.vertexId !== draft.vertexId) {
-      route.push({ key: draft.key, vertexId: draft.vertexId });
+    for (const vertexId of stopVertexIds(draft)) {
+      if (route[route.length - 1]?.vertexId !== vertexId) {
+        route.push({ key: draft.key, vertexId });
+      }
     }
   }
   return route;
@@ -396,6 +611,7 @@ export function stepGroupNames(drafts: readonly StepDraft[]): (string | null)[] 
 const BODY_STEP_TYPES: ReadonlySet<StepType> = new Set([
   "MOVE",
   "DOCK",
+  "PATROL",
   "STANDUP",
   "LIEDOWN",
 ]);
@@ -405,7 +621,7 @@ export function stepOccupiesBody(type: StepType): boolean {
   return BODY_STEP_TYPES.has(type);
 }
 
-const ONE_BODY_STEP = "The robot does one Move, Dock, Stand or Lie down at a time";
+const ONE_BODY_STEP = "The robot does one Move, Dock, Patrol, Stand or Lie down at a time";
 
 function spanMoves(drafts: readonly StepDraft[], span: StepSpan | undefined): boolean {
   if (!span) return false;
@@ -523,6 +739,41 @@ function moveParams(draft: StepDraft): MoveStepParams | null {
   return wireMoveParams(x, y, theta, draft.z);
 }
 
+/**
+ * A Patrol's params, or null while any waypoint is not a usable pose. An
+ * intermediate heading is never shown and the robot ignores it, but it is
+ * sent: the vertex's own, or 0 for a free point that has none.
+ */
+function patrolParams(draft: StepDraft): PatrolStepParams | null {
+  const waypoints = [];
+  for (const [at, waypoint] of draft.waypoints.entries()) {
+    const x = parseCoordinate(waypoint.x);
+    const y = parseCoordinate(waypoint.y);
+    const last = at === draft.waypoints.length - 1;
+    const theta = parseCoordinate(waypoint.theta) ?? (last ? null : 0);
+    if (x === null || y === null || theta === null) return null;
+    waypoints.push(wirePatrolWaypoint(x, y, theta, waypoint.z));
+  }
+  return { waypoints };
+}
+
+/**
+ * Why each of a Patrol's waypoints cannot be sent, index for index, null for
+ * one that can. Only the last needs a heading: it is the only one the robot
+ * turns to.
+ */
+export function patrolWaypointErrors(draft: StepDraft): (string | null)[] {
+  return draft.waypoints.map((waypoint, at) => {
+    if (parseCoordinate(waypoint.x) === null || parseCoordinate(waypoint.y) === null) {
+      return "Pick a waypoint.";
+    }
+    if (at === draft.waypoints.length - 1 && parseCoordinate(waypoint.theta) === null) {
+      return "Needs an arrival heading in degrees.";
+    }
+    return null;
+  });
+}
+
 /** A SPEAK row's count, or null when what is typed is not a whole 1 to the limit. */
 function speakRepeat(draft: StepDraft, limits: StepLimits = DEFAULT_STEP_LIMITS): number | null {
   const text = draft.repeat.trim();
@@ -582,6 +833,16 @@ export function stepDraftError(
     }
     return null;
   }
+  if (draft.type === "PATROL") {
+    const count = draft.waypoints.length;
+    if (count < limits.patrolWaypointsMin) {
+      return `Needs at least ${limits.patrolWaypointsMin} waypoints to drive through — ${count} picked.`;
+    }
+    // The waypoint's own row says it too; this names which, for a folded card.
+    const errors = patrolWaypointErrors(draft);
+    const at = errors.findIndex((error) => error !== null);
+    return at === -1 ? null : `Waypoint ${at + 1}: ${errors[at]}`;
+  }
   if (!isNavStep(draft)) return null;
   // No theta range check: normalizeTheta folds 270° to -90°.
   return moveParams(draft) ? null : "Pick a waypoint.";
@@ -627,6 +888,13 @@ function toStepRequest(
   if (draft.type === "STANDUP" || draft.type === "LIEDOWN") {
     return { id, type: draft.type };
   }
+  if (draft.type === "PATROL") {
+    const params = patrolParams(draft);
+    if (!params || params.waypoints.length < limits.patrolWaypointsMin) {
+      throw new Error(`Step ${id} has no usable waypoints.`);
+    }
+    return { id, type: "PATROL", params };
+  }
 
   const params = moveParams(draft);
   // Throwing beats sending a MOVE to (0, 0).
@@ -649,7 +917,8 @@ export function toStepRequests(
 
 /**
  * The authored list as the task-template endpoint stores it: `toStepRequests`
- * plus each waypoint step's `vertex_id`, so it can follow the map later.
+ * plus each waypoint step's `vertex_id` — a Patrol's `vertex_ids`, one per
+ * waypoint, and never the single key — so it can follow the map later.
  */
 export function toTemplateSteps(
   drafts: readonly StepDraft[],
@@ -657,6 +926,9 @@ export function toTemplateSteps(
 ): TemplateStepRequest[] {
   return toStepRequests(drafts, limits).map((request, index) => {
     const draft = drafts[index]!;
+    if (request.type === "PATROL") {
+      return { ...request, vertex_ids: draft.waypoints.map((waypoint) => waypoint.vertexId) };
+    }
     if (!isNavStep(request)) return request;
     // Waypoint steps only: the backend 422s any other step that carries one.
     return { ...request, vertex_id: draft.vertexId };
@@ -683,6 +955,23 @@ export function fromTemplateSteps(steps: readonly TemplateStep[]): StepDraft[] {
         z: pose?.z ?? 0,
         vertexId: step.vertex_id,
         vertexMissing: step.vertex_status === "MISSING",
+      };
+    }
+    if (step.type === "PATROL") {
+      // Aligned index for index; a short list from the backend reads as free points.
+      const poses = step.resolved_params?.waypoints ?? [];
+      return {
+        ...draft,
+        waypoints: poses.map((pose, at) =>
+          newPatrolWaypoint({
+            x: formatDraftPosition(pose.x),
+            y: formatDraftPosition(pose.y),
+            theta: formatDraftAngle(pose.theta),
+            z: pose.z,
+            vertexId: step.vertex_ids[at] ?? null,
+            vertexMissing: step.vertex_statuses[at] === "MISSING",
+          }),
+        ),
       };
     }
     if (step.type === "SPEAK") {
@@ -724,6 +1013,8 @@ function dispatchStep(step: TemplateStep): TaskStepRequest {
         // an origin would be a silent drive to (0, 0), so this throws.
         params: assertResolved(step, "no coordinates"),
       };
+    case "PATROL":
+      return { id: step.id, type: "PATROL", params: assertResolved(step, "no waypoints") };
     case "SPEAK":
       // Likewise: the backend refuses to store a SPEAK without text.
       return { id: step.id, type: "SPEAK", params: assertResolved(step, "no text") };
