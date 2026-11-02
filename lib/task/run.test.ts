@@ -91,6 +91,7 @@ describe("stepLabel", () => {
     expect(stepLabel("12-standup")).toBe("Stand");
     expect(stepLabel("3-liedown")).toBe("Lie down");
     expect(stepLabel("4-dock")).toBe("Dock");
+    expect(stepLabel("6-patrol")).toBe("Patrol");
   });
 
   it("reads a single-gesture step as the dashboard's word for it", () => {

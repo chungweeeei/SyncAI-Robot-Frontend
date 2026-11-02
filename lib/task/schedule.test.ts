@@ -528,3 +528,30 @@ describe("sameTrigger", () => {
     expect(sameTrigger({ interval_seconds: 1800 }, { cron: "0 9 * * *" })).toBe(false);
   });
 });
+
+describe("scheduleDrift for a patrol", () => {
+  const poses = (...xs: number[]) => xs.map((x) => ({ x, y: 0, theta: 0, z: 0 }));
+  const patrolT = (xs: number[]): TemplateStep => ({
+    id: "1-patrol",
+    type: "PATROL",
+    vertex_id: null,
+    vertex_name: null,
+    vertex_status: "NONE",
+    group: null,
+    params: { waypoints: poses(...xs) },
+    resolved_params: { waypoints: poses(...xs) },
+    vertex_ids: xs.map(() => null),
+    vertex_names: xs.map(() => null),
+    vertex_statuses: xs.map(() => "NONE" as const),
+  });
+  const frozen = (xs: number[]): TaskStepRequest[] => [
+    { id: "1-patrol", type: "PATROL", params: { waypoints: poses(...xs) } },
+  ];
+
+  it("is one stale step when a waypoint moved or one was added", () => {
+    expect(scheduleDrift(frozen([1, 2]), [patrolT([1, 2])])).toBe(0);
+    expect(scheduleDrift(frozen([1, 2]), [patrolT([1, 2.0004])])).toBe(0);
+    expect(scheduleDrift(frozen([1, 2]), [patrolT([1, 3])])).toBe(1);
+    expect(scheduleDrift(frozen([1, 2]), [patrolT([1, 2, 3])])).toBe(1);
+  });
+});

@@ -23,6 +23,7 @@ import {
   stopWaypointOrdinals,
 } from "@/lib/task/stops";
 import {
+  newPatrolWaypoint,
   newStepDraft,
   stepGroupError,
   stepGroupNames,
@@ -354,5 +355,67 @@ describe("formatDuration", () => {
     expect(formatDuration(90)).toBe("1 min 30 s");
     expect(formatDuration(120)).toBe("2 min");
     expect(formatDuration(3900)).toBe("1 h 5 min");
+  });
+});
+
+/**
+ * A Patrol is one stop however many waypoints it drives through: its actions
+ * hang off it as off a Move, its waypoints all carry its number on the map,
+ * and the job ends where its last waypoint is.
+ */
+describe("a patrol as a stop", () => {
+  function patrolRow(name: string, ...vertexIds: (string | null)[]): StepDraft {
+    const draft = {
+      ...newStepDraft("PATROL"),
+      waypoints: vertexIds.map((vertexId, at) =>
+        newPatrolWaypoint({ x: String(at), y: "0", vertexId }),
+      ),
+    };
+    names.set(draft.key, name);
+    return draft;
+  }
+
+  it("reads as one stop with its walk and its arrival", () => {
+    const steps = [row("A"), patrolRow("P", "v-1", "v-2", "v-3"), row("hi", "SPEAK", true), row("rest", "WAIT")];
+    const layout = stopLayout(steps);
+    expect(layout.stops.map((stop) => names.get(stop.key))).toEqual(["A", "P"]);
+    expect(sectionOf(steps, keyOf(steps, "hi"))).toEqual({ kind: "transit", stop: keyOf(steps, "P") });
+    expect(sectionOf(steps, keyOf(steps, "rest"))).toEqual({ kind: "arrival", stop: keyOf(steps, "P") });
+    expect(sectionProblem({ kind: "start" }, { type: "PATROL" })).toMatch(/stop of its own/);
+  });
+
+  it("starts a group it is in, as a Move does", () => {
+    const steps = [row("hi", "SPEAK"), { ...patrolRow("P", "v-1", "v-2"), withPrevious: true }];
+    expect(shape(normalizeStops(steps))).toEqual(["P", "&hi"]);
+  });
+
+  it("marks every one of its waypoints with its stop number, once each", () => {
+    const steps = [row("A"), patrolRow("P", "v-1", null, "v-A", "v-1")];
+    expect(stopWaypointOrdinals(steps)).toEqual(
+      new Map([
+        ["v-A", [1, 2]],
+        ["v-1", [2]],
+      ]),
+    );
+  });
+
+  it("ends the job at its last waypoint, not docked", () => {
+    const steps = [row("A", "DOCK"), patrolRow("P", "v-1", "v-end")];
+    expect(jobSummary(steps, (id) => (id === "v-end" ? "Gate" : null))).toEqual({
+      stops: 2,
+      waitSeconds: 0,
+      end: { name: "Gate", dock: false },
+    });
+    // A last waypoint picked off the map has no name to end at.
+    expect(jobSummary([patrolRow("Q", "v-1", null)], () => "x").end).toEqual({
+      name: null,
+      dock: false,
+    });
+  });
+
+  it("moves and goes as a block with its actions", () => {
+    const steps = [row("A"), row("hi"), patrolRow("P", "v-1", "v-2"), row("bye")];
+    expect(shape(moveStop(steps, keyOf(steps, "P"), 0))).toEqual(["P", "bye", "A", "hi"]);
+    expect(shape(removeStop(steps, keyOf(steps, "P")))).toEqual(["A", "hi"]);
   });
 });

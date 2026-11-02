@@ -43,6 +43,12 @@ export interface WaypointComboboxProps {
   onPick: (vertex: MapVertex) => void;
   /** The accessible name; the card adds its stop number. */
   label: string;
+  /**
+   * What the closed box says while `value` names no waypoint: "Pick a
+   * waypoint" unless the caller has better words — a free point's position,
+   * or what picking from an empty box does.
+   */
+  emptyLabel?: string;
 }
 
 /**
@@ -63,6 +69,7 @@ export function WaypointCombobox({
   disabled,
   onPick,
   label,
+  emptyLabel = "Pick a waypoint",
 }: WaypointComboboxProps) {
   const groups = React.useMemo((): WaypointGroup[] => {
     const ordered = chargersFirst
@@ -167,7 +174,7 @@ export function WaypointCombobox({
         className="flex h-7 w-full min-w-0 items-center justify-between gap-1.5 rounded-sm border border-input bg-transparent pr-1.5 pl-2 text-[13px] outline-none select-none hover:bg-elevated focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-popup-open:bg-elevated dark:bg-input/30 pointer-coarse:h-10"
       >
         <span className={cn("min-w-0 truncate", !selected && "text-muted-foreground")}>
-          {selected?.label ?? "Pick a waypoint"}
+          {selected?.label ?? emptyLabel}
         </span>
         <ChevronsUpDownIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
       </Combobox.Trigger>

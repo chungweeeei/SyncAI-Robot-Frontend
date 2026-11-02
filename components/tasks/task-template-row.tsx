@@ -30,11 +30,13 @@ import { stepSpec } from "@/lib/task/catalogue";
 import {
   routeLine,
   routeStops,
+  stopPlace,
+  stopWaypoints,
   taskStops,
   taskSummary,
   type RouteStop,
 } from "@/lib/task/library";
-import { repeatSuffix } from "@/lib/task/step";
+import { patrolRoute, repeatSuffix } from "@/lib/task/step";
 import { formatDuration } from "@/lib/task/stops";
 
 export interface TaskTemplateRowProps {
@@ -216,6 +218,7 @@ function TaskRoute({ steps }: { steps: readonly TemplateStep[] }) {
 }
 
 function StopName({ stop }: { stop: RouteStop }) {
+  // A Patrol's waypoint picked off the map, not from a vertex, has no name.
   const name = stop.name ?? "a waypoint";
   if (!stop.missing) return <span>{name}</span>;
   return (
@@ -242,7 +245,9 @@ function TaskStopsView({ steps }: { steps: readonly TemplateStep[] }) {
         </li>
       )}
       {read.stops.map((stop, index) => {
-        const place = stop.step.vertex_name ?? "a waypoint";
+        const end = stopPlace(stop.step);
+        const place = end?.name ?? "a waypoint";
+        const waypoints = stopWaypoints(stop.step);
         return (
           <li key={stop.step.id} className="space-y-1">
             <div className="flex items-baseline gap-2 text-[12px]">
@@ -250,16 +255,29 @@ function TaskStopsView({ steps }: { steps: readonly TemplateStep[] }) {
               <span className="instrument-label w-10 shrink-0 text-muted-foreground">
                 {label(stop.step)}
               </span>
-              <StopName
-                stop={{
-                  name: stop.step.vertex_name,
-                  missing: stop.step.vertex_status === "MISSING",
-                  dock: stop.step.type === "DOCK",
-                }}
-              />
+              {stop.step.type === "PATROL" ? (
+                <span className="readout text-muted-foreground">
+                  {patrolRoute(waypoints.length, end?.name ?? null)}
+                </span>
+              ) : (
+                end && <StopName stop={end} />
+              )}
               {/* A chip, since a finger cannot hover to ask what the strike means. */}
-              {stop.step.vertex_status === "MISSING" && <Chip tone="caution">deleted</Chip>}
+              {waypoints.some((waypoint) => waypoint.missing) && (
+                <Chip tone="caution">deleted</Chip>
+              )}
             </div>
+            {/* Every waypoint a Patrol drives through, in order; it stops at the last. */}
+            {stop.step.type === "PATROL" && waypoints.length > 0 && (
+              <p className="ml-6 text-[11px] leading-snug" aria-label="Patrol waypoints">
+                {waypoints.map((waypoint, at) => (
+                  <React.Fragment key={at}>
+                    {at > 0 && <span aria-hidden> → </span>}
+                    <StopName stop={waypoint} />
+                  </React.Fragment>
+                ))}
+              </p>
+            )}
             {stop.transit.length > 0 && (
               <ActionRun heading={`On the way to ${place}`} steps={stop.transit} label={label} />
             )}

@@ -178,6 +178,13 @@ export function taskSteps(): { steps: Record<string, unknown>[] } {
     steps: [
       { type: "MOVE", label: "Move", hint: "Walk to a waypoint.", occupies_body: true, while_walking: false, params: [waypoint("Waypoint")] },
       {
+        type: "PATROL",
+        label: "Patrol",
+        hint: "Drive through the waypoints in order without stopping; face the last one\u2019s heading.",
+        occupies_body: true, while_walking: false,
+        params: [{ kind: "waypoints", key: "waypoints", label: "Waypoints", min_items: 2 }],
+      },
+      {
         type: "DOCK",
         label: "Dock",
         hint: "Go to a waypoint, then walk straight onto the charger there and stay standing on it.",

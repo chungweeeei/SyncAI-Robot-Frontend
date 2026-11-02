@@ -6,7 +6,8 @@
 // those terms, so nothing sent, stored or scheduled changes shape.
 //
 //   rows before the first stop   done before setting off
-//   a Move or Dock row           a stop
+//   a Move, Dock or Patrol row   a stop (a Patrol is one, however
+//                                many waypoints it drives through)
 //   rows in its group after it   done while walking there
 //   rows after that, up to the   done on arrival
 //   next stop
@@ -17,13 +18,14 @@
 // positional step ids of a job saved the other way and nothing else.
 
 import {
-  isNavStep,
+  isStopStep,
   moveStepDraft,
   newStepDraft,
   stepLinkProblem,
   stepMoveProblem,
   stepOccupiesBody,
   stepSpans,
+  stopVertexIds,
   unlinkStep,
   type StepDraft,
 } from "@/lib/task/step";
@@ -86,7 +88,7 @@ export function normalizeStops(steps: readonly StepDraft[]): StepDraft[] {
   const ordered: StepDraft[] = [];
   for (const span of stepSpans(unclashed)) {
     const members = unclashed.slice(span.start, span.end + 1);
-    const stop = members.findIndex(isNavStep);
+    const stop = members.findIndex(isStopStep);
     if (stop <= 0) {
       ordered.push(...members);
       continue;
@@ -104,7 +106,7 @@ export function normalizeStops(steps: readonly StepDraft[]): StepDraft[] {
 export function stopLayout(steps: readonly StepDraft[]): StopLayout {
   const indices: number[] = [];
   steps.forEach((step, index) => {
-    if (isNavStep(step)) indices.push(index);
+    if (isStopStep(step)) indices.push(index);
   });
   const stops = indices.map((index, at): StopBlock => {
     const end = indices[at + 1] ?? steps.length;
@@ -131,7 +133,7 @@ export function sectionRange(
 /** The section a row is an action in; null for a stop's own row or a key not in the list. */
 export function sectionOf(steps: readonly StepDraft[], key: number): StopSection | null {
   const index = steps.findIndex((step) => step.key === key);
-  if (index === -1 || isNavStep(steps[index]!)) return null;
+  if (index === -1 || isStopStep(steps[index]!)) return null;
   const layout = stopLayout(steps);
   if (index < layout.startEnd) return { kind: "start" };
   const block = layout.stops.find((stop) => stop.index < index && index < stop.end)!;
@@ -148,7 +150,7 @@ export function sectionOf(steps: readonly StepDraft[], key: number): StopSection
 export function stopOfRow(steps: readonly StepDraft[], key: number): number | "start" | null {
   const row = steps.find((step) => step.key === key);
   if (!row) return null;
-  if (isNavStep(row)) return row.key;
+  if (isStopStep(row)) return row.key;
   const section = sectionOf(steps, key)!;
   return section.kind === "start" ? "start" : section.stop;
 }
@@ -183,7 +185,7 @@ export function insertStop(
 
 /** Why an action of this type may not go in this section, or null. */
 export function sectionProblem(section: StopSection, row: Pick<StepDraft, "type">): string | null {
-  if (isNavStep(row)) return "A waypoint is a stop of its own.";
+  if (isStopStep(row)) return "A waypoint is a stop of its own.";
   if (section.kind === "transit" && stepOccupiesBody(row.type)) {
     return "The robot is already walking; it cannot also stand or lie down.";
   }
@@ -365,12 +367,14 @@ export function stopWaypointOrdinals(
   const marks = new Map<string, number[]>();
   let ordinal = 0;
   for (const step of steps) {
-    if (!isNavStep(step)) continue;
+    if (!isStopStep(step)) continue;
     ordinal += 1;
-    if (step.vertexId === null) continue;
-    const list = marks.get(step.vertexId) ?? [];
-    list.push(ordinal);
-    marks.set(step.vertexId, list);
+    // A Patrol marks each of its waypoints with its own number.
+    for (const vertexId of stopVertexIds(step)) {
+      const list = marks.get(vertexId) ?? [];
+      if (list[list.length - 1] !== ordinal) list.push(ordinal);
+      marks.set(vertexId, list);
+    }
   }
   return marks;
 }
@@ -392,7 +396,7 @@ export function jobSummary(
   let waitSeconds = 0;
   let last: StepDraft | null = null;
   for (const step of steps) {
-    if (isNavStep(step)) {
+    if (isStopStep(step)) {
       stops += 1;
       last = step;
     } else if (step.type === "WAIT") {
@@ -400,11 +404,18 @@ export function jobSummary(
       if (step.seconds.trim() && Number.isFinite(seconds) && seconds > 0) waitSeconds += seconds;
     }
   }
+  // A Patrol ends where its last waypoint is, the one it stops at.
+  const endVertex =
+    last === null
+      ? null
+      : last.type === "PATROL"
+        ? (last.waypoints[last.waypoints.length - 1]?.vertexId ?? null)
+        : last.vertexId;
   return {
     stops,
     waitSeconds,
     end: last
-      ? { name: last.vertexId === null ? null : nameOf(last.vertexId), dock: last.type === "DOCK" }
+      ? { name: endVertex === null ? null : nameOf(endVertex), dock: last.type === "DOCK" }
       : null,
   };
 }

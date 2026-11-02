@@ -6,7 +6,7 @@
 // way it looked when it was built — waypoints by name, not one letter a step.
 
 import type { TemplateStep, TaskTemplate } from "@/lib/api/task-template";
-import { isNavStep, wireLinked } from "@/lib/task/step";
+import { isStopStep, wireLinked } from "@/lib/task/step";
 
 /**
  * Names as a person orders them: `Patrol 2` before `Patrol 10`. The backend's
@@ -70,12 +70,42 @@ export interface RouteStop {
   dock: boolean;
 }
 
+/**
+ * The waypoints a stored stop goes to, in order: a Move's or Dock's one, a
+ * Patrol's each, read off the per-waypoint names and statuses it is stored
+ * with (a free point has no name).
+ */
+export function stopWaypoints(step: TemplateStep): RouteStop[] {
+  if (step.type === "PATROL") {
+    const count = step.resolved_params?.waypoints.length ?? step.vertex_ids.length;
+    return Array.from({ length: count }, (_, at) => ({
+      name: step.vertex_names[at] ?? null,
+      missing: step.vertex_statuses[at] === "MISSING",
+      dock: false,
+    }));
+  }
+  if (!isStopStep(step)) return [];
+  return [
+    {
+      name: step.vertex_name,
+      missing: step.vertex_status === "MISSING",
+      dock: step.type === "DOCK",
+    },
+  ];
+}
+
+/** Every waypoint the task drives to or through, a Patrol's each, in order. */
 export function routeStops(steps: readonly TemplateStep[]): RouteStop[] {
-  return steps.filter(isNavStep).map((step) => ({
-    name: step.vertex_name,
-    missing: step.vertex_status === "MISSING",
-    dock: step.type === "DOCK",
-  }));
+  return steps.flatMap(stopWaypoints);
+}
+
+/**
+ * Where a stored stop leaves the robot, which its headings name: the last of
+ * a Patrol's waypoints, a Move's or Dock's own.
+ */
+export function stopPlace(step: TemplateStep): RouteStop | null {
+  const waypoints = stopWaypoints(step);
+  return waypoints[waypoints.length - 1] ?? null;
 }
 
 /**
@@ -105,7 +135,7 @@ export function taskSummary(steps: readonly TemplateStep[]): TaskSummary {
   let waitSeconds = 0;
   let endsDocked = false;
   for (const step of steps) {
-    if (isNavStep(step)) {
+    if (isStopStep(step)) {
       stops += 1;
       endsDocked = step.type === "DOCK";
     } else if (step.type === "WAIT") {
@@ -143,7 +173,7 @@ export function taskStops(steps: readonly TemplateStep[]): TaskStops {
     let end = index + 1;
     while (end < steps.length && wireLinked(steps, end)) end += 1;
     const span = steps.slice(index, end);
-    const leader = span.find(isNavStep);
+    const leader = span.find(isStopStep);
     if (leader) {
       result.stops.push({
         step: leader,

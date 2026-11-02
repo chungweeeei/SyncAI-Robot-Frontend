@@ -277,7 +277,13 @@ components/
                 cards) beside the stops, under a Route strip of the job's
                 summary and Undo / Redo (stop-list: what is done before
                 setting off, then a card per stop — its waypoint by search
-                (waypoint-combobox, grouped by floor), then in the order it
+                (waypoint-combobox, grouped by floor), or for a Patrol its
+                waypoints in the order driven (patrol-waypoints: each picked
+                by search, or by a click on the map while the Patrol's card
+                is the selection; dragged within it; a dashed rail through
+                rings (no text: the ring itself says "passed, not stopped at"), ending at a dot, the
+                last, which the robot faces with that waypoint's own heading —
+                no heading field on the card), then in the order it
                 happens what is done on the way there and at it, each
                 headed with the waypoint's name, and one Add for both
                 (action-section: drag within a run, boxes
@@ -405,7 +411,7 @@ lib/
   task/         step, schedule and history domain helpers, template name limit,
                 the /tasks list (library.ts: grouping by map, the natural
                 name order, a card's route line, summary and read-only stops),
-                the group rule (step.ts: one Move, Dock, Stand or Lie per group,
+                the group rule (step.ts: one Move, Dock, Patrol, Stand or Lie per group,
                 refused as it is built by stepLinkProblem / stepMoveProblem,
                 with stepGroupError as the backstop for a list handed in),
                 the masthead's rules for the running job (run.ts: which step is
@@ -419,9 +425,18 @@ lib/
                 never takes a body step, a group holding a stop starts with
                 it; the wire keeps its flat shape) and the step catalogue
                 (catalogue.ts: each step's label, hint, body rule and fields
-                as four kinds — waypoint, text, integer, number — the
-                contract a backend endpoint is to serve; local until then,
-                read only through use-step-catalogue)
+                as five kinds — waypoint, waypoints (a Patrol's ordered list,
+                `min_items` 2), text, integer, number — served by
+                GET /task_steps, with a local copy for a robot without it,
+                read only through use-step-catalogue). The stops are Move,
+                Dock and Patrol (isStopStep); isNavStep is the two with one
+                pose. A Patrol is one stop and one body step that drives
+                through ≥ 2 waypoints without stopping, facing only the last
+                one's heading; on the wire `params.waypoints` (each with its
+                floor's `z`) and, in a template, `vertex_ids` aligned with
+                them — never the single `vertex_id` — read back with
+                `vertex_names` / `vertex_statuses`, MISSING flagged per
+                waypoint. Its live progress is the step's `message`, no field of its own
   network/      the Wi-Fi page's saved networks: their order (the live one
                 by the state poll, then most recently joined), the
                 "Last joined …" line, measured from the list's read time,

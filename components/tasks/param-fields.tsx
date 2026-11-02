@@ -7,6 +7,9 @@ import type { StepParamField, StepSpec } from "@/lib/task/catalogue";
 import type { StepDraft } from "@/lib/task/step";
 import { cn } from "@/lib/utils";
 
+/** The kinds an action's row draws; the waypoint kinds belong to a stop's card. */
+type ActionField = Exclude<StepParamField, { kind: "waypoint" } | { kind: "waypoints" }>;
+
 /**
  * The draft holds each field as typed, under the field's own key — today's
  * keys (`text`, `repeat`, `seconds`) are the wire's, so the draft and the
@@ -20,8 +23,8 @@ function draftValue(step: StepDraft, key: string): string | null {
 
 /**
  * An action's settings in its row, drawn from the catalogue's fields rather
- * than written per type. The waypoint kind is the stop card's; it is never
- * an action's field.
+ * than written per type. The waypoint kinds are the stop card's; they are
+ * never an action's field.
  */
 export function ParamFields({
   spec,
@@ -38,7 +41,9 @@ export function ParamFields({
   /** One field's new text; the caller tags it for Undo by `${step.key}:${key}`. */
   onChange: (key: string, value: string) => void;
 }) {
-  const fields = spec.params.filter((field) => field.kind !== "waypoint");
+  const fields = spec.params.filter(
+    (field): field is ActionField => field.kind !== "waypoint" && field.kind !== "waypoints",
+  );
   if (!fields.length) return null;
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
@@ -67,7 +72,7 @@ function ParamField({
   disabled,
   onChange,
 }: {
-  field: Exclude<StepParamField, { kind: "waypoint" }>;
+  field: ActionField;
   value: string;
   label: string;
   disabled: boolean;

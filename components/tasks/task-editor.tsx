@@ -52,8 +52,12 @@ import type { TaskStepState } from "@/lib/api/task";
 import { canEditMap, waypointEditor } from "@/lib/map/links";
 import { draftIsUnsaved, type TaskDraft } from "@/lib/task/draft-store";
 import {
+  addPatrolWaypoint,
+  clearPatrolVertices,
   isNavStep,
+  isStopStep,
   newStepDraft,
+  patrolWaypointFromVertex,
   stepDraftsSubmittable,
   stepIdFor,
   stepPatchFromVertex,
@@ -180,12 +184,26 @@ export function TaskEditor() {
   const insertAfter =
     selection === null || selection === "start" ? selection : stopOfRow(steps, selection);
   const layout = stopLayout(steps);
+  /**
+   * A Patrol whose card is the selection takes the map's clicks as its next
+   * waypoints instead of new stops. Only its own card: an action selected
+   * under it still slots a stop in after it, as under any stop.
+   */
+  const pickingPatrol =
+    typeof selection === "number"
+      ? steps.find((step) => step.key === selection && step.type === "PATROL")
+      : undefined;
+  const pickingOrdinal = pickingPatrol
+    ? layout.stops.findIndex((stop) => stop.key === pickingPatrol.key) + 1
+    : null;
   const afterOrdinal =
     typeof insertAfter === "number"
       ? layout.stops.findIndex((stop) => stop.key === insertAfter) + 1
       : null;
   const pickHint =
-    afterOrdinal !== null && afterOrdinal < layout.stops.length
+    pickingOrdinal !== null
+      ? `Click waypoints to add them to the patrol at stop ${pickingOrdinal}, in the order to drive through them; press Esc when done.`
+      : afterOrdinal !== null && afterOrdinal < layout.stops.length
       ? `Click a waypoint to add it as a stop after stop ${afterOrdinal}.`
       : insertAfter === "start" && layout.stops.length
         ? "Click a waypoint to add it as the first stop."
@@ -206,6 +224,14 @@ export function TaskEditor() {
   }, [selection]);
 
   const pickWaypoint = (vertex: MapVertex) => {
+    if (pickingPatrol) {
+      // Minted here, not in the updater, so a twice-run updater cannot mint two.
+      const waypoint = patrolWaypointFromVertex(vertex);
+      edit((current) =>
+        current.map((row) => (row.key === pickingPatrol.key ? addPatrolWaypoint(row, waypoint) : row)),
+      );
+      return;
+    }
     const row = { ...newStepDraft(stepTypeForVertex(vertex)), ...stepPatchFromVertex(vertex) };
     edit((current) => insertStop(current, insertAfter, row));
     setSelected(row.key);
@@ -220,7 +246,11 @@ export function TaskEditor() {
   const [mapHover, setMapHover] = React.useState<string | null>(null);
   const focusKey = cardHover ?? (typeof insertAfter === "number" ? insertAfter : null);
   const focusStop = focusKey === null ? undefined : steps.find((step) => step.key === focusKey);
-  const highlight = focusStop?.vertexId ?? null;
+  // A Patrol is ringed at its last waypoint, where it stops; its legs are drawn bold.
+  const highlight =
+    focusStop?.type === "PATROL"
+      ? (focusStop.waypoints[focusStop.waypoints.length - 1]?.vertexId ?? null)
+      : (focusStop?.vertexId ?? null);
   const focus = React.useMemo(
     () => (focusKey === null ? null : { key: focusKey, fade: cardHover !== null }),
     [focusKey, cardHover],
@@ -246,7 +276,7 @@ export function TaskEditor() {
       : null;
 
   /** Any stop means the template has to name the map its waypoints are on. */
-  const hasStop = steps.some(isNavStep);
+  const hasStop = steps.some(isStopStep);
   const draftMapName = hasStop ? mapName : null;
   const saveReason =
     stepReason ??
@@ -270,7 +300,7 @@ export function TaskEditor() {
       steps: current.steps.map((step) =>
         isNavStep(step) && step.vertexId !== null
           ? { ...step, x: "", y: "", theta: "0", z: 0, vertexId: null, vertexMissing: false }
-          : step,
+          : clearPatrolVertices(step),
       ),
     }));
   };
@@ -581,7 +611,9 @@ export function TaskEditor() {
               <p className="text-[11px] leading-snug text-muted-foreground">
                 {vertices.length === 0 && verticesStatus === "ok"
                     ? "This map has no waypoints yet. Add some, then click them here."
-                    : `${pickHint} A charger adds a Dock.`}
+                    : pickingPatrol
+                      ? pickHint
+                      : `${pickHint} A charger adds a Dock.`}
               </p>
             </>
           )}

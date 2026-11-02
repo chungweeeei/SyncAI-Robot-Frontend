@@ -18,6 +18,7 @@ import { z } from "zod";
 import type { StepType } from "@/lib/api/task";
 import {
   DEFAULT_STEP_LIMITS,
+  PATROL_WAYPOINTS_MIN,
   SPEAK_REPEAT_MAX,
   SPEAK_TEXT_MAX,
   STEP_TYPES,
@@ -36,6 +37,19 @@ export interface WaypointField {
   label: string;
   /** "charger": only charging waypoints are offered. */
   filter?: "charger" | null;
+}
+
+/**
+ * An ordered list of waypoints on the job's map, driven through in order. On
+ * the wire it is the params' `waypoints` (each `x / y / theta / z`) and the
+ * template's `vertex_ids`, aligned with it. A step with one is a stop too.
+ */
+export interface WaypointsField {
+  kind: "waypoints";
+  key: string;
+  label: string;
+  /** The fewest waypoints the robot takes. */
+  min_items: number;
 }
 
 export interface TextField {
@@ -70,7 +84,12 @@ export interface NumberField {
   placeholder?: string | null;
 }
 
-export type StepParamField = WaypointField | TextField | IntegerField | NumberField;
+export type StepParamField =
+  | WaypointField
+  | WaypointsField
+  | TextField
+  | IntegerField
+  | NumberField;
 
 export interface StepSpec {
   type: StepType;
@@ -99,6 +118,14 @@ const WaypointFieldSchema: z.ZodType<WaypointField> = z.object({
   key: z.string(),
   label: z.string(),
   filter: z.literal("charger").nullish(),
+});
+
+const WaypointsFieldSchema: z.ZodType<WaypointsField> = z.object({
+  kind: z.literal("waypoints"),
+  key: z.string(),
+  label: z.string(),
+  // The contract's floor when an answer leaves it out: a single pose is a Move.
+  min_items: z.number().int().min(PATROL_WAYPOINTS_MIN).default(PATROL_WAYPOINTS_MIN),
 });
 
 const TextFieldSchema: z.ZodType<TextField> = z.object({
@@ -131,13 +158,19 @@ const NumberFieldSchema: z.ZodType<NumberField> = z.object({
 });
 
 const StepSpecSchema: z.ZodType<StepSpec> = z.object({
-  type: z.enum(["MOVE", "DOCK", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
+  type: z.enum(["MOVE", "DOCK", "PATROL", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
   label: z.string(),
   hint: z.string(),
   occupies_body: z.boolean(),
   while_walking: z.boolean(),
   params: z.array(
-    z.union([WaypointFieldSchema, TextFieldSchema, IntegerFieldSchema, NumberFieldSchema]),
+    z.union([
+      WaypointFieldSchema,
+      WaypointsFieldSchema,
+      TextFieldSchema,
+      IntegerFieldSchema,
+      NumberFieldSchema,
+    ]),
   ),
 });
 
@@ -175,13 +208,16 @@ function spec(
 }
 
 /**
- * Today's six steps in the catalogue's shape. The limits are step.ts's, which
+ * Today's seven steps in the catalogue's shape. The limits are step.ts's, which
  * mirror the backend's validators; Speak's voice and speed are left out, as
  * the backend defaults them and the editor never sent them.
  */
 export const LOCAL_STEP_CATALOGUE: StepCatalogue = {
   steps: [
     spec("MOVE", true, [{ kind: "waypoint", key: "target", label: "Waypoint" }]),
+    spec("PATROL", true, [
+      { kind: "waypoints", key: "waypoints", label: "Waypoints", min_items: PATROL_WAYPOINTS_MIN },
+    ]),
     spec("DOCK", true, [
       { kind: "waypoint", key: "target", label: "Charger", filter: "charger" },
     ]),
@@ -223,9 +259,12 @@ export function stepSpec(catalogue: StepCatalogue, type: StepType): StepSpec | n
   return catalogue.steps.find((each) => each.type === type) ?? null;
 }
 
-/** A step set by a waypoint is a stop: the editor gives it a card of its own. */
+/**
+ * A step set by a waypoint, or by a list of them, is a stop: the editor gives
+ * it a card of its own.
+ */
 export function isStopSpec(spec: StepSpec): boolean {
-  return spec.params.some((field) => field.kind === "waypoint");
+  return spec.params.some((field) => field.kind === "waypoint" || field.kind === "waypoints");
 }
 
 /** The steps done at or on the way to a stop, in catalogue order. */
@@ -248,8 +287,8 @@ export function transitSpecs(catalogue: StepCatalogue): StepSpec[] {
 
 /**
  * The bounds a draft is checked against, from the robot's own fields: Speak's
- * text and count, Wait's duration. A field the catalogue leaves out keeps the
- * local bound.
+ * text and count, Wait's duration, a Patrol's fewest waypoints. A field the
+ * catalogue leaves out keeps the local bound.
  */
 export function stepLimits(catalogue: StepCatalogue): StepLimits {
   const field = (type: StepType, key: string) =>
@@ -257,6 +296,7 @@ export function stepLimits(catalogue: StepCatalogue): StepLimits {
   const text = field("SPEAK", "text");
   const repeat = field("SPEAK", "repeat");
   const seconds = field("WAIT", "seconds");
+  const waypoints = field("PATROL", "waypoints");
   return {
     speakTextMax:
       text?.kind === "text" ? text.max_length : DEFAULT_STEP_LIMITS.speakTextMax,
@@ -264,5 +304,9 @@ export function stepLimits(catalogue: StepCatalogue): StepLimits {
       repeat?.kind === "integer" ? repeat.max : DEFAULT_STEP_LIMITS.speakRepeatMax,
     waitSecondsMax:
       seconds?.kind === "number" ? seconds.max : DEFAULT_STEP_LIMITS.waitSecondsMax,
+    patrolWaypointsMin:
+      waypoints?.kind === "waypoints"
+        ? waypoints.min_items
+        : DEFAULT_STEP_LIMITS.patrolWaypointsMin,
   };
 }

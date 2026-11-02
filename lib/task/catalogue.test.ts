@@ -13,13 +13,13 @@ import {
 } from "@/lib/task/catalogue";
 import {
   DEFAULT_STEP_LIMITS,
-  isNavStep,
+  isStopStep,
   newStepDraft,
   stepDraftError,
   stepOccupiesBody,
 } from "@/lib/task/step";
 
-const ALL_TYPES: StepType[] = ["MOVE", "DOCK", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"];
+const ALL_TYPES: StepType[] = ["MOVE", "DOCK", "PATROL", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"];
 
 describe("the local step catalogue", () => {
   it("describes every step type the backend takes", () => {
@@ -32,7 +32,7 @@ describe("the local step catalogue", () => {
   it("agrees with the rules the drafts are checked against", () => {
     for (const spec of LOCAL_STEP_CATALOGUE.steps) {
       expect(spec.occupies_body, spec.type).toBe(stepOccupiesBody(spec.type));
-      expect(isStopSpec(spec), spec.type).toBe(isNavStep(spec));
+      expect(isStopSpec(spec), spec.type).toBe(isStopStep(spec));
     }
   });
 
@@ -49,7 +49,11 @@ describe("the local step catalogue", () => {
   });
 
   it("splits the steps into stops and what is done at them", () => {
-    expect(stopSpecs(LOCAL_STEP_CATALOGUE).map((spec) => spec.type)).toEqual(["MOVE", "DOCK"]);
+    expect(stopSpecs(LOCAL_STEP_CATALOGUE).map((spec) => spec.type)).toEqual([
+      "MOVE",
+      "PATROL",
+      "DOCK",
+    ]);
     expect(actionSpecs(LOCAL_STEP_CATALOGUE).map((spec) => spec.type)).toEqual([
       "SPEAK",
       "WAIT",
@@ -105,7 +109,51 @@ describe("the robot's catalogue", () => {
     expect(stepDraftError(wait, limits)).toBe("At most 600 seconds (10 min).");
   });
 
+  it("holds a patrol to the robot's fewest waypoints", () => {
+    const longer = {
+      steps: LOCAL_STEP_CATALOGUE.steps.map((spec) =>
+        spec.type === "PATROL"
+          ? { ...spec, params: spec.params.map((field) => ({ ...field, min_items: 3 })) }
+          : spec,
+      ),
+    };
+    expect(stepLimits(StepCatalogueSchema.parse(longer)).patrolWaypointsMin).toBe(3);
+  });
+
   it("keeps the local bound for a field the robot does not describe", () => {
     expect(stepLimits({ steps: [] })).toEqual(DEFAULT_STEP_LIMITS);
+  });
+});
+
+describe("the patrol's waypoints field", () => {
+  const patrolSpec = (field: Record<string, unknown>) => ({
+    type: "PATROL",
+    label: "Patrol",
+    hint: "Drive through the waypoints in order without stopping; face the last one's heading",
+    occupies_body: true,
+    while_walking: false,
+    params: [{ kind: "waypoints", key: "waypoints", label: "Waypoints", ...field }],
+  });
+
+  it("reads the robot's answer as a stop that occupies the body", () => {
+    const [spec] = StepCatalogueSchema.parse({ steps: [patrolSpec({ min_items: 2 })] }).steps;
+    expect(spec).toBeDefined();
+    expect(isStopSpec(spec!)).toBe(true);
+    expect(spec!.params).toEqual([
+      { kind: "waypoints", key: "waypoints", label: "Waypoints", min_items: 2 },
+    ]);
+    expect(actionSpecs({ steps: [spec!] })).toEqual([]);
+  });
+
+  // The contract's floor: one pose is a Move, never a patrol.
+  it("reads a missing count as two, and leaves out a patrol that claims fewer", () => {
+    const [spec] = StepCatalogueSchema.parse({ steps: [patrolSpec({})] }).steps;
+    expect(spec!.params[0]).toMatchObject({ min_items: 2 });
+    expect(StepCatalogueSchema.parse({ steps: [patrolSpec({ min_items: 1 })] }).steps).toEqual([]);
+  });
+
+  it("holds a new patrol to the field's count before it can be sent", () => {
+    const limits = stepLimits(StepCatalogueSchema.parse({ steps: [patrolSpec({ min_items: 2 })] }));
+    expect(stepDraftError(newStepDraft("PATROL"), limits)).toMatch(/at least 2 waypoints/);
   });
 });

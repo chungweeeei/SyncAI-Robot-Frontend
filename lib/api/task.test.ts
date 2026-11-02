@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  TaskStepRequestSchema,
   fetchActiveTasks,
   fetchTaskState,
+  patrolWaypoint,
   pauseTask,
   resumeTask,
   sendMoveTask,
@@ -127,6 +129,59 @@ describe("fetchTaskState", () => {
     const state = await fetchTaskState("t");
     expect(state.steps[0]?.message).toBe("Following the path");
     expect(state.steps[1]?.message).toBeUndefined();
+  });
+
+  // No new field: a patrol's progress is the sentence the backend words.
+  it("keeps a running PATROL's progress as its message", async () => {
+    fetchMock.mockResolvedValue(
+      ack({
+        id: "t",
+        status: "IN_PROGRESS",
+        steps: [
+          {
+            id: "1-patrol",
+            status: "IN_PROGRESS",
+            error_msg: "",
+            message: "Patrolling: 3 of 5 waypoints left, 12.4 m to go",
+          },
+        ],
+      }),
+    );
+    const state = await fetchTaskState("t");
+    expect(state.steps[0]?.message).toBe("Patrolling: 3 of 5 waypoints left, 12.4 m to go");
+  });
+});
+
+describe("a Patrol step on the wire", () => {
+  it("folds a waypoint's heading as a Move's is folded, and always says its floor", () => {
+    expect(patrolWaypoint(1, 2, 270)).toEqual({ x: 1, y: 2, theta: -90, z: 0 });
+    expect(patrolWaypoint(1, 2, -180, 3.5)).toEqual({ x: 1, y: 2, theta: 180, z: 3.5 });
+  });
+
+  // A schedule's steps are read back through this schema.
+  it("reads back from a schedule, a waypoint without z on the ground floor", () => {
+    const parsed = TaskStepRequestSchema.parse({
+      id: "2-patrol",
+      type: "PATROL",
+      group: null,
+      params: {
+        waypoints: [
+          { x: 0, y: 0, theta: 0 },
+          { x: 1, y: 1, theta: 90, z: 3 },
+        ],
+      },
+    });
+    expect(parsed).toEqual({
+      id: "2-patrol",
+      type: "PATROL",
+      group: null,
+      params: {
+        waypoints: [
+          { x: 0, y: 0, theta: 0, z: 0 },
+          { x: 1, y: 1, theta: 90, z: 3 },
+        ],
+      },
+    });
   });
 });
 

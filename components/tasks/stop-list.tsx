@@ -33,6 +33,7 @@ import { Chip } from "@/components/console/instrument";
 import { TaskStatusChip } from "@/components/console/task-chip";
 import { ActionSection, type EditSteps } from "@/components/tasks/action-section";
 import { IconButton } from "@/components/tasks/icon-button";
+import { PatrolWaypoints } from "@/components/tasks/patrol-waypoints";
 import { WaypointCombobox } from "@/components/tasks/waypoint-combobox";
 import {
   DropdownMenu,
@@ -48,6 +49,7 @@ import type { TaskStepState } from "@/lib/api/task";
 import type { WaypointEditor } from "@/lib/map/links";
 import {
   actionSpecs,
+  stepLimits,
   stepSpec,
   stopSpecs,
   transitSpecs,
@@ -55,10 +57,14 @@ import {
   type StepSpec,
 } from "@/lib/task/catalogue";
 import {
+  changeStopType,
+  isStopStep,
   newStepDraft,
+  patrolRoute,
   stepDraftError,
   stepIdFor,
   stepPatchFromVertex,
+  stopVertexIds,
   type StepDraft,
 } from "@/lib/task/step";
 import {
@@ -218,7 +224,8 @@ export function StopList({
                   stopMarks={stopMarks}
                   onSelect={onSelect}
                   lit={
-                    hoveredVertex !== null && steps[block.index]!.vertexId === hoveredVertex
+                    hoveredVertex !== null &&
+                    stopVertexIds(steps[block.index]!).includes(hoveredVertex)
                   }
                   onHoverStop={onHoverStop}
                 />
@@ -294,15 +301,23 @@ function StopCard({
   const spec = stepSpec(catalogue, stop.type);
   const label = spec?.label ?? stop.type;
   const name = `stop ${ordinal}`;
+  const patrol = stop.type === "PATROL";
+  /**
+   * The vertex the stop leaves the robot at: a Move's or Dock's own, a
+   * Patrol's last waypoint's — the one it stops at.
+   */
+  const endVertex = patrol
+    ? (stop.waypoints[stop.waypoints.length - 1]?.vertexId ?? null)
+    : stop.vertexId;
+  const endName =
+    endVertex !== null ? (vertices.find((vertex) => vertex.id === endVertex)?.name ?? null) : null;
   /** What the card's headings call the stop: its waypoint, once one is picked. */
-  const place =
-    (stop.vertexId !== null
-      ? vertices.find((vertex) => vertex.id === stop.vertexId)?.name
-      : undefined) ?? name;
+  const place = endName ?? name;
   const other = stopSpecs(catalogue).filter((each) => each.type !== stop.type);
   const ownSelected = selected !== null && selected !== "start" && stopOfRow(steps, selected) === stop.key;
   const error =
-    stepDraftError(stop) ?? (refusal?.key === stop.key ? refusal.message : null);
+    stepDraftError(stop, stepLimits(catalogue)) ??
+    (refusal?.key === stop.key ? refusal.message : null);
   const state = stepStates.get(stepIdFor(block.index, stop.type)) ?? null;
   const layout = stopLayout(steps);
   const walk = sectionRange(layout, { kind: "transit", stop: stop.key })!;
@@ -364,28 +379,37 @@ function StopCard({
           <span className="instrument-label w-10 shrink-0" title={spec?.hint}>
             {label}
           </span>
-          <div className="min-w-0 flex-1">
-            <WaypointCombobox
-              vertices={vertices}
-              status={verticesStatus}
-              mapName={mapName}
-              waypointLink={waypointLink}
-              floors={floors}
-              stopMarks={stopMarks}
-              chargersFirst={charger ?? false}
-              value={stop.vertexId}
-              disabled={disabled}
-              onPick={(vertex) =>
-                edit((current) =>
-                  current.map((row) =>
-                    row.key === stop.key ? { ...row, ...stepPatchFromVertex(vertex) } : row,
-                  ),
-                )
-              }
-              label={`Waypoint for ${name}`}
-            />
-          </div>
-          {stop.vertexMissing && stop.vertexId !== null && (
+          {patrol ? (
+            // The waypoints are listed under the header; it says what they come to.
+            <p className="readout min-w-0 flex-1 truncate text-[12px] text-muted-foreground">
+              {stop.waypoints.length === 0
+                ? "No waypoints yet"
+                : patrolRoute(stop.waypoints.length, endName)}
+            </p>
+          ) : (
+            <div className="min-w-0 flex-1">
+              <WaypointCombobox
+                vertices={vertices}
+                status={verticesStatus}
+                mapName={mapName}
+                waypointLink={waypointLink}
+                floors={floors}
+                stopMarks={stopMarks}
+                chargersFirst={charger ?? false}
+                value={stop.vertexId}
+                disabled={disabled}
+                onPick={(vertex) =>
+                  edit((current) =>
+                    current.map((row) =>
+                      row.key === stop.key ? { ...row, ...stepPatchFromVertex(vertex) } : row,
+                    ),
+                  )
+                }
+                label={`Waypoint for ${name}`}
+              />
+            </div>
+          )}
+          {!patrol && stop.vertexMissing && stop.vertexId !== null && (
             <Chip tone="caution" className="max-sm:hidden">
               waypoint deleted
             </Chip>
@@ -422,7 +446,11 @@ function StopCard({
                     key={each.type}
                     onClick={() =>
                       edit((current) =>
-                        current.map((row) => (row.key === stop.key ? { ...row, type: each.type } : row)),
+                        current.map((row) =>
+                          row.key === stop.key && isStopStep(each)
+                            ? changeStopType(row, each.type)
+                            : row,
+                        ),
                       )
                     }
                   >
@@ -468,6 +496,25 @@ function StopCard({
           * arrival, each named for the waypoint so neither heading needs
           * explaining. A dashed rail is the walk, a dot the arrival. */}
         <div className="space-y-1.5 px-2 py-1.5">
+          {/* A press anywhere in the waypoints makes the patrol the selection,
+            * so the map's next clicks land in it rather than adding stops. */}
+          {patrol && (
+            <div onPointerDown={() => onSelect(stop.key)}>
+              <PatrolWaypoints
+                row={stop}
+                name={name}
+                vertices={vertices}
+                verticesStatus={verticesStatus}
+                mapName={mapName}
+                waypointLink={waypointLink}
+                floors={floors}
+                stopMarks={stopMarks}
+                disabled={disabled}
+                picking={stop.key === selected}
+                edit={edit}
+              />
+            </div>
+          )}
           {walk.to > walk.from && (
             <div className="relative pl-4">
               <span
