@@ -675,7 +675,7 @@ test.describe("the task console", () => {
     await expect(
       page.getByRole("menuitem", { name: "Start together with the action above" }),
     ).toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByText(/one Move, Dock, Stand or Lie down at a time/)).toBeVisible();
+    await expect(page.getByText(/one Move, Dock, Patrol, Stand or Lie down at a time/)).toBeVisible();
     expect(writes).toEqual([]);
   });
 
@@ -1748,6 +1748,109 @@ test.describe("the step editor", () => {
       { id: "1-move", type: "MOVE", vertex_id: "a" },
       { id: "2-move", type: "MOVE", vertex_id: "a" },
     ]);
+  });
+
+  test("saves a Patrol through the waypoints picked, with only the last one's heading", async ({
+    page,
+  }) => {
+    // Both halves: the card's pass-through and arrival rows on screen, and
+    // one PATROL step with its waypoints and aligned vertex ids in the body.
+    const room = (id: string, name: string, x: number) =>
+      vertex({ id, name, type: "MOVE", x, y: 2, theta: 30 });
+    const a = room("aaaaaaaa-0000-0000-0000-00000000000a", "room-a", -6);
+    const b = room("aaaaaaaa-0000-0000-0000-00000000000b", "room-b", -2);
+    const c = room("aaaaaaaa-0000-0000-0000-00000000000c", "room-c", 2);
+    await mockBackend(page, { vertices: [a, b, c] });
+    const posted: { map_name?: string; steps: Record<string, unknown>[] }[] = [];
+    await page.route("**/api/v1/task_templates", (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      const body = route.request().postDataJSON() as (typeof posted)[number] & { name: string };
+      posted.push(body);
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          taskTemplate({ id: "88888888-8888-8888-8888-888888888888", name: body.name }),
+        ),
+      });
+    });
+    await page.goto("/tasks/editor");
+    await page.getByRole("textbox", { name: "Task name" }).fill("rounds");
+
+    await page.getByRole("button", { name: "Add a Patrol stop" }).click();
+    const add = page.getByRole("combobox", { name: "Add a waypoint to stop 1" });
+    await add.click();
+    await page.getByRole("option", { name: /^room-a\b/ }).click();
+    // One waypoint is a Move, and the card says so before Save does.
+    await expect(page.getByText(/Needs at least 2 waypoints/)).toBeVisible();
+    for (const name of ["room-b", "room-c"]) {
+      await add.click();
+      await page.getByRole("option", { name: new RegExp(`^${name}\\b`) }).click();
+    }
+    const card = page.locator("[data-stop='1']");
+    await expect(card.getByText("3 waypoints → room-c")).toBeVisible();
+    await expect(card.getByText("pass through, no stop")).toHaveCount(2);
+    await expect(page.getByLabel("Job summary")).toHaveText(/1 stop · ends at room-c/);
+
+    // Only the last waypoint has a heading to face, and typing one lets it
+    // go of its waypoint, keeping the spot.
+    const heading = card.getByRole("textbox", { name: "Arrival heading" });
+    await expect(heading).toHaveCount(1);
+    await expect(heading).toHaveValue("30");
+    await heading.fill("180");
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => posted).toHaveLength(1);
+    expect(posted[0]!.map_name).toBe(MAP_NAME);
+    expect(posted[0]!.steps).toEqual([
+      {
+        id: "1-patrol",
+        type: "PATROL",
+        params: {
+          waypoints: [
+            { x: -6, y: 2, theta: 30, z: 0 },
+            { x: -2, y: 2, theta: 30, z: 0 },
+            { x: 2, y: 2, theta: 180, z: 0 },
+          ],
+        },
+        vertex_ids: [a.id, b.id, null],
+      },
+    ]);
+  });
+
+  test("adds the waypoints tapped on the 3D map to the patrol selected", async ({ page }) => {
+    const lobby = vertex({ id: "a", name: "lobby", type: "MOVE", x: 2, y: 2, theta: 0, z: 0 });
+    await mockBackend(page, {
+      maps: [mapSummary()],
+      vertices: [lobby],
+      octomap: octomapBt(40),
+    });
+    await page.goto("/tasks/editor");
+    const view = page.getByTestId("route-canvas-3d");
+    await expect(view).toBeVisible();
+    const box = (await view.boundingBox())!;
+    const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const cards = page.locator("[data-stop]");
+
+    // As the stops' test does: framed, so the stop is where the view looks.
+    await page.getByRole("button", { name: "Fit to view" }).click();
+
+    // Control: with no patrol selected, a tap adds a stop.
+    await page.mouse.click(centre.x, centre.y);
+    await expect(cards).toHaveCount(1);
+
+    // A new Patrol is the selection, so the taps land in it, not as stops.
+    await page.getByRole("button", { name: "Add a Patrol stop" }).click();
+    await expect(page.getByText(/Clicks on the map add waypoints to this patrol/)).toBeVisible();
+    // The new card is scrolled into view, which can carry the page and the
+    // map with it: measured again rather than tapped where it was.
+    const moved = (await view.boundingBox())!;
+    const at = { x: moved.x + moved.width / 2, y: moved.y + moved.height / 2 };
+    await page.mouse.click(at.x, at.y);
+    await expect(page.locator("[data-waypoint]")).toHaveCount(1);
+    await page.mouse.click(at.x, at.y);
+    await expect(page.locator("[data-waypoint]")).toHaveCount(2);
+    await expect(cards).toHaveCount(2);
   });
 });
 

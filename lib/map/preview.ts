@@ -182,7 +182,11 @@ export function drawStops(
   ctx.restore();
 }
 
-/** One point of the route: the stop's row and the waypoint it goes to. */
+/**
+ * One point of the route: the stop's row and the waypoint it goes to. A
+ * Patrol is several points under one row, a point per waypoint it drives
+ * through, so every leg of it arrives at its row.
+ */
 export interface RoutePoint {
   key: number;
   vertexId: string;
@@ -283,7 +287,8 @@ function legPath(leg: PlannedLeg): Path2D {
  * it. With `fade` the rest fade too — for a hovered card, a glance; not for
  * the selected stop, which every added stop becomes and which would keep
  * the route dim for the whole build. A focus with no leg on screen (the
- * first stop, a stop on another floor) fades nothing.
+ * first stop, a stop on another floor) fades nothing. A Patrol's legs all
+ * arrive at its row, so its whole drive is drawn bold together.
  */
 export function drawRoute(
   ctx: CanvasRenderingContext2D,
@@ -294,16 +299,17 @@ export function drawRoute(
   fade = false,
 ): void {
   const legs = planLegs(route, placed);
-  const focused = legs.find((leg) => leg.arrive === focus) ?? null;
+  const focused = legs.filter((leg) => leg.arrive === focus);
+  const anyFocused = focused.length > 0;
   ctx.save();
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  // The focused leg last, so it crosses over the faded ones.
-  for (const leg of focused ? [...legs.filter((each) => each !== focused), focused] : legs) {
+  // The focused legs last, so they cross over the faded ones.
+  for (const leg of [...legs.filter((each) => each.arrive !== focus), ...focused]) {
     const path = legPath(leg);
-    const bold = leg === focused;
+    const bold = anyFocused && leg.arrive === focus;
     const width = bold ? ROUTE_FOCUS_LINE_PX : ROUTE_LINE_PX;
-    ctx.globalAlpha = focused && fade && !bold ? ROUTE_UNFOCUSED_ALPHA : 1;
+    ctx.globalAlpha = anyFocused && fade && !bold ? ROUTE_UNFOCUSED_ALPHA : 1;
     // Over a halo, as a marker is: a bare line vanished over the 3D map's
     // height colours.
     ctx.strokeStyle = MARKER_HALO;
