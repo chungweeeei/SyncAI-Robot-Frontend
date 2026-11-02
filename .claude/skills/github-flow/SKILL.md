@@ -123,15 +123,34 @@ gh run watch                                # release.yml: build ×2, publish
 ```
 
 `vX.Y.Z` exactly — the metadata step derives `1.2.0`, `1.2` and `latest` from
-it, and a tag that is not semver produces only a `sha-` image. Tag `main`,
-never `dev`: a tag pushed from a `dev` commit publishes code that has not
-merged through the release PR. Check the result with
+it, and a tag that is not semver produces only a `sha-` image. A plain
+`vX.Y.Z` goes on `main` only — a release is code that merged through the
+release PR — and `release.yml`'s `ref-check` job fails one that `main` does
+not contain. Check the result with
 
 ```bash
 docker buildx imagetools inspect ghcr.io/chungweeeei/syncai-robot-frontend:1.2.0
 ```
 
 which must list both `linux/arm64` and `linux/amd64`.
+
+### A prerelease from dev
+
+To put a build on a robot before it is released, tag `dev` with a
+prerelease. Every push to `dev` already moves the `dev` image tag; the
+prerelease is a version that stays put:
+
+```bash
+git fetch origin
+gh run list --branch dev --workflow CI --limit 1   # release.yml does not wait for CI
+git tag -a v0.1.0-dev.1 -m "v0.1.0-dev.1" origin/dev
+git push origin v0.1.0-dev.1
+gh run watch
+```
+
+It publishes `0.1.0-dev.1` alone: metadata-action gives a prerelease neither
+`0.1` nor `latest`. Bump the last number for the next try on the same
+version.
 
 ---
 
