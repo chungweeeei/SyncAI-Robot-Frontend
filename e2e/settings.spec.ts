@@ -344,7 +344,9 @@ test.describe("Controller settings", () => {
     await expect(stuck.getByText("While stopped")).toBeVisible();
     const stairs = page.getByRole("region", { name: "Stairs" });
     await expect(stairs.getByText("After restart")).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Save/ })).toBeDisabled();
+    // Nothing to save, so no save bar; the limits show before any typing.
+    await expect(page.getByRole("button", { name: /^Save/ })).toHaveCount(0);
+    await expect(page.getByText("0.4 – 1 m/s")).toBeVisible();
   });
 
   test("saves only the changed setting, and shows it kept", async ({ page }) => {
@@ -360,7 +362,7 @@ test.describe("Controller settings", () => {
 
     await page.getByRole("button", { name: "Save 1 change" }).click();
 
-    await expect(page.getByRole("button", { name: /^Save/ })).toBeDisabled();
+    await expect(page.getByRole("button", { name: /^Save/ })).toHaveCount(0);
     await expect(speed).toHaveValue("0.6");
     await expect(page.getByText("Default 0.8 m/s")).toBeVisible();
     expect(writes).toEqual([
@@ -449,7 +451,7 @@ test.describe("Controller settings", () => {
     await page.getByRole("button", { name: "Reset all to defaults" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Reset all" }).click();
     await expect(page.getByLabel("Blocked time per attempt", { exact: true })).toHaveValue("3");
-    await expect(page.getByRole("button", { name: "Reset all to defaults" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Reset all to defaults" })).toHaveCount(0);
 
     expect(writes.map(({ method, path }) => `${method} ${path}`)).toEqual([
       "DELETE /api/v1/settings/controller",
