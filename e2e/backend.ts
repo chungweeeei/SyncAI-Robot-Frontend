@@ -378,6 +378,88 @@ export interface BackendOverrides {
   wifiNetworks?: Record<string, unknown>[];
   /** GET /task_steps' answer; `taskSteps()` by default, the robot's six. */
   taskSteps?: { steps: Record<string, unknown>[] };
+  /**
+   * GET /settings/controller's answer; `controllerSettings()` by default. A
+   * PUT sets the values it names and a DELETE puts them back to the default,
+   * so the console's next read sees the change land.
+   */
+  controllerSettings?: ControllerSettingsFixture;
+}
+
+export interface ControllerSettingsFixture {
+  live_available: boolean;
+  groups: Record<string, unknown>[];
+  fields: Record<string, unknown>[];
+}
+
+/** One controller setting, as GET /settings/controller lists it. */
+export function controllerSetting(
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: "max_speed",
+    group: "speed",
+    label: "Maximum walking speed",
+    description: "The fastest the robot walks on a flat route.",
+    kind: "number",
+    unit: "m/s",
+    min: 0.4,
+    max: 1.0,
+    step: 0.05,
+    apply: "live",
+    value: 0.8,
+    current: 0.8,
+    default: 0.8,
+    modified: false,
+    pending_restart: false,
+    ...over,
+  };
+}
+
+/** Two groups, a live setting, one only while stopped, one after a restart. */
+export function controllerSettings(
+  over: Partial<ControllerSettingsFixture> = {},
+): ControllerSettingsFixture {
+  return {
+    live_available: true,
+    groups: [
+      { id: "speed", label: "Speed", description: "How fast the robot walks." },
+      { id: "stuck", label: "Stuck detection", description: "How long it keeps trying." },
+      { id: "stairs", label: "Stairs", description: "Walking up and down stairs." },
+    ],
+    fields: [
+      controllerSetting(),
+      controllerSetting({
+        id: "failure_tolerance",
+        group: "stuck",
+        label: "Blocked time per attempt",
+        description: "How long the robot waits for a way through.",
+        unit: "s",
+        min: 1.0,
+        max: 30.0,
+        step: 0.5,
+        apply: "idle",
+        value: 3.0,
+        current: 3.0,
+        default: 3.0,
+      }),
+      controllerSetting({
+        id: "stair_standoff",
+        group: "stairs",
+        label: "Stop before stairs",
+        description: "How far before the first step the robot stops.",
+        unit: "m",
+        min: 0.5,
+        max: 2.0,
+        step: 0.1,
+        apply: "restart",
+        value: 1.0,
+        current: 1.0,
+        default: 1.0,
+      }),
+    ],
+    ...over,
+  };
 }
 
 /** One floor, as GET .../floors lists it. */
@@ -456,6 +538,11 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   const taskHistoryPageSize = over.taskHistoryPageSize ?? 20;
   const taskStates = over.taskStates ?? {};
   const stepCatalogue = over.taskSteps ?? taskSteps();
+  // Deep-copied: the PUT and DELETE below move its values, and a test's
+  // fixture must not change under it.
+  const settings: ControllerSettingsFixture = structuredClone(
+    over.controllerSettings ?? controllerSettings(),
+  );
   // Every id the active list has carried. A test ends a job by emptying the
   // list, and the backend still answers a finished run from retention.
   const listedTaskIds = new Set<string>();
@@ -569,6 +656,33 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       }
     }
     if (path === "/api/v1/task_steps" && method === "GET") return json(route, stepCatalogue);
+    if (path === "/api/v1/settings/controller") {
+      if (method === "PUT") {
+        const { values } = parseBody(request.postData()) as {
+          values: Record<string, number | boolean>;
+        };
+        for (const field of settings.fields) {
+          const id = field.id as string;
+          if (!(id in values)) continue;
+          const next = values[id];
+          field.value = next;
+          field.modified = true;
+          // A restart setting is saved but not yet in force.
+          if (field.apply === "restart") field.pending_restart = next !== field.current;
+          else field.current = next;
+        }
+      } else if (method === "DELETE") {
+        const ids = url.searchParams.getAll("id");
+        for (const field of settings.fields) {
+          if (ids.length && !ids.includes(field.id as string)) continue;
+          field.value = field.default;
+          field.modified = false;
+          if (field.apply === "restart") field.pending_restart = field.default !== field.current;
+          else field.current = field.default;
+        }
+      }
+      return json(route, settings);
+    }
     if (path === "/api/v1/active_tasks") {
       for (const task of activeTasks) listedTaskIds.add(task.id as string);
       return json(route, { tasks: activeTasks, as_of: "2026-09-18T09:45:00Z" });

@@ -1,6 +1,8 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import {
+  controllerSetting,
+  controllerSettings,
   failOnConsoleErrors,
   mockBackend,
   robotState,
@@ -279,7 +281,7 @@ test.describe("settings sections", () => {
     await expect(page.locator("main header").getByRole("link", { name: /Go back/ })).toHaveCount(0);
   });
 
-  test("says Planner and Controller are not available yet", async ({ page }) => {
+  test("says Planner is not available yet, and opens Controller", async ({ page }) => {
     await mockBackend(page);
     await page.goto("/settings");
 
@@ -292,18 +294,179 @@ test.describe("settings sections", () => {
       /Preferences/,
     ]);
 
-    for (const [name, path] of [
-      ["Planner", "planner"],
-      ["Controller", "controller"],
-    ]) {
-      await page.goto("/settings");
-      await sections.getByRole("link", { name: new RegExp(name) }).click();
-      await expect(page).toHaveURL(new RegExp(`/settings/${path}$`));
-      await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
-      await expect(
-        page.getByText(`${name} settings are not available on this robot yet.`),
-      ).toBeVisible();
+    await sections.getByRole("link", { name: /Planner/ }).click();
+    await expect(page).toHaveURL(/\/settings\/planner$/);
+    await expect(page.getByRole("heading", { name: "Planner", level: 1 })).toBeVisible();
+    await expect(
+      page.getByText("Planner settings are not available on this robot yet."),
+    ).toBeVisible();
+
+    await page.goto("/settings");
+    await sections.getByRole("link", { name: /Controller/ }).click();
+    await expect(page).toHaveURL(/\/settings\/controller$/);
+    await expect(page.getByRole("heading", { name: "Controller", level: 1 })).toBeVisible();
+    await expect(page.getByLabel("Maximum walking speed", { exact: true })).toHaveValue("0.8");
+  });
+});
+
+/**
+ * Controller: a form drawn from the robot's own list of settings. Save sends
+ * only what changed; the robot's answer is the new state.
+ *
+ * A refusal logs "Failed to load resource", and in the refusal test that is
+ * the behaviour under test; a thrown render or schema failure still fails.
+ */
+test.describe("Controller settings", () => {
+  let errors: string[];
+
+  test.beforeEach(async ({ page }) => {
+    errors = [];
+    failOnConsoleErrors(page, errors);
+  });
+
+  test.afterEach(() => {
+    expect(
+      errors.filter((text) => !/Failed to load resource/.test(text)),
+      "the page logged errors",
+    ).toEqual([]);
+  });
+
+  test("draws the robot's settings in their groups, with how each applies", async ({
+    page,
+  }) => {
+    await mockBackend(page);
+    await page.goto("/settings/controller");
+
+    for (const group of ["Speed", "Stuck detection", "Stairs"]) {
+      await expect(page.getByRole("region", { name: group })).toBeVisible();
     }
+    const stuck = page.getByRole("region", { name: "Stuck detection" });
+    await expect(stuck.getByText("While stopped")).toBeVisible();
+    const stairs = page.getByRole("region", { name: "Stairs" });
+    await expect(stairs.getByText("After restart")).toBeVisible();
+    // Nothing to save, so no save bar; the limits show before any typing.
+    await expect(page.getByRole("button", { name: /^Save/ })).toHaveCount(0);
+    await expect(page.getByText("0.4 – 1 m/s")).toBeVisible();
+  });
+
+  test("saves only the changed setting, and shows it kept", async ({ page }) => {
+    const writes = await mockBackend(page);
+    await page.goto("/settings/controller");
+
+    const speed = page.getByLabel("Maximum walking speed", { exact: true });
+    await speed.fill("0.6");
+    // Typed back to what it was, the other one is no change.
+    const blocked = page.getByLabel("Blocked time per attempt", { exact: true });
+    await blocked.fill("4");
+    await blocked.fill("3");
+
+    await page.getByRole("button", { name: "Save 1 change" }).click();
+
+    await expect(page.getByRole("button", { name: /^Save/ })).toHaveCount(0);
+    await expect(speed).toHaveValue("0.6");
+    await expect(page.getByText("Default 0.8 m/s")).toBeVisible();
+    expect(writes).toEqual([
+      {
+        method: "PUT",
+        path: "/api/v1/settings/controller",
+        body: { values: { max_speed: 0.6 } },
+      },
+    ]);
+  });
+
+  test("holds a value outside the limits back with its sentence", async ({ page }) => {
+    const writes = await mockBackend(page);
+    await page.goto("/settings/controller");
+
+    await page.getByLabel("Maximum walking speed", { exact: true }).fill("2");
+
+    await expect(page.getByText("Maximum walking speed must be at most 1 m/s.")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Save/ })).toBeDisabled();
+    expect(writes).toEqual([]);
+  });
+
+  test("shows the robot's refusal and keeps the draft", async ({ page }) => {
+    await mockBackend(page);
+    await page.route("**/api/v1/settings/controller", (route) =>
+      route.request().method() === "PUT"
+        ? route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({
+              detail: "This setting can only be changed while the robot is not navigating.",
+              code: "controller_busy",
+            }),
+          })
+        : route.fallback(),
+    );
+    await page.goto("/settings/controller");
+
+    const blocked = page.getByLabel("Blocked time per attempt", { exact: true });
+    await blocked.fill("5");
+    await page.getByRole("button", { name: "Save 1 change" }).click();
+
+    await expect(
+      page.getByText("This setting can only be changed while the robot is not navigating."),
+    ).toBeVisible();
+    await expect(blocked).toHaveValue("5");
+  });
+
+  test("a restart setting says it waits for a restart", async ({ page }) => {
+    await mockBackend(page);
+    await page.goto("/settings/controller");
+
+    await page.getByLabel("Stop before stairs", { exact: true }).fill("1.2");
+    await page.getByRole("button", { name: "Save 1 change" }).click();
+
+    await expect(page.getByText("Restart to apply")).toBeVisible();
+    await expect(page.getByText(/take effect only after the robot restarts/)).toBeVisible();
+  });
+
+  test("resets one setting, and all of them behind a confirm", async ({ page }) => {
+    const writes = await mockBackend(page, {
+      controllerSettings: controllerSettings({
+        fields: [
+          controllerSetting({ value: 0.6, current: 0.6, modified: true }),
+          controllerSetting({
+            id: "failure_tolerance",
+            group: "stuck",
+            label: "Blocked time per attempt",
+            unit: "s",
+            min: 1,
+            max: 30,
+            apply: "idle",
+            value: 5,
+            current: 5,
+            default: 3,
+            modified: true,
+          }),
+        ],
+      }),
+    });
+    await page.goto("/settings/controller");
+
+    await page.getByRole("button", { name: "Reset Maximum walking speed to its default" }).click();
+    await expect(page.getByLabel("Maximum walking speed", { exact: true })).toHaveValue("0.8");
+
+    await page.getByRole("button", { name: "Reset all to defaults" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Reset all" }).click();
+    await expect(page.getByLabel("Blocked time per attempt", { exact: true })).toHaveValue("3");
+    await expect(page.getByRole("button", { name: "Reset all to defaults" })).toHaveCount(0);
+
+    expect(writes.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      "DELETE /api/v1/settings/controller",
+      "DELETE /api/v1/settings/controller",
+    ]);
+  });
+
+  test("says when navigation is not running", async ({ page }) => {
+    await mockBackend(page, {
+      controllerSettings: controllerSettings({ live_available: false }),
+    });
+    await page.goto("/settings/controller");
+
+    await expect(page.getByText(/Navigation is not running/)).toBeVisible();
+    await expect(page.getByLabel("Maximum walking speed", { exact: true })).toBeEnabled();
   });
 });
 

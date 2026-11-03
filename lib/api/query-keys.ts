@@ -139,6 +139,12 @@ export const queryKeys = {
    * read from the state poll.)
    */
   wifiConnections: ["wifi-connections"] as const,
+  /**
+   * GET /api/v1/settings/controller — the controller settings page. Not
+   * polled: only a change from a settings page moves it, and each change
+   * answers with the whole new state, written here.
+   */
+  controllerSettings: ["controller-settings"] as const,
 };
 
 /**
