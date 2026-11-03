@@ -1,12 +1,15 @@
 "use client";
 
+import { ControllerSettings } from "@/components/settings/controller-settings";
 import { SettingsPage } from "@/components/settings/settings-page";
-import { UnavailableSettings } from "@/components/settings/unavailable-settings";
 
 export default function ControllerSettingsPage() {
   return (
-    <SettingsPage title="Controller">
-      <UnavailableSettings section="Controller" />
+    <SettingsPage
+      title="Controller"
+      description="How the robot walks, arrives and docks. Changes are kept on the robot."
+    >
+      <ControllerSettings />
     </SettingsPage>
   );
 }
