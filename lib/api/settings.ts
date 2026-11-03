@@ -4,7 +4,13 @@ import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
 
 /**
- * How a change takes effect, as the robot reads its own controller: `live` at
+ * A settings page's path segment: the robot node it tunes, in the operator's
+ * words (`controller` is the walking controller, `planner` the route planner).
+ */
+export type SettingsPageId = "controller" | "planner";
+
+/**
+ * How a change takes effect, as the robot reads its own node: `live` at
  * once, `idle` at once but refused while the robot navigates (409
  * `controller_busy`), `restart` the next time navigation starts.
  */
@@ -53,7 +59,7 @@ export interface SettingField {
   pending_restart: boolean;
 }
 
-export interface ControllerSettings {
+export interface NodeSettings {
   /**
    * Whether navigation is running. When false the values are the saved ones,
    * and a change is saved for the next start.
@@ -95,7 +101,7 @@ const SettingGroupSchema: z.ZodType<SettingGroup> = z.object({
  * catalogue does: the other settings stay editable, and the robot still
  * validates every change.
  */
-export const ControllerSettingsSchema: z.ZodType<ControllerSettings> = z
+export const NodeSettingsSchema: z.ZodType<NodeSettings> = z
   .object({
     live_available: z.boolean(),
     groups: z.array(SettingGroupSchema),
@@ -110,16 +116,21 @@ export const ControllerSettingsSchema: z.ZodType<ControllerSettings> = z
     }),
   }));
 
-const URL_PATH = "/api/v1/settings/controller";
+function settingsPath(page: SettingsPageId): string {
+  return `/api/v1/settings/${page}`;
+}
 
 /**
- * The controller's settings. Slow when navigation is not running: the robot
- * waits a couple of seconds for it before answering with the saved values.
+ * A page's settings. Slow when navigation is not running: the robot waits a
+ * couple of seconds for the node before answering with the saved values.
  */
-export function fetchControllerSettings(signal?: AbortSignal): Promise<ControllerSettings> {
-  return requestJson<ControllerSettings>(apiUrl(URL_PATH), {
+export function fetchSettings(
+  page: SettingsPageId,
+  signal?: AbortSignal,
+): Promise<NodeSettings> {
+  return requestJson<NodeSettings>(apiUrl(settingsPath(page)), {
     signal,
-    schema: ControllerSettingsSchema,
+    schema: NodeSettingsSchema,
   });
 }
 
@@ -130,23 +141,24 @@ export function fetchControllerSettings(signal?: AbortSignal): Promise<Controlle
  * (409 `controller_busy`), another change in flight (409 `settings_busy`).
  * Nothing is changed on any refusal.
  */
-export function updateControllerSettings(
+export function updateSettings(
+  page: SettingsPageId,
   values: Record<string, SettingValue>,
-): Promise<ControllerSettings> {
-  return requestJson<ControllerSettings>(apiUrl(URL_PATH), {
+): Promise<NodeSettings> {
+  return requestJson<NodeSettings>(apiUrl(settingsPath(page)), {
     method: "PUT",
     body: JSON.stringify({ values }),
-    schema: ControllerSettingsSchema,
+    schema: NodeSettingsSchema,
   });
 }
 
 /** Back to the robot's defaults: the given settings, or all of them. */
-export function resetControllerSettings(ids?: string[]): Promise<ControllerSettings> {
+export function resetSettings(page: SettingsPageId, ids?: string[]): Promise<NodeSettings> {
   const query = ids?.length
     ? `?${ids.map((id) => `id=${encodeURIComponent(id)}`).join("&")}`
     : "";
-  return requestJson<ControllerSettings>(apiUrl(`${URL_PATH}${query}`), {
+  return requestJson<NodeSettings>(apiUrl(`${settingsPath(page)}${query}`), {
     method: "DELETE",
-    schema: ControllerSettingsSchema,
+    schema: NodeSettingsSchema,
   });
 }

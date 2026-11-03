@@ -383,10 +383,12 @@ export interface BackendOverrides {
    * PUT sets the values it names and a DELETE puts them back to the default,
    * so the console's next read sees the change land.
    */
-  controllerSettings?: ControllerSettingsFixture;
+  controllerSettings?: SettingsFixture;
+  /** GET /settings/planner's answer, the same way; `plannerSettings()` by default. */
+  plannerSettings?: SettingsFixture;
 }
 
-export interface ControllerSettingsFixture {
+export interface SettingsFixture {
   live_available: boolean;
   groups: Record<string, unknown>[];
   fields: Record<string, unknown>[];
@@ -416,10 +418,48 @@ export function controllerSetting(
   };
 }
 
-/** Two groups, a live setting, one only while stopped, one after a restart. */
+/** A switch and a number, as GET /settings/planner lists them. */
+export function plannerSettings(over: Partial<SettingsFixture> = {}): SettingsFixture {
+  return {
+    live_available: true,
+    groups: [{ id: "route", label: "Route choice", description: "What routes the robot prefers." }],
+    fields: [
+      controllerSetting({
+        id: "stair_cost",
+        group: "route",
+        label: "Stair avoidance",
+        description: "How much longer a flat route may be before the robot takes the stairs.",
+        unit: "×",
+        min: 1,
+        max: 10,
+        step: 0.5,
+        value: 2,
+        current: 2,
+        default: 2,
+      }),
+      controllerSetting({
+        id: "shortcut",
+        group: "route",
+        label: "Straighten routes",
+        description: "Smooth a route into straight lines where the way is clear.",
+        kind: "boolean",
+        unit: null,
+        min: null,
+        max: null,
+        step: null,
+        value: true,
+        current: true,
+        default: true,
+      }),
+    ],
+    ...over,
+  };
+}
+
+/** Three groups, a live setting, one only while stopped, one after a restart. */
 export function controllerSettings(
-  over: Partial<ControllerSettingsFixture> = {},
-): ControllerSettingsFixture {
+  over: Partial<SettingsFixture> = {},
+): SettingsFixture {
   return {
     live_available: true,
     groups: [
@@ -540,9 +580,10 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   const stepCatalogue = over.taskSteps ?? taskSteps();
   // Deep-copied: the PUT and DELETE below move its values, and a test's
   // fixture must not change under it.
-  const settings: ControllerSettingsFixture = structuredClone(
-    over.controllerSettings ?? controllerSettings(),
-  );
+  const settingsByPage: Record<string, SettingsFixture> = {
+    controller: structuredClone(over.controllerSettings ?? controllerSettings()),
+    planner: structuredClone(over.plannerSettings ?? plannerSettings()),
+  };
   // Every id the active list has carried. A test ends a job by emptying the
   // list, and the backend still answers a finished run from retention.
   const listedTaskIds = new Set<string>();
@@ -656,7 +697,9 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       }
     }
     if (path === "/api/v1/task_steps" && method === "GET") return json(route, stepCatalogue);
-    if (path === "/api/v1/settings/controller") {
+    const settingsMatch = /^\/api\/v1\/settings\/(controller|planner)$/.exec(path);
+    if (settingsMatch) {
+      const settings = settingsByPage[settingsMatch[1]];
       if (method === "PUT") {
         const { values } = parseBody(request.postData()) as {
           values: Record<string, number | boolean>;

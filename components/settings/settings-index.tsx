@@ -16,9 +16,8 @@ import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 // Each setting is its own route: a new one is a row here and a page beside
 // the others.
 const settingsSections = [
-  // Planner and Controller come first. Planner has no backend yet, and its
-  // page says so rather than show a form that saves nothing; Controller's is
-  // drawn from the robot's own list of settings.
+  // Planner and Controller come first: both are SettingsForm, drawn from the
+  // robot's own list of each node's settings.
   {
     title: "Planner",
     description: "Path planning",
