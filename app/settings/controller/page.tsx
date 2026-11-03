@@ -1,6 +1,6 @@
 "use client";
 
-import { ControllerSettings } from "@/components/settings/controller-settings";
+import { SettingsForm } from "@/components/settings/settings-form";
 import { SettingsPage } from "@/components/settings/settings-page";
 
 export default function ControllerSettingsPage() {
@@ -9,7 +9,7 @@ export default function ControllerSettingsPage() {
       title="Controller"
       description="How the robot walks and arrives. Changes are kept on the robot."
     >
-      <ControllerSettings />
+      <SettingsForm page="controller" />
     </SettingsPage>
   );
 }

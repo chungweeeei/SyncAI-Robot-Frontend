@@ -18,12 +18,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import {
-  useControllerSettings,
-  useControllerSettingsWrites,
-} from "@/hooks/use-controller-settings";
+import { useSettings, useSettingsWrites } from "@/hooks/use-settings";
 import { useLeaveGuard } from "@/hooks/use-leave-guard";
-import type { SettingField } from "@/lib/api/settings";
+import type { SettingField, SettingsPageId } from "@/lib/api/settings";
 import {
   draftOf,
   formatValue,
@@ -34,10 +31,11 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * The controller's settings, drawn from the robot's own description of them:
- * which settings, their words, their limits and how each takes effect all
- * come from the robot, so this form has no list of its own to fall out of
- * step with.
+ * One settings page (the controller's, the planner's), drawn from the robot's
+ * own description of it: which settings, their words, their limits and how
+ * each takes effect all come from the robot, so this form has no list of its
+ * own to fall out of step with, and a new page is a route and a backend
+ * schema, not a new form.
  *
  * Edits are drafts until Save, which sends only what differs from the
  * robot's value, all at once — the robot applies a change as a whole or not
@@ -45,9 +43,9 @@ import { cn } from "@/lib/utils";
  * refusal keeps them, with the robot's sentence, so a value can be fixed
  * rather than retyped.
  */
-export function ControllerSettings() {
-  const query = useControllerSettings();
-  const { update, reset } = useControllerSettingsWrites();
+export function SettingsForm({ page }: { page: SettingsPageId }) {
+  const query = useSettings(page);
+  const { update, reset } = useSettingsWrites(page);
   const [drafts, setDrafts] = React.useState<SettingDrafts>({});
   const [confirmingReset, setConfirmingReset] = React.useState(false);
 

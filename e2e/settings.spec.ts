@@ -281,7 +281,7 @@ test.describe("settings sections", () => {
     await expect(page.locator("main header").getByRole("link", { name: /Go back/ })).toHaveCount(0);
   });
 
-  test("says Planner is not available yet, and opens Controller", async ({ page }) => {
+  test("opens Planner and Controller, each on its own settings", async ({ page }) => {
     await mockBackend(page);
     await page.goto("/settings");
 
@@ -297,15 +297,51 @@ test.describe("settings sections", () => {
     await sections.getByRole("link", { name: /Planner/ }).click();
     await expect(page).toHaveURL(/\/settings\/planner$/);
     await expect(page.getByRole("heading", { name: "Planner", level: 1 })).toBeVisible();
-    await expect(
-      page.getByText("Planner settings are not available on this robot yet."),
-    ).toBeVisible();
+    await expect(page.getByLabel("Stair avoidance", { exact: true })).toHaveValue("2");
 
     await page.goto("/settings");
     await sections.getByRole("link", { name: /Controller/ }).click();
     await expect(page).toHaveURL(/\/settings\/controller$/);
     await expect(page.getByRole("heading", { name: "Controller", level: 1 })).toBeVisible();
     await expect(page.getByLabel("Maximum walking speed", { exact: true })).toHaveValue("0.8");
+  });
+});
+
+/**
+ * Planner: the same form on the planner's settings, with a switch among them.
+ */
+test.describe("Planner settings", () => {
+  let errors: string[];
+
+  test.beforeEach(async ({ page }) => {
+    errors = [];
+    failOnConsoleErrors(page, errors);
+  });
+
+  test.afterEach(() => {
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("saves a switch and a number to the planner, and nothing else", async ({ page }) => {
+    const writes = await mockBackend(page);
+    await page.goto("/settings/planner");
+
+    const straighten = page.getByRole("switch", { name: "Straighten routes" });
+    await expect(straighten).toBeChecked();
+    await straighten.click();
+    await page.getByLabel("Stair avoidance", { exact: true }).fill("4");
+
+    await page.getByRole("button", { name: "Save 2 changes" }).click();
+
+    await expect(page.getByRole("button", { name: /^Save/ })).toHaveCount(0);
+    await expect(straighten).not.toBeChecked();
+    expect(writes).toEqual([
+      {
+        method: "PUT",
+        path: "/api/v1/settings/planner",
+        body: { values: { stair_cost: 4, shortcut: false } },
+      },
+    ]);
   });
 });
 

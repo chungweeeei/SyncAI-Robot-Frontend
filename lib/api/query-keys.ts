@@ -140,11 +140,11 @@ export const queryKeys = {
    */
   wifiConnections: ["wifi-connections"] as const,
   /**
-   * GET /api/v1/settings/controller — the controller settings page. Not
+   * GET /api/v1/settings/<page> — a settings page (controller, planner). Not
    * polled: only a change from a settings page moves it, and each change
    * answers with the whole new state, written here.
    */
-  controllerSettings: ["controller-settings"] as const,
+  settings: (page: string) => ["settings", page] as const,
 };
 
 /**

@@ -297,11 +297,11 @@ components/
                 the URL), the counts and the outcome bar, cursor paging,
                 per-run step detail
   settings/     the /settings landing (a card per section, and Restart) and
-                its sections, each its own route: Planner (a placeholder
-                until the backend has it), Controller (a form drawn from the
-                robot's own list of settings — labels, limits and how each
-                applies all come from GET /settings/controller; drafts until
-                Save, which sends only what changed), Wi-Fi (the robot's
+                its sections, each its own route: Planner and Controller (one
+                SettingsForm each, drawn from the robot's own list of that
+                node's settings — labels, limits and how each applies all come
+                from GET /settings/<page>; drafts until Save, which sends only
+                what changed), Wi-Fi (the robot's
                 saved networks as cards that rejoin or forget, and Add network
                 one page in: the scan and password form) and Preferences;
                 every one of them, the landing included, sits in one frame
@@ -450,7 +450,7 @@ lib/
                 state poll's, on the card of the network it reports, and a
                 blank in the value's own shape on every other card)
   recording/    bag size/duration formatting and the bag name rule
-  settings/     the controller settings form's rules: a typed draft against
+  settings/     the settings form's rules: a typed draft against
                 the robot's limits, and which drafts a Save sends
   robot/        G23 joint table (URDF link names ↔ GLB node names), how the
                 dashboard names a motor (the leg grid and its joint codes), and
