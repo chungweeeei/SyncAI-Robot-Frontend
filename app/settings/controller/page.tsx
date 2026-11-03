@@ -7,7 +7,7 @@ export default function ControllerSettingsPage() {
   return (
     <SettingsPage
       title="Controller"
-      description="How the robot walks, arrives and docks. Changes are kept on the robot."
+      description="How the robot walks and arrives. Changes are kept on the robot."
     >
       <ControllerSettings />
     </SettingsPage>
