@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import type { ActiveTasksStatus } from "@/hooks/use-active-tasks";
@@ -12,6 +13,7 @@ import {
   type TaskStatus,
   type TaskStepState,
 } from "@/lib/api/task";
+import { endedRunRemainingMs } from "@/lib/task/run";
 
 /**
  * Slower than the tracker's 1 Hz: a step changes over seconds to minutes, and
@@ -37,6 +39,13 @@ export interface UseActiveRun {
    * ended.
    */
   run: ActiveRun | null;
+  /**
+   * The run that has just left the list, for `ENDED_RUN_LINGER_MS` after the
+   * read that closed it, so its outcome can be read before the bar goes idle.
+   * Only ever a closed run, only while the list reads empty (never over an
+   * error), and gone the moment another run is listed. Nothing may act on it.
+   */
+  ended: ActiveRun | null;
   /** So "no job" is never drawn for "the list cannot be read". */
   status: ActiveTasksStatus;
   /** The list's clock at its last good read. */
@@ -59,6 +68,11 @@ export function useActiveRun(): UseActiveRun {
   const { tasks, status, asOf } = useConsoleActiveTasks();
   const task = status === "ok" ? (tasks[0] ?? null) : null;
 
+  // The last run the list showed, kept past its leaving so its close can be
+  // said. Adjusted during render, by id, rather than in an effect.
+  const [last, setLast] = React.useState<ActiveTask | null>(null);
+  if (task !== null && task.id !== last?.id) setLast(task);
+
   const { data } = useQuery({
     queryKey: queryKeys.task(task?.id ?? ""),
     queryFn: fetchHeldTaskState,
@@ -67,11 +81,48 @@ export function useActiveRun(): UseActiveRun {
       isTerminalTaskStatus(entry.state.data?.status) ? false : ACTIVE_RUN_POLL_MS,
   });
 
+  const gone = status === "ok" && task === null && last !== null;
+  // The same entry as above while the run is listed, so a close read there
+  // is already here. A run the list dropped before its own read said it
+  // closed gets one more read, which is what the stale-unless-terminal time
+  // buys; no poll, since a run off the list has nothing left to report.
+  const closing = useQuery({
+    queryKey: queryKeys.task(last?.id ?? ""),
+    queryFn: fetchHeldTaskState,
+    enabled: gone,
+    staleTime: (entry) =>
+      isTerminalTaskStatus(entry.state.data?.status) ? Infinity : 0,
+  });
+  const closedAt = isTerminalTaskStatus(closing.data?.status)
+    ? closing.dataUpdatedAt
+    : null;
+
+  // Timed from the closing read while the run may still be listed, so a list
+  // that lags past the linger lets go at once rather than flashing the outcome.
+  const lastId = last?.id ?? null;
+  const [expiredId, setExpiredId] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (lastId === null || closedAt === null) return;
+    const timer = window.setTimeout(
+      () => setExpiredId(lastId),
+      endedRunRemainingMs(closedAt, Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [lastId, closedAt]);
+
   return {
     run:
       task === null
         ? null
         : { task, status: data?.status ?? null, steps: data?.steps ?? NO_STEPS },
+    ended:
+      gone && closedAt !== null && expiredId !== last.id
+        ? {
+            task: last,
+            status: closing.data?.status ?? null,
+            steps: closing.data?.steps ?? NO_STEPS,
+          }
+        : null,
     status,
     asOf,
   };

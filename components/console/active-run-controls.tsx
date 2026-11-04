@@ -34,12 +34,15 @@ import { cn } from "@/lib/utils";
  * gives way first, then the step name, never the state word.
  */
 export function ActiveRunControls() {
-  const { run, status, asOf } = useActiveRun();
+  const { run, ended, status, asOf } = useActiveRun();
 
-  if (run) {
+  // A run that has just ended stays a moment so its outcome can be read; it
+  // is closed, so RunControls greys both buttons for it.
+  const shown = run ?? ended;
+  if (shown) {
     // Keyed by the run so the mutations (and any refusal shown) start over
     // with the next job.
-    return <RunControls key={run.task.id} run={run} asOf={asOf} />;
+    return <RunControls key={shown.task.id} run={shown} asOf={asOf} />;
   }
 
   // Loading is not idle: it gets the dash every unread instrument shows.
@@ -218,8 +221,8 @@ function RunControls({ run, asOf }: { run: ActiveRun; asOf: string | null }) {
   const progress = stepProgress(run.steps);
   const { title } = describeRun(run.task);
   const holdable = holdOffered(run.task.kind, run.status);
-  // The active list lags the run's own read, so a closed run lingers a moment;
-  // both controls grey for it.
+  // A closed run stays on the bar a moment (the list's lag, then
+  // useActiveRun's `ended`); both controls grey for it.
   const closed = runClosed(state);
   const error = hold.error ?? cancel.error?.message ?? null;
 
