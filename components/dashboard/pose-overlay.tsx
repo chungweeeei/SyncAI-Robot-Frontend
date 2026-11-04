@@ -40,6 +40,12 @@ export function PoseOverlay({
           live={localized}
         />
         <PoseValue
+          label="Z"
+          value={localized ? position.z.toFixed(2) : "—"}
+          unit="m"
+          live={localized}
+        />
+        <PoseValue
           label="Orientation"
           value={localized ? position.theta.toFixed(1) : "—"}
           unit="°"

@@ -1009,3 +1009,33 @@ test.describe("waypoints on an upper floor", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 });
+
+test.describe("the pose readout", () => {
+  const pose = (page: Page) => page.getByRole("region", { name: "Pose" });
+
+  test("reads the robot's height beside X and Y, and masks all three before it is localized", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const state = robotState({
+      localization_status: {
+        position: { x: 1.25, y: -3.5, z: 3.274, theta: 90 },
+        velocity: 0,
+      },
+    });
+    await mockBackend(page, { state });
+    await page.goto("/");
+
+    await expect(pose(page)).toContainText("X1.25");
+    await expect(pose(page)).toContainText("Y-3.50");
+    await expect(pose(page)).toContainText("Z3.27");
+    await expect(pose(page)).toContainText("Orientation90.0");
+
+    // A zeroed placeholder would read as standing on the map origin.
+    state.localization_valid = false;
+    await expect(pose(page)).toContainText("Z—");
+    await expect(pose(page)).not.toContainText("3.27");
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+});
