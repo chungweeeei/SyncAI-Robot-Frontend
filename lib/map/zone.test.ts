@@ -8,6 +8,7 @@ import {
   mergeIntoZone,
   newZoneId,
   pointInPolygon,
+  removedZones,
   reshapeZone,
   sameZones,
   zoneAt,
@@ -339,5 +340,23 @@ describe("a zone's floor band", () => {
     expect(zoneOnFloor(upstairs, oneF)).toBe(false);
     expect(zoneOnFloor(zone, oneF)).toBe(true);
     expect(zoneOnFloor(upstairs, null)).toBe(true);
+  });
+});
+
+describe("removedZones", () => {
+  const zone = (id: string, x = 0) => ({
+    id,
+    points: [{ x, y: 0 }, { x: x + 1, y: 0 }, { x, y: 1 }],
+  });
+  const saved = [zone("a"), zone("b"), zone("c")];
+
+  it("names the saved zones a Save would delete, and only those", () => {
+    expect(removedZones(saved, [zone("a"), zone("c")]).map((z) => z.id)).toEqual(["b"]);
+    // A zone drawn since the last save is not on the robot to delete.
+    expect(removedZones(saved, [...saved, zone("d")])).toEqual([]);
+  });
+
+  it("does not count a reshaped zone as deleted, since it keeps its id", () => {
+    expect(removedZones(saved, [zone("a", 5), zone("b"), zone("c")])).toEqual([]);
   });
 });
