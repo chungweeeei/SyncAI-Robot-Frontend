@@ -471,6 +471,7 @@ lib/
                 decoded 3D map (octree.ts: the occupied cells and the key
                 origin), and the readout tone a lib/ rule answers in
   angle.ts      normalizeTheta — the degree fold every heading goes through
+  page-title.ts pageTitle — a tab's title, the screen before the console's name
   download.ts   downloadBlob — hands a file to the operator's own machine
   keyboard.ts   isTypingTarget — whether a focused element is really taking
                 letters, which is what keeps the drive keys alive beside a
@@ -510,6 +511,11 @@ Rules for new code:
   `components/console/robot-state-provider.tsx`.
 - `app/*/page.tsx` is chrome: it reads a provider, picks a component, and
   renders it. State machines, dialogs and fetcher calls go in `components/`.
+  Its tab title is the one thing it cannot hold: a client page cannot export
+  `metadata`, so every route has a pass-through `layout.tsx` beside it whose
+  only job is `title: pageTitle("…")` (`lib/page-title.ts`, the screen first).
+  A new route adds one. Not the root's `title.template`: a nested layout
+  that sets a title stops the template reaching the pages under it.
 - Pure, React-free logic (maths, drawing, scene construction) goes in `lib/`,
   even when only one component uses it.
 

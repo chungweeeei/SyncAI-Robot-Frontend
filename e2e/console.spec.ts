@@ -1,6 +1,13 @@
 import { expect, test } from "@playwright/test";
 
-import { failOnConsoleErrors, mockBackend, robotState } from "./backend";
+import {
+  failOnConsoleErrors,
+  MAP_NAME,
+  mapSummary,
+  mockBackend,
+  robotState,
+  withOctomap,
+} from "./backend";
 
 /**
  * The shell: every screen loads, the rail navigates, and the header agrees
@@ -207,6 +214,25 @@ test.describe("the console shell", () => {
     await expect(
       page.getByRole("region", { name: "Mapping viewport" }),
     ).toBeVisible();
+  });
+
+  test("titles each tab by its screen, page first", async ({ page }) => {
+    // The control: the dashboard is the default, not a template left unfilled.
+    await page.goto("/");
+    await expect(page).toHaveTitle("Dashboard · SyncAI Robot Console");
+    await page.goto("/settings/wifi");
+    await expect(page).toHaveTitle("Wi-Fi · SyncAI Robot Console");
+
+    // A client navigation retitles the tab too, not only a fresh load.
+    await page.getByRole("link", { name: "Maps" }).click();
+    await expect(page.getByRole("heading", { name: "Maps", level: 1 })).toBeVisible();
+    await expect(page).toHaveTitle("Maps · SyncAI Robot Console");
+  });
+
+  test("titles the map editor by the map's own name", async ({ page }) => {
+    await mockBackend(page, { maps: [mapSummary(withOctomap())] });
+    await page.goto(`/maps/${MAP_NAME}/edit`);
+    await expect(page).toHaveTitle(`${MAP_NAME} · Map editor · SyncAI Robot Console`);
   });
 
   test("opens the rail labelled, and folds it to icons from its head", async ({ page }) => {

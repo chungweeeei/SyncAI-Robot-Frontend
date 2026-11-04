@@ -10,6 +10,7 @@ import { RobotStateProvider } from "@/components/console/robot-state-provider";
 import { StatusStrip } from "@/components/console/status-strip";
 import { QueryProvider } from "@/components/query-provider";
 import { ThemeProvider } from "@/components/theme-provider";
+import { pageTitle } from "@/lib/page-title";
 
 // `axes: ["wdth"]`, or next/font ships the wght-only subset and
 // `instrument-label` silently renders at normal width.
@@ -26,7 +27,9 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SyncAI Robot Console",
+  // The dashboard's, since it is this segment's own page; every other screen
+  // writes its own beside it (lib/page-title.ts).
+  title: pageTitle("Dashboard"),
   description: "Live telemetry, map and navigation control for one robot",
 };
 
