@@ -9,9 +9,7 @@ import {
   newZoneId,
   pointInPolygon,
   reshapeZone,
-  restoreZones,
   sameZones,
-  withoutZones,
   zoneAt,
   zoneBandAround,
   zoneGround,
@@ -341,32 +339,5 @@ describe("a zone's floor band", () => {
     expect(zoneOnFloor(upstairs, oneF)).toBe(false);
     expect(zoneOnFloor(zone, oneF)).toBe(true);
     expect(zoneOnFloor(upstairs, null)).toBe(true);
-  });
-});
-
-describe("withoutZones and restoreZones", () => {
-  const zone = (id: string) => ({ id, points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }] });
-  const saved = [zone("a"), zone("b"), zone("c")];
-
-  it("sends the robot the saved list minus the removed zones, and nothing unsaved", () => {
-    // "d" was drawn after the last Save: it is on screen but must not be
-    // written by a remove, which is not a save.
-    const onScreen = [...saved, zone("d")];
-    expect(withoutZones(onScreen, ["b"]).kept.map((z) => z.id)).toEqual(["a", "c", "d"]);
-    expect(withoutZones(saved, ["b"]).kept.map((z) => z.id)).toEqual(["a", "c"]);
-  });
-
-  it("has nothing to send when every removed zone was never saved", () => {
-    expect(withoutZones(saved, ["d"]).removed).toEqual([]);
-  });
-
-  it("puts a refused remove back in order, so a clean editor stays clean", () => {
-    const { kept, removed } = withoutZones(saved, ["a", "c"]);
-    expect(sameZones(restoreZones(kept, removed), saved)).toBe(true);
-  });
-
-  it("does not double a zone that is already back", () => {
-    const { removed } = withoutZones(saved, ["b"]);
-    expect(restoreZones(saved, removed)).toHaveLength(3);
   });
 });

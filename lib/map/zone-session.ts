@@ -5,10 +5,7 @@ import {
   canCloseZone,
   mergeIntoZone,
   newZoneId,
-  restoreZones,
   sameZones,
-  withoutZones,
-  type RemovedZone,
   type ZoneAnchor,
   type ZoneCornerRef,
   type ZonePoint,
@@ -50,14 +47,10 @@ export type ZoneSessionAction =
   | { type: "drop" }
   /** Take back the shape's last corner. */
   | { type: "pop" }
-  /** Take zones off the screen (a Remove, before its write lands). */
+  /** Take zones off the screen; Save is what deletes them on the robot. */
   | { type: "remove"; ids: readonly string[] }
-  /** Put back zones a refused Remove took off the screen. */
-  | { type: "restore"; removed: readonly RemovedZone[] }
   /** A Save landed: `zones` is what it sent. */
-  | { type: "saved"; zones: ZonePolygon[] }
-  /** A Remove landed: those zones are gone from the saved list too. */
-  | { type: "savedRemoval"; ids: readonly string[] };
+  | { type: "saved"; zones: ZonePolygon[] };
 
 export function initialZoneSession(zones: ZonePolygon[] | null): ZoneSession {
   return { zones, saved: zones, draft: [], anchor: null };
@@ -147,24 +140,14 @@ export function zoneSessionReducer(
 
     case "remove": {
       if (!state.zones) return state;
-      const zones = withoutZones(state.zones, action.ids).kept;
+      const zones = state.zones.filter((zone) => !action.ids.includes(zone.id));
       // A shape anchored on a removed zone has nothing left to join.
       const orphaned = state.anchor !== null && action.ids.includes(state.anchor.zoneId);
       return orphaned ? { ...state, ...cleared, zones } : { ...state, zones };
     }
 
-    case "restore":
-      return state.zones
-        ? { ...state, zones: restoreZones(state.zones, action.removed) }
-        : state;
-
     case "saved":
       return { ...state, saved: action.zones };
-
-    case "savedRemoval":
-      return state.saved
-        ? { ...state, saved: withoutZones(state.saved, action.ids).kept }
-        : state;
   }
 }
 

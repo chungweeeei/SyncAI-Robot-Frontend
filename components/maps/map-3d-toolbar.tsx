@@ -254,7 +254,7 @@ export function Map3dToolBar({
             />
             <ToolButton
               label="Remove zone"
-              hint={zoneLock ?? "tap a forbidden zone to delete it from the robot"}
+              hint={zoneLock ?? "tap a forbidden zone to delete it; Save sends the change"}
               icon={Trash2Icon}
               tone="caution"
               pressed={tool === "zoneRemove"}

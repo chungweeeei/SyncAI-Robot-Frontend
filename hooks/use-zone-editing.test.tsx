@@ -34,38 +34,31 @@ const ok = { name: "lab", zones: [], active: true, reloaded: true, message: "Sav
 describe("useZoneEditing", () => {
   beforeEach(() => mutate.mockReset());
 
-  it("removes from the last saved list, so unsaved zones do not ride along", () => {
-    const { result } = renderHook(() => useZoneEditing("lab", [zone("a"), zone("b")]));
-    act(() => {
-      result.current.addCorner({ x: 5, y: 5 });
-      result.current.addCorner({ x: 6, y: 5 });
-      result.current.addCorner({ x: 6, y: 6 });
-    });
-    act(() => result.current.closeShape());
-    expect(result.current.zones).toHaveLength(3);
-    const drawn = result.current.zones![2].id;
-
-    act(() => result.current.remove(["a"]));
-    const [vars] = mutate.mock.calls[0];
-    expect(vars.zones.map((entry) => entry.id)).toEqual(["b"]);
-    // The new zone is still on screen, waiting for Save.
-    expect(result.current.zones?.map((entry) => entry.id)).toEqual(["b", drawn]);
-    expect(result.current.dirty).toBe(true);
-  });
-
-  it("puts a zone back when the robot refuses to delete it", () => {
+  it("stages a removal for Save, sending nothing until it is pressed", () => {
     const { result } = renderHook(() => useZoneEditing("lab", [zone("a"), zone("b")]));
     act(() => result.current.remove(["a"]));
+    // Off the screen and unsaved, but the robot still holds it.
     expect(result.current.zones?.map((entry) => entry.id)).toEqual(["b"]);
-    expect(result.current.writing).toBe(true);
+    expect(result.current.dirty).toBe(true);
+    expect(mutate).not.toHaveBeenCalled();
 
-    act(() => mutate.mock.calls[0][1].onError(new Error("A job is driving on this map.")));
-    expect(result.current.zones?.map((entry) => entry.id)).toEqual(["a", "b"]);
-    expect(result.current.note).toEqual({ kind: "failed", message: "A job is driving on this map." });
+    act(() => result.current.save());
+    expect(mutate.mock.calls[0][0].zones.map((entry) => entry.id)).toEqual(["b"]);
+    act(() => mutate.mock.calls[0][1].onSuccess(ok));
     expect(result.current.dirty).toBe(false);
   });
 
-  it("sends nothing for a zone that was never saved", () => {
+  it("keeps a refused Save's removal staged, so the next Save sends it again", () => {
+    const { result } = renderHook(() => useZoneEditing("lab", [zone("a"), zone("b")]));
+    act(() => result.current.remove(["a"]));
+    act(() => result.current.save());
+    act(() => mutate.mock.calls[0][1].onError(new Error("A job is driving on this map.")));
+    expect(result.current.note).toEqual({ kind: "failed", message: "A job is driving on this map." });
+    expect(result.current.zones?.map((entry) => entry.id)).toEqual(["b"]);
+    expect(result.current.dirty).toBe(true);
+  });
+
+  it("leaves the editor clean when the zone removed was never saved", () => {
     const { result } = renderHook(() => useZoneEditing("lab", []));
     act(() => {
       result.current.addCorner({ x: 0, y: 0 });
@@ -75,14 +68,16 @@ describe("useZoneEditing", () => {
     act(() => result.current.closeShape());
     const id = result.current.zones![0].id;
     act(() => result.current.remove([id]));
-    expect(mutate).not.toHaveBeenCalled();
     expect(result.current.zones).toEqual([]);
+    expect(result.current.dirty).toBe(false);
   });
 
-  it("holds a second write while one is in flight", () => {
+  it("holds a second Save while one is in flight", () => {
     const { result } = renderHook(() => useZoneEditing("lab", [zone("a"), zone("b")]));
     act(() => result.current.remove(["a"]));
+    act(() => result.current.save());
     act(() => result.current.remove(["b"]));
+    act(() => result.current.save());
     // Each sends a whole list the other did not see; the later would undo the first.
     expect(mutate).toHaveBeenCalledTimes(1);
   });

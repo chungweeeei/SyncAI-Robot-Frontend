@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import { useSaveMapKeepout } from "@/hooks/use-map-actions";
-import { withoutZones, type ZoneCornerRef, type ZonePoint, type ZonePolygon } from "@/lib/map/zone";
+import type { ZoneCornerRef, ZonePoint, ZonePolygon } from "@/lib/map/zone";
 import {
   canCloseZoneSession,
   initialZoneSession,
@@ -34,12 +34,7 @@ export interface UseZoneEditing extends ZoneSession {
   dirty: boolean;
   canClose: boolean;
   note: ZoneSaveNote;
-  /** Which press `note` reports on: Save, or a Remove, which writes at once. */
-  action: "save" | "remove";
-  /**
-   * One zone write at a time: Save and Remove each send a whole list the
-   * other did not see, so the second to land would undo the first.
-   */
+  /** A Save in flight; a second would send a list the first did not see. */
   writing: boolean;
   addCorner: (point: ZonePoint) => void;
   anchorOn: (corner: { zoneId: string; index: number }) => void;
@@ -51,20 +46,19 @@ export interface UseZoneEditing extends ZoneSession {
   /** Write the zones as shown, when they differ from the saved list. */
   save: () => void;
   /**
-   * Remove zones, on the robot at once (no Save). Sends the *last saved*
-   * list minus these, not the screen's: a remove only deletes, so unsaved
-   * zone edits stay for Save, and a zone never saved sends nothing. Taken off
-   * screen before the answer (a planner reload can take seconds) and put
-   * back on a refusal, so the map never hides a zone the planner keeps.
+   * Take zones off the screen, staged for Save like every other zone edit:
+   * the robot keeps them until Save sends the list without them.
    */
   remove: (ids: readonly string[]) => void;
 }
 
 /**
- * The forbidden zones an editor is changing, for both map editors. Zones wait
- * for Save rather than writing through: the endpoint takes the whole list and
- * the planner reloads on each write, so a write per dragged corner would
- * reload it dozens of times. Only finished zones are saved.
+ * The forbidden zones the map editor is changing. Zones wait for Save rather
+ * than writing through, a removal included: the endpoint takes the whole
+ * list and the planner reloads on each write, so a write per dragged corner
+ * would reload it dozens of times, and a removal the operator cannot take
+ * back before Save opened an area to the robot on one mistaken tap. Only
+ * finished zones are saved.
  *
  * `read` is the robot's list, or null while unread or unreadable, which keeps
  * `zones` null and every write refused. The first list read is taken once.
@@ -81,7 +75,6 @@ export function useZoneEditing(
   if (state.zones === null && read !== null) dispatch({ type: "load", zones: read });
 
   const [note, setNote] = React.useState<ZoneSaveNote>(IDLE);
-  const [action, setAction] = React.useState<"save" | "remove">("save");
   // `mutate` alone: bound once per observer, so the callbacks keep their identity.
   const { mutate } = useSaveMapKeepout();
   const writing = note.kind === "saving";
@@ -126,17 +119,24 @@ export function useZoneEditing(
     },
     [edited],
   );
+  const remove = React.useCallback(
+    (ids: readonly string[]) => {
+      if (ids.length === 0) return;
+      dispatch({ type: "remove", ids });
+      edited();
+    },
+    [edited],
+  );
   const dropShape = React.useCallback(() => dispatch({ type: "drop" }), []);
   const popCorner = React.useCallback(() => dispatch({ type: "pop" }), []);
 
-  const { zones, saved } = state;
+  const { zones } = state;
 
   const save = React.useCallback(() => {
     if (writing || !dirty || zones === null) return;
     // The list as of the press becomes the saved one, so a corner dragged
     // mid-request is still unsaved after, by comparison.
     const sent = zones;
-    setAction("save");
     setNote({ kind: "saving" });
     mutate(
       { name, zones: sent },
@@ -150,38 +150,11 @@ export function useZoneEditing(
     );
   }, [writing, dirty, zones, mutate, name]);
 
-  const remove = React.useCallback(
-    (ids: readonly string[]) => {
-      if (writing || ids.length === 0 || zones === null || saved === null) return;
-      const { removed } = withoutZones(zones, ids);
-      dispatch({ type: "remove", ids });
-      const remote = withoutZones(saved, ids);
-      if (remote.removed.length === 0) return;
-      setAction("remove");
-      setNote({ kind: "saving" });
-      mutate(
-        { name, zones: remote.kept },
-        {
-          onSuccess: (result) => {
-            dispatch({ type: "savedRemoval", ids });
-            setNote(savedNote(result));
-          },
-          onError: (cause) => {
-            dispatch({ type: "restore", removed });
-            setNote({ kind: "failed", message: cause.message });
-          },
-        },
-      );
-    },
-    [writing, zones, saved, mutate, name],
-  );
-
   return {
     ...state,
     dirty,
     canClose: canCloseZoneSession(state),
     note,
-    action,
     writing,
     addCorner,
     anchorOn,
