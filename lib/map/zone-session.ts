@@ -29,6 +29,22 @@ export interface ZoneSession {
    * stale once that corner is dragged.
    */
   anchor: ZoneAnchor | null;
+  /**
+   * The last finished edit to the zones, for the editor's undo history: a
+   * zone closed, merged, removed, or reshaped by a corner drag let go. A new
+   * object per edit, so a reader can tell one from the next by identity.
+   * Recorded here rather than by the caller so its `after` is the list the
+   * edit produced, whatever React has rendered by then.
+   */
+  commit: ZoneCommit | null;
+  /** The zones as a corner drag found them, until the drag is let go. */
+  dragFrom: ZonePolygon[] | null;
+}
+
+/** A finished edit to the zones, as the list stood either side of it. */
+export interface ZoneCommit {
+  before: ZonePolygon[];
+  after: ZonePolygon[];
 }
 
 export type ZoneSessionAction =
@@ -41,6 +57,8 @@ export type ZoneSessionAction =
   | { type: "merge"; target: number }
   /** A dragged corner, of the shape (`zoneId` null) or a finished zone. */
   | { type: "move"; corner: ZoneCornerRef; point: ZonePoint }
+  /** A corner drag let go: the whole drag is one commit, not one per move. */
+  | { type: "dragEnd" }
   /** Close the shape into a zone; `band` is the floor it forbids, if one. */
   | { type: "close"; band?: Pick<ZonePolygon, "z_min" | "z_max"> }
   /** Drop the shape in flight. */
@@ -50,18 +68,33 @@ export type ZoneSessionAction =
   /** Take zones off the screen; Save is what deletes them on the robot. */
   | { type: "remove"; ids: readonly string[] }
   /** A Save landed: `zones` is what it sent. */
-  | { type: "saved"; zones: ZonePolygon[] };
+  | { type: "saved"; zones: ZonePolygon[] }
+  /** Undo or Redo: the zones as they stood either side of an edit. */
+  | { type: "replace"; zones: ZonePolygon[] };
 
 export function initialZoneSession(zones: ZonePolygon[] | null): ZoneSession {
-  return { zones, saved: zones, draft: [], anchor: null };
+  return { zones, saved: zones, draft: [], anchor: null, commit: null, dragFrom: null };
 }
 
 const cleared = { draft: [] as ZonePoint[], anchor: null };
+
+/** The edits that finish in one action; a corner drag finishes on `dragEnd`. */
+const COMMITS: ReadonlySet<ZoneSessionAction["type"]> = new Set(["close", "merge", "remove"]);
 
 export function zoneSessionReducer(
   state: ZoneSession,
   action: ZoneSessionAction,
 ): ZoneSession {
+  const next = applyZoneAction(state, action);
+  const { zones: before } = state;
+  const { zones: after } = next;
+  if (before === null || after === null || sameZones(before, after)) return next;
+  if (COMMITS.has(action.type)) return { ...next, commit: { before, after } };
+  if (action.type === "move" && next.dragFrom === null) return { ...next, dragFrom: before };
+  return next;
+}
+
+function applyZoneAction(state: ZoneSession, action: ZoneSessionAction): ZoneSession {
   switch (action.type) {
     case "load":
       return state.zones === null ? initialZoneSession(action.zones) : state;
@@ -148,6 +181,24 @@ export function zoneSessionReducer(
 
     case "saved":
       return { ...state, saved: action.zones };
+
+    case "dragEnd": {
+      const { dragFrom, zones } = state;
+      if (dragFrom === null) return state;
+      const moved = zones !== null && !sameZones(dragFrom, zones);
+      return {
+        ...state,
+        dragFrom: null,
+        commit: moved ? { before: dragFrom, after: zones } : state.commit,
+      };
+    }
+
+    case "replace":
+      // `saved` stays, so dirty still measures against the robot's list. The
+      // shape in flight goes: its anchor may name a zone the step took away.
+      return state.zones === null
+        ? state
+        : { ...state, ...cleared, zones: action.zones, dragFrom: null };
   }
 }
 

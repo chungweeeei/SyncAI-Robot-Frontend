@@ -165,6 +165,8 @@ export interface Map3dCanvasProps {
    * The caller moves it on screen; Save sends it.
    */
   onZoneCornerDrag: (corner: ZoneCornerRef, point: ZonePoint) => void;
+  /** A corner drag let go, however the press ended: one undo step for the drag. */
+  onZoneCornerDragEnd: () => void;
   /** A tap inside a zone with Zone remove armed. */
   onZoneRemove: (zone: ZonePolygon) => void;
   className?: string;
@@ -865,6 +867,18 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     }
   };
 
+  /**
+   * Put a zone press down, every way one ends. A drag that moved a finished
+   * zone's corner is one edit, recorded now that it is let go.
+   */
+  const endZonePress = () => {
+    const press = zonePressRef.current;
+    zonePressRef.current = null;
+    if (press?.dragging && press.grab && press.grab.zoneId !== null) {
+      propsRef.current.onZoneCornerDragEnd();
+    }
+  };
+
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     const { tool } = propsRef.current;
     if (tapsZones(tool)) {
@@ -872,7 +886,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
       // (a pinch) abandons the press. A press on a corner may become its drag:
       // the shape's own, else a finished zone's (Zone only, not Remove).
       if (event.button !== 0 || !event.isPrimary) {
-        zonePressRef.current = null;
+        endZonePress();
         return;
       }
       let grab: ZoneCornerRef | null = null;
@@ -1043,7 +1057,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     const press = zonePressRef.current;
     if (press) {
-      zonePressRef.current = null;
+      endZonePress();
       if (!tapsZones(propsRef.current.tool) || press.pointerId !== event.pointerId) return;
       // A drag has already moved its corner; only a tap does anything here.
       if (!press.dragging && !isDrag(press.cx, press.cy, event.clientX, event.clientY)) {
@@ -1098,7 +1112,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     }
     // A cancelled corner drag stays where it was let go, as a cancelled
     // stroke stays painted: it is already on screen there, and unsaved.
-    if (zonePressRef.current?.pointerId === event.pointerId) zonePressRef.current = null;
+    if (zonePressRef.current?.pointerId === event.pointerId) endZonePress();
     // Only a deliberate release may put a stop down.
     if (anchorRef.current?.pointerId === event.pointerId) {
       anchorRef.current = null;
@@ -1123,7 +1137,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   const handlePointerLeave = () => {
     tapRef.current = null;
     // A corner dragged off the canvas stays where it last was.
-    zonePressRef.current = null;
+    endZonePress();
     hoverVertex(null);
     // A planted or dragged stop survives the pointer leaving; a carried one does not.
     if (!anchorRef.current && !dragRef.current) showDraft(null);

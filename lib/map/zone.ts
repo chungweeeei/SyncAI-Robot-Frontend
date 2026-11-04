@@ -297,3 +297,23 @@ export function sameZones(a: readonly ZonePolygon[], b: readonly ZonePolygon[]):
     );
   });
 }
+
+/**
+ * The saved zones a list no longer holds: what a Save of `zones` deletes on
+ * the robot. By id, since a merge and a dragged corner keep theirs.
+ */
+export function removedZones(
+  saved: readonly ZonePolygon[],
+  zones: readonly ZonePolygon[],
+): ZonePolygon[] {
+  const kept = new Set(zones.map((zone) => zone.id));
+  return saved.filter((zone) => !kept.has(zone.id));
+}
+
+/**
+ * Roughly what a zone list weighs in an undo history, in bytes: its corners'
+ * two numbers each, and a little per zone for its id, name and band.
+ */
+export function zonesBytes(zones: readonly ZonePolygon[]): number {
+  return zones.reduce((sum, zone) => sum + 64 + zone.points.length * 16, 0);
+}

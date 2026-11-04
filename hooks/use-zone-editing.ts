@@ -9,6 +9,7 @@ import {
   initialZoneSession,
   zoneSessionDirty,
   zoneSessionReducer,
+  type ZoneCommit,
   type ZoneSession,
 } from "@/lib/map/zone-session";
 import type { SaveKeepoutResult } from "@/lib/api/keepout";
@@ -50,6 +51,10 @@ export interface UseZoneEditing extends ZoneSession {
    * the robot keeps them until Save sends the list without them.
    */
   remove: (ids: readonly string[]) => void;
+  /** A corner drag let go: the whole drag is one undo step. */
+  endCornerDrag: () => void;
+  /** Undo or Redo: put the zones back as a commit recorded them. */
+  replace: (zones: ZonePolygon[]) => void;
 }
 
 /**
@@ -64,15 +69,29 @@ export interface UseZoneEditing extends ZoneSession {
  * `zones` null and every write refused. The first list read is taken once.
  *
  * `clearNoteOnEdit` puts a finished save's note away at the next edit to a
- * zone.
+ * zone. `onCommit` hears each finished edit to the zones once (the session's
+ * `commit`), for the editor's undo history.
  */
 export function useZoneEditing(
   name: string,
   read: ZonePolygon[] | null,
-  { clearNoteOnEdit = false }: { clearNoteOnEdit?: boolean } = {},
+  {
+    clearNoteOnEdit = false,
+    onCommit,
+  }: { clearNoteOnEdit?: boolean; onCommit?: (commit: ZoneCommit) => void } = {},
 ): UseZoneEditing {
   const [state, dispatch] = React.useReducer(zoneSessionReducer, read, initialZoneSession);
   if (state.zones === null && read !== null) dispatch({ type: "load", zones: read });
+
+  // Each commit is handed on once, by identity: a new `onCommit` re-runs the
+  // effect, and must not record the same edit twice.
+  const heardRef = React.useRef<ZoneCommit | null>(null);
+  React.useEffect(() => {
+    const { commit } = state;
+    if (commit === null || commit === heardRef.current) return;
+    heardRef.current = commit;
+    onCommit?.(commit);
+  }, [state, onCommit]);
 
   const [note, setNote] = React.useState<ZoneSaveNote>(IDLE);
   // `mutate` alone: bound once per observer, so the callbacks keep their identity.
@@ -127,6 +146,14 @@ export function useZoneEditing(
     },
     [edited],
   );
+  const endCornerDrag = React.useCallback(() => dispatch({ type: "dragEnd" }), []);
+  const replace = React.useCallback(
+    (zones: ZonePolygon[]) => {
+      dispatch({ type: "replace", zones });
+      edited();
+    },
+    [edited],
+  );
   const dropShape = React.useCallback(() => dispatch({ type: "drop" }), []);
   const popCorner = React.useCallback(() => dispatch({ type: "pop" }), []);
 
@@ -165,5 +192,7 @@ export function useZoneEditing(
     popCorner,
     save,
     remove,
+    endCornerDrag,
+    replace,
   };
 }
