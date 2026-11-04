@@ -66,6 +66,7 @@ function dispatchedRun(mutation: Mutation<unknown, Error, unknown>): ActiveTask 
     run_id: "",
     status: "PENDING",
     started_at: new Date(submittedAt).toISOString(),
+    ended_at: null,
     source: "DIRECT",
     schedule_id: null,
     kind: typeof kind === "string" ? kind : null,
@@ -87,7 +88,7 @@ function dispatchedRun(mutation: Mutation<unknown, Error, unknown>): ActiveTask 
  * for the tracker's reasons.
  */
 export function useActiveRun(): UseActiveRun {
-  const { tasks, status, asOf } = useConsoleActiveTasks();
+  const { tasks, recentlyEnded, status, asOf } = useConsoleActiveTasks();
   const task = status === "ok" ? (tasks[0] ?? null) : null;
 
   // The last run the list showed, kept past its leaving so its close can be
@@ -122,6 +123,28 @@ export function useActiveRun(): UseActiveRun {
   // Never listed, so nothing has read it closing yet: polled until a read
   // says it closed, where a run the list dropped is read once.
   const unlisted = last !== null && last.id === unlistedId;
+
+  // The same for a run anyone started — a schedule, another console — that
+  // the backend lists as just ended without ever having listed it running.
+  // Only one that ended after this console first read the list: one that
+  // closed before is history, not news, and must not flash on a page load.
+  const [watchingFrom, setWatchingFrom] = React.useState<string | null>(null);
+  if (watchingFrom === null && status === "ok" && asOf !== null) {
+    setWatchingFrom(asOf);
+  }
+  const justEnded = status === "ok" ? (recentlyEnded[0] ?? null) : null;
+  const [noticedId, setNoticedId] = React.useState<string | null>(null);
+  if (justEnded && justEnded.id !== noticedId && watchingFrom !== null) {
+    const news =
+      justEnded.ended_at !== null &&
+      Date.parse(justEnded.ended_at) > Date.parse(watchingFrom);
+    if (justEnded.id === task?.id || justEnded.id === last?.id || !news) {
+      setNoticedId(justEnded.id);
+    } else if (task === null) {
+      setNoticedId(justEnded.id);
+      setLast(justEnded);
+    }
+  }
 
   const { data } = useQuery({
     queryKey: queryKeys.task(task?.id ?? ""),

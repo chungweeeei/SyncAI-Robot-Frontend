@@ -279,6 +279,32 @@ test.describe("the running-job controls", () => {
     await expect(readout(page)).toContainText("Job list unavailable");
   });
 
+  test("says a run another console or a schedule started failed, though it was never listed", async ({
+    page,
+  }) => {
+    const ended: Record<string, unknown>[] = [];
+    await mockBackend(page, {
+      recentlyEnded: ended,
+      taskStates: {
+        [ID]: taskState({
+          status: "FAILED",
+          steps: [{ id: "1-move", status: "FAILED", error_msg: "" }],
+        }),
+      },
+    });
+    await page.goto("/settings");
+    await expect(readout(page)).toContainText("No task message in queue");
+
+    // Started and closed between two reads: only `recently_ended` saw it.
+    ended.push({
+      ...activeTask(),
+      status: "FAILED",
+      ended_at: "2026-09-18T09:45:01Z",
+    });
+    await expect(readout(page)).toContainText("Failed");
+    await expect(cancelButton(page)).toBeDisabled();
+  });
+
   test("says a job this console sent failed, though the list never listed it", async ({
     page,
   }) => {

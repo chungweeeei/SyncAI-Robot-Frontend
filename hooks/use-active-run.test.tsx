@@ -54,7 +54,13 @@ function activeTask(id = ID): ActiveTask {
 
 function setup(tasks: ActiveTask[]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  let list: UseActiveTasks = { tasks, status: "ok", asOf: null, refresh: () => {} };
+  let list: UseActiveTasks = {
+    tasks,
+    recentlyEnded: [],
+    status: "ok",
+    asOf: "2026-09-18T09:45:00Z",
+    refresh: () => {},
+  };
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={client}>
       <ActiveTaskContext.Provider value={list}>{children}</ActiveTaskContext.Provider>
@@ -219,5 +225,61 @@ describe("useActiveRun and a job this console sent", () => {
     await act(() => vi.advanceTimersByTimeAsync(2_000));
     expect(result.current.ended).toBeNull();
     expect(reads).not.toContain(ID);
+  });
+});
+
+describe("useActiveRun and a run the backend lists as just ended", () => {
+  /** A schedule's run that started and closed between two reads of the list. */
+  function justEnded(endedAt: string, id = ID): ActiveTask {
+    return {
+      ...activeTask(id),
+      status: "FAILED",
+      source: "SCHEDULE",
+      schedule_id: "robot01-sched-001",
+      ended_at: endedAt,
+    };
+  }
+
+  it("shows how it closed though the list never listed it running", async () => {
+    states.set(ID, "FAILED");
+    const { result, listing } = setup([]);
+    expect(result.current.ended).toBeNull();
+
+    listing({
+      recentlyEnded: [justEnded("2026-09-18T09:45:01Z")],
+      asOf: "2026-09-18T09:45:02Z",
+    });
+    await waitFor(() => expect(result.current.ended?.status).toBe("FAILED"));
+    expect(result.current.run).toBeNull();
+    expect(result.current.ended?.task.schedule_id).toBe("robot01-sched-001");
+
+    await act(() => vi.advanceTimersByTimeAsync(ENDED_RUN_LINGER_MS));
+    expect(result.current.ended).toBeNull();
+  });
+
+  it("says nothing of a run that closed before this console first looked", async () => {
+    states.set(ID, "FAILED");
+    // On a page load the list already carries it: history, not news.
+    const { result, listing } = setup([]);
+    listing({ recentlyEnded: [justEnded("2026-09-18T09:44:58Z")] });
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+
+    expect(result.current.ended).toBeNull();
+    expect(reads).not.toContain(ID);
+  });
+
+  it("does not say a run twice that the list showed running", async () => {
+    states.set(ID, "COMPLETED");
+    const { result, listing } = setup([activeTask()]);
+    await waitFor(() => expect(result.current.run?.status).toBe("COMPLETED"));
+    listing({ tasks: [], recentlyEnded: [justEnded("2026-09-18T09:45:03Z")] });
+    expect(result.current.ended?.task.id).toBe(ID);
+
+    await act(() => vi.advanceTimersByTimeAsync(ENDED_RUN_LINGER_MS));
+    expect(result.current.ended).toBeNull();
+    // The next read still carries it; it is not taken again.
+    listing({ asOf: "2026-09-18T09:45:10Z" });
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+    expect(result.current.ended).toBeNull();
   });
 });

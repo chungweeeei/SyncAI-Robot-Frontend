@@ -338,6 +338,12 @@ export interface BackendOverrides {
   templates?: Record<string, unknown>[];
   schedules?: Record<string, unknown>[];
   activeTasks?: Record<string, unknown>[];
+  /**
+   * GET /active_tasks' `recently_ended`, read on every poll so a test can
+   * push a run into it. Its `ended_at` must be after the list's `as_of`
+   * (2026-09-18T09:45:00Z) for the console to take it as news.
+   */
+  recentlyEnded?: Record<string, unknown>[];
   /** Finished runs, newest close first, as GET /task_history pages them. */
   taskHistory?: Record<string, unknown>[];
   /** Rows per history page; the fake's cursor is the offset of the next one. */
@@ -735,7 +741,11 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     }
     if (path === "/api/v1/active_tasks") {
       for (const task of activeTasks) listedTaskIds.add(task.id as string);
-      return json(route, { tasks: activeTasks, as_of: "2026-09-18T09:45:00Z" });
+      return json(route, {
+        tasks: activeTasks,
+        recently_ended: over.recentlyEnded ?? [],
+        as_of: "2026-09-18T09:45:00Z",
+      });
     }
     if (path === "/api/v1/task_history/stats") {
       return json(route, historyStats(taskHistory, url.searchParams));
