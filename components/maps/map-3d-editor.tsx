@@ -230,7 +230,7 @@ function Map3dSurface({
   const [drawKind, setDrawKind] = React.useState<Map3dDrawKind | null>(
     openOnWaypoint ? "waypoint" : null,
   );
-  const [tool, setTool] = React.useState<Map3dTool>("orbit");
+  const [tool, setTool] = React.useState<Map3dTool>("pan");
   /**
    * A link's ask to open on Waypoint, held until the run lock first reads
    * clear rather than armed at once: on a fresh load the job list may not
@@ -342,7 +342,7 @@ function Map3dSurface({
   // read-only map. An open name dialog stays up instead: its Create greys and
   // the name survives.
   if (placeLock !== null && (tool === "waypoint" || tool === "move" || tool === "remove")) {
-    setTool("orbit");
+    setTool("pan");
     setMoving(null);
   }
 
@@ -356,7 +356,7 @@ function Map3dSurface({
         ? "Reading the forbidden zones…"
         : null);
   if (zoneLock !== null && (tool === "zone" || tool === "zoneRemove")) {
-    setTool("orbit");
+    setTool("pan");
     dropZoneShape();
   }
 
@@ -373,13 +373,13 @@ function Map3dSurface({
 
 
   /**
-   * A new Draw choice starts on Orbit, and
+   * A new Draw choice starts on Pan, and
    * puts the selection down: off Waypoint there is no list to show it in.
    */
   const chooseDraw = React.useCallback(
     (kind: Map3dDrawKind | null) => {
       setDrawKind(kind);
-      changeTool("orbit");
+      changeTool("pan");
       setSelectedIds([]);
     },
     [changeTool],
@@ -649,7 +649,7 @@ function Map3dSurface({
         setDrawKind("ground");
         changeTool("erase");
       } else if (event.key.toLowerCase() === "o") {
-        changeTool("orbit");
+        changeTool("pan");
       } else if (event.key.toLowerCase() === "w" && !placeLocked) {
         setDrawKind("waypoint");
         changeTool("waypoint");
@@ -682,7 +682,7 @@ function Map3dSurface({
         current.map((vertex) => (vertex.id === target ? { ...vertex, ...placed } : vertex)),
       );
       setVertexNote({ kind: "idle" });
-      changeTool("orbit");
+      changeTool("pan");
     } else {
       setPlacement({ key: ++placementSeq.current, pose: placed });
     }
@@ -952,7 +952,7 @@ function Map3dSurface({
             vertex={moving}
             busy={false}
             error={null}
-            onCancel={() => changeTool("orbit")}
+            onCancel={() => changeTool("pan")}
             onDismissError={() => {}}
           />
           <div className={cn(overlayPanel, "pointer-events-auto space-y-2 p-2.5")}>

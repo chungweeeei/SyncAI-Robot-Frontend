@@ -217,24 +217,36 @@ export function frontViewAround(camera: THREE.PerspectiveCamera, controls: Orbit
 }
 
 /**
- * The 3D view's controls. With no tool armed the primary button orbits
- * (nothing here aims a goal, unlike the dashboard), right-drag pans, one
- * finger orbits and two pan and pinch. With a brush or Waypoint armed the
- * primary button and one finger are the tool's, so OrbitControls is told to
- * ignore them; right-drag still orbits, the middle button pans, and two
- * fingers still pan and pinch. The wheel zooms to the cursor either way.
+ * The buttons every free 3D view shares with the dashboard's "move" mode:
+ * the primary button and one finger pan, the right button orbits, two
+ * fingers pinch and turn. One table, because an operator moves between the
+ * dashboard and the editors, and a right button that pans on one screen and
+ * orbits on the next is a drag in the wrong direction every time.
+ */
+export function applyLookControls(controls: OrbitControls) {
+  controls.mouseButtons = {
+    LEFT: THREE.MOUSE.PAN,
+    MIDDLE: THREE.MOUSE.DOLLY,
+    RIGHT: THREE.MOUSE.ROTATE,
+  };
+  controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+}
+
+/**
+ * The map editor's controls: applyLookControls with nothing armed. With a
+ * tool armed the primary button and one finger are the tool's, so
+ * OrbitControls is told to ignore them; the right button still orbits, as it
+ * does unarmed, and the middle button takes over the pan. The wheel zooms to
+ * the cursor either way.
  */
 export function applyMap3dControls(controls: OrbitControls, armed: boolean) {
   controls.enablePan = true;
   controls.zoomToCursor = true;
   controls.screenSpacePanning = true;
-  controls.mouseButtons = armed
-    ? { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE }
-    : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
-  controls.touches = {
-    ONE: armed ? null : THREE.TOUCH.ROTATE,
-    TWO: THREE.TOUCH.DOLLY_PAN,
-  };
+  applyLookControls(controls);
+  if (!armed) return;
+  controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+  controls.touches = { ONE: null, TWO: THREE.TOUCH.DOLLY_ROTATE };
 }
 
 /**

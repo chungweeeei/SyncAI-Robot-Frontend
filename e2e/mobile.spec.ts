@@ -513,7 +513,7 @@ test.describe("the console on a phone", () => {
     ) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
     const distance = async () => Number(await canvas.getAttribute("data-distance"));
 
-    // Orbit is the opening tool; fingers spreading zoom in and paint nothing.
+    // Pan is the opening tool; fingers spreading zoom in and paint nothing.
     const opening = await distance();
     const a = { x: box.x + box.width * 0.62, y: cy };
     const b = { x: box.x + box.width * 0.82, y: cy };

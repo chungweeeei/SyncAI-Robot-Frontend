@@ -406,10 +406,13 @@ lib/
                 depth, so a scan point is not ringed), the task editor's
                 waypoints as screen marks over the 3D map (route-marks.ts:
                 projectStops, stopNear), camera policy (the
-                opening, overhead and front framings, and the editor's:
-                the primary button orbits until a brush or
-                Waypoint is armed, then paints or places while the right
-                button orbits), the ground patches' 3D marks, picking,
+                opening, overhead and front framings, and one button
+                table for every 3D view, applyLookControls: the primary
+                button pans and the right one orbits, on the dashboard
+                and in both editors, and an armed tool takes only the
+                primary, the middle button taking over the pan, so the
+                right button never changes meaning), the ground patches'
+                3D marks, picking,
                 robot mesh
   theme/        the signal hues both canvases draw with, and the height ramp
                 the 3D map is coloured by (height-ramp.ts: data colouring,

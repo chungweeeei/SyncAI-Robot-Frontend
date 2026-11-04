@@ -1726,7 +1726,7 @@ test.describe("the step editor", () => {
     const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
     const cards = page.locator("[data-stop]");
 
-    // A drag from the stop orbits; it adds nothing.
+    // A drag from the stop moves the camera; it adds nothing.
     await page.mouse.move(centre.x, centre.y);
     await page.mouse.down();
     await page.mouse.move(centre.x + 40, centre.y, { steps: 4 });
