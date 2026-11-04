@@ -644,7 +644,9 @@ touch one, prefer moving it toward the rule.
   key once. Never inline a key. The few mutations another part of the console must see
   in flight (`useIsMutating`) take a key from `mutationKeys` in the same
   file: `wifiChange`, because the robot makes one Wi-Fi join or forget at a
-  time (409 `wifi_busy`) and every such button greys while one runs.
+  time (409 `wifi_busy`) and every such button greys while one runs; and
+  `taskDispatch`, the goal and task sends, which `useActiveRun` reads with
+  `useMutationState` (below).
 - **Polling policy**: poll only while the server is changing something on its
   own, and let the status that triggered the poll switch it off (`useMaps`
   every 5 s while an `octomap_status` is `"converting"` — the robot's map
@@ -661,7 +663,10 @@ touch one, prefer moving it toward the rule.
   place a paused run and its current step are visible), and switches off
   when the run leaves the list or its own read turns terminal — a run the
   list drops before its read said it closed gets one more read, no poll, so
-  the bar's `ended` run can say how it closed. The list itself still means
+  the bar's `ended` run can say how it closed. A job this tab sent that the
+  list never listed — one that failed inside the list's 2 s — is taken from
+  the last `taskDispatch` that landed and stands in as that `ended` run,
+  read until it closes; only over an empty list, and once per dispatch. The list itself still means
   "running now": the map lock and the history refresh read it. It shares the
   entry with `useTaskTracker`, so every poller of that key goes through
   `fetchHeldTaskState` — see the key's note. The history screen
