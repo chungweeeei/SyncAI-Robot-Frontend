@@ -6,6 +6,8 @@ import {
   DEFAULT_SPAN_M,
   MAX_DOLLY_SPANS,
   MIN_DOLLY_M,
+  applyCameraMode,
+  applyLookControls,
   applyMap3dControls,
   fitDollyRange,
   frameGround,
@@ -273,14 +275,34 @@ describe("the 3D view's controls", () => {
   it("gives the primary button and one finger to a tool only while one is armed", () => {
     const { controls } = rig();
     applyMap3dControls(controls, false);
-    expect(controls.mouseButtons.LEFT).toBe(THREE.MOUSE.ROTATE);
-    expect(controls.touches.ONE).toBe(THREE.TOUCH.ROTATE);
+    expect(controls.mouseButtons.LEFT).toBe(THREE.MOUSE.PAN);
+    expect(controls.touches.ONE).toBe(THREE.TOUCH.PAN);
     applyMap3dControls(controls, true);
     expect(controls.mouseButtons.LEFT).toBeNull();
     expect(controls.touches.ONE).toBeNull();
     // Still a way to look around mid-edit, and a pinch still zooms.
-    expect(controls.mouseButtons.RIGHT).toBe(THREE.MOUSE.ROTATE);
-    expect(controls.touches.TWO).toBe(THREE.TOUCH.DOLLY_PAN);
+    expect(controls.mouseButtons.MIDDLE).toBe(THREE.MOUSE.PAN);
+    expect(controls.touches.TWO).toBe(THREE.TOUCH.DOLLY_ROTATE);
+  });
+
+  it("keeps each button's meaning across every 3D view, armed or not", () => {
+    // The rule the views share: the right button orbits everywhere, so a
+    // screen change or a tool armed never turns an orbit into a pan.
+    const dashboard = rig().controls;
+    applyCameraMode(dashboard, "move", false);
+    const views = [false, true].map((armed) => {
+      const { controls } = rig();
+      applyMap3dControls(controls, armed);
+      return controls;
+    });
+    const route = rig().controls;
+    applyLookControls(route);
+    for (const controls of [dashboard, ...views, route]) {
+      expect(controls.mouseButtons.RIGHT).toBe(THREE.MOUSE.ROTATE);
+    }
+    expect(views[0].mouseButtons).toEqual(dashboard.mouseButtons);
+    expect(views[0].touches).toEqual(dashboard.touches);
+    expect(route.mouseButtons).toEqual(dashboard.mouseButtons);
   });
 
   it("opens on the floor the brush aims at, so the middle of the screen is the map's", () => {

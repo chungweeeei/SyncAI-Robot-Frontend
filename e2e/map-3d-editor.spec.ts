@@ -142,7 +142,7 @@ test.describe("the editor's 3D view", () => {
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       await expect(patched(page)).toHaveAttribute("data-patched", "0");
 
-      // Orbit is the opening tool: a press turns the map, it never paints.
+      // Pan is the opening tool: a press moves the camera, it never paints.
       const hole = await holeOnScreen(page);
       await page.mouse.click(hole.x, hole.y);
       await expect(patched(page)).toHaveAttribute("data-patched", "0");
@@ -650,7 +650,7 @@ test.describe("the editor's 3D view", () => {
       await page.mouse.up();
     }
 
-    test("is reached from the card's pencil, opening on Orbit", async ({ page }) => {
+    test("is reached from the card's pencil, opening on Pan", async ({ page }) => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
       await mockBackend(page, {
@@ -670,9 +670,9 @@ test.describe("the editor's 3D view", () => {
       await pencil.click();
       await expect(page).toHaveURL(new RegExp(`/maps/${MAP_NAME}/edit$`));
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
-      // An editor opened to look round opens on Orbit:
+      // An editor opened to look round opens on Pan:
       // only a link that came to place waypoints arms the tool.
-      await expect(page.getByRole("button", { name: "Orbit" })).toHaveAttribute(
+      await expect(page.getByRole("button", { name: "Pan", exact: true })).toHaveAttribute(
         "aria-pressed",
         "true",
       );
@@ -798,7 +798,7 @@ test.describe("the editor's 3D view", () => {
       await page.goto(EDITOR);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
 
-      // Positive control: with no tool armed a press only turns the map.
+      // Positive control: with no tool armed a press only moves the camera.
       const centre = await centreOnScreen(page);
       await page.mouse.click(centre.x, centre.y);
       const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
