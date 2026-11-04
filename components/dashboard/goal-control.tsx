@@ -12,8 +12,9 @@ import type { GoalTask } from "@/hooks/use-goal-task";
  * drag it describes, in the arrow's cmd hue.
  *
  * No Send: release dispatches (`useGoalTask`), and a button left standing
- * would read as a step still owed. Cancel while running, Clear after, and
- * Retry only when the submit failed. Presentation only.
+ * would read as a step still owed. Cancel while running; a goal reached
+ * clears itself (useGoalTask), and one that failed offers Retry beside Clear.
+ * Presentation only.
  */
 export function GoalControl({
   task,
@@ -80,8 +81,9 @@ export function GoalControl({
           </button>
         ) : (
           <>
-            {/* Only a retry; to re-drive a goal, drag again. */}
-            {error && (
+            {/* Only a retry; to re-drive a goal, drag again. A FAILED run
+                whose step carried no sentence still gets one. */}
+            {(error || taskStatus === "FAILED") && (
               <button
                 type="button"
                 disabled={busy || !goal}
