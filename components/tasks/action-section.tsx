@@ -50,6 +50,7 @@ import {
   type StepCatalogue,
   type StepSpec,
 } from "@/lib/task/catalogue";
+import { stepFailureText } from "@/lib/task/failure";
 import {
   newStepDraft,
   stepDraftError,
@@ -546,7 +547,7 @@ function ActionRow({
           )}
           {state?.error_msg && (
             <p role="alert" className="mt-1 text-[11px] leading-snug break-words text-signal-warn">
-              {state.error_msg}
+              {stepFailureText(state.error_msg)}
             </p>
           )}
         </div>
