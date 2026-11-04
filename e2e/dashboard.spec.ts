@@ -755,6 +755,63 @@ test.describe("tapping a stop on the dashboard", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
+  const dispatches = <W extends { path: string; method: string }>(writes: W[]) =>
+    writes.filter((w) => w.path === "/api/v1/tasks" && w.method === "POST");
+
+  test("clears the goal once the robot arrives, with no Clear to press", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, {
+      octomap: framedTree(),
+      dispatchedTaskState: (id) => ({
+        id,
+        status: "COMPLETED",
+        steps: [{ id: "1-move", status: "COMPLETED", error_msg: "" }],
+      }),
+    });
+    await page.goto("/");
+
+    await tapStop(page);
+    await page.getByRole("button", { name: "Move", exact: true }).click();
+    await expect.poll(() => dispatches(writes)).toHaveLength(1);
+    // The failed run below is the positive control: the read-back does show.
+    await expect(page.getByText("Goal X")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Clear", exact: true })).toHaveCount(0);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("keeps a failed goal on screen and sends it again from Retry", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, {
+      octomap: framedTree(),
+      // No sentence on the step: a FAILED run still owes the operator a Retry.
+      dispatchedTaskState: (id) => ({
+        id,
+        status: "FAILED",
+        steps: [{ id: "1-move", status: "FAILED", error_msg: "" }],
+      }),
+    });
+    await page.goto("/");
+
+    await tapStop(page);
+    await page.getByRole("button", { name: "Move", exact: true }).click();
+    await expect(page.getByText("Goal X")).toBeVisible();
+    await page.getByRole("button", { name: "Retry" }).click();
+
+    await expect.poll(() => dispatches(writes)).toHaveLength(2);
+    const [first, again] = dispatches(writes).map(
+      (w) => (w.body as { steps: { params: unknown }[] }).steps[0].params,
+    );
+    expect(again).toEqual(first);
+    expect(first).toMatchObject({ x: stop.x, y: stop.y });
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
   test("writes nothing when the confirm is dismissed", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);

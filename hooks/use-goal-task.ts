@@ -115,6 +115,26 @@ export function useGoalTask(robotId: string, mapName: string | null): GoalTask {
     resetCancel();
   }, [reset, resetSubmit, resetCancel]);
 
+  // A goal reached is cleared on arrival: there is nothing left to retry or
+  // read back, and a Clear owed on every success stops being pressed. Derived
+  // rather than cleared in an effect, so the read that closed the run is the
+  // one that drops the marker. A failed or canceled goal stays for its Retry.
+  if (task.taskStatus === "COMPLETED") {
+    return {
+      goal: null,
+      taskStatus: null,
+      running: false,
+      busy: submit.isPending || cancelRun.isPending,
+      error: null,
+      message: "",
+      cancelable: false,
+      send,
+      sendGoal,
+      cancel,
+      clear,
+    };
+  }
+
   return {
     goal,
     taskStatus: task.taskStatus,
