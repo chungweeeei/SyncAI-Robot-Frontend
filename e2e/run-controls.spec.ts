@@ -223,6 +223,39 @@ test.describe("the running-job controls", () => {
     expect(writes[0].path).toBe(`/api/v1/tasks/${ID}`);
   });
 
+  test("holds a finished run's outcome a moment, then reads idle", async ({
+    page,
+  }) => {
+    await page.clock.install();
+    const running = [activeTask()];
+    const state = taskState();
+    await mockBackend(page, {
+      activeTasks: running,
+      taskStates: { [ID]: state },
+    });
+    await page.goto("/settings");
+    await expect(readout(page)).toContainText("2/3");
+
+    // The run closes and leaves the list together: whichever read lands
+    // first, the outcome is said rather than skipped straight to idle.
+    state.status = "COMPLETED";
+    state.steps = state.steps.map((step) => ({ ...step, status: "COMPLETED" }));
+    running.length = 0;
+    await expect(readout(page)).toContainText("Completed");
+
+    // Past the list's read of it as gone, the outcome stays, with nothing
+    // left to press.
+    await page.waitForResponse((response) =>
+      response.url().endsWith("/api/v1/active_tasks"),
+    );
+    await expect(readout(page)).toContainText("Completed");
+    await expect(pauseButton(page)).toBeDisabled();
+    await expect(cancelButton(page)).toBeDisabled();
+
+    await page.clock.fastForward(5_000);
+    await expect(readout(page)).toContainText("No task message in queue");
+  });
+
   test("empties with the run, and never draws a failing list as idle", async ({
     page,
   }) => {

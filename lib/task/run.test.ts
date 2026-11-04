@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import type { TaskStepState } from "@/lib/api/task";
 import {
+  ENDED_RUN_LINGER_MS,
   currentStep,
+  endedRunRemainingMs,
   holdOffered,
   liveDock,
   pauseOffered,
@@ -272,5 +274,17 @@ describe("runElapsed", () => {
   it("is a dash, never NaN, when it cannot be measured", () => {
     expect(runElapsed("2026-09-18T09:44:30Z", null)).toBe("—");
     expect(runElapsed("not a time", "2026-09-18T09:45:00Z")).toBe("—");
+  });
+});
+
+describe("endedRunRemainingMs", () => {
+  it("counts the linger from the read that closed the run", () => {
+    expect(endedRunRemainingMs(10_000, 10_000)).toBe(ENDED_RUN_LINGER_MS);
+    expect(endedRunRemainingMs(10_000, 12_000)).toBe(ENDED_RUN_LINGER_MS - 2_000);
+  });
+
+  it("has nothing left once a lagging list let go after the linger, never a negative wait", () => {
+    expect(endedRunRemainingMs(10_000, 10_000 + ENDED_RUN_LINGER_MS)).toBe(0);
+    expect(endedRunRemainingMs(10_000, 60_000)).toBe(0);
   });
 });

@@ -172,6 +172,23 @@ export function runClosed(state: RunState): boolean {
   return state === "completed" || state === "failed" || state === "canceled";
 }
 
+/**
+ * How long the bar keeps a closed run's outcome after the read that closed
+ * it. The active list drops a run within a poll of its end, which is too
+ * quick to read "Completed" in; the list itself keeps meaning "running now",
+ * since the map lock and the history refresh are read off it.
+ */
+export const ENDED_RUN_LINGER_MS = 5_000;
+
+/**
+ * What is left of a closed run's time on the bar, from the read that closed
+ * it — never from when the list let go of it, so a list that lags the run
+ * does not stretch the outcome past its five seconds.
+ */
+export function endedRunRemainingMs(closedAt: number, now: number): number {
+  return Math.max(0, closedAt + ENDED_RUN_LINGER_MS - now);
+}
+
 /** The slice of a mutation this reads, so the rule needs no TanStack to test. */
 export interface HoldRequestView {
   /** 0 for a mutation that has never run. */
