@@ -666,7 +666,12 @@ touch one, prefer moving it toward the rule.
   the bar's `ended` run can say how it closed. A job this tab sent that the
   list never listed — one that failed inside the list's 2 s — is taken from
   the last `taskDispatch` that landed and stands in as that `ended` run,
-  read until it closes; only over an empty list, and once per dispatch. The list itself still means
+  read until it closes; only over an empty list, and once per dispatch. A
+  run anyone else started that did the same comes from the list's own
+  `recently_ended` (closed in the backend's last 10 s, never running, so no
+  lock or busy reads it), taken the same way, and only if it ended after
+  this console's first read, so a page load does not replay one. The list
+  itself still means
   "running now": the map lock and the history refresh read it. It shares the
   entry with `useTaskTracker`, so every poller of that key goes through
   `fetchHeldTaskState` — see the key's note. The history screen
