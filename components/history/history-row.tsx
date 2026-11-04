@@ -10,6 +10,7 @@ import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";
 import { useTaskRun } from "@/hooks/use-task-run";
 import type { TaskHistoryEntry } from "@/lib/api/task";
 import { formatDuration } from "@/lib/recording/format";
+import { stepFailureText } from "@/lib/task/failure";
 import { describeRun, runSeconds, stepSeconds } from "@/lib/task/history";
 import { formatLocalRunTime, formatUtcRunTime } from "@/lib/task/schedule";
 import { wireGroupPlaces } from "@/lib/task/step";
@@ -115,7 +116,7 @@ function RunSteps({ id }: { id: string }) {
             </div>
             {step.error_msg && (
               <p className="pl-7 text-[11px] leading-snug break-words text-signal-warn">
-                {step.error_msg}
+                {stepFailureText(step.error_msg)}
               </p>
             )}
           </li>

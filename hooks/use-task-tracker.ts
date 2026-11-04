@@ -11,6 +11,7 @@ import {
   type TaskStatus,
   type TaskStepState,
 } from "@/lib/api/task";
+import { stepFailureText } from "@/lib/task/failure";
 
 // 1 Hz, like the robot-state poll: plenty for a nav goal or a posture command.
 const TASK_POLL_MS = 1000;
@@ -49,7 +50,7 @@ export interface TaskTracker {
   running: boolean;
   /** Only true while the task can still be cancelled — see `taskId`. */
   cancelable: boolean;
-  /** The error message of the first failed step, if any. */
+  /** The first failed step's error, in an operator's words (stepFailureText). */
   error: string | null;
   /** Per-step state as last reported; empty until a populated list arrives. */
   steps: TaskStepState[];
@@ -99,6 +100,7 @@ export function useTaskTracker(): TaskTracker {
     query.data?.status ?? (followedId !== null ? "PENDING" : null);
   const terminal = isTerminalTaskStatus(query.data?.status);
   const steps = query.data?.steps ?? NO_STEPS;
+  const failedStep = steps.find((step) => step.error_msg);
 
   return {
     taskStatus,
@@ -106,7 +108,7 @@ export function useTaskTracker(): TaskTracker {
     cancelable: followedId !== null && !terminal,
     // Off the held list, so a degraded `steps: []` (typically on the terminal
     // poll) cannot leave FAILED with nothing saying why.
-    error: steps.find((step) => step.error_msg)?.error_msg || null,
+    error: failedStep ? stepFailureText(failedStep.error_msg) : null,
     steps,
     taskId: terminal ? null : followedId,
     track,
