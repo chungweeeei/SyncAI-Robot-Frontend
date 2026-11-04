@@ -7,6 +7,7 @@ import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { normalizeTheta } from "@/lib/angle";
 import { ignore } from "@/lib/api/mutation-state";
+import { mutationKeys } from "@/lib/api/query-keys";
 import {
   cancelTask,
   sendMoveTask,
@@ -59,6 +60,8 @@ export function useGoalTask(robotId: string, mapName: string | null): GoalTask {
   const { engaged: stopped } = useConsoleEstop();
 
   const submit = useMutation({
+    mutationKey: mutationKeys.taskDispatch,
+    meta: { kind: "goal" },
     // The map travels with the goal, so the backend refuses it if the robot
     // has switched maps since it was aimed.
     mutationFn: async (staged: GoalPose) => {

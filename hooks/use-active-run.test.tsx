@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { UseActiveTasks } from "@/hooks/use-active-tasks";
 import { ActiveTaskContext } from "@/hooks/use-console-active-tasks";
+import { mutationKeys } from "@/lib/api/query-keys";
 import type { ActiveTask, TaskStateResponse, TaskStatus } from "@/lib/api/task";
 import { ENDED_RUN_LINGER_MS } from "@/lib/task/run";
 
@@ -64,7 +65,19 @@ function setup(tasks: ActiveTask[]) {
     list = { ...list, ...next };
     hook.rerender();
   };
-  return { ...hook, listing };
+  /** What a Run on /tasks leaves in the cache once the backend acked it. */
+  const dispatch = (id: string, name: string | null = "Morning round") =>
+    act(() =>
+      client
+        .getMutationCache()
+        .build(client, {
+          mutationKey: mutationKeys.taskDispatch,
+          meta: { kind: "task" },
+          mutationFn: async () => id,
+        })
+        .execute({ name }),
+    );
+  return { ...hook, listing, dispatch };
 }
 
 beforeEach(() => {
@@ -152,5 +165,59 @@ describe("useActiveRun's ended run", () => {
     await act(() => vi.advanceTimersByTimeAsync(ENDED_RUN_LINGER_MS + 1_000));
     listing({ tasks: [] });
     expect(result.current.ended).toBeNull();
+  });
+});
+
+describe("useActiveRun and a job this console sent", () => {
+  it("shows how a job closed that failed before the list could show it", async () => {
+    states.set(ID, "FAILED");
+    const { result, dispatch } = setup([]);
+    await dispatch(ID);
+
+    await waitFor(() => expect(result.current.ended?.status).toBe("FAILED"));
+    expect(result.current.run).toBeNull();
+    expect(result.current.ended?.task.name).toBe("Morning round");
+    expect(result.current.ended?.task.kind).toBe("task");
+
+    await act(() => vi.advanceTimersByTimeAsync(ENDED_RUN_LINGER_MS));
+    expect(result.current.ended).toBeNull();
+  });
+
+  it("reads an unlisted job until a read says it closed", async () => {
+    const { result, dispatch } = setup([]);
+    await dispatch(ID);
+    await waitFor(() => expect(reads).toContain(ID));
+    expect(result.current.ended).toBeNull();
+
+    states.set(ID, "FAILED");
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+    await waitFor(() => expect(result.current.ended?.status).toBe("FAILED"));
+  });
+
+  it("does not bring a job back once another run has had the bar", async () => {
+    states.set(ID, "FAILED");
+    const { result, listing, dispatch } = setup([]);
+    await dispatch(ID);
+    await waitFor(() => expect(result.current.ended?.status).toBe("FAILED"));
+
+    const next = "robot01-task-1758000100-1";
+    states.set(next, "COMPLETED");
+    listing({ tasks: [activeTask(next)] });
+    await waitFor(() => expect(result.current.run?.status).toBe("COMPLETED"));
+    listing({ tasks: [] });
+    expect(result.current.ended?.task.id).toBe(next);
+
+    await act(() => vi.advanceTimersByTimeAsync(ENDED_RUN_LINGER_MS));
+    expect(result.current.ended).toBeNull();
+  });
+
+  it("is never drawn over a list that cannot be read", async () => {
+    states.set(ID, "FAILED");
+    const { result, listing, dispatch } = setup([]);
+    listing({ status: "error" });
+    await dispatch(ID);
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+    expect(result.current.ended).toBeNull();
+    expect(reads).not.toContain(ID);
   });
 });
