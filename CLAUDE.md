@@ -426,7 +426,11 @@ lib/
                 the masthead's rules for the running job (run.ts: which step is
                 live, what to call it, whether a hold is offered, the state
                 the bar ends in, and how long a closed run stays on it:
-                ENDED_RUN_LINGER_MS, 5 s from the read that closed it), the
+                ENDED_RUN_LINGER_MS, 5 s from the read that closed it), a
+                failed step's `error_msg` in an operator's words (failure.ts:
+                the robot's known sentences in the house words, the backend's
+                wrapper and the planner's detail dropped; an unknown one is
+                shown, not guessed at — the history export keeps the raw), the
                 editor's unsaved draft (draft-store.ts
                 — the one place that touches browser storage) and its undo
                 history (draft-history.ts: snapshots, a burst of typing as one
