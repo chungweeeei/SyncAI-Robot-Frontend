@@ -12,7 +12,7 @@ import { useGpuContext } from "@/hooks/use-gpu-context";
 import { PALETTES, VERTEX_HIT_RADIUS, VERTEX_HIT_RADIUS_TOUCH } from "@/lib/map/draw";
 import { isDrag } from "@/lib/map/gesture";
 import { drawRoute, drawStops, type PlacedStop, type RoutePoint } from "@/lib/map/preview";
-import { frameGround } from "@/lib/scene/camera";
+import { applyLookControls, frameGround } from "@/lib/scene/camera";
 import { createEdlPass, type EdlPass } from "@/lib/scene/edl";
 import { projectStops, stopNear } from "@/lib/scene/route-marks";
 import { THEMES } from "@/lib/scene/theme";
@@ -62,8 +62,8 @@ export interface RouteCanvas3dProps {
  * too. Drawn without depth, so a floor's stops show through the
  * storey over it with All picked; a floor picked shows that floor's alone.
  *
- * A drag orbits and two fingers pinch and pan, as OrbitControls has them;
- * only a primary press lifted inside the deadzone on a waypoint picks it.
+ * A drag pans, a right-drag orbits and two fingers pinch and turn, as on
+ * the dashboard and the map editor (applyLookControls); only a primary press lifted inside the deadzone on a waypoint picks it.
  * A second finger landing abandons the press, so a pinch begun on a stop
  * never also adds it. Draws only when something changed or the camera
  * moves, as the editor's view does.
@@ -182,6 +182,7 @@ export function RouteCanvas3d({
     });
     const { scene, camera, renderer, controls } = viewport;
     controls.enableDamping = true;
+    applyLookControls(controls);
     controls.addEventListener("change", invalidate);
     const edl = createEdlPass(voxels.res);
 
@@ -284,7 +285,7 @@ export function RouteCanvas3d({
       tap.pointerId === event.pointerId &&
       isDrag(tap.cx, tap.cy, event.clientX, event.clientY)
     ) {
-      // Past the deadzone it is an orbit, whatever it lifts on.
+      // Past the deadzone it is a camera drag, whatever it lifts on.
       tapRef.current = null;
     }
     // Hover only with no button down; a button down is a camera drag.
@@ -322,8 +323,8 @@ export function RouteCanvas3d({
         ref={containerRef}
         data-testid="route-canvas-3d"
         role="application"
-        aria-label="The 3D map with this map's waypoints. Drag to orbit; tap a waypoint to add it as the next stop."
-        // touch-none: every finger here is the map's, an orbit or a pick.
+        aria-label="The 3D map with this map's waypoints. Drag to pan, right-drag to orbit; tap a waypoint to add it as the next stop."
+        // touch-none: every finger here is the map's, a camera drag or a pick.
         className={cn(
           "absolute inset-0 touch-none select-none",
           hovering ? "cursor-pointer" : "cursor-grab active:cursor-grabbing",

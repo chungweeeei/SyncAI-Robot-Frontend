@@ -45,14 +45,14 @@ import type { MapVertex, ZonePoint, ZonePolygon } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
 /**
- * Orbit, the two brushes, Waypoint (put a stop down, or a re-placed one
+ * Pan, the two brushes, Waypoint (put a stop down, or a re-placed one
  * back), Move (drag a stop somewhere else), Select (tap stops into the set a
  * Delete takes), Remove (take a stored stop off the map), Zone (draw a
  * forbidden zone's corners, one tap each) and Zone remove (tap a zone to
  * delete it).
  */
 export type Map3dTool =
-  | "orbit"
+  | "pan"
   | "fill"
   | "erase"
   | "waypoint"
@@ -74,7 +74,7 @@ const CORNER_RADIUS_PX = 12;
 const CORNER_RADIUS_TOUCH_PX = 22;
 
 /** The tools a tap on a stored stop means something to. */
-const tapsStops = (tool: Map3dTool) => tool === "orbit" || tool === "select" || tool === "remove";
+const tapsStops = (tool: Map3dTool) => tool === "pan" || tool === "select" || tool === "remove";
 
 interface Column {
   x: number;
@@ -317,7 +317,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     controls.enableDamping = true;
     // Any camera move the controls make themselves, beside what update() reports.
     controls.addEventListener("change", invalidate);
-    applyMap3dControls(controls, propsRef.current.tool !== "orbit");
+    applyMap3dControls(controls, propsRef.current.tool !== "pan");
 
     const layer = createVoxelLayer(voxels);
     const { band } = propsRef.current;
@@ -412,7 +412,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   // ---- Controls follow the tool ------------------------------------------
   React.useEffect(() => {
     const ctx = sceneRef.current;
-    if (ctx) applyMap3dControls(ctx.controls, props.tool !== "orbit");
+    if (ctx) applyMap3dControls(ctx.controls, props.tool !== "pan");
     if (ctx && props.tool !== "fill" && props.tool !== "erase") ctx.brush.visible = false;
     // Disarming mid-press must not strand a planted stop.
     if (props.tool !== "waypoint" && props.tool !== "move") {
@@ -853,7 +853,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
       }) === null;
     setUnreadable(lost);
     if (ctx) {
-      ctx.brush.visible = tool !== "orbit" && column !== null;
+      ctx.brush.visible = tool !== "pan" && column !== null;
       if (hit && column) {
         const r = (radius + 0.5) * session.voxels.res;
         ctx.brush.position.set(hit.x, hit.y, hit.z);
@@ -921,7 +921,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     }
     if (tapsStops(tool)) {
       // Maybe a tap on a stop, resolved on release so a drag starting on a
-      // marker still orbits. Primary only: a second finger is a pinch.
+      // marker still moves the camera. Primary only: a second finger is a pinch.
       tapRef.current =
         event.button === 0 && event.isPrimary
           ? { pointerId: event.pointerId, cx: event.clientX, cy: event.clientY }
@@ -1140,7 +1140,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
         ref={containerRef}
         data-testid="map-3d-canvas"
         role="application"
-        aria-label="The 3D map. Drag to orbit; with Fill or Erase armed, drag to paint; with Place armed, press to place and drag to aim; with Move armed, drag a waypoint to put it somewhere else; with Select armed, press waypoints to select them; with Remove armed, press a waypoint to delete it; with Zone armed, tap each corner of a forbidden zone and its first corner to close it, start on a zone's corner and end on another of its corners to merge into it, or drag a corner to move it; with Zone remove armed, tap a zone to delete it."
+        aria-label="The 3D map. Drag to pan, right-drag to orbit; with Fill or Erase armed, drag to paint; with Place armed, press to place and drag to aim; with Move armed, drag a waypoint to put it somewhere else; with Select armed, press waypoints to select them; with Remove armed, press a waypoint to delete it; with Zone armed, tap each corner of a forbidden zone and its first corner to close it, start on a zone's corner and end on another of its corners to merge into it, or drag a corner to move it; with Zone remove armed, tap a zone to delete it."
         className={cn(
           "absolute inset-0 touch-none",
           props.tool === "move"
@@ -1149,7 +1149,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
               : "cursor-default"
             : tapsStops(props.tool) && hovering
             ? "cursor-pointer"
-            : props.tool === "orbit"
+            : props.tool === "pan"
               ? "cursor-grab active:cursor-grabbing"
               : props.tool === "remove" || props.tool === "zoneRemove"
                 ? "cursor-default"

@@ -3,6 +3,7 @@
 import {
   BanIcon,
   EraserIcon,
+  HandIcon,
   MapPinIcon,
   MapPinPlusIcon,
   MapPinXIcon,
@@ -12,7 +13,6 @@ import {
   PaintbrushIcon,
   PentagonIcon,
   Redo2Icon,
-  Rotate3dIcon,
   SaveIcon,
   SunMediumIcon,
   Trash2Icon,
@@ -44,7 +44,7 @@ import { BRUSH_RADII_M } from "@/lib/map/ground-fill";
  *
  * Right, **Draw**: what a press on the map works on — nothing, ground
  * patches, waypoints or forbidden zones — beside the zoom. Left: fit and
- * shading, history, Save, then Orbit and the tools the Draw choice allows.
+ * shading, history, Save, then Pan and the tools the Draw choice allows.
  * Save sends the patches, the forbidden zones drawn, merged or moved, and
  * the waypoints placed, moved or deleted; History is the patches' only. A
  * zone is written as it is removed.
@@ -74,7 +74,7 @@ const RADIUS_ITEMS = BRUSH_RADII_M.map((radius) => ({
 }));
 
 /**
- * The left strip. Orbit is always offered — with nothing chosen it is the
+ * The left strip. Pan is always offered — with nothing chosen it is the
  * only tool, lit, so the strip still says what a drag does. The radius shows
  * only while a brush is armed.
  */
@@ -173,15 +173,15 @@ export function Map3dToolBar({
 
       <ToolGroup label="Tool">
         <ToolButton
-          label="Orbit"
+          label="Pan"
           hint={
             drawKind === null
-              ? "drag turns the map; choose a type to edit it"
-              : "drag turns the map, right-drag pans, the wheel zooms"
+              ? "drag pans, right-drag turns the map; choose a type to edit it"
+              : "drag pans, right-drag turns the map, the wheel zooms"
           }
-          icon={Rotate3dIcon}
-          pressed={tool === "orbit"}
-          onClick={() => onToolChange("orbit")}
+          icon={HandIcon}
+          pressed={tool === "pan"}
+          onClick={() => onToolChange("pan")}
         />
         {drawKind === "ground" && (
           <>
