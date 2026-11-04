@@ -347,6 +347,12 @@ export interface BackendOverrides {
    * the default `taskState`; any other id with none answers 404.
    */
   taskStates?: Record<string, Record<string, unknown>>;
+  /**
+   * What GET /tasks/<id> answers for a job this console POSTed, by its id,
+   * which the console makes up. With it the active list never lists the job,
+   * as when one fails before the list's next poll.
+   */
+  dispatchedTaskState?: (id: string) => Record<string, unknown>;
   /** The tree every map's /octomap answers with; see octomapBt. */
   octomap?: Buffer;
   /**
@@ -587,6 +593,7 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   // Every id the active list has carried. A test ends a job by emptying the
   // list, and the backend still answers a finished run from retention.
   const listedTaskIds = new Set<string>();
+  const dispatchedTaskIds = new Set<string>();
   const octomap = over.octomap ?? octomapBt();
   // Copied: the PUT below replaces a map's list, and a test's fixture must
   // not change under it.
@@ -747,6 +754,7 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       // The ack's id is what the tracker polls; the catch-all's `{ message }`
       // would fail the ack schema.
       const body = parseBody(request.postData()) as { id?: string } | null;
+      if (body?.id) dispatchedTaskIds.add(body.id);
       return json(route, {
         id: body?.id ?? "robot01-task-0-0",
         status: "PENDING",
@@ -786,6 +794,9 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       // notices. An id never listed still answers 404.
       const state =
         taskStates[id] ??
+        (over.dispatchedTaskState && dispatchedTaskIds.has(id)
+          ? over.dispatchedTaskState(id)
+          : undefined) ??
         (activeTasks.some((task) => task.id === id)
           ? taskState({ id })
           : listedTaskIds.has(id)
