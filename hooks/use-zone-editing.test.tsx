@@ -82,6 +82,43 @@ describe("useZoneEditing", () => {
     expect(mutate).toHaveBeenCalledTimes(1);
   });
 
+  it("hands each finished edit to onCommit once, a corner drag as one", () => {
+    const onCommit = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ cb }: { cb: typeof onCommit }) => useZoneEditing("lab", [zone("a"), zone("b")], { onCommit: cb }),
+      { initialProps: { cb: onCommit } },
+    );
+    act(() => result.current.remove(["a"]));
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit.mock.calls[0][0].after.map((entry: ZonePolygon) => entry.id)).toEqual(["b"]);
+
+    // A new callback is not a new edit.
+    const next = vi.fn();
+    rerender({ cb: next });
+    expect(next).not.toHaveBeenCalled();
+
+    for (const x of [-1, -2, -3]) {
+      act(() => result.current.moveCorner({ zoneId: "b", index: 0 }, { x, y: 0 }));
+    }
+    expect(next).not.toHaveBeenCalled();
+    act(() => result.current.endCornerDrag());
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0].before).toEqual([zone("b")]);
+  });
+
+  it("puts a removed zone back on Undo, leaving nothing to save", () => {
+    const onCommit = vi.fn();
+    const { result } = renderHook(() =>
+      useZoneEditing("lab", [zone("a"), zone("b")], { onCommit }),
+    );
+    act(() => result.current.remove(["a"]));
+    act(() => result.current.replace(onCommit.mock.calls[0][0].before));
+    expect(result.current.zones?.map((entry) => entry.id)).toEqual(["a", "b"]);
+    expect(result.current.dirty).toBe(false);
+    // Undo is not itself an edit to record.
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses to save over a list it has not read, then takes the first read", () => {
     const { result, rerender } = renderHook(
       ({ read }: { read: ZonePolygon[] | null }) => useZoneEditing("lab", read),

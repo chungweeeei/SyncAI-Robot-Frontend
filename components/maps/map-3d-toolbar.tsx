@@ -138,7 +138,7 @@ export function Map3dToolBar({
       <ToolDivider />
 
       <ToolGroup label="History">
-        <ToolButton label="Undo" hint="take back the last stroke" icon={Undo2Icon} disabled={!canUndo} onClick={onUndo} />
+        <ToolButton label="Undo" hint="take back the last stroke or zone edit" icon={Undo2Icon} disabled={!canUndo} onClick={onUndo} />
         <ToolButton label="Redo" hint="put it back" icon={Redo2Icon} disabled={!canRedo} onClick={onRedo} />
       </ToolGroup>
 
@@ -254,7 +254,7 @@ export function Map3dToolBar({
             />
             <ToolButton
               label="Remove zone"
-              hint={zoneLock ?? "tap a forbidden zone to delete it; Save sends the change"}
+              hint={zoneLock ?? "tap a forbidden zone to delete it; Undo puts it back, Save sends the change"}
               icon={Trash2Icon}
               tone="caution"
               pressed={tool === "zoneRemove"}

@@ -11,10 +11,10 @@ import {
 import type { ZonePolygon } from "@/lib/map/zone";
 
 /**
- * The rules both map editors keep for forbidden zones. Each is something the
+ * The rules the map editor keeps for forbidden zones. Each is something the
  * operator would otherwise feel: a zone erased by a save over a list never
- * read, a shape left joined to a zone that is gone, a removed zone that
- * stays hidden after the robot refused to delete it.
+ * read, a shape left joined to a zone that is gone, an Undo that skips a
+ * zone edit or takes a whole corner drag back one move at a time.
  */
 
 const square = (id: string, at = 0): ZonePolygon => ({
@@ -140,5 +140,69 @@ describe("zoneSessionReducer", () => {
       point: { x: 4, y: 0 },
     });
     expect(zoneSessionDirty(run(dragged, { type: "saved", zones: sent }))).toBe(true);
+  });
+
+  it("records each finished edit for Undo, and nothing for one that changed nothing", () => {
+    const start = initialZoneSession([square("z1"), square("z2", 5)]);
+    const removed = run(start, { type: "remove", ids: ["z1"] });
+    expect(removed.commit).toEqual({ before: start.zones, after: [square("z2", 5)] });
+
+    // A remove that hits nothing and a close short of corners are not edits.
+    expect(run(removed, { type: "remove", ids: ["gone"] }).commit).toBe(removed.commit);
+    const short = run(removed, { type: "add", point: { x: 9, y: 9 } }, { type: "close" });
+    expect(short.commit).toBe(removed.commit);
+
+    // A shape in flight is not one either: it has its own Backspace.
+    expect(run(start, { type: "add", point: { x: 9, y: 9 } }).commit).toBeNull();
+  });
+
+  it("records a corner drag as one edit, once it is let go", () => {
+    const start = initialZoneSession([square("z1")]);
+    const corner = { zoneId: "z1", index: 0 };
+    const dragging = run(
+      start,
+      { type: "move", corner, point: { x: -1, y: 0 } },
+      { type: "move", corner, point: { x: -2, y: 0 } },
+      { type: "move", corner, point: { x: -3, y: 0 } },
+    );
+    expect(dragging.commit).toBeNull();
+
+    const dropped = run(dragging, { type: "dragEnd" });
+    expect(dropped.commit?.before).toEqual(start.zones);
+    expect(dropped.commit?.after[0].points[0]).toEqual({ x: -3, y: 0 });
+    expect(dropped.dragFrom).toBeNull();
+
+    // A drag that ends where it began records nothing.
+    const back = run(
+      start,
+      { type: "move", corner, point: { x: -1, y: 0 } },
+      { type: "move", corner, point: { x: 0, y: 0 } },
+      { type: "dragEnd" },
+    );
+    expect(back.commit).toBeNull();
+  });
+
+  it("steps back to a saved list on Undo, measuring dirty against what was saved", () => {
+    const zones = [square("z1"), square("z2", 5)];
+    const removed = run(initialZoneSession(zones), { type: "remove", ids: ["z1"] });
+    expect(zoneSessionDirty(removed)).toBe(true);
+    const undone = run(removed, { type: "replace", zones: removed.commit!.before });
+    expect(undone.zones).toEqual(zones);
+    expect(zoneSessionDirty(undone)).toBe(false);
+
+    // After a save the same Undo is an unsaved edit again.
+    const saved = run(removed, { type: "saved", zones: removed.zones! });
+    expect(zoneSessionDirty(run(saved, { type: "replace", zones }))).toBe(true);
+  });
+
+  it("drops a shape in flight on Undo, since its anchor may be the zone undone", () => {
+    const state = run(
+      initialZoneSession([square("z1")]),
+      { type: "anchor", zoneId: "z1", index: 0 },
+      { type: "add", point: { x: 3, y: 3 } },
+      { type: "replace", zones: [] },
+    );
+    expect(state.draft).toEqual([]);
+    expect(state.anchor).toBeNull();
   });
 });

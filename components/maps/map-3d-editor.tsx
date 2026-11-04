@@ -65,9 +65,12 @@ import {
 import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
 import {
   canCloseZone,
+  removedZones,
   zoneBandAround,
+  zonesBytes,
   type ZoneCornerRef,
 } from "@/lib/map/zone";
+import type { ZoneCommit } from "@/lib/map/zone-session";
 import { isTypingTarget } from "@/lib/keyboard";
 import { cn } from "@/lib/utils";
 import type { MapVertex, VertexType, ZonePoint, ZonePolygon } from "@/lib/types/map";
@@ -185,6 +188,19 @@ type SaveNote =
   | { kind: "failed"; message: string };
 
 /**
+ * One undo step: a brush stroke's patch, or a finished zone edit as the
+ * list stood either side of it. The waypoints have no undo yet.
+ */
+type EditorEntry =
+  | { kind: "patch"; patch: GroundPatch }
+  | ({ kind: "zones" } & ZoneCommit);
+
+const editorEntryBytes = (entry: EditorEntry): number =>
+  entry.kind === "patch"
+    ? groundPatchBytes(entry.patch)
+    : zonesBytes(entry.before) + zonesBytes(entry.after);
+
+/**
  * The editor shell: tool state, the undo stack, shortcuts and the save flow.
  * The canvas owns the scene and the camera; they meet at the session
  * (lib/map/ground-fill.ts), which is mutable and never in React state.
@@ -255,7 +271,7 @@ function Map3dSurface({
     canRedo,
     push: pushHistory,
     pop: popHistory,
-  } = useUndoHistory<GroundPatch>(groundPatchBytes);
+  } = useUndoHistory<EditorEntry>(editorEntryBytes);
 
   const runLock = useMapRunLock(name);
   const { mutate: save } = useSaveMapOctomapEdits();
@@ -265,7 +281,14 @@ function Map3dSurface({
    * (hooks/use-zone-editing.ts). Null zones until the robot's list
    * is read: a save over an unread list would erase it.
    */
-  const zoneEdit = useZoneEditing(name, keepout.zones, { clearNoteOnEdit: true });
+  const recordZones = React.useCallback(
+    (commit: ZoneCommit) => pushHistory({ kind: "zones", ...commit }),
+    [pushHistory],
+  );
+  const zoneEdit = useZoneEditing(name, keepout.zones, {
+    clearNoteOnEdit: true,
+    onCommit: recordZones,
+  });
   const {
     addCorner: addZoneCorner,
     anchorOn: anchorZone,
@@ -275,6 +298,8 @@ function Map3dSurface({
     dropShape: dropZoneShape,
     popCorner: popZoneCorner,
     remove: removeZones,
+    endCornerDrag: endZoneCornerDrag,
+    replace: replaceZones,
     save: saveZoneEdits,
   } = zoneEdit;
   const zones = zoneEdit.zones;
@@ -416,20 +441,25 @@ function Map3dSurface({
 
   const commit = React.useCallback(
     (patch: GroundPatch) => {
-      pushHistory(patch);
+      pushHistory({ kind: "patch", patch });
       refresh();
     },
     [refresh, pushHistory],
   );
 
+  /** One history for the patches and the zones, so Undo takes the last edit of either. */
   const step = React.useCallback(
     (direction: "undo" | "redo") => {
-      const patch = popHistory(direction);
-      if (!patch) return;
-      applyGroundPatch(session.edits, patch, direction === "undo" ? "before" : "after");
+      const entry = popHistory(direction);
+      if (!entry) return;
+      if (entry.kind === "zones") {
+        replaceZones(direction === "undo" ? entry.before : entry.after);
+        return;
+      }
+      applyGroundPatch(session.edits, entry.patch, direction === "undo" ? "before" : "after");
       refresh();
     },
-    [session, refresh, popHistory],
+    [session, refresh, popHistory, replaceZones],
   );
   const undo = React.useCallback(() => step("undo"), [step]);
   const redo = React.useCallback(() => step("redo"), [step]);
@@ -460,6 +490,11 @@ function Map3dSurface({
    */
   const onSave = React.useCallback(() => {
     if (runLock.locked || note.kind === "saving" || zoneNote.kind === "saving") return;
+    // A removal is staged without asking, so Undo can take it back; Save is
+    // where it opens an area to the robot, and is asked once. No means no
+    // Save at all, so a cancel never leaves half the edits sent.
+    const gone = zonesDirty ? removedZones(zoneEdit.saved ?? [], zones ?? []) : [];
+    if (gone.length > 0 && !window.confirm(zoneDeleteQuestion(gone))) return;
     if (verticesDirty && !vertexWriting) {
       // The plan as of the press; rebaseVertices folds in what landed, so a
       // stop placed mid-request stays unsaved, and a refusal keeps the rest.
@@ -503,6 +538,8 @@ function Map3dSurface({
     name,
     voxels,
     zonesDirty,
+    zoneEdit.saved,
+    zones,
     saveZoneEdits,
     verticesDirty,
     vertexWriting,
@@ -586,20 +623,11 @@ function Map3dSurface({
   );
 
   /**
-   * Take a zone off the map, staged for Save. Still asked once, as a
-   * waypoint's Remove is: the zones have no undo here, so a finger's tap on
-   * the wrong one could only be taken back by dropping every unsaved edit.
+   * Take a zone off the map, staged for Save and not asked: Undo puts it
+   * back, and Save asks before the robot loses it.
    */
   const removeZone = (zone: ZonePolygon) => {
-    if (zoneLock !== null) return;
-    if (
-      !window.confirm(
-        `Delete forbidden zone "${zone.name ?? zone.id}"? Once you save, the robot may drive there.`,
-      )
-    ) {
-      return;
-    }
-    removeZones([zone.id]);
+    if (zoneLock === null) removeZones([zone.id]);
   };
 
   const placeLocked = placeLock !== null;
@@ -866,6 +894,7 @@ function Map3dSurface({
           onZoneAnchor={anchorZone}
           onZoneMerge={mergeZone}
           onZoneCornerDrag={dragZoneCorner}
+          onZoneCornerDragEnd={endZoneCornerDrag}
           onZoneRemove={removeZone}
         />
       </ViewportBoundary>
@@ -1135,6 +1164,15 @@ function Map3dSurface({
 }
 
 /** The question a stop's Delete asks: nothing leaves the robot until Save. */
+/** What Save asks before the zones it would delete leave the robot. */
+function zoneDeleteQuestion(gone: readonly ZonePolygon[]): string {
+  const what =
+    gone.length === 1
+      ? `forbidden zone "${gone[0].name ?? gone[0].id}"`
+      : `${gone.length} forbidden zones`;
+  return `Delete ${what}? The robot may then drive there.`;
+}
+
 function deleteQuestion(stopName: string): string {
   return `Delete "${stopName}"? It is removed from the robot when you save.`;
 }

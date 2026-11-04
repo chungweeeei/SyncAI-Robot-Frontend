@@ -554,6 +554,34 @@ test.describe("the editor's 3D view", () => {
       expect(errors, "the page logged errors").toEqual([]);
     });
 
+    test("takes a drawn zone back with Ctrl+Z, and puts it back with Ctrl+Shift+Z", async ({
+      page,
+    }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      await mockBackend(page, { maps: [mapSummary(withOctomap())] });
+      await page.goto(EDITOR);
+      await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+      await chooseDraw(page, "Forbidden zone");
+      await page.getByRole("button", { name: "Shape" }).click();
+      const corners = await threeCorners(page);
+      await page.mouse.click(corners[0].x, corners[0].y);
+      await expect(saveButton(page)).toBeEnabled();
+
+      // The closed zone is the last edit, so it is what Undo takes.
+      await page.keyboard.press("ControlOrMeta+z");
+      await expect(saveButton(page)).toBeDisabled();
+      await page.keyboard.press("ControlOrMeta+Shift+z");
+      await expect(saveButton(page)).toBeEnabled();
+
+      // And Save sends it, unasked: nothing on the robot is deleted.
+      const put = keepoutPut(page);
+      await saveButton(page).click();
+      const body = (await put).postDataJSON() as { zones: Record<string, unknown>[] };
+      expect(body.zones).toHaveLength(1);
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
     test("moves a finished zone's corner by dragging it", async ({ page }) => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
@@ -586,7 +614,7 @@ test.describe("the editor's 3D view", () => {
       expect(errors, "the page logged errors").toEqual([]);
     });
 
-    test("stages a tapped zone's removal for Save, keeping the others' bands", async ({ page }) => {
+    test("removes a tapped zone unasked, undoes it, and asks once on Save", async ({ page }) => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
       const square = (half: number) => [
@@ -616,23 +644,48 @@ test.describe("the editor's 3D view", () => {
       await chooseDraw(page, "Forbidden zone");
       await page.getByRole("button", { name: "Remove zone" }).click();
 
+      // Every dialog is recorded, and answered as `answer` says.
+      const asked: string[] = [];
+      let answer: "accept" | "dismiss" = "dismiss";
+      page.on("dialog", (dialog) => {
+        asked.push(dialog.message());
+        void (answer === "accept" ? dialog.accept() : dialog.dismiss());
+      });
       const puts: string[] = [];
       page.on("request", (request) => {
         if (request.method() === "PUT" && new URL(request.url()).pathname === keepoutPath) {
           puts.push(request.url());
         }
       });
-      page.once("dialog", (dialog) => void dialog.accept());
+      const unsaved = page.getByText(/Unsaved — press Save/);
+
+      // A tap takes it off at once, unasked; nothing is sent.
       const centre = await centreOnScreen(page);
       await page.mouse.click(centre.x, centre.y);
-      // Off the map, and nothing sent: Save is what deletes it on the robot.
-      await expect(page.getByText(/Unsaved — press Save/)).toBeVisible();
+      await expect(unsaved).toBeVisible();
       await expect(saveButton(page)).toBeEnabled();
+      expect(asked).toEqual([]);
+
+      // Undo puts it back: the zones match the robot's again.
+      await page.getByRole("button", { name: "Undo" }).click();
+      await expect(unsaved).toHaveCount(0);
+      await expect(saveButton(page)).toBeDisabled();
+      await page.getByRole("button", { name: "Redo" }).click();
+      await expect(unsaved).toBeVisible();
+
+      // Save asks once; a No sends nothing and keeps the removal staged.
+      await saveButton(page).click();
+      await expect.poll(() => asked).toEqual([
+        'Delete forbidden zone "middle"? The robot may then drive there.',
+      ]);
+      await expect(unsaved).toBeVisible();
       expect(puts).toEqual([]);
 
+      answer = "accept";
       const put = keepoutPut(page);
       await saveButton(page).click();
       const body = (await put).postDataJSON() as { zones: Record<string, unknown>[] };
+      expect(asked).toHaveLength(2);
 
       expect(body.zones).toEqual([
         {
