@@ -586,13 +586,17 @@ function Map3dSurface({
   );
 
   /**
-   * Remove a zone, on the robot at once.
-   * Asked once: a finger's tap on the wrong zone must not open an area to
-   * the robot.
+   * Take a zone off the map, staged for Save. Still asked once, as a
+   * waypoint's Remove is: the zones have no undo here, so a finger's tap on
+   * the wrong one could only be taken back by dropping every unsaved edit.
    */
   const removeZone = (zone: ZonePolygon) => {
-    if (zoneLock !== null || zoneEdit.writing) return;
-    if (!window.confirm(`Delete forbidden zone "${zone.name ?? zone.id}"? The robot may then drive there.`)) {
+    if (zoneLock !== null) return;
+    if (
+      !window.confirm(
+        `Delete forbidden zone "${zone.name ?? zone.id}"? Once you save, the robot may drive there.`,
+      )
+    ) {
       return;
     }
     removeZones([zone.id]);
