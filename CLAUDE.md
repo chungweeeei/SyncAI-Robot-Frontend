@@ -424,8 +424,10 @@ lib/
                 refused as it is built by stepLinkProblem / stepMoveProblem,
                 with stepGroupError as the backstop for a list handed in),
                 the masthead's rules for the running job (run.ts: which step is
-                live, what to call it, whether a hold is offered, and the state
-                the bar ends in), the editor's unsaved draft (draft-store.ts
+                live, what to call it, whether a hold is offered, the state
+                the bar ends in, and how long a closed run stays on it:
+                ENDED_RUN_LINGER_MS, 5 s from the read that closed it), the
+                editor's unsaved draft (draft-store.ts
                 — the one place that touches browser storage) and its undo
                 history (draft-history.ts: snapshots, a burst of typing as one
                 entry), the step list read as stops (stops.ts: before setting
@@ -653,7 +655,10 @@ touch one, prefer moving it toward the rule.
   adds one derived read on top of the second: `useActiveRun` polls
   `task(id)` for whatever the active list says is running (2 s, the only
   place a paused run and its current step are visible), and switches off
-  when the run leaves the list or its own read turns terminal. It shares the
+  when the run leaves the list or its own read turns terminal — a run the
+  list drops before its read said it closed gets one more read, no poll, so
+  the bar's `ended` run can say how it closed. The list itself still means
+  "running now": the map lock and the history refresh read it. It shares the
   entry with `useTaskTracker`, so every poller of that key goes through
   `fetchHeldTaskState` — see the key's note. The history screen
   polls nothing: `taskHistory` is the prefix of both its page keys and its
