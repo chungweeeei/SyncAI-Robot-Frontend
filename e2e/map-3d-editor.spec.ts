@@ -586,7 +586,7 @@ test.describe("the editor's 3D view", () => {
       expect(errors, "the page logged errors").toEqual([]);
     });
 
-    test("removes a tapped zone after asking, keeping the others' bands", async ({ page }) => {
+    test("stages a tapped zone's removal for Save, keeping the others' bands", async ({ page }) => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);
       const square = (half: number) => [
@@ -616,10 +616,22 @@ test.describe("the editor's 3D view", () => {
       await chooseDraw(page, "Forbidden zone");
       await page.getByRole("button", { name: "Remove zone" }).click();
 
+      const puts: string[] = [];
+      page.on("request", (request) => {
+        if (request.method() === "PUT" && new URL(request.url()).pathname === keepoutPath) {
+          puts.push(request.url());
+        }
+      });
       page.once("dialog", (dialog) => void dialog.accept());
-      const put = keepoutPut(page);
       const centre = await centreOnScreen(page);
       await page.mouse.click(centre.x, centre.y);
+      // Off the map, and nothing sent: Save is what deletes it on the robot.
+      await expect(page.getByText(/Unsaved — press Save/)).toBeVisible();
+      await expect(saveButton(page)).toBeEnabled();
+      expect(puts).toEqual([]);
+
+      const put = keepoutPut(page);
+      await saveButton(page).click();
       const body = (await put).postDataJSON() as { zones: Record<string, unknown>[] };
 
       expect(body.zones).toEqual([

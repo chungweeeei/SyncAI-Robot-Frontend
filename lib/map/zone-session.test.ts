@@ -126,18 +126,6 @@ describe("zoneSessionReducer", () => {
     expect(moved.zones?.[0].points).toHaveLength(4);
   });
 
-  it("puts a refused remove back where it stood, leaving the editor clean", () => {
-    const zones = [square("z1"), square("z2", 5), square("z3", 10)];
-    const removed = [{ zone: zones[1], index: 1 }];
-    const state = run(
-      initialZoneSession(zones),
-      { type: "remove", ids: ["z2"] },
-      { type: "restore", removed },
-    );
-    expect(state.zones).toEqual(zones);
-    expect(zoneSessionDirty(state)).toBe(false);
-  });
-
   it("measures dirty against what the last save sent, not what is on screen now", () => {
     const sent = [square("z1"), square("z2", 5)];
     // A zone drawn since the last read: the screen holds two, the saved list one.
@@ -152,14 +140,5 @@ describe("zoneSessionReducer", () => {
       point: { x: 4, y: 0 },
     });
     expect(zoneSessionDirty(run(dragged, { type: "saved", zones: sent }))).toBe(true);
-  });
-
-  it("takes a landed remove out of the saved list too", () => {
-    const state = run(
-      initialZoneSession([square("z1"), square("z2", 5)]),
-      { type: "remove", ids: ["z1"] },
-      { type: "savedRemoval", ids: ["z1"] },
-    );
-    expect(zoneSessionDirty(state)).toBe(false);
   });
 });
