@@ -6,6 +6,7 @@ import { useMutation } from "@tanstack/react-query";
 import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { ignore } from "@/lib/api/mutation-state";
+import { mutationKeys } from "@/lib/api/query-keys";
 import {
   cancelTask,
   submitTask,
@@ -64,6 +65,8 @@ export function useTaskDispatch(robotId: string | null): TaskDispatch {
   const { engaged: stopped } = useConsoleEstop();
 
   const submit = useMutation({
+    mutationKey: mutationKeys.taskDispatch,
+    meta: { kind: "task" },
     // The robot id travels in the variables so it is non-null without an assertion.
     mutationFn: async ({
       robot,

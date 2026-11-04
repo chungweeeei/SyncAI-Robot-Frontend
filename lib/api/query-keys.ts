@@ -178,4 +178,11 @@ export const mutationKeys = {
    * greys while any of them is in flight from this console.
    */
   wifiChange: ["wifi-change"] as const,
+  /**
+   * A job sent from this console (a goal or a task). The masthead reads the
+   * last one that landed, because a job that fails inside the active list's
+   * poll interval is never listed and the bar would otherwise not see it at
+   * all. Each carries `meta.kind`, the active list's word for it.
+   */
+  taskDispatch: ["task-dispatch"] as const,
 };

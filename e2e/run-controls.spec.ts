@@ -278,4 +278,38 @@ test.describe("the running-job controls", () => {
     );
     await expect(readout(page)).toContainText("Job list unavailable");
   });
+
+  test("says a job this console sent failed, though the list never listed it", async ({
+    page,
+  }) => {
+    // The robot refuses it at once: the run has closed before the list's
+    // next read, so only the dispatch knows it existed.
+    const writes = await mockBackend(page, {
+      dispatchedTaskState: (id) => ({
+        id,
+        status: "FAILED",
+        steps: [
+          {
+            id: "1-move",
+            status: "FAILED",
+            error_msg:
+              "move ended in aborted: Planning failed: the goal is inside a keepout zone (detail)",
+          },
+        ],
+      }),
+    });
+    await page.goto("/tasks");
+    await expect(readout(page)).toContainText("No task message in queue");
+
+    await page.getByRole("button", { name: 'Run "Morning round" now' }).click();
+    await expect
+      .poll(() => writes.filter((w) => w.path === "/api/v1/tasks"))
+      .toHaveLength(1);
+
+    await expect(readout(page)).toContainText("Failed");
+    await expect(
+      strip(page).getByRole("link", { name: /^Morning round/ }),
+    ).toBeVisible();
+    await expect(cancelButton(page)).toBeDisabled();
+  });
 });

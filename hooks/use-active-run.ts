@@ -1,12 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutationState, useQuery, type Mutation } from "@tanstack/react-query";
 
 import type { ActiveTasksStatus } from "@/hooks/use-active-tasks";
 import { useConsoleActiveTasks } from "@/hooks/use-console-active-tasks";
 import { NO_STEPS, fetchHeldTaskState } from "@/hooks/use-task-tracker";
-import { queryKeys } from "@/lib/api/query-keys";
+import { mutationKeys, queryKeys } from "@/lib/api/query-keys";
 import {
   isTerminalTaskStatus,
   type ActiveTask,
@@ -53,6 +53,28 @@ export interface UseActiveRun {
 }
 
 /**
+ * A job this console sent, as the active list would have listed it. Only the
+ * bar's words come from it (kind, name, start); nothing locks or acts on it.
+ */
+function dispatchedRun(mutation: Mutation<unknown, Error, unknown>): ActiveTask | null {
+  const { data, variables, submittedAt } = mutation.state;
+  if (typeof data !== "string") return null;
+  const kind = mutation.options.meta?.kind;
+  const name = (variables as { name?: unknown } | undefined)?.name;
+  return {
+    id: data,
+    run_id: "",
+    status: "PENDING",
+    started_at: new Date(submittedAt).toISOString(),
+    source: "DIRECT",
+    schedule_id: null,
+    kind: typeof kind === "string" ? kind : null,
+    name: typeof name === "string" ? name : null,
+    map_name: null,
+  };
+}
+
+/**
  * The job running on the robot now, with its per-step state — the read
  * behind the masthead's step readout and Pause / Resume.
  *
@@ -73,6 +95,34 @@ export function useActiveRun(): UseActiveRun {
   const [last, setLast] = React.useState<ActiveTask | null>(null);
   if (task !== null && task.id !== last?.id) setLast(task);
 
+  // A job sent from this tab that the list never showed: one that failed
+  // inside the list's poll interval would otherwise never reach the bar. It
+  // is taken once, and only over an empty list, so it stands in as the run
+  // that has just left it and never as a run going on.
+  const dispatches = useMutationState({
+    filters: { mutationKey: mutationKeys.taskDispatch, status: "success" },
+    select: dispatchedRun,
+  });
+  const dispatched = dispatches.reduce<ActiveTask | null>(
+    (latest, next) =>
+      next && (!latest || next.started_at >= latest.started_at) ? next : latest,
+    null,
+  );
+  const [adoptedId, setAdoptedId] = React.useState<string | null>(null);
+  const [unlistedId, setUnlistedId] = React.useState<string | null>(null);
+  if (dispatched && dispatched.id !== adoptedId) {
+    if (task?.id === dispatched.id || last?.id === dispatched.id) {
+      setAdoptedId(dispatched.id);
+    } else if (status === "ok" && task === null) {
+      setAdoptedId(dispatched.id);
+      setUnlistedId(dispatched.id);
+      setLast(dispatched);
+    }
+  }
+  // Never listed, so nothing has read it closing yet: polled until a read
+  // says it closed, where a run the list dropped is read once.
+  const unlisted = last !== null && last.id === unlistedId;
+
   const { data } = useQuery({
     queryKey: queryKeys.task(task?.id ?? ""),
     queryFn: fetchHeldTaskState,
@@ -92,6 +142,10 @@ export function useActiveRun(): UseActiveRun {
     enabled: gone,
     staleTime: (entry) =>
       isTerminalTaskStatus(entry.state.data?.status) ? Infinity : 0,
+    refetchInterval: (entry) =>
+      unlisted && !isTerminalTaskStatus(entry.state.data?.status)
+        ? ACTIVE_RUN_POLL_MS
+        : false,
   });
   const closedAt = isTerminalTaskStatus(closing.data?.status)
     ? closing.dataUpdatedAt
