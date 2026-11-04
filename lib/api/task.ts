@@ -408,6 +408,8 @@ export interface ActiveTask {
   status: TaskStatus;
   /** ISO 8601, UTC. */
   started_at: string;
+  /** ISO 8601, UTC; null while running, set in `recently_ended`. */
+  ended_at: string | null;
   source: TaskSource;
   /** Set only when `source` is "SCHEDULE". */
   schedule_id: string | null;
@@ -425,25 +427,34 @@ export interface ActiveTask {
 /** Absent reads as null, so an older backend still parses (it still enforces the lock). */
 const AbsentOrNullStringSchema = z.string().nullable().default(null);
 
+const ActiveTaskSchema: z.ZodType<ActiveTask> = z.object({
+  id: z.string(),
+  run_id: z.string(),
+  status: TaskStatusSchema,
+  started_at: z.string(),
+  ended_at: AbsentOrNullStringSchema,
+  source: z.enum(["DIRECT", "SCHEDULE"]),
+  schedule_id: z.string().nullable(),
+  kind: AbsentOrNullStringSchema,
+  name: AbsentOrNullStringSchema,
+  map_name: AbsentOrNullStringSchema,
+});
+
 const ActiveTasksResponseSchema: z.ZodType<ActiveTasksResponse> = z.object({
-  tasks: z.array(
-    z.object({
-      id: z.string(),
-      run_id: z.string(),
-      status: TaskStatusSchema,
-      started_at: z.string(),
-      source: z.enum(["DIRECT", "SCHEDULE"]),
-      schedule_id: z.string().nullable(),
-      kind: AbsentOrNullStringSchema,
-      name: AbsentOrNullStringSchema,
-      map_name: AbsentOrNullStringSchema,
-    }),
-  ),
+  tasks: z.array(ActiveTaskSchema),
+  // Absent from a backend older than it: nothing just ended, as before.
+  recently_ended: z.array(ActiveTaskSchema).default([]),
   as_of: z.string(),
 });
 
 export interface ActiveTasksResponse {
   tasks: ActiveTask[];
+  /**
+   * Runs that closed in the last few seconds, newest first. Never running:
+   * no map lock and no "busy" reads them. A run that starts and fails between
+   * two polls is in here and never in `tasks`.
+   */
+  recently_ended: ActiveTask[];
   /**
    * When the backend read it, ISO 8601 UTC. Measure elapsed time against this,
    * not the browser clock: different clocks, and the answer is cached.

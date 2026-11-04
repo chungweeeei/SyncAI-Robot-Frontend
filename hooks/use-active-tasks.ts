@@ -17,6 +17,8 @@ export type ActiveTasksStatus = "loading" | "ok" | "error";
 export interface UseActiveTasks {
   /** Running executions, or the last good list while `status` is "error". */
   tasks: ActiveTask[];
+  /** Closed in the last few seconds, newest first; see ActiveTasksResponse. */
+  recentlyEnded: ActiveTask[];
   /**
    * Consumers MUST distinguish "error" from an empty list: a failed poll shown
    * as idle would say the robot stands still while it drives.
@@ -44,16 +46,24 @@ export function useActiveTasks(
   });
 
   // A run leaving this list has finished, and this poll is the only place that
-  // sees every run finish, so it refreshes the history. `data` is structurally
-  // shared, so an idle robot costs nothing here.
+  // sees every run finish, so it refreshes the history — as does a run that
+  // first appears already ended, having started and closed between two reads.
+  // `data` is structurally shared, so an idle robot costs nothing here.
   const queryClient = useQueryClient();
-  const previousIds = React.useRef<Set<string> | null>(null);
+  const previous = React.useRef<{ ids: Set<string>; ended: Set<string> } | null>(
+    null,
+  );
   React.useEffect(() => {
     if (!data) return;
     const ids = new Set(data.tasks.map((task) => task.id));
-    const previous = previousIds.current;
-    previousIds.current = ids;
-    if (previous && [...previous].some((id) => !ids.has(id))) {
+    const ended = new Set(data.recently_ended.map((task) => task.id));
+    const before = previous.current;
+    previous.current = { ids, ended };
+    if (
+      before &&
+      ([...before.ids].some((id) => !ids.has(id)) ||
+        [...ended].some((id) => !before.ended.has(id) && !before.ids.has(id)))
+    ) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.taskHistory });
     }
   }, [data, queryClient]);
@@ -64,6 +74,7 @@ export function useActiveTasks(
 
   return {
     tasks: data?.tasks ?? [],
+    recentlyEnded: data?.recently_ended ?? [],
     status: isPending ? "loading" : isError ? "error" : "ok",
     asOf: data?.as_of ?? null,
     refresh,
