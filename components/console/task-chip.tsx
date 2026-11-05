@@ -5,7 +5,8 @@ import type { TaskStatus } from "@/lib/api/task";
 
 // In flight is active guidance (magenta); finished is a measured outcome.
 // CANCELED and PAUSED are caution, not neutral: the robot is short of where
-// it was sent, worth a second look though nothing went wrong.
+// it was sent, worth a second look though nothing went wrong. SKIPPED is
+// neutral: a continued job's step its failed job had already done.
 //
 // Exported for the status strip, which draws its own shorter label but must
 // use the same colour as /tasks.
@@ -17,6 +18,7 @@ export const STATUS_TONE: Record<TaskStatus, Tone> = {
   COMPLETED: "live",
   FAILED: "warn",
   CANCELED: "caution",
+  SKIPPED: "neutral",
 };
 
 /**

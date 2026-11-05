@@ -16,7 +16,9 @@ import type { PlanarPose } from "@/lib/types/robot";
 /**
  * PAUSED is a *reading* (`GET /tasks/{id}`, once a step is held). PAUSING is
  * only the unparsed pause ack's claim; listed so a backend that ever reports
- * it from the read does not fail the schema.
+ * it from the read does not fail the schema. SKIPPED is a step's only: a job
+ * continuing a failed one (`continueTask`) passes over the steps that one got
+ * past, and lists them so its steps are the failed job's.
  */
 const TaskStatusSchema = z.enum([
   "PENDING",
@@ -26,6 +28,7 @@ const TaskStatusSchema = z.enum([
   "COMPLETED",
   "FAILED",
   "CANCELED",
+  "SKIPPED",
 ]);
 
 export type TaskStatus =
@@ -35,7 +38,8 @@ export type TaskStatus =
   | "PAUSING"
   | "COMPLETED"
   | "FAILED"
-  | "CANCELED";
+  | "CANCELED"
+  | "SKIPPED";
 
 /** A hold is not an end: a paused run is still running to the orchestrator. */
 export const TERMINAL_TASK_STATUSES: readonly TaskStatus[] = [
@@ -79,6 +83,8 @@ export interface TaskStepState {
    * time is `ended_at − started_at − paused_seconds`.
    */
   paused_seconds?: number;
+  /** A PATROL's waypoints the robot has passed; 0 for every other step. */
+  waypoints_passed?: number;
 }
 
 export interface TaskStateResponse {
@@ -101,6 +107,7 @@ const TaskStateResponseSchema: z.ZodType<TaskStateResponse> = z.object({
       started_at: z.string().nullish(),
       ended_at: z.string().nullish(),
       paused_seconds: z.number().optional(),
+      waypoints_passed: z.number().optional(),
     }),
   ),
 });
@@ -116,6 +123,20 @@ const TaskAckResponseSchema: z.ZodType<TaskAckResponse> = z.object({
   id: z.string(),
   status: TaskStatusSchema,
   message: z.string(),
+});
+
+interface TaskContinuationAck extends TaskAckResponse {
+  continued_from: string;
+  from_step_id: string;
+}
+
+/** Checked like the plain ack: its `id` is a poll target as much. */
+const TaskContinuationAckSchema: z.ZodType<TaskContinuationAck> = z.object({
+  id: z.string(),
+  status: TaskStatusSchema,
+  message: z.string(),
+  continued_from: z.string(),
+  from_step_id: z.string(),
 });
 
 /** Posture steps carry no params; sending any is refused. */
@@ -441,6 +462,28 @@ export function submitTask(
   mapName: string | null = null,
 ): Promise<string> {
   return postTask(robotId, "task", steps, name, mapName);
+}
+
+/**
+ * Run a FAILED job again from the step it failed at, as a new job: the backend
+ * reads the steps off the failed one, starts at that step's group (a Patrol
+ * past the waypoints it had passed), and lists the steps before it as
+ * SKIPPED. No map is sent: the positions are the failed job's, so its map is
+ * the check. `kind` is the failed job's (lib/task/history.ts's
+ * `continuationKind`).
+ */
+export async function continueTask(
+  robotId: string,
+  failedId: string,
+  kind: TaskKind,
+): Promise<string> {
+  const { id, timestamp } = newTaskIdentity(robotId, kind);
+  const ack = await requestJson<TaskContinuationAck>(apiUrl("/api/v1/tasks"), {
+    method: "POST",
+    body: JSON.stringify({ id, timestamp, kind, continue_from: failedId }),
+    schema: TaskContinuationAckSchema,
+  });
+  return ack.id;
 }
 
 export function fetchTaskState(
