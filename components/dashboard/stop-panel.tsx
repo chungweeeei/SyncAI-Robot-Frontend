@@ -36,9 +36,12 @@ import type { MapVertex } from "@/lib/types/map";
  * Go sends the stop, and the robot plans again as it sets off — a person can
  * step into the way between the two — which the footnote says. A stop with
  * no route offers no Go: it would fail for the same reason. While this
- * console's goal runs, Cancel stands where Go does, so the panel is the one
- * card over the map: the goal's own read-back steps aside while it is open.
- * Presentation only.
+ * console's goal runs the panel is the one card over the map — the goal's
+ * own read-back steps aside — so it carries that goal's Cancel. Where it
+ * sits depends on the stop: on the stop the robot is heading to, Cancel is
+ * the panel's action; on any other, a tap is as often the next stop picked
+ * ahead as a change of mind, so Go stays, held until the robot gets there,
+ * and Cancel waits in the ⋯ menu. Presentation only.
  */
 export function StopPanel({
   vertex,
@@ -46,6 +49,8 @@ export function StopPanel({
   floors,
   stale,
   running,
+  goalHere,
+  goalName,
   cancelable,
   onCancel,
   cancelError = null,
@@ -70,6 +75,10 @@ export function StopPanel({
   stale: boolean;
   /** This console's goal is running: no route is asked for until it ends. */
   running: boolean;
+  /** The running goal is this stop: the robot is already on its way here. */
+  goalHere: boolean;
+  /** The waypoint the running goal is heading to, or null for a goal set on the map. */
+  goalName: string | null;
   /** The running goal can be canceled now (it has an id and no request is in flight). */
   cancelable: boolean;
   onCancel: () => void;
@@ -121,6 +130,15 @@ export function StopPanel({
             <EllipsisIcon className="size-3.5" aria-hidden />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
+            {running && !goalHere && (
+              <>
+                <DropdownMenuItem disabled={!cancelable} onClick={onCancel}>
+                  <XIcon aria-hidden />
+                  Cancel current goal
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
             <DropdownMenuItem disabled={editLock !== null} onClick={() => onReplace(vertex)}>
               <MapPinIcon aria-hidden />
               Reposition
@@ -153,9 +171,12 @@ export function StopPanel({
 
       {/* role=status so a screen reader hears the answer arrive. */}
       <div role="status">
-        {running && (
+        {running && goalHere && (
+          <p className="text-[11px] leading-snug text-signal-cmd">The robot is on its way here.</p>
+        )}
+        {running && !goalHere && (
           <p className="text-[11px] leading-snug text-signal-caution">
-            The robot is on its way to another goal. Cancel it to go here — the robot takes one goal at a time.
+            The robot is on its way to {goalName ?? "another goal"}. Go opens once it gets there.
           </p>
         )}
         {cancelError && (
@@ -193,7 +214,7 @@ export function StopPanel({
       )}
 
       <div className="mt-2.5 flex gap-1.5">
-        {running ? (
+        {running && goalHere ? (
           <button
             type="button"
             disabled={!cancelable}

@@ -343,6 +343,13 @@ export function PointCloudView({
   // so Go sends exactly what was previewed.
   const goalBusy = task.running || task.busy;
   const { clear: clearGoal } = task;
+  // The waypoint the goal went to, by position: Go sends a stop's own x and
+  // y, while the heading is normalised on the way out. A goal set on the map
+  // matches none.
+  const sentGoal = task.goal;
+  const goalVertex = sentGoal
+    ? (vertices.find((v) => v.x === sentGoal.x && v.y === sentGoal.y) ?? null)
+    : null;
   const { clearWriteError } = stops;
   const previewVertex = React.useCallback(
     (vertex: MapVertex) =>
@@ -370,8 +377,9 @@ export function PointCloudView({
     [goalBusy, previewVertex, clearPreview, clearWriteError, clearGoal],
   );
 
-  // A stop tapped while the goal ran is asked about once the goal ends — the
-  // panel's Cancel is usually why it ended — so the panel offers its Go
+  // A stop tapped while the goal ran is asked about once the goal ends — on
+  // arrival, when it was the next stop picked ahead, or by the panel's
+  // Cancel — so the panel offers its Go
   // without a second tap. The ended goal's card goes with it, as on a tap:
   // the panel is the decision now, and closing it must not bring a Canceled
   // card back. A ref, not the preview's state: a mutation's variables land a
@@ -608,6 +616,8 @@ export function PointCloudView({
               floors={previewFloors}
               stale={stalePreview}
               running={goalBusy}
+              goalHere={goalVertex !== null && goalVertex.id === askedVertex?.id}
+              goalName={goalVertex?.name ?? null}
               cancelable={task.cancelable && !task.busy}
               onCancel={task.cancel}
               cancelError={goalBusy ? task.error : null}
