@@ -7,7 +7,10 @@ import type {
   TaskHistoryKind,
   TaskHistoryStats,
   TaskHistoryStatus,
+  TaskKind,
+  TaskStatus,
 } from "@/lib/api/task";
+import { wireLinked } from "@/lib/task/step";
 
 /**
  * Seconds between a run's start and close (server timestamps), or null without
@@ -44,6 +47,30 @@ export function stepSeconds(step: {
     active: Math.max(0, Math.floor((end - start) / 1000 - paused)),
     paused: Math.floor(paused),
   };
+}
+
+/**
+ * Where a FAILED job would be run again from: the step it failed at, or the
+ * first of that step's group, since a group runs together (the backend's
+ * `continuation_steps`, mirrored so the button can say which step). `ordinal`
+ * counts from 1, as the step list does. Null when no step failed — the
+ * backend refuses that job with `no_failed_step`.
+ */
+export function continuationStart(
+  steps: readonly { id: string; status: TaskStatus; group?: string | null }[],
+): { id: string; ordinal: number } | null {
+  let index = steps.findIndex((step) => step.status === "FAILED");
+  if (index < 0) return null;
+  while (wireLinked(steps, index)) index -= 1;
+  return { id: steps[index].id, ordinal: index + 1 };
+}
+
+/**
+ * The kind a continuation's id and run carry: the failed job's own, but a
+ * schedule's (or an unknown one) is "task", since this console sends it.
+ */
+export function continuationKind(kind: string | null): TaskKind {
+  return kind === "goal" || kind === "standup" || kind === "liedown" ? kind : "task";
 }
 
 /**
