@@ -202,11 +202,12 @@ components/
                 storeys; with a floor picked,
                 only that floor's stretch),
                 with Top down and Front view (level, from the south, where
-                storeys stack), and a Preview route tool (route-preview-control:
-                the route the planner would take to an aimed goal or a tapped
-                stop, drawn in the draft's hue, with its length and Go — which
-                sends that goal — or why there is none; nothing is sent until
-                Go, so the stop holds only Go) — the instrument rail (the registered schedules
+                storeys stack); a tapped stop's Move draws the route first
+                (route-preview-control: the route the planner would take
+                there, in the draft's hue, with its length and Go — which
+                sends that stop — or why there is none; nothing is sent until
+                Go, so the stop holds only Go), while Set goal still sends on
+                release — the instrument rail (the registered schedules
                 first — a glance with pause and delete, the list itself stays
                 on /tasks — then locomotion and motors) and the
                 driving controls

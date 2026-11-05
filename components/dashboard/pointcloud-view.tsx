@@ -207,7 +207,7 @@ export function PointCloudView({
    * vertex cannot exist.
    */
   const [pick, setPick] = React.useState<
-    | { mode: "goal" | "preview" | "initial-pose" | "place" }
+    | { mode: "goal" | "initial-pose" | "place" }
     | { mode: "vertex"; vertex: MapVertex }
     | null
   >(null);
@@ -261,7 +261,7 @@ export function PointCloudView({
   );
 
   const armPick = React.useCallback(
-    (mode: "goal" | "preview" | "initial-pose" | "place") => {
+    (mode: "goal" | "initial-pose" | "place") => {
       // Re-arming drops the last estimate, so the panel describes the drag in
       // progress. useInitialPose's timed clear covers an operator who walks away.
       if (mode === "initial-pose") clearEstimate();
@@ -313,10 +313,6 @@ export function PointCloudView({
         setSavingVertex(target);
         // The echo patches the list in the same render that clears this.
         void moveVertex(target.id, placed).finally(() => setSavingVertex(null));
-      } else if (pick?.mode === "preview") {
-        // Asked, not sent: the same pose a goal would go out with, so Go
-        // sends exactly what was previewed.
-        requestPreview(placed);
       } else {
         // Dispatched at once: the aimed arrow is the confirmation. Failures
         // surface in GoalControl through the task state. A preview on screen
@@ -326,23 +322,19 @@ export function PointCloudView({
       }
       setPick(null);
     },
-    [pick, voxels, floorBand, bands, commitPose, sendGoal, moveVertex, requestPreview, clearPreview],
+    [pick, voxels, floorBand, bands, commitPose, sendGoal, moveVertex, clearPreview],
   );
 
-  // The dialog closes first; GoalControl reports the job and any error.
+  // A stop's Move asks for the route before it sends anything: the dialog
+  // closes so the route is drawn on the map it covered, and the preview card
+  // asks Go there. Set goal stays release-to-send; a stop is often across the
+  // building, where the way the planner picks is the question. The stop's own
+  // pose, z included, so Go sends exactly what was previewed.
+  const [previewTarget, setPreviewTarget] = React.useState<string | null>(null);
   const moveToVertex = React.useCallback(
     (vertex: MapVertex) => {
       setAskedVertex(null);
-      clearPreview();
-      void sendGoal({ x: vertex.x, y: vertex.y, theta: vertex.theta, z: vertex.z });
-    },
-    [sendGoal, clearPreview],
-  );
-
-  // The stop's own pose, z included, as Move would send it.
-  const previewVertex = React.useCallback(
-    (vertex: MapVertex) => {
-      setAskedVertex(null);
+      setPreviewTarget(vertex.name);
       requestPreview({ x: vertex.x, y: vertex.y, theta: vertex.theta, z: vertex.z });
     },
     [requestPreview],
@@ -521,9 +513,6 @@ export function PointCloudView({
         deleting={stops.busy}
         deleteError={stops.writeError}
         onConfirm={moveToVertex}
-        // Held with Set goal's lock, so a preview never lands over the route
-        // this console's goal is driving.
-        onPreview={task.running || task.busy ? undefined : previewVertex}
         onReplace={armReplace}
         onDelete={deleteAsked}
         onClose={closeAsked}
@@ -545,17 +534,13 @@ export function PointCloudView({
           <ViewportToolbar
             className="pointer-events-auto"
             pick={
-              pick?.mode === "goal" ||
-              pick?.mode === "preview" ||
-              pick?.mode === "initial-pose"
+              pick?.mode === "goal" || pick?.mode === "initial-pose"
                 ? pick.mode
                 : null
             }
             goalLocked={task.running || task.busy || stopped}
             goalLockReason={stopped ? ESTOP_REFUSAL : undefined}
             onArmGoal={() => armPick("goal")}
-            previewLocked={task.running || task.busy}
-            onArmPreview={() => armPick("preview")}
             onArmInitialPose={() => armPick("initial-pose")}
             autoLocalizeBusy={localize.busy}
             autoLocalizeLock={localize.lock}
@@ -581,14 +566,13 @@ export function PointCloudView({
             {pick?.mode === "goal" && (
               <ArmedHint tone="cmd">Aim and release to send</ArmedHint>
             )}
-            {pick?.mode === "preview" && (
-              <ArmedHint tone="cmd">Aim and release to see the route</ArmedHint>
-            )}
+
             {pick?.mode === "initial-pose" && (
               <ArmedHint tone="caution">Press the map, then drag to aim</ArmedHint>
             )}
             {/* No hint for Add waypoint, by request: the carried marker says it. */}
             <RoutePreviewControl
+              target={previewTarget}
               state={routePreview}
               stale={stalePreview}
               goLocked={task.running || task.busy || stopped}

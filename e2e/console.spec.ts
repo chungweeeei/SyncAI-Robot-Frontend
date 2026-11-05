@@ -126,7 +126,6 @@ test.describe("the console shell", () => {
     const toolbar = page.getByRole("toolbar", { name: "Viewport" });
     for (const name of [
       "Set goal",
-      "Preview route",
       "Set initial pose",
       "Auto localize",
       "Move",

@@ -7,7 +7,6 @@ import {
   MapPinIcon,
   PencilIcon,
   SendIcon,
-  SplineIcon,
   Trash2Icon,
 } from "lucide-react";
 
@@ -66,7 +65,6 @@ export function VertexMoveDialog({
   deleteError,
   deleteQuestion = immediateDeleteQuestion,
   onConfirm,
-  onPreview,
   onReplace,
   onDelete,
   onSetPose,
@@ -88,13 +86,11 @@ export function VertexMoveDialog({
   deleteError: string | null;
   /** What Delete asks before `onDelete`; by default, that it cannot be undone. */
   deleteQuestion?: (name: string) => string;
-  /** Send the robot there; omitted, the dialog offers no Move. */
-  onConfirm?: (vertex: MapVertex) => void;
   /**
-   * Show the route the robot would take there, without sending it. Not held
-   * by a running task: a preview moves nothing.
+   * Move there. On the dashboard this asks for the route first and the
+   * operator says Go over the drawn route; omitted, the dialog offers no Move.
    */
-  onPreview?: (vertex: MapVertex) => void;
+  onConfirm?: (vertex: MapVertex) => void;
   /** Hand the stop's pose to the pointer so it can be put somewhere else. */
   onReplace: (vertex: MapVertex) => void;
   /** Already confirmed by the operator; the row goes now. */
@@ -221,17 +217,6 @@ export function VertexMoveDialog({
                 <Trash2Icon data-icon="inline-start" />
                 Delete
               </Button>
-              {onPreview && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={deleting}
-                  onClick={() => onPreview(shown)}
-                >
-                  <SplineIcon data-icon="inline-start" />
-                  Preview route
-                </Button>
-              )}
               {onConfirm && (
                 <Button
                   size="sm"

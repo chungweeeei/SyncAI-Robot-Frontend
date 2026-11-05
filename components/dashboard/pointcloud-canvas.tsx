@@ -94,7 +94,7 @@ const CARRY_LIFT_M = 0.35;
  * rather than a tap because a new stop needs a heading, and only a drag gives
  * one.
  */
-export type PickMode = "goal" | "preview" | "initial-pose" | "vertex" | "place";
+export type PickMode = "goal" | "initial-pose" | "vertex" | "place";
 
 interface PointCloudCanvasProps {
   /**
@@ -235,10 +235,10 @@ interface PointCloudCanvasProps {
   /** Committed goal, drawn on its floor's ground until the caller clears it. */
   goal?: (PlanarPose & { z?: number }) | null;
   /**
-   * A goal being previewed, and the route the planner would drive to it
-   * ([x, y, z] triples, z the ground under each): drawn in the draft's hue,
-   * so a route nobody has sent never reads as the route being driven. Same
-   * floor rule as `path`.
+   * A stop's Move being previewed, and the route the planner would drive to
+   * it ([x, y, z] triples, z the ground under each): drawn in the draft's
+   * hue, so a route nobody has sent never reads as the route being driven.
+   * Same floor rule as `path`.
    */
   previewGoal?: (PlanarPose & { z?: number }) | null;
   previewPath?: Float32Array | null;
@@ -1514,11 +1514,11 @@ export function PointCloudCanvas({
 
     const anchor = anchorRef.current;
 
-    // No press yet: carry the pose under the pointer. Not in goal or preview
-    // mode, where a trailing arrow would read as a goal already set; the others move
+    // No press yet: carry the pose under the pointer. Not in goal mode, where a
+    // trailing arrow would read as a goal already set; the other modes move
     // something that exists. Off the map nothing is carried.
     if (!anchor) {
-      if (pickMode === "goal" || pickMode === "preview") return;
+      if (pickMode === "goal") return;
       const hit = pickGround(event);
       if (!hit || !insideMap(hit.wx, hit.wy)) {
         setDraft(null);

@@ -8,8 +8,8 @@ import { stepFailureText } from "@/lib/task/failure";
 import type { RoutePreviewState } from "@/hooks/use-route-preview";
 
 /**
- * What a route preview found, floating where GoalControl does, with the one
- * decision it exists for: Go, or not.
+ * What a stop's Move found before anything was sent, floating where
+ * GoalControl does, with the one decision it exists for: Go, or not.
  *
  * Go sends the goal that was previewed, and the robot plans again as it sets
  * off — a person can step into the way between the two — which the footnote
@@ -18,6 +18,7 @@ import type { RoutePreviewState } from "@/hooks/use-route-preview";
  * Presentation only.
  */
 export function RoutePreviewControl({
+  target,
   state,
   stale,
   goLocked,
@@ -26,6 +27,8 @@ export function RoutePreviewControl({
   onAgain,
   className,
 }: {
+  /** The stop's name, which the card asks about; null names none. */
+  target: string | null;
   state: RoutePreviewState;
   /** The robot has walked off the preview's start, so it is out of date. */
   stale: boolean;
@@ -49,7 +52,9 @@ export function RoutePreviewControl({
       aria-label="Route preview"
     >
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="instrument-label text-muted-foreground">Route preview</span>
+        <span className="instrument-label min-w-0 truncate text-muted-foreground">
+          {target ? `Move to ${target}?` : "Route preview"}
+        </span>
         {pending ? (
           <Chip tone="cmd">PLANNING</Chip>
         ) : stale && preview ? (

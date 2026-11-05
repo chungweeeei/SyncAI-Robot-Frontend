@@ -775,6 +775,8 @@ test.describe("tapping a stop on the dashboard", () => {
 
     await tapStop(page);
     await page.getByRole("button", { name: "Move", exact: true }).click();
+    // Move asks for the route first; Go on the drawn route sends it.
+    await page.getByRole("region", { name: "Route preview" }).getByRole("button", { name: "Go" }).click();
     await expect.poll(() => dispatches(writes)).toHaveLength(1);
     // The failed run below is the positive control: the read-back does show.
     await expect(page.getByText("Goal X")).toHaveCount(0);
@@ -800,6 +802,8 @@ test.describe("tapping a stop on the dashboard", () => {
 
     await tapStop(page);
     await page.getByRole("button", { name: "Move", exact: true }).click();
+    // Move asks for the route first; Go on the drawn route sends it.
+    await page.getByRole("region", { name: "Route preview" }).getByRole("button", { name: "Go" }).click();
     await expect(page.getByText("Goal X")).toBeVisible();
     await page.getByRole("button", { name: "Retry" }).click();
 
@@ -832,7 +836,7 @@ test.describe("tapping a stop on the dashboard", () => {
   const previews = <W extends { path: string; method: string }>(writes: W[]) =>
     writes.filter((w) => w.path === "/api/v1/route_preview" && w.method === "POST");
 
-  test("previews the route to a stop without sending the robot, then Go sends that goal", async ({
+  test("draws the route to a stop on Move without sending the robot, then Go sends that goal", async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -841,10 +845,11 @@ test.describe("tapping a stop on the dashboard", () => {
     await page.goto("/");
 
     await tapStop(page);
-    await page.getByRole("button", { name: "Preview route" }).click();
+    await page.getByRole("button", { name: "Move", exact: true }).click();
 
     // The planner's answer, read back: from where the robot stands to the stop.
     const card = page.getByRole("region", { name: "Route preview" });
+    await expect(card.getByText(`Move to ${stop.name}?`)).toBeVisible();
     await expect(card.getByText("Route length")).toBeVisible();
     const { x: rx, y: ry } = robotState().localization_status.position;
     await expect(card.getByText(Math.hypot(stop.x - rx, stop.y - ry).toFixed(1))).toBeVisible();
@@ -892,7 +897,7 @@ test.describe("tapping a stop on the dashboard", () => {
     await page.goto("/");
 
     await tapStop(page);
-    await page.getByRole("button", { name: "Preview route" }).click();
+    await page.getByRole("button", { name: "Move", exact: true }).click();
 
     const card = page.getByRole("region", { name: "Route preview" });
     await expect(card.getByText("The goal is inside a forbidden zone.")).toBeVisible();
@@ -903,7 +908,7 @@ test.describe("tapping a stop on the dashboard", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("still previews with the stop engaged, but holds Go", async ({ page }) => {
+  test("still draws a stop's route with the stop engaged, but holds Go", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, {
@@ -915,7 +920,7 @@ test.describe("tapping a stop on the dashboard", () => {
     await page.goto("/");
 
     await tapStop(page);
-    await page.getByRole("button", { name: "Preview route" }).click();
+    await page.getByRole("button", { name: "Move", exact: true }).click();
 
     const card = page.getByRole("region", { name: "Route preview" });
     // A preview moves nothing, so the stop does not hold it: the route comes back.
@@ -1065,6 +1070,8 @@ test.describe("waypoints on an upper floor", () => {
         .getByText(UPSTAIRS_M.toFixed(2)),
     ).toBeVisible();
     await page.getByRole("button", { name: "Move", exact: true }).click();
+    // Move asks for the route first; Go on the drawn route sends it.
+    await page.getByRole("region", { name: "Route preview" }).getByRole("button", { name: "Go" }).click();
     await expect
       .poll(() => writes.filter((w) => w.path === "/api/v1/tasks"))
       .toHaveLength(1);
