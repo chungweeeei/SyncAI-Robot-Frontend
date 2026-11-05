@@ -212,6 +212,8 @@ export function PointCloudView({
   >(null);
   /** The stop a tap is asking about; null when its panel is closed. */
   const [askedVertex, setAskedVertex] = React.useState<MapVertex | null>(null);
+  /** The asked stop was tapped while this console's goal ran: its route is owed. */
+  const askedDuringGoal = React.useRef(false);
   /**
    * An Add waypoint pose waiting for a name; written only on Create, so a
    * wrong placement costs a Cancel. The key counts placements so the dialog
@@ -340,6 +342,7 @@ export function PointCloudView({
   // its route is the one on the map then. The stop's own pose, z included,
   // so Go sends exactly what was previewed.
   const goalBusy = task.running || task.busy;
+  const { clear: clearGoal } = task;
   const { clearWriteError } = stops;
   const previewVertex = React.useCallback(
     (vertex: MapVertex) =>
@@ -351,11 +354,34 @@ export function PointCloudView({
       setAskedVertex(vertex);
       // A refusal belongs to the stop it answered, not to the next one.
       clearWriteError();
-      if (goalBusy) clearPreview();
-      else previewVertex(vertex);
+      askedDuringGoal.current = goalBusy;
+      if (goalBusy) {
+        clearPreview();
+      } else {
+        // A failed or canceled goal's read-back is about the last decision;
+        // a tap is the next one, and two cards stacked over the map read as
+        // two jobs. Its Retry is this panel's Go now, and the outcome stays
+        // in history. A running goal keeps its card: its Cancel is what the
+        // panel's note points at.
+        clearGoal();
+        previewVertex(vertex);
+      }
     },
-    [goalBusy, previewVertex, clearPreview, clearWriteError],
+    [goalBusy, previewVertex, clearPreview, clearWriteError, clearGoal],
   );
+
+  // A stop tapped while the goal ran is asked about once the goal ends — the
+  // panel's Cancel is usually why it ended — so the panel offers its Go
+  // without a second tap. The ended goal's card goes with it, as on a tap:
+  // the panel is the decision now, and closing it must not bring a Canceled
+  // card back. A ref, not the preview's state: a mutation's variables land a
+  // render late, so reading them here would ask a fresh tap's route twice.
+  React.useEffect(() => {
+    if (goalBusy || !askedVertex || !askedDuringGoal.current) return;
+    askedDuringGoal.current = false;
+    clearGoal();
+    previewVertex(askedVertex);
+  }, [goalBusy, askedVertex, clearGoal, previewVertex]);
 
   // Go hands over to GoalControl, which follows the job from here.
   const goVertex = React.useCallback(
@@ -582,6 +608,9 @@ export function PointCloudView({
               floors={previewFloors}
               stale={stalePreview}
               running={goalBusy}
+              cancelable={task.cancelable && !task.busy}
+              onCancel={task.cancel}
+              cancelError={goalBusy ? task.error : null}
               goLocked={goalBusy || stopped}
               goLockReason={stopped ? ESTOP_REFUSAL : null}
               editLock={runLock.reason}
@@ -594,7 +623,9 @@ export function PointCloudView({
               onClose={closeAsked}
               className="pointer-events-auto"
             />
-            <GoalControl task={task} className="pointer-events-auto" />
+            {/* One card at a time: an open stop carries the running goal's
+              * Cancel itself, and the masthead still reads the job out. */}
+            {!askedVertex && <GoalControl task={task} className="pointer-events-auto" />}
             <InitialPoseControl estimate={estimate} className="pointer-events-auto" />
             <AutoLocalizeControl localize={localize} className="pointer-events-auto" />
             {/* Shown while a re-place is live, and after it when the write fails

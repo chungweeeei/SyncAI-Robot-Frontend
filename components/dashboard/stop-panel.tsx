@@ -35,7 +35,10 @@ import type { MapVertex } from "@/lib/types/map";
  *
  * Go sends the stop, and the robot plans again as it sets off — a person can
  * step into the way between the two — which the footnote says. A stop with
- * no route offers no Go: it would fail for the same reason. Presentation only.
+ * no route offers no Go: it would fail for the same reason. While this
+ * console's goal runs, Cancel stands where Go does, so the panel is the one
+ * card over the map: the goal's own read-back steps aside while it is open.
+ * Presentation only.
  */
 export function StopPanel({
   vertex,
@@ -43,6 +46,9 @@ export function StopPanel({
   floors,
   stale,
   running,
+  cancelable,
+  onCancel,
+  cancelError = null,
   goLocked,
   goLockReason = null,
   editLock = null,
@@ -64,6 +70,11 @@ export function StopPanel({
   stale: boolean;
   /** This console's goal is running: no route is asked for until it ends. */
   running: boolean;
+  /** The running goal can be canceled now (it has an id and no request is in flight). */
+  cancelable: boolean;
+  onCancel: () => void;
+  /** The backend's refusal of that Cancel, or null. Rendered verbatim. */
+  cancelError?: string | null;
   /** Go is held: a goal on its way, or the stop engaged. */
   goLocked: boolean;
   /** Why Go is held, when the reason is not a running goal. */
@@ -144,7 +155,12 @@ export function StopPanel({
       <div role="status">
         {running && (
           <p className="text-[11px] leading-snug text-signal-caution">
-            A task is already running. Cancel it first — the robot takes one goal at a time.
+            The robot is on its way to another goal. Cancel it to go here — the robot takes one goal at a time.
+          </p>
+        )}
+        {cancelError && (
+          <p className="mt-1.5 text-[11px] leading-snug break-words text-signal-warn">
+            {cancelError}
           </p>
         )}
         {preview && !reachable && (
@@ -177,7 +193,17 @@ export function StopPanel({
       )}
 
       <div className="mt-2.5 flex gap-1.5">
-        {stale && reachable ? (
+        {running ? (
+          <button
+            type="button"
+            disabled={!cancelable}
+            onClick={onCancel}
+            className="instrument-label flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border border-signal-warn/50 bg-signal-warn/12 text-signal-warn transition-colors hover:bg-signal-warn/20 disabled:opacity-50 pointer-coarse:h-10"
+          >
+            <XIcon className="size-3.5" aria-hidden />
+            Cancel
+          </button>
+        ) : stale && reachable ? (
           <button
             type="button"
             disabled={pending}

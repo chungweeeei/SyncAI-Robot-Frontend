@@ -816,6 +816,84 @@ test.describe("tapping a stop on the dashboard", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
+  test("drops a failed goal's card when the next stop is tapped, so one card is up", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, {
+      octomap: framedTree(),
+      dispatchedTaskState: (id) => ({
+        id,
+        status: "FAILED",
+        steps: [{ id: "1-move", status: "FAILED", error_msg: "" }],
+      }),
+    });
+    await page.goto("/");
+
+    await tapStop(page);
+    await page.getByRole("button", { name: "Go", exact: true }).click();
+    // Positive control: the failed goal's card is up before the next tap.
+    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+
+    await tapStop(page);
+    await expect(page.getByRole("region", { name: stop.name })).toBeVisible();
+    await expect(page.getByText("Goal X")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
+    // The tap only cleared the screen: nothing more went to the robot.
+    expect(dispatches(writes)).toHaveLength(1);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("cancels a running goal from the stop's own card, then offers its Go", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    // The run reads as canceled once the console has asked for it.
+    let sent: { path: string; method: string }[] = [];
+    const canceled = (id: string) =>
+      sent.some((w) => w.method === "DELETE" && w.path === `/api/v1/tasks/${id}`);
+    const writes = await mockBackend(page, {
+      octomap: framedTree(),
+      dispatchedTaskState: (id) => ({
+        id,
+        status: canceled(id) ? "CANCELED" : "IN_PROGRESS",
+        steps: [
+          { id: "1-move", status: canceled(id) ? "CANCELED" : "IN_PROGRESS", error_msg: "" },
+        ],
+      }),
+    });
+    sent = writes;
+    await page.goto("/");
+
+    await tapStop(page);
+    await page.getByRole("button", { name: "Go", exact: true }).click();
+    // Positive control: the running goal's own card is up before the tap.
+    await expect(page.getByText("Goal X")).toBeVisible();
+
+    await tapStop(page);
+    const card = page.getByRole("region", { name: stop.name });
+    // One card: the goal's read-back steps aside, its Cancel is on the stop's.
+    await expect(page.getByText("Goal X")).toHaveCount(0);
+    await expect(card.getByRole("button", { name: "Go" })).toHaveCount(0);
+    // Asked during the run: no route until it ends.
+    expect(previews(writes)).toHaveLength(1);
+
+    await card.getByRole("button", { name: "Cancel" }).click();
+    const [job] = dispatches(writes).map((w) => (w.body as { id: string }).id);
+    await expect.poll(() => canceled(job)).toBe(true);
+
+    // The run ended, so the stop's route is asked for and Go comes back.
+    await expect(card.getByRole("button", { name: "Go" })).toBeEnabled();
+    expect(previews(writes)).toHaveLength(2);
+    // Closing the card does not bring the canceled goal's back.
+    await card.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByText("Goal X")).toHaveCount(0);
+    expect(dispatches(writes)).toHaveLength(1);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
   test("writes nothing when the confirm is dismissed", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
