@@ -10,6 +10,8 @@
  * on a timer.
  */
 
+import { floorOfHeight } from "@/lib/map/floors";
+import type { MapFloor } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
 /**
@@ -43,4 +45,22 @@ export function previewStale(
   if (robot === null || points.length === 0) return false;
   const [x, y] = points[0];
   return Math.hypot(robot.x - x, robot.y - y) > STALE_AFTER_M;
+}
+
+/**
+ * The floors a route walks, in the order it walks them, each named once per
+ * visit: `["1F", "2F"]` up a stair, `["2F", "1F", "2F"]` down and back up.
+ * Empty on a map of one storey, where there is nothing to say. A stretch
+ * between two floors' bands (a flight) names neither.
+ */
+export function routeFloors(
+  points: readonly (readonly number[])[],
+  floors: readonly MapFloor[],
+): string[] {
+  const out: string[] = [];
+  for (const [, , z] of points) {
+    const floor = floorOfHeight(z, floors);
+    if (floor !== null && floor !== out[out.length - 1]) out.push(floor);
+  }
+  return out;
 }

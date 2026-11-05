@@ -202,12 +202,13 @@ components/
                 storeys; with a floor picked,
                 only that floor's stretch),
                 with Top down and Front view (level, from the south, where
-                storeys stack); a tapped stop's Move draws the route first
-                (route-preview-control: the route the planner would take
-                there, in the draft's hue, with its length and Go — which
-                sends that stop — or why there is none; nothing is sent until
-                Go, so the stop holds only Go), while Set goal still sends on
-                release — the instrument rail (the registered schedules
+                storeys stack); a tapped stop opens a panel beside the map, not
+                a dialog over it (stop-panel: the route the planner would take
+                there, asked for on the tap and drawn in the draft's hue, its
+                length and the floors it walks, and Go — which sends that stop —
+                or why there is none; Reposition and Delete in its ⋯ menu;
+                nothing is sent until Go, so the stop holds only Go), while Set
+                goal still sends on release — the instrument rail (the registered schedules
                 first — a glance with pause and delete, the list itself stays
                 on /tasks — then locomotion and motors) and the
                 driving controls

@@ -676,7 +676,7 @@ test.describe("tapping a stop on the dashboard", () => {
   const stopPath = `/api/v1/maps/${MAP_NAME}/vertices/${stop.id}`;
 
   /**
-   * Open the waypoint's dialog by tapping its marker. Top down first, because
+   * Open the waypoint's panel by tapping its marker. Top down first, because
    * from overhead the floor is a plain scale (the 20 x 15 m box of
    * framedTree, 8 % margin, 60° fov), so the waypoint lands a known number of
    * pixels from the centre.
@@ -696,9 +696,7 @@ test.describe("tapping a stop on the dashboard", () => {
     // Polled: the camera eases into the overhead view over a few frames.
     await expect(async () => {
       await page.mouse.click(x, y);
-      await expect(
-        page.getByRole("alertdialog", { name: `Move to ${stop.name}` }),
-      ).toBeVisible({
+      await expect(page.getByRole("region", { name: stop.name })).toBeVisible({
         timeout: 500,
       });
     }).toPass();
@@ -717,14 +715,15 @@ test.describe("tapping a stop on the dashboard", () => {
       expect(confirm.message()).toContain(`Delete "${stop.name}"?`);
       void confirm.accept();
     });
-    await page.getByRole("button", { name: "Delete" }).click();
+    await page.getByRole("button", { name: `More for ${stop.name}` }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
 
     await expect
       .poll(() =>
         writes.filter((w) => w.method === "DELETE").map((w) => w.path),
       )
       .toEqual([stopPath]);
-    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(page.getByRole("region", { name: stop.name })).toHaveCount(0);
     // The layer toggle goes with the last stop: nothing left to hide.
     await expect(page.getByRole("button", { name: "Waypoints" })).toHaveCount(
       0,
@@ -741,14 +740,17 @@ test.describe("tapping a stop on the dashboard", () => {
     await page.goto("/");
 
     await tapStop(page);
-    const dialog = page.getByRole("alertdialog", { name: `Move to ${stop.name}` });
-    await expect(
-      dialog.getByText(/The robot is running a job on this map/),
-    ).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "Delete" })).toBeDisabled();
-    await expect(
-      dialog.getByRole("button", { name: "Reposition" }),
-    ).toBeDisabled();
+    const panel = page.getByRole("region", { name: stop.name });
+    await expect(panel.getByText(/The robot is running a job on this map/)).toBeVisible();
+    await panel.getByRole("button", { name: `More for ${stop.name}` }).click();
+    await expect(page.getByRole("menuitem", { name: "Delete" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await expect(page.getByRole("menuitem", { name: "Reposition" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     expect(
       writes.filter((w) => w.path.startsWith(`/api/v1/maps/${MAP_NAME}/vertices`)),
     ).toEqual([]);
@@ -774,9 +776,8 @@ test.describe("tapping a stop on the dashboard", () => {
     await page.goto("/");
 
     await tapStop(page);
-    await page.getByRole("button", { name: "Move", exact: true }).click();
-    // Move asks for the route first; Go on the drawn route sends it.
-    await page.getByRole("region", { name: "Route preview" }).getByRole("button", { name: "Go" }).click();
+    // The tap drew the route; Go on the panel sends it.
+    await page.getByRole("button", { name: "Go", exact: true }).click();
     await expect.poll(() => dispatches(writes)).toHaveLength(1);
     // The failed run below is the positive control: the read-back does show.
     await expect(page.getByText("Goal X")).toHaveCount(0);
@@ -801,9 +802,8 @@ test.describe("tapping a stop on the dashboard", () => {
     await page.goto("/");
 
     await tapStop(page);
-    await page.getByRole("button", { name: "Move", exact: true }).click();
-    // Move asks for the route first; Go on the drawn route sends it.
-    await page.getByRole("region", { name: "Route preview" }).getByRole("button", { name: "Go" }).click();
+    // The tap drew the route; Go on the panel sends it.
+    await page.getByRole("button", { name: "Go", exact: true }).click();
     await expect(page.getByText("Goal X")).toBeVisible();
     await page.getByRole("button", { name: "Retry" }).click();
 
@@ -824,11 +824,10 @@ test.describe("tapping a stop on the dashboard", () => {
 
     await tapStop(page);
     page.once("dialog", (confirm) => void confirm.dismiss());
-    await page.getByRole("button", { name: "Delete" }).click();
+    await page.getByRole("button", { name: `More for ${stop.name}` }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
 
-    await expect(
-      page.getByRole("alertdialog", { name: `Move to ${stop.name}` }),
-    ).toBeVisible();
+    await expect(page.getByRole("region", { name: stop.name })).toBeVisible();
     expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
     expect(errors, "the page logged errors").toEqual([]);
   });
@@ -836,21 +835,27 @@ test.describe("tapping a stop on the dashboard", () => {
   const previews = <W extends { path: string; method: string }>(writes: W[]) =>
     writes.filter((w) => w.path === "/api/v1/route_preview" && w.method === "POST");
 
-  test("draws the route to a stop on Move without sending the robot, then Go sends that goal", async ({
+  test("draws the route to a stop without sending the robot, then Go sends that goal", async ({
     page,
   }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    const writes = await mockBackend(page, { octomap: framedTree() });
+    const writes = await mockBackend(page, {
+      octomap: framedTree(),
+      // The job Go sends is followed by its id; a 404 there trips the guard.
+      dispatchedTaskState: (id) => ({
+        id,
+        status: "IN_PROGRESS",
+        steps: [{ id: "1-move", status: "IN_PROGRESS", error_msg: "" }],
+      }),
+    });
     await page.goto("/");
 
     await tapStop(page);
-    await page.getByRole("button", { name: "Move", exact: true }).click();
 
-    // The planner's answer, read back: from where the robot stands to the stop.
-    const card = page.getByRole("region", { name: "Route preview" });
-    await expect(card.getByText(`Move to ${stop.name}?`)).toBeVisible();
-    await expect(card.getByText("Route length")).toBeVisible();
+    // The tap alone asked for the route: from where the robot stands to the stop.
+    const card = page.getByRole("region", { name: stop.name });
+    await expect(card.getByText("Route", { exact: true })).toBeVisible();
     const { x: rx, y: ry } = robotState().localization_status.position;
     await expect(card.getByText(Math.hypot(stop.x - rx, stop.y - ry).toFixed(1))).toBeVisible();
     expect(previews(writes)).toHaveLength(1);
@@ -871,8 +876,9 @@ test.describe("tapping a stop on the dashboard", () => {
     };
     expect(job.map_name).toBe(MAP_NAME);
     expect(job.steps[0].params).toMatchObject({ x: stop.x, y: stop.y, theta: stop.theta });
-    // The preview hands over to the goal's own read-back.
+    // The panel hands over to the goal's own read-back.
     await expect(card).toHaveCount(0);
+    await expect(page.getByText("Goal X")).toBeVisible();
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -897,12 +903,11 @@ test.describe("tapping a stop on the dashboard", () => {
     await page.goto("/");
 
     await tapStop(page);
-    await page.getByRole("button", { name: "Move", exact: true }).click();
 
-    const card = page.getByRole("region", { name: "Route preview" });
+    const card = page.getByRole("region", { name: stop.name });
     await expect(card.getByText("The goal is inside a forbidden zone.")).toBeVisible();
     await expect(card.getByRole("button", { name: "Go" })).toBeDisabled();
-    await card.getByRole("button", { name: "Discard" }).click();
+    await card.getByRole("button", { name: "Close" }).click();
     await expect(card).toHaveCount(0);
     expect(dispatches(writes)).toEqual([]);
     expect(errors, "the page logged errors").toEqual([]);
@@ -920,11 +925,10 @@ test.describe("tapping a stop on the dashboard", () => {
     await page.goto("/");
 
     await tapStop(page);
-    await page.getByRole("button", { name: "Move", exact: true }).click();
 
-    const card = page.getByRole("region", { name: "Route preview" });
+    const card = page.getByRole("region", { name: stop.name });
     // A preview moves nothing, so the stop does not hold it: the route comes back.
-    await expect(card.getByText("Route length")).toBeVisible();
+    await expect(card.getByText("Route", { exact: true })).toBeVisible();
     await expect(card.getByRole("button", { name: "Go" })).toBeDisabled();
     expect(previews(writes)).toHaveLength(1);
     expect(dispatches(writes)).toEqual([]);
@@ -1059,19 +1063,19 @@ test.describe("waypoints on an upper floor", () => {
     const up = await onScreen(page, landing, LIFT_2F_M);
     await expect(async () => {
       await page.mouse.click(up.x, up.y);
-      await expect(
-        page.getByRole("alertdialog", { name: `Move to ${landing.name}` }),
-      ).toBeVisible({ timeout: 500 });
+      await expect(page.getByRole("region", { name: landing.name })).toBeVisible({
+        timeout: 500,
+      });
     }).toPass();
-    // Its height is read back beside X and Y: the stop says it is upstairs.
+    // The route was asked for at the stop's own height, and it climbs.
     await expect(
-      page
-        .getByRole("alertdialog", { name: `Move to ${landing.name}` })
-        .getByText(UPSTAIRS_M.toFixed(2)),
+      page.getByRole("region", { name: landing.name }).getByText("1F → 2F"),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Move", exact: true }).click();
-    // Move asks for the route first; Go on the drawn route sends it.
-    await page.getByRole("region", { name: "Route preview" }).getByRole("button", { name: "Go" }).click();
+    expect(
+      writes.find((w) => w.path === "/api/v1/route_preview")!.body,
+    ).toMatchObject({ x: -4, y: 2, z: UPSTAIRS_M });
+    // The tap drew the route; Go on the panel sends it.
+    await page.getByRole("button", { name: "Go", exact: true }).click();
     await expect
       .poll(() => writes.filter((w) => w.path === "/api/v1/tasks"))
       .toHaveLength(1);
@@ -1085,7 +1089,7 @@ test.describe("waypoints on an upper floor", () => {
     const down = await onScreen(page, dock, LIFT_2F_M);
     await page.mouse.click(down.x, down.y);
     await page.waitForTimeout(300);
-    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    await expect(page.getByRole("region", { name: dock.name })).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -1114,9 +1118,9 @@ test.describe("waypoints on an upper floor", () => {
     expect(Math.hypot(up.x - unlifted.x, up.y - unlifted.y)).toBeGreaterThan(40);
     await expect(async () => {
       await page.mouse.click(up.x, up.y);
-      await expect(
-        page.getByRole("alertdialog", { name: `Move to ${landing.name}` }),
-      ).toBeVisible({ timeout: 500 });
+      await expect(page.getByRole("region", { name: landing.name })).toBeVisible({
+        timeout: 500,
+      });
     }).toPass();
     expect(errors, "the page logged errors").toEqual([]);
   });

@@ -235,7 +235,7 @@ interface PointCloudCanvasProps {
   /** Committed goal, drawn on its floor's ground until the caller clears it. */
   goal?: (PlanarPose & { z?: number }) | null;
   /**
-   * A stop's Move being previewed, and the route the planner would drive to
+   * A stop being previewed, and the route the planner would drive to
    * it ([x, y, z] triples, z the ground under each): drawn in the draft's
    * hue, so a route nobody has sent never reads as the route being driven.
    * Same floor rule as `path`.
