@@ -205,7 +205,7 @@ components/
                 storeys stack); a tapped stop opens a panel beside the map, not
                 a dialog over it (stop-panel: the route the planner would take
                 there, asked for on the tap and drawn in the draft's hue, its
-                length and the floors it walks, and Go — which sends that stop —
+                X, Y, Z and the floors it walks, and Go — which sends that stop —
                 or why there is none; Reposition and Delete in its ⋯ menu;
                 nothing is sent until Go, so the stop holds only Go), while Set
                 goal still sends on release — the instrument rail (the registered schedules
