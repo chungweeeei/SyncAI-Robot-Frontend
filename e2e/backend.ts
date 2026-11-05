@@ -802,12 +802,22 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     if (path === "/api/v1/tasks" && method === "POST") {
       // The ack's id is what the tracker polls; the catch-all's `{ message }`
       // would fail the ack schema.
-      const body = parseBody(request.postData()) as { id?: string } | null;
+      const body = parseBody(request.postData()) as
+        | { id?: string; continue_from?: string }
+        | null;
       if (body?.id) dispatchedTaskIds.add(body.id);
+      // A continuation's ack names the job it continues and the step it
+      // starts at; the plain ack would fail its schema.
+      const failed = body?.continue_from ? taskStates[body.continue_from] : undefined;
+      const failedSteps = (failed?.steps ?? []) as { id: string; status: string }[];
       return json(route, {
         id: body?.id ?? "robot01-task-0-0",
         status: "PENDING",
         message: "ok",
+        ...(body?.continue_from && {
+          continued_from: body.continue_from,
+          from_step_id: failedSteps.find((step) => step.status === "FAILED")?.id ?? "",
+        }),
       });
     }
     const holdMatch = /^\/api\/v1\/tasks\/([^/]+)\/(pause|resume)$/.exec(path);

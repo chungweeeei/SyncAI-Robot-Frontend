@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_HISTORY_FILTER,
+  continuationKind,
+  continuationStart,
   customRangeSeed,
   countReportJobs,
   dateInputValue,
@@ -465,3 +467,53 @@ describe("countReportJobs", () => {
   });
 });
 
+
+describe("continuationStart", () => {
+  const step = (id: string, status: string, group: string | null = null) =>
+    ({ id, status, group }) as { id: string; status: "FAILED"; group: string | null };
+
+  it("is the failed step when it ran on its own", () => {
+    expect(
+      continuationStart([step("1-move", "COMPLETED"), step("2-move", "FAILED")]),
+    ).toEqual({ id: "2-move", ordinal: 2 });
+  });
+
+  it("is the first of the failed step's group, since a group runs together", () => {
+    expect(
+      continuationStart([
+        step("1-standup", "COMPLETED"),
+        step("2-speak", "CANCELED", "g"),
+        step("3-move", "FAILED", "g"),
+        step("4-wait", "PENDING"),
+      ]),
+    ).toEqual({ id: "2-speak", ordinal: 2 });
+  });
+
+  it("does not reach into a group that only shares the name further up", () => {
+    expect(
+      continuationStart([
+        step("1-speak", "COMPLETED", "g"),
+        step("2-standup", "COMPLETED"),
+        step("3-move", "FAILED", "g"),
+      ]),
+    ).toEqual({ id: "3-move", ordinal: 3 });
+  });
+
+  it("is null when no step failed, which the backend refuses", () => {
+    expect(continuationStart([step("1-move", "CANCELED")])).toBeNull();
+    expect(continuationStart([])).toBeNull();
+  });
+});
+
+describe("continuationKind", () => {
+  it("keeps the failed job's own kind", () => {
+    expect(continuationKind("goal")).toBe("goal");
+    expect(continuationKind("task")).toBe("task");
+  });
+
+  it("sends a schedule's, or an unknown one, as a task: the backend refuses 'schedule'", () => {
+    expect(continuationKind("schedule")).toBe("task");
+    expect(continuationKind(null)).toBe("task");
+    expect(continuationKind("newer-kind")).toBe("task");
+  });
+});

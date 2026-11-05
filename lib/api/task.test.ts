@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   TaskStepRequestSchema,
+  continueTask,
   fetchActiveTasks,
   fetchTaskState,
   patrolWaypoint,
@@ -100,7 +101,69 @@ describe("pauseTask / resumeTask", () => {
   });
 });
 
+describe("continueTask", () => {
+  const FAILED = "robot01-task-1758000000-1";
+  const continued = (over: Record<string, unknown> = {}) =>
+    ack({
+      id: "robot01-task-1758000100-2",
+      status: "PENDING",
+      message: "ok",
+      continued_from: FAILED,
+      from_step_id: "2-move",
+      ...over,
+    });
+
+  it("names the failed job instead of sending steps, and no map", async () => {
+    fetchMock.mockResolvedValue(continued());
+    await continueTask("robot01", FAILED, "task");
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toMatch(/\/api\/v1\/tasks$/);
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body).toMatchObject({ kind: "task", continue_from: FAILED });
+    expect(body.id).toMatch(/^robot01-task-\d+-\d+$/);
+    expect(body).not.toHaveProperty("steps");
+    expect(body).not.toHaveProperty("map_name");
+  });
+
+  it("resolves to the new job's id, the one the masthead follows", async () => {
+    fetchMock.mockResolvedValue(continued());
+    await expect(continueTask("robot01", FAILED, "task")).resolves.toBe(
+      "robot01-task-1758000100-2",
+    );
+  });
+
+  it("refuses a plain ack: a backend without continuations ran nothing it said", async () => {
+    fetchMock.mockResolvedValue(ack({ id: "x", status: "PENDING", message: "ok" }));
+    await expect(continueTask("robot01", FAILED, "task")).rejects.toThrow(/continued_from|from_step_id/);
+  });
+
+  it("hands up the backend's refusal as its sentence", async () => {
+    fetchMock.mockResolvedValue(
+      ack({ detail: `Task ${FAILED} has not failed`, code: "task_not_failed" }, 409),
+    );
+    await expect(continueTask("robot01", FAILED, "task")).rejects.toThrow(
+      `Task ${FAILED} has not failed`,
+    );
+  });
+});
+
 describe("fetchTaskState", () => {
+  it("accepts a continued job's SKIPPED steps and a Patrol's progress", async () => {
+    fetchMock.mockResolvedValue(
+      ack({
+        id: "t",
+        status: "IN_PROGRESS",
+        steps: [
+          { id: "1-move", status: "SKIPPED", error_msg: "" },
+          { id: "2-patrol", status: "IN_PROGRESS", error_msg: "", waypoints_passed: 2 },
+        ],
+      }),
+    );
+    await expect(fetchTaskState("t")).resolves.toMatchObject({
+      steps: [{ status: "SKIPPED" }, { waypoints_passed: 2 }],
+    });
+  });
+
   it("accepts a held run and a held step", async () => {
     fetchMock.mockResolvedValue(
       ack({

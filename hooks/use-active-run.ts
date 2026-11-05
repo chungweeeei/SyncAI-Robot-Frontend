@@ -59,7 +59,10 @@ export interface UseActiveRun {
 function dispatchedRun(mutation: Mutation<unknown, Error, unknown>): ActiveTask | null {
   const { data, variables, submittedAt } = mutation.state;
   if (typeof data !== "string") return null;
-  const kind = mutation.options.meta?.kind;
+  // A continuation's kind is per send (the failed job's), so it rides in the
+  // variables; the other dispatches name theirs once, in `meta`.
+  const kind =
+    (variables as { kind?: unknown } | undefined)?.kind ?? mutation.options.meta?.kind;
   const name = (variables as { name?: unknown } | undefined)?.name;
   return {
     id: data,
