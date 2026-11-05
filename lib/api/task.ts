@@ -376,6 +376,60 @@ export function sendMoveTask(
 }
 
 /**
+ * The route the robot would drive from where it stands to a goal: what
+ * `POST /api/v1/route_preview` answers. A goal the planner cannot reach is
+ * an answer too (`reachable: false`, with why), not a refusal.
+ */
+export interface RoutePreview {
+  reachable: boolean;
+  /** Map-frame [x, y, z], z the ground under each; empty when not reachable. */
+  points: [number, number, number][];
+  /** Along the route in 3D, so a stair's rise counts. 0 when not reachable. */
+  length_m: number;
+  /** Why there is no route (`goal_in_keepout`, `no_valid_path`, …); null when reachable. */
+  code: string | null;
+  /**
+   * The sentence the MOVE would have failed with ("Planning failed: …"), so
+   * `stepFailureText` says it in the house words; "" when reachable.
+   */
+  message: string;
+}
+
+const RoutePreviewSchema: z.ZodType<RoutePreview> = z.object({
+  reachable: z.boolean(),
+  points: z.array(z.tuple([z.number(), z.number(), z.number()])),
+  length_m: z.number(),
+  code: z.string().nullable(),
+  message: z.string(),
+});
+
+/**
+ * Ask the planner for a goal's route without sending the robot. Nothing is
+ * dispatched, recorded or cached: it changes no resource, so no key is
+ * invalidated by it. `mapName` is checked as a dispatch's is (409
+ * `map_mismatch`).
+ */
+export function previewRoute(
+  goal: GoalPose,
+  mapName: string | null = null,
+  signal?: AbortSignal,
+): Promise<RoutePreview> {
+  const body: MoveStepParams & { map_name?: string } = moveParams(
+    goal.x,
+    goal.y,
+    goal.theta,
+    goal.z,
+  );
+  if (mapName !== null) body.map_name = mapName;
+  return requestJson<RoutePreview>(apiUrl("/api/v1/route_preview"), {
+    method: "POST",
+    body: JSON.stringify(body),
+    schema: RoutePreviewSchema,
+    signal,
+  });
+}
+
+/**
  * Dispatch an authored step list (already wire shape; see lib/task/step.ts)
  * and return its id. `name` is the source template, recorded for history;
  * `mapName` is the template's `map_name`.

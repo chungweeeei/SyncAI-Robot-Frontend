@@ -202,7 +202,11 @@ components/
                 storeys; with a floor picked,
                 only that floor's stretch),
                 with Top down and Front view (level, from the south, where
-                storeys stack) — the instrument rail (the registered schedules
+                storeys stack), and a Preview route tool (route-preview-control:
+                the route the planner would take to an aimed goal or a tapped
+                stop, drawn in the draft's hue, with its length and Go — which
+                sends that goal — or why there is none; nothing is sent until
+                Go, so the stop holds only Go) — the instrument rail (the registered schedules
                 first — a glance with pause and delete, the list itself stays
                 on /tasks — then locomotion and motors) and the
                 driving controls
@@ -367,7 +371,10 @@ lib/
                 through the clearance band — the dabs and their undo patches, and
                 the record's absolute keys and the tree with them drawn in
                 (withGroundPatches, a union, since an applied patch is in
-                both)), the z a placed waypoint is written with
+                both)), the route preview's rules (route-preview.ts: the
+                wire's rows as ribbon triples, and when the robot has walked
+                off a preview's start, which is said rather than re-asked),
+                the z a placed waypoint is written with
                 (waypoint-ground.ts: the ground under it on the floor
                 picked, a re-placed stop's own with none, else the ground
                 floor's 0 — the rule the dashboard and the editor share), and the floors of a

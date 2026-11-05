@@ -94,7 +94,7 @@ const CARRY_LIFT_M = 0.35;
  * rather than a tap because a new stop needs a heading, and only a drag gives
  * one.
  */
-export type PickMode = "goal" | "initial-pose" | "vertex" | "place";
+export type PickMode = "goal" | "preview" | "initial-pose" | "vertex" | "place";
 
 interface PointCloudCanvasProps {
   /**
@@ -235,6 +235,14 @@ interface PointCloudCanvasProps {
   /** Committed goal, drawn on its floor's ground until the caller clears it. */
   goal?: (PlanarPose & { z?: number }) | null;
   /**
+   * A goal being previewed, and the route the planner would drive to it
+   * ([x, y, z] triples, z the ground under each): drawn in the draft's hue,
+   * so a route nobody has sent never reads as the route being driven. Same
+   * floor rule as `path`.
+   */
+  previewGoal?: (PlanarPose & { z?: number }) | null;
+  previewPath?: Float32Array | null;
+  /**
    * The initial pose last placed, kept as the reference the reported pose is
    * read against while localization converges, on its floor's ground when it
    * was placed on one. useInitialPose expires it.
@@ -288,6 +296,8 @@ export function PointCloudCanvas({
   mapCloudStream = false,
   onMapStatus,
   goal = null,
+  previewGoal = null,
+  previewPath = null,
   initialPose = null,
   initialPoseGround = null,
   pickMode = null,
@@ -324,6 +334,7 @@ export function PointCloudCanvas({
      */
     streamedMapPoints: THREE.Points | null;
     goalMarker: THREE.Group;
+    previewMarker: THREE.Group;
     initialPoseMarker: THREE.Group;
     draftMarker: THREE.Group;
     dispose: () => void;
@@ -372,6 +383,7 @@ export function PointCloudCanvas({
   const edlRef = React.useRef<EdlPass | null>(null);
   /** The route's band while it is drawn, so a floor switch can cut it without a rebuild. */
   const pathRibbonRef = React.useRef<PathRibbon | null>(null);
+  const previewRibbonRef = React.useRef<PathRibbon | null>(null);
   /**
    * The robot's local costmap and trajectory, one per scene. The render loop
    * feeds it from the telemetry feed and keeps it on the robot's ground.
@@ -635,9 +647,11 @@ export function PointCloudCanvas({
     // Goal, initial pose, and the drag's draft. Placed by the marker effect,
     // which re-runs after a rebuild.
     const goalMarker = createPoseMarker(theme.goal, 1);
+    const previewMarker = createPoseMarker(theme.preview, 0.8);
     const initialPoseMarker = createPoseMarker(theme.initialPose, 1);
     const draftMarker = createPoseMarker(theme.goalDraft, 0.55);
     scene.add(goalMarker);
+    scene.add(previewMarker);
     scene.add(initialPoseMarker);
     scene.add(draftMarker);
 
@@ -816,6 +830,7 @@ export function PointCloudCanvas({
       mapPoints: null,
       streamedMapPoints: null,
       goalMarker,
+      previewMarker,
       initialPoseMarker,
       draftMarker,
       dispose,
@@ -1069,6 +1084,7 @@ export function PointCloudCanvas({
     const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
 
     placePoseMarker(ctx.goalMarker, goal);
+    placePoseMarker(ctx.previewMarker, previewGoal);
     placePoseMarker(ctx.initialPoseMarker, initialPose);
 
     // The draft wears the armed mode's hue, so it says which pose is being
@@ -1078,7 +1094,7 @@ export function PointCloudCanvas({
       pickMode === "initial-pose" ? theme.initialPoseDraft : theme.goalDraft,
     );
     placePoseMarker(ctx.draftMarker, pickMode && draft ? { ...draft, z: pickZ } : null);
-  }, [goal, initialPose, draft, pickMode, pickZ, resolvedTheme]);
+  }, [goal, previewGoal, initialPose, draft, pickMode, pickZ, resolvedTheme]);
 
   // ---- Initial-pose pick: the robot itself is the preview ----------------
   // An initial pose asserts where the machine is, so the machine moves: what
@@ -1178,6 +1194,36 @@ export function PointCloudCanvas({
       ribbon.dispose();
     };
   }, [path, showPath, resolvedTheme]);
+
+  // ---- A route preview's band ---------------------------------------------
+  // The route's band in the preview's hues, under the route's floor and 3D
+  // map rules: a preview up a stair is drawn on both storeys as a route is.
+  // Not under the path toggle, which hides what the robot is doing; this is
+  // what the operator just asked to see.
+  React.useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx || !previewPath || previewPath.length < 6) return;
+
+    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
+    const ribbon = createPathRibbon(previewPath, {
+      ...theme,
+      path: theme.preview,
+      pathOverMap: theme.previewOverMap,
+      pathCasingOverMap: theme.previewCasingOverMap,
+    });
+    if (!ribbon) return;
+    const band = voxelBandRef.current;
+    if (band) ribbon.setBand(band.lo, band.hi);
+    if (voxelLayerRef.current) ribbon.setOverMap(true);
+    ctx.scene.add(ribbon.mesh);
+    previewRibbonRef.current = ribbon;
+
+    return () => {
+      if (previewRibbonRef.current === ribbon) previewRibbonRef.current = null;
+      ctx.scene.remove(ribbon.mesh);
+      ribbon.dispose();
+    };
+  }, [previewPath, resolvedTheme]);
 
   // ---- The robot's local costmap and trajectory ---------------------------
   // Built with the scene and fed by the render loop; only the path toggle
@@ -1288,6 +1334,7 @@ export function PointCloudCanvas({
       surfaceTopNear(voxels, voxelStacks, wx, wy, z, reach),
     );
     pathRibbonRef.current?.setOverMap(true);
+    previewRibbonRef.current?.setOverMap(true);
     voxelFrameRef.current = layer.frame;
     // The wheel's range follows the box the views now frame, or a 3D map
     // wider than the fallback could not be zoomed out to see whole.
@@ -1313,6 +1360,7 @@ export function PointCloudCanvas({
       // The route on screen now, which is not the one there at setup:
       // a new route replaces the band every few seconds.
       pathRibbonRef.current?.setOverMap(false);
+      previewRibbonRef.current?.setOverMap(false);
       if (voxelFrameRef.current === layer.frame) voxelFrameRef.current = null;
     };
   }, [voxels, voxelStacks, resolvedTheme]);
@@ -1326,6 +1374,7 @@ export function PointCloudCanvas({
     // The waypoints and the route follow the floor shown, by their own ground height.
     vertexLayerRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
     pathRibbonRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
+    previewRibbonRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
   }, [voxelBand]);
   // Apart from the marks: Follow slides the cells' window without moving them.
   React.useEffect(() => {
@@ -1465,11 +1514,11 @@ export function PointCloudCanvas({
 
     const anchor = anchorRef.current;
 
-    // No press yet: carry the pose under the pointer. Not in goal mode, where a
-    // trailing arrow would read as a goal already set; the other modes move
+    // No press yet: carry the pose under the pointer. Not in goal or preview
+    // mode, where a trailing arrow would read as a goal already set; the others move
     // something that exists. Off the map nothing is carried.
     if (!anchor) {
-      if (pickMode === "goal") return;
+      if (pickMode === "goal" || pickMode === "preview") return;
       const hit = pickGround(event);
       if (!hit || !insideMap(hit.wx, hit.wy)) {
         setDraft(null);

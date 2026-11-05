@@ -236,6 +236,22 @@ export function taskHistoryEntry(over: Record<string, unknown> = {}) {
  * A job running right now, as GET /active_tasks lists it — on this robot's
  * map unless a test says otherwise, which is what locks that map's writes.
  */
+/** A reachable preview along `points`, its length measured as the backend does. */
+export function routePreview(points: [number, number, number][]) {
+  let length = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const [a, b] = [points[i - 1], points[i]];
+    length += Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+  }
+  return {
+    reachable: true,
+    points,
+    length_m: Math.round(length * 100) / 100,
+    code: null,
+    message: "",
+  };
+}
+
 export function activeTask(over: Record<string, unknown> = {}) {
   return {
     id: "robot01-task-1758000000-1",
@@ -359,6 +375,15 @@ export interface BackendOverrides {
    * as when one fails before the list's next poll.
    */
   dispatchedTaskState?: (id: string) => Record<string, unknown>;
+  /**
+   * What POST /route_preview answers for the goal it was sent; by default a
+   * straight route from the robot's position to that goal, as the planner
+   * would find on open floor.
+   */
+  routePreview?: (goal: { x: number; y: number; z?: number }) => {
+    status?: number;
+    body: Record<string, unknown>;
+  };
   /** The tree every map's /octomap answers with; see octomapBt. */
   octomap?: Buffer;
   /**
@@ -759,6 +784,20 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         tasks: rows.slice(offset, end),
         next_page_token: end < rows.length ? String(end) : null,
       });
+    }
+    if (path === "/api/v1/route_preview" && method === "POST") {
+      const goal = parseBody(request.postData()) as { x: number; y: number; z?: number };
+      // From where the robot stands, as the planner plans: a route that
+      // started anywhere else would read as out of date at once.
+      const at = (state?.localization_status as { position?: { x: number; y: number } })
+        ?.position ?? { x: 0, y: 0 };
+      const answer: { status?: number; body: unknown } = over.routePreview?.(goal) ?? {
+        body: routePreview([
+          [at.x, at.y, 0],
+          [goal.x, goal.y, goal.z ?? 0],
+        ]),
+      };
+      return json(route, answer.body, answer.status ?? 200);
     }
     if (path === "/api/v1/tasks" && method === "POST") {
       // The ack's id is what the tracker polls; the catch-all's `{ message }`

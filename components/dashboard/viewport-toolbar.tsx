@@ -16,6 +16,7 @@ import {
   RouteIcon,
   ScanLineIcon,
   ScanSearchIcon,
+  SplineIcon,
   ZoomInIcon,
   ZoomOutIcon,
 } from "lucide-react";
@@ -44,6 +45,8 @@ export function ViewportToolbar({
   goalLocked,
   goalLockReason = null,
   onArmGoal,
+  previewLocked,
+  onArmPreview,
   onArmInitialPose,
   autoLocalizeBusy,
   autoLocalizeLock = null,
@@ -58,12 +61,18 @@ export function ViewportToolbar({
   className,
 }: {
   /** Which pose tool a drag on the ground currently belongs to, if any. */
-  pick: "goal" | "initial-pose" | null;
+  pick: "goal" | "preview" | "initial-pose" | null;
   /** A goal is running or on its way; a second one must not be armed. */
   goalLocked: boolean;
   /** Why the map cannot take a goal, for the tooltip. A running goal needs none. */
   goalLockReason?: string | null;
   onArmGoal: () => void;
+  /**
+   * A goal this console sent is running or on its way. Not the stop: a
+   * preview moves nothing, so the stop leaves it free and holds only Go.
+   */
+  previewLocked: boolean;
+  onArmPreview: () => void;
   onArmInitialPose: () => void;
   /** The robot is searching for where it stands. */
   autoLocalizeBusy: boolean;
@@ -97,6 +106,15 @@ export function ViewportToolbar({
             // it returns, and re-arming then would send a second goal.
             disabled={goalLocked}
             onClick={onArmGoal}
+          />
+          {/* The goal's hue: it aims a goal the same way, and Go sends it. */}
+          <ToolButton
+            label="Preview route"
+            hint="drag on the map to aim; the robot does not move"
+            icon={SplineIcon}
+            pressed={pick === "preview"}
+            disabled={previewLocked}
+            onClick={onArmPreview}
           />
           <ToolButton
             label="Set initial pose"

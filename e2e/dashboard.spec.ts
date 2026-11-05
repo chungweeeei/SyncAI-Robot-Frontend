@@ -828,6 +828,103 @@ test.describe("tapping a stop on the dashboard", () => {
     expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
     expect(errors, "the page logged errors").toEqual([]);
   });
+
+  const previews = <W extends { path: string; method: string }>(writes: W[]) =>
+    writes.filter((w) => w.path === "/api/v1/route_preview" && w.method === "POST");
+
+  test("previews the route to a stop without sending the robot, then Go sends that goal", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, { octomap: framedTree() });
+    await page.goto("/");
+
+    await tapStop(page);
+    await page.getByRole("button", { name: "Preview route" }).click();
+
+    // The planner's answer, read back: from where the robot stands to the stop.
+    const card = page.getByRole("region", { name: "Route preview" });
+    await expect(card.getByText("Route length")).toBeVisible();
+    const { x: rx, y: ry } = robotState().localization_status.position;
+    await expect(card.getByText(Math.hypot(stop.x - rx, stop.y - ry).toFixed(1))).toBeVisible();
+    expect(previews(writes)).toHaveLength(1);
+    expect(previews(writes)[0].body).toMatchObject({
+      x: stop.x,
+      y: stop.y,
+      theta: stop.theta,
+      map_name: MAP_NAME,
+    });
+    // Asked, not sent: nothing moved.
+    expect(dispatches(writes)).toEqual([]);
+
+    await card.getByRole("button", { name: "Go" }).click();
+    await expect.poll(() => dispatches(writes)).toHaveLength(1);
+    const job = dispatches(writes)[0].body as {
+      map_name: string;
+      steps: { params: Record<string, number> }[];
+    };
+    expect(job.map_name).toBe(MAP_NAME);
+    expect(job.steps[0].params).toMatchObject({ x: stop.x, y: stop.y, theta: stop.theta });
+    // The preview hands over to the goal's own read-back.
+    await expect(card).toHaveCount(0);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("says why a stop has no route, in the console's words, and offers no Go", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, {
+      octomap: framedTree(),
+      routePreview: () => ({
+        body: {
+          reachable: false,
+          points: [],
+          length_m: 0,
+          code: "goal_in_keepout",
+          message:
+            "Planning failed: the goal is inside a keepout zone (goal_in_keepout: zone 'z1')",
+        },
+      }),
+    });
+    await page.goto("/");
+
+    await tapStop(page);
+    await page.getByRole("button", { name: "Preview route" }).click();
+
+    const card = page.getByRole("region", { name: "Route preview" });
+    await expect(card.getByText("The goal is inside a forbidden zone.")).toBeVisible();
+    await expect(card.getByRole("button", { name: "Go" })).toBeDisabled();
+    await card.getByRole("button", { name: "Discard" }).click();
+    await expect(card).toHaveCount(0);
+    expect(dispatches(writes)).toEqual([]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("still previews with the stop engaged, but holds Go", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, {
+      octomap: framedTree(),
+      state: robotState({
+        low_level_mode: { policy: "PPO", motion: "LOCOMOTION", safety_locked: true },
+      }),
+    });
+    await page.goto("/");
+
+    await tapStop(page);
+    await page.getByRole("button", { name: "Preview route" }).click();
+
+    const card = page.getByRole("region", { name: "Route preview" });
+    // A preview moves nothing, so the stop does not hold it: the route comes back.
+    await expect(card.getByText("Route length")).toBeVisible();
+    await expect(card.getByRole("button", { name: "Go" })).toBeDisabled();
+    expect(previews(writes)).toHaveLength(1);
+    expect(dispatches(writes)).toEqual([]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
 });
 
 test.describe("waypoints on an upper floor", () => {

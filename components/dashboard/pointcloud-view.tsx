@@ -10,6 +10,7 @@ import { AutoLocalizeControl } from "@/components/dashboard/auto-localize-contro
 import { GoalControl } from "@/components/dashboard/goal-control";
 import { InitialPoseControl } from "@/components/dashboard/initial-pose-control";
 import { PointCloudCanvas } from "@/components/dashboard/pointcloud-canvas";
+import { RoutePreviewControl } from "@/components/dashboard/route-preview-control";
 import {
   VertexCreateDialog,
   type Placement,
@@ -35,6 +36,7 @@ import { useMapPointCloud } from "@/hooks/use-map-point-cloud";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useActiveMap } from "@/hooks/use-maps";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
+import { useRoutePreview } from "@/hooks/use-route-preview";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import { useViewCommands } from "@/hooks/use-view-commands";
 import {
@@ -46,6 +48,7 @@ import {
   followWindow,
 } from "@/lib/map/floors";
 import { withGroundPatches } from "@/lib/map/ground-fill";
+import { previewPoints, previewStale } from "@/lib/map/route-preview";
 import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
 import { liveDock } from "@/lib/task/run";
 import { cn } from "@/lib/utils";
@@ -204,7 +207,7 @@ export function PointCloudView({
    * vertex cannot exist.
    */
   const [pick, setPick] = React.useState<
-    | { mode: "goal" | "initial-pose" | "place" }
+    | { mode: "goal" | "preview" | "initial-pose" | "place" }
     | { mode: "vertex"; vertex: MapVertex }
     | null
   >(null);
@@ -234,6 +237,7 @@ export function PointCloudView({
   }
 
   const task = useGoalTask(robotId, activeMap?.name ?? null);
+  const routePreview = useRoutePreview(activeMap?.name ?? null);
   const estimate = useInitialPose();
   const localize = useAutoLocalize();
 
@@ -241,9 +245,23 @@ export function PointCloudView({
   // members are stable.
   const { commitPose, clear: clearEstimate } = estimate;
   const { sendGoal } = task;
+  const { request: requestPreview, clear: clearPreview } = routePreview;
+
+  // A preview belongs to the map it was aimed on: a switch, from here or
+  // another console, leaves its route drawn over a building that is gone.
+  const activeMapName = activeMap?.name ?? null;
+  React.useEffect(() => clearPreview, [activeMapName, clearPreview]);
+  // Out of date once the robot has walked off its start: said, not redrawn
+  // (lib/map/route-preview.ts says why).
+  const previewPointsWire = routePreview.preview?.reachable ? routePreview.preview.points : null;
+  const stalePreview = previewStale(previewPointsWire ?? [], robotPose);
+  const previewPath = React.useMemo(
+    () => (previewPointsWire ? previewPoints(previewPointsWire) : null),
+    [previewPointsWire],
+  );
 
   const armPick = React.useCallback(
-    (mode: "goal" | "initial-pose" | "place") => {
+    (mode: "goal" | "preview" | "initial-pose" | "place") => {
       // Re-arming drops the last estimate, so the panel describes the drag in
       // progress. useInitialPose's timed clear covers an operator who walks away.
       if (mode === "initial-pose") clearEstimate();
@@ -295,24 +313,51 @@ export function PointCloudView({
         setSavingVertex(target);
         // The echo patches the list in the same render that clears this.
         void moveVertex(target.id, placed).finally(() => setSavingVertex(null));
+      } else if (pick?.mode === "preview") {
+        // Asked, not sent: the same pose a goal would go out with, so Go
+        // sends exactly what was previewed.
+        requestPreview(placed);
       } else {
         // Dispatched at once: the aimed arrow is the confirmation. Failures
-        // surface in GoalControl through the task state.
+        // surface in GoalControl through the task state. A preview on screen
+        // is of some other goal now.
+        clearPreview();
         void sendGoal(placed);
       }
       setPick(null);
     },
-    [pick, voxels, floorBand, bands, commitPose, sendGoal, moveVertex],
+    [pick, voxels, floorBand, bands, commitPose, sendGoal, moveVertex, requestPreview, clearPreview],
   );
 
   // The dialog closes first; GoalControl reports the job and any error.
   const moveToVertex = React.useCallback(
     (vertex: MapVertex) => {
       setAskedVertex(null);
+      clearPreview();
       void sendGoal({ x: vertex.x, y: vertex.y, theta: vertex.theta, z: vertex.z });
     },
-    [sendGoal],
+    [sendGoal, clearPreview],
   );
+
+  // The stop's own pose, z included, as Move would send it.
+  const previewVertex = React.useCallback(
+    (vertex: MapVertex) => {
+      setAskedVertex(null);
+      requestPreview({ x: vertex.x, y: vertex.y, theta: vertex.theta, z: vertex.z });
+    },
+    [requestPreview],
+  );
+
+  // Go sends the goal that was previewed, then hands over to GoalControl.
+  const goPreviewed = React.useCallback(() => {
+    const goal = routePreview.goal;
+    if (!goal) return;
+    clearPreview();
+    void sendGoal(goal);
+  }, [routePreview.goal, clearPreview, sendGoal]);
+  const previewAgain = React.useCallback(() => {
+    if (routePreview.goal) requestPreview(routePreview.goal);
+  }, [routePreview.goal, requestPreview]);
 
   // Closes only once the row comes back; a refusal keeps the dialog up with
   // the backend's sentence. The marker is the server's echo in the list.
@@ -443,6 +488,8 @@ export function PointCloudView({
           }
           cameraMode={cameraMode}
           goal={task.goal}
+          previewGoal={routePreview.goal}
+          previewPath={previewPath}
           initialPose={estimate.pose}
           initialPoseGround={initialPoseGround}
           topDownNonce={topDownNonce}
@@ -474,6 +521,9 @@ export function PointCloudView({
         deleting={stops.busy}
         deleteError={stops.writeError}
         onConfirm={moveToVertex}
+        // Held with Set goal's lock, so a preview never lands over the route
+        // this console's goal is driving.
+        onPreview={task.running || task.busy ? undefined : previewVertex}
         onReplace={armReplace}
         onDelete={deleteAsked}
         onClose={closeAsked}
@@ -495,13 +545,17 @@ export function PointCloudView({
           <ViewportToolbar
             className="pointer-events-auto"
             pick={
-              pick?.mode === "goal" || pick?.mode === "initial-pose"
+              pick?.mode === "goal" ||
+              pick?.mode === "preview" ||
+              pick?.mode === "initial-pose"
                 ? pick.mode
                 : null
             }
             goalLocked={task.running || task.busy || stopped}
             goalLockReason={stopped ? ESTOP_REFUSAL : undefined}
             onArmGoal={() => armPick("goal")}
+            previewLocked={task.running || task.busy}
+            onArmPreview={() => armPick("preview")}
             onArmInitialPose={() => armPick("initial-pose")}
             autoLocalizeBusy={localize.busy}
             autoLocalizeLock={localize.lock}
@@ -527,10 +581,22 @@ export function PointCloudView({
             {pick?.mode === "goal" && (
               <ArmedHint tone="cmd">Aim and release to send</ArmedHint>
             )}
+            {pick?.mode === "preview" && (
+              <ArmedHint tone="cmd">Aim and release to see the route</ArmedHint>
+            )}
             {pick?.mode === "initial-pose" && (
               <ArmedHint tone="caution">Press the map, then drag to aim</ArmedHint>
             )}
             {/* No hint for Add waypoint, by request: the carried marker says it. */}
+            <RoutePreviewControl
+              state={routePreview}
+              stale={stalePreview}
+              goLocked={task.running || task.busy || stopped}
+              goLockReason={stopped ? ESTOP_REFUSAL : null}
+              onGo={goPreviewed}
+              onAgain={previewAgain}
+              className="pointer-events-auto"
+            />
             <GoalControl task={task} className="pointer-events-auto" />
             <InitialPoseControl estimate={estimate} className="pointer-events-auto" />
             <AutoLocalizeControl localize={localize} className="pointer-events-auto" />
