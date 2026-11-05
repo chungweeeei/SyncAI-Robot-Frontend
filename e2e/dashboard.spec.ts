@@ -681,7 +681,7 @@ test.describe("tapping a stop on the dashboard", () => {
    * framedTree, 8 % margin, 60° fov), so the waypoint lands a known number of
    * pixels from the centre.
    */
-  const tapStop = async (page: Page) => {
+  const tapStop = async (page: Page, target: { x: number; y: number; name: string } = stop) => {
     const region = page.getByRole("region", { name: "Map viewport" });
     await expect(region).toBeVisible();
     await page.getByRole("button", { name: "Top down" }).click();
@@ -691,12 +691,12 @@ test.describe("tapping a stop on the dashboard", () => {
       Math.max(7.5 / tanHalfFov, 10 / (tanHalfFov * (box.width / box.height))) *
       1.08;
     const pxPerM = box.height / (2 * height * tanHalfFov);
-    const x = box.x + box.width / 2 + (stop.x - -2.3) * pxPerM;
-    const y = box.y + box.height / 2 - (stop.y - -0.3) * pxPerM;
+    const x = box.x + box.width / 2 + (target.x - -2.3) * pxPerM;
+    const y = box.y + box.height / 2 - (target.y - -0.3) * pxPerM;
     // Polled: the camera eases into the overhead view over a few frames.
     await expect(async () => {
       await page.mouse.click(x, y);
-      await expect(page.getByRole("region", { name: stop.name })).toBeVisible({
+      await expect(page.getByRole("region", { name: target.name })).toBeVisible({
         timeout: 500,
       });
     }).toPass();
@@ -780,7 +780,7 @@ test.describe("tapping a stop on the dashboard", () => {
     await page.getByRole("button", { name: "Go", exact: true }).click();
     await expect.poll(() => dispatches(writes)).toHaveLength(1);
     // The failed run below is the positive control: the read-back does show.
-    await expect(page.getByText("Goal X")).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Navigation goal" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Clear", exact: true })).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
@@ -804,7 +804,7 @@ test.describe("tapping a stop on the dashboard", () => {
     await tapStop(page);
     // The tap drew the route; Go on the panel sends it.
     await page.getByRole("button", { name: "Go", exact: true }).click();
-    await expect(page.getByText("Goal X")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Navigation goal" })).toBeVisible();
     await page.getByRole("button", { name: "Retry" }).click();
 
     await expect.poll(() => dispatches(writes)).toHaveLength(2);
@@ -813,6 +813,133 @@ test.describe("tapping a stop on the dashboard", () => {
     );
     expect(again).toEqual(first);
     expect(first).toMatchObject({ x: stop.x, y: stop.y });
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("drops a failed goal's card when the next stop is tapped, so one card is up", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, {
+      octomap: framedTree(),
+      dispatchedTaskState: (id) => ({
+        id,
+        status: "FAILED",
+        steps: [{ id: "1-move", status: "FAILED", error_msg: "" }],
+      }),
+    });
+    await page.goto("/");
+
+    await tapStop(page);
+    await page.getByRole("button", { name: "Go", exact: true }).click();
+    // Positive control: the failed goal's card is up before the next tap.
+    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+
+    await tapStop(page);
+    await expect(page.getByRole("region", { name: stop.name })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Navigation goal" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
+    // The tap only cleared the screen: nothing more went to the robot.
+    expect(dispatches(writes)).toHaveLength(1);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("cancels a running goal from the stop's own card, then offers its Go", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    // The run reads as canceled once the console has asked for it.
+    let sent: { path: string; method: string }[] = [];
+    const canceled = (id: string) =>
+      sent.some((w) => w.method === "DELETE" && w.path === `/api/v1/tasks/${id}`);
+    const writes = await mockBackend(page, {
+      octomap: framedTree(),
+      dispatchedTaskState: (id) => ({
+        id,
+        status: canceled(id) ? "CANCELED" : "IN_PROGRESS",
+        steps: [
+          { id: "1-move", status: canceled(id) ? "CANCELED" : "IN_PROGRESS", error_msg: "" },
+        ],
+      }),
+    });
+    sent = writes;
+    await page.goto("/");
+
+    await tapStop(page);
+    await page.getByRole("button", { name: "Go", exact: true }).click();
+    // Positive control: the running goal's own card is up before the tap.
+    await expect(page.getByRole("region", { name: "Navigation goal" })).toBeVisible();
+
+    await tapStop(page);
+    const card = page.getByRole("region", { name: stop.name });
+    // One card: the goal's read-back steps aside, its Cancel is on the stop's.
+    await expect(page.getByRole("region", { name: "Navigation goal" })).toHaveCount(0);
+    await expect(card.getByText("The robot is on its way here.")).toBeVisible();
+    await expect(card.getByRole("button", { name: "Go" })).toHaveCount(0);
+    // Asked during the run: no route until it ends.
+    expect(previews(writes)).toHaveLength(1);
+
+    await card.getByRole("button", { name: "Cancel" }).click();
+    const [job] = dispatches(writes).map((w) => (w.body as { id: string }).id);
+    await expect.poll(() => canceled(job)).toBe(true);
+
+    // The run ended, so the stop's route is asked for and Go comes back.
+    await expect(card.getByRole("button", { name: "Go" })).toBeEnabled();
+    expect(previews(writes)).toHaveLength(2);
+    // Closing the card does not bring the canceled goal's back.
+    await card.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByRole("region", { name: "Navigation goal" })).toHaveCount(0);
+    expect(dispatches(writes)).toHaveLength(1);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("holds Go on the next stop picked ahead, and offers it once the robot arrives", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const next = vertex({
+      id: "22222222-2222-2222-2222-222222222222",
+      name: "shelf-a",
+      type: "MOVE",
+      x: -6,
+      y: -3,
+    });
+    let arrived = false;
+    const writes = await mockBackend(page, {
+      octomap: framedTree(),
+      vertices: [stop, next],
+      dispatchedTaskState: (id) => ({
+        id,
+        status: arrived ? "COMPLETED" : "IN_PROGRESS",
+        steps: [{ id: "1-move", status: arrived ? "COMPLETED" : "IN_PROGRESS", error_msg: "" }],
+      }),
+    });
+    await page.goto("/");
+
+    await tapStop(page);
+    await page.getByRole("button", { name: "Go", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Navigation goal" })).toBeVisible();
+
+    await tapStop(page, next);
+    const card = page.getByRole("region", { name: next.name });
+    // Picked ahead, not a change of mind: Go stays, held, and names the goal.
+    await expect(card.getByText(`The robot is on its way to ${stop.name}.`)).toBeVisible();
+    await expect(card.getByRole("button", { name: "Go", exact: true })).toBeDisabled();
+    await expect(card.getByRole("button", { name: "Cancel" })).toHaveCount(0);
+    // The goal's Cancel is still to hand, one menu in.
+    await card.getByRole("button", { name: `More for ${next.name}` }).click();
+    await expect(page.getByRole("menuitem", { name: "Cancel current goal" })).toBeEnabled();
+    await page.keyboard.press("Escape");
+
+    arrived = true;
+    await expect(card.getByRole("button", { name: "Go", exact: true })).toBeEnabled();
+    expect(previews(writes)).toHaveLength(2);
+    // Nothing was canceled on the way.
+    expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
+    expect(dispatches(writes)).toHaveLength(1);
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -855,9 +982,7 @@ test.describe("tapping a stop on the dashboard", () => {
 
     // The tap alone asked for the route: from where the robot stands to the stop.
     const card = page.getByRole("region", { name: stop.name });
-    await expect(card.getByText("Route", { exact: true })).toBeVisible();
-    const { x: rx, y: ry } = robotState().localization_status.position;
-    await expect(card.getByText(Math.hypot(stop.x - rx, stop.y - ry).toFixed(1))).toBeVisible();
+    await expect(card.getByRole("button", { name: "Go" })).toBeEnabled();
     expect(previews(writes)).toHaveLength(1);
     expect(previews(writes)[0].body).toMatchObject({
       x: stop.x,
@@ -878,7 +1003,7 @@ test.describe("tapping a stop on the dashboard", () => {
     expect(job.steps[0].params).toMatchObject({ x: stop.x, y: stop.y, theta: stop.theta });
     // The panel hands over to the goal's own read-back.
     await expect(card).toHaveCount(0);
-    await expect(page.getByText("Goal X")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Navigation goal" })).toBeVisible();
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -927,8 +1052,10 @@ test.describe("tapping a stop on the dashboard", () => {
     await tapStop(page);
 
     const card = page.getByRole("region", { name: stop.name });
-    // A preview moves nothing, so the stop does not hold it: the route comes back.
-    await expect(card.getByText("Route", { exact: true })).toBeVisible();
+    // A preview moves nothing, so the stop does not hold it: the route comes
+    // back, and the line under it says why Go is held.
+    await expect(card.getByText(/^Emergency stop is engaged\./)).toBeVisible();
+    await expect(card.getByText("PLANNING")).toHaveCount(0);
     await expect(card.getByRole("button", { name: "Go" })).toBeDisabled();
     expect(previews(writes)).toHaveLength(1);
     expect(dispatches(writes)).toEqual([]);

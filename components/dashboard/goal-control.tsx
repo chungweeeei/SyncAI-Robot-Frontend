@@ -1,9 +1,10 @@
 "use client";
 
-import { SendIcon, XIcon } from "lucide-react";
+import { NavigationIcon, SendIcon, XIcon } from "lucide-react";
 
-import { Chip, Readout, overlayPanel } from "@/components/console/instrument";
+import { Chip, overlayPanel } from "@/components/console/instrument";
 import { TaskStatusChip } from "@/components/console/task-chip";
+import { PositionGrid, cardAction, cardHeader } from "@/components/dashboard/overlay-card";
 import { cn } from "@/lib/utils";
 import type { GoalTask } from "@/hooks/use-goal-task";
 
@@ -14,13 +15,17 @@ import type { GoalTask } from "@/hooks/use-goal-task";
  * No Send: release dispatches (`useGoalTask`), and a button left standing
  * would read as a step still owed. Cancel while running; a goal reached
  * clears itself (useGoalTask), and one that failed offers Retry beside Clear.
- * Presentation only.
+ * Laid out as the stop panel is, header, position, then actions, since the
+ * one hands over to the other on Go. Presentation only.
  */
 export function GoalControl({
   task,
+  name = null,
   className,
 }: {
   task: GoalTask;
+  /** The waypoint the goal went to, or null for one set on the map. */
+  name?: string | null;
   className?: string;
 }) {
   const { goal, taskStatus, error, message, running, busy } = task;
@@ -28,44 +33,28 @@ export function GoalControl({
   if (!goal && !taskStatus && !error) return null;
 
   return (
-    <div className={cn(overlayPanel, "w-full p-2.5", className)}>
-      {goal && (
-        <div className="space-y-1">
-          <Readout label="Goal X" value={goal.x.toFixed(2)} unit="m" tone="cmd" />
-          <Readout label="Goal Y" value={goal.y.toFixed(2)} unit="m" tone="cmd" />
-          <Readout
-            label="Orientation"
-            value={goal.theta.toFixed(1)}
-            unit="°"
-            tone="cmd"
-          />
+    <section aria-label="Navigation goal" className={cn(overlayPanel, "w-full p-2.5", className)}>
+      <div className={cardHeader}>
+        <NavigationIcon className="size-3.5 shrink-0 text-signal-cmd" aria-hidden />
+        <h2 className="min-w-0 flex-1 truncate text-sm font-medium">
+          {name ?? "Navigation goal"}
+        </h2>
+        {/* Shown while the POST is in flight too, or the drag looks inert. */}
+        {busy && !taskStatus ? (
+          <Chip tone="cmd">SENDING</Chip>
+        ) : (
+          taskStatus && <TaskStatusChip status={taskStatus} />
+        )}
+      </div>
+
+      {/* No heading, as on the stop panel: the arrow on the map is it. */}
+      {goal && <PositionGrid x={goal.x} y={goal.y} z={goal.z} className="mt-2.5" />}
+
+      {(message || error) && (
+        <div className="mt-2.5 space-y-1.5 text-[11px] leading-snug break-words">
+          {message && <p className="text-muted-foreground">{message}</p>}
+          {error && <p className="text-signal-warn">{error}</p>}
         </div>
-      )}
-
-      {/* Shown while the POST is in flight too, or the drag looks inert. */}
-      {(taskStatus || busy) && (
-        <div className="mt-2.5 flex items-center justify-between gap-2">
-          <span className="instrument-label text-muted-foreground">
-            Task
-          </span>
-          {busy && !taskStatus ? (
-            <Chip tone="cmd">SENDING</Chip>
-          ) : (
-            taskStatus && <TaskStatusChip status={taskStatus} />
-          )}
-        </div>
-      )}
-
-      {message && (
-        <p className="mt-1.5 text-[11px] leading-snug break-words text-muted-foreground">
-          {message}
-        </p>
-      )}
-
-      {error && (
-        <p className="mt-2.5 text-[11px] leading-snug break-words text-signal-warn">
-          {error}
-        </p>
       )}
 
       <div className="mt-2.5 flex gap-1.5">
@@ -74,9 +63,9 @@ export function GoalControl({
             type="button"
             disabled={busy || !task.cancelable}
             onClick={task.cancel}
-            className="instrument-label flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border border-signal-warn/50 bg-signal-warn/12 text-signal-warn transition-colors hover:bg-signal-warn/20 disabled:opacity-50"
+            className={cardAction("warn")}
           >
-            <XIcon className="size-3.5" />
+            <XIcon className="size-3.5" aria-hidden />
             Cancel
           </button>
         ) : (
@@ -88,9 +77,9 @@ export function GoalControl({
                 type="button"
                 disabled={busy || !goal}
                 onClick={task.send}
-                className="instrument-label flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd transition-colors hover:bg-signal-cmd/20 disabled:opacity-50"
+                className={cardAction("cmd")}
               >
-                <SendIcon className="size-3.5" />
+                <SendIcon className="size-3.5" aria-hidden />
                 Retry
               </button>
             )}
@@ -99,13 +88,13 @@ export function GoalControl({
               type="button"
               disabled={busy}
               onClick={task.clear}
-              className="instrument-label h-7 rounded-sm border border-hairline px-2 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-50"
+              className={cardAction("quiet")}
             >
               Clear
             </button>
           </>
         )}
       </div>
-    </div>
+    </section>
   );
 }
