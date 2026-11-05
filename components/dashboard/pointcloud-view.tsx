@@ -10,11 +10,11 @@ import { AutoLocalizeControl } from "@/components/dashboard/auto-localize-contro
 import { GoalControl } from "@/components/dashboard/goal-control";
 import { InitialPoseControl } from "@/components/dashboard/initial-pose-control";
 import { PointCloudCanvas } from "@/components/dashboard/pointcloud-canvas";
+import { StopPanel } from "@/components/dashboard/stop-panel";
 import {
   VertexCreateDialog,
   type Placement,
 } from "@/components/dashboard/vertex-create-dialog";
-import { VertexMoveDialog } from "@/components/dashboard/vertex-move-dialog";
 import { VertexPlaceControl } from "@/components/dashboard/vertex-place-control";
 import {
   MapToolbar,
@@ -35,6 +35,7 @@ import { useMapPointCloud } from "@/hooks/use-map-point-cloud";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useActiveMap } from "@/hooks/use-maps";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
+import { useRoutePreview } from "@/hooks/use-route-preview";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import { useViewCommands } from "@/hooks/use-view-commands";
 import {
@@ -46,6 +47,7 @@ import {
   followWindow,
 } from "@/lib/map/floors";
 import { withGroundPatches } from "@/lib/map/ground-fill";
+import { previewPoints, previewStale, routeFloors } from "@/lib/map/route-preview";
 import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
 import { liveDock } from "@/lib/task/run";
 import { cn } from "@/lib/utils";
@@ -208,7 +210,7 @@ export function PointCloudView({
     | { mode: "vertex"; vertex: MapVertex }
     | null
   >(null);
-  /** The stop a tap is asking about; null when the dialog is closed. */
+  /** The stop a tap is asking about; null when its panel is closed. */
   const [askedVertex, setAskedVertex] = React.useState<MapVertex | null>(null);
   /**
    * An Add waypoint pose waiting for a name; written only on Create, so a
@@ -234,6 +236,7 @@ export function PointCloudView({
   }
 
   const task = useGoalTask(robotId, activeMap?.name ?? null);
+  const routePreview = useRoutePreview(activeMap?.name ?? null);
   const estimate = useInitialPose();
   const localize = useAutoLocalize();
 
@@ -241,6 +244,24 @@ export function PointCloudView({
   // members are stable.
   const { commitPose, clear: clearEstimate } = estimate;
   const { sendGoal } = task;
+  const { request: requestPreview, clear: clearPreview } = routePreview;
+
+  // A preview belongs to the map it was aimed on: a switch, from here or
+  // another console, leaves its route drawn over a building that is gone.
+  const activeMapName = activeMap?.name ?? null;
+  React.useEffect(() => clearPreview, [activeMapName, clearPreview]);
+  // Out of date once the robot has walked off its start: said, not redrawn
+  // (lib/map/route-preview.ts says why).
+  const previewPointsWire = routePreview.preview?.reachable ? routePreview.preview.points : null;
+  const stalePreview = previewStale(previewPointsWire ?? [], robotPose);
+  const previewPath = React.useMemo(
+    () => (previewPointsWire ? previewPoints(previewPointsWire) : null),
+    [previewPointsWire],
+  );
+  const previewFloors = React.useMemo(
+    () => (previewPointsWire ? routeFloors(previewPointsWire, floors) : []),
+    [previewPointsWire, floors],
+  );
 
   const armPick = React.useCallback(
     (mode: "goal" | "initial-pose" | "place") => {
@@ -252,10 +273,14 @@ export function PointCloudView({
     [clearEstimate],
   );
 
-  const armReplace = React.useCallback((vertex: MapVertex) => {
-    setAskedVertex(null);
-    setPick({ mode: "vertex", vertex });
-  }, []);
+  const armReplace = React.useCallback(
+    (vertex: MapVertex) => {
+      setAskedVertex(null);
+      clearPreview();
+      setPick({ mode: "vertex", vertex });
+    },
+    [clearPreview],
+  );
 
   // A pick lands on the floor shown, which is read off the 3D map: until the
   // tree is in there is no floor to pick, so every pick stays at 0, the
@@ -297,21 +322,49 @@ export function PointCloudView({
         void moveVertex(target.id, placed).finally(() => setSavingVertex(null));
       } else {
         // Dispatched at once: the aimed arrow is the confirmation. Failures
-        // surface in GoalControl through the task state.
+        // surface in GoalControl through the task state. A preview on screen
+        // is of some other goal now.
+        clearPreview();
         void sendGoal(placed);
       }
       setPick(null);
     },
-    [pick, voxels, floorBand, bands, commitPose, sendGoal, moveVertex],
+    [pick, voxels, floorBand, bands, commitPose, sendGoal, moveVertex, clearPreview],
   );
 
-  // The dialog closes first; GoalControl reports the job and any error.
-  const moveToVertex = React.useCallback(
+  // A tapped stop asks for its route at once — a preview moves nothing — so
+  // the route is on the map by the time the operator reads the panel, and
+  // tap and Go is the whole of sending the robot there. Set goal stays
+  // release-to-send; a stop is often across the building, where the way the
+  // planner picks is the question. Not while this console's own goal runs:
+  // its route is the one on the map then. The stop's own pose, z included,
+  // so Go sends exactly what was previewed.
+  const goalBusy = task.running || task.busy;
+  const { clearWriteError } = stops;
+  const previewVertex = React.useCallback(
+    (vertex: MapVertex) =>
+      requestPreview({ x: vertex.x, y: vertex.y, theta: vertex.theta, z: vertex.z }),
+    [requestPreview],
+  );
+  const askVertex = React.useCallback(
+    (vertex: MapVertex) => {
+      setAskedVertex(vertex);
+      // A refusal belongs to the stop it answered, not to the next one.
+      clearWriteError();
+      if (goalBusy) clearPreview();
+      else previewVertex(vertex);
+    },
+    [goalBusy, previewVertex, clearPreview, clearWriteError],
+  );
+
+  // Go hands over to GoalControl, which follows the job from here.
+  const goVertex = React.useCallback(
     (vertex: MapVertex) => {
       setAskedVertex(null);
+      clearPreview();
       void sendGoal({ x: vertex.x, y: vertex.y, theta: vertex.theta, z: vertex.z });
     },
-    [sendGoal],
+    [clearPreview, sendGoal],
   );
 
   // Closes only once the row comes back; a refusal keeps the dialog up with
@@ -336,21 +389,23 @@ export function PointCloudView({
     setPlacement((cur) => (cur ? { ...cur, pose } : cur));
   }, [robotPose, bands, voxels]);
 
-  const { clearWriteError } = stops;
 
-  // A refusal leaves the dialog up with the sentence in it.
+  // A refusal leaves the panel up with the sentence in it.
   const deleteAsked = React.useCallback(
     (vertex: MapVertex) => {
       void removeVertex(vertex.id).then((gone) => {
-        if (gone) setAskedVertex(null);
+        if (!gone) return;
+        setAskedVertex(null);
+        clearPreview();
       });
     },
-    [removeVertex],
+    [removeVertex, clearPreview],
   );
   const closeAsked = React.useCallback(() => {
     setAskedVertex(null);
+    clearPreview();
     clearWriteError();
-  }, [clearWriteError]);
+  }, [clearPreview, clearWriteError]);
 
   const closeCreate = React.useCallback(() => {
     setPlacement(null);
@@ -437,12 +492,14 @@ export function PointCloudView({
           showVertices={showVertices}
           zones={zones ?? undefined}
           showZones={showZones}
-          onVertexActivate={setAskedVertex}
+          onVertexActivate={askVertex}
           movingVertex={
             pick?.mode === "vertex" ? pick.vertex : (savingVertex ?? null)
           }
           cameraMode={cameraMode}
           goal={task.goal}
+          previewGoal={routePreview.goal}
+          previewPath={previewPath}
           initialPose={estimate.pose}
           initialPoseGround={initialPoseGround}
           topDownNonce={topDownNonce}
@@ -464,19 +521,6 @@ export function PointCloudView({
         onUseRobotPose={useRobotPose}
         onCreate={createPlaced}
         onClose={closeCreate}
-      />
-
-      <VertexMoveDialog
-        vertex={askedVertex}
-        busy={task.busy}
-        running={task.running}
-        editLock={runLock.reason}
-        deleting={stops.busy}
-        deleteError={stops.writeError}
-        onConfirm={moveToVertex}
-        onReplace={armReplace}
-        onDelete={deleteAsked}
-        onClose={closeAsked}
       />
 
       {/* Pointer-transparent so the scene behind its empty stretches still
@@ -527,10 +571,29 @@ export function PointCloudView({
             {pick?.mode === "goal" && (
               <ArmedHint tone="cmd">Aim and release to send</ArmedHint>
             )}
+
             {pick?.mode === "initial-pose" && (
               <ArmedHint tone="caution">Press the map, then drag to aim</ArmedHint>
             )}
             {/* No hint for Add waypoint, by request: the carried marker says it. */}
+            <StopPanel
+              vertex={askedVertex}
+              state={routePreview}
+              floors={previewFloors}
+              stale={stalePreview}
+              running={goalBusy}
+              goLocked={goalBusy || stopped}
+              goLockReason={stopped ? ESTOP_REFUSAL : null}
+              editLock={runLock.reason}
+              deleting={stops.busy}
+              deleteError={stops.writeError}
+              onGo={goVertex}
+              onAgain={previewVertex}
+              onReplace={armReplace}
+              onDelete={deleteAsked}
+              onClose={closeAsked}
+              className="pointer-events-auto"
+            />
             <GoalControl task={task} className="pointer-events-auto" />
             <InitialPoseControl estimate={estimate} className="pointer-events-auto" />
             <AutoLocalizeControl localize={localize} className="pointer-events-auto" />

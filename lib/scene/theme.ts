@@ -58,6 +58,15 @@ export interface Theme {
   pathOverMap: number;
   pathCasingOverMap: number;
   /**
+   * A route preview: the route a goal would take, before anything is sent.
+   * The draft arrow's pale cyan, since it is a draft of a route the way that
+   * arrow is a draft of a goal; over the 3D map the live route's neutrals
+   * turned round (a dark core, a pale rim), so the two never read as one.
+   */
+  preview: number;
+  previewOverMap: number;
+  previewCasingOverMap: number;
+  /**
    * The floors under the one picked on the dashboard's 3D map, drawn faint
    * for context: a neutral, since the height ramp is the floor on show's,
    * and a second ramp underneath would read as more of the same storey.
@@ -116,6 +125,9 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     pathCasing: 0xffffff,
     pathOverMap: 0xffffff,
     pathCasingOverMap: SIGNAL.dark.elevated,
+    preview: 0x4aa6c6,
+    previewOverMap: SIGNAL.dark.elevated,
+    previewCasingOverMap: 0xffffff,
     voxelGhost: 0x7d8a94,
     dock: 0x6a4fc0,
     zone: SIGNAL.light.warn,
@@ -138,6 +150,9 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     pathCasing: 0xf2f7fa,
     pathOverMap: 0xf2f7fa,
     pathCasingOverMap: SIGNAL.dark.background,
+    preview: 0x8adcf7,
+    previewOverMap: SIGNAL.dark.background,
+    previewCasingOverMap: 0xf2f7fa,
     voxelGhost: 0x8796a2,
     dock: 0xa991f2,
     zone: SIGNAL.dark.warn,

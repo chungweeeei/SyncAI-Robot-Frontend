@@ -6,7 +6,6 @@ import {
   LocateFixedIcon,
   MapPinIcon,
   PencilIcon,
-  SendIcon,
   Trash2Icon,
 } from "lucide-react";
 
@@ -34,18 +33,14 @@ export interface TypedPose extends PlanarPose {
 }
 
 /**
- * The dialog behind a tap on a waypoint. It is where the name shows (on the
- * map a caption per stop would be a wall of text).
+ * The map editor's dialog behind a tap on a waypoint. It is where the name
+ * shows (on the map a caption per stop would be a wall of text). The
+ * dashboard's tap opens StopPanel instead, which sends the robot; the editor
+ * opens maps the robot is not running on, where a goal would only be refused.
  *
- * Move dispatches at once: this question is the confirmation, and asking twice
- * teaches click-through. GoalControl reports the job after. Reposition is the
- * secondary action, for a stop that turns out to be in a wall. Delete asks
- * once more, since the write goes through with no undo; the editor's 3D
- * view, which only stages it, says so in the question.
- *
- * Without `onConfirm` there is no Move: the editor's 3D view opens maps the robot
- * is not running on, where a goal would only be refused, and is an editor
- * rather than somewhere to send the robot from.
+ * Reposition is the main action, for a stop that turns out to be in a wall.
+ * Delete asks once more, since the write goes through with no undo; the
+ * editor's 3D view, which only stages it, says so in the question.
  *
  * With `onSetPose` an Edit pose button turns the readouts into a form — X, Y
  * and the heading typed, or the robot's own position taken — for a stop that
@@ -58,13 +53,10 @@ export interface TypedPose extends PlanarPose {
  */
 export function VertexMoveDialog({
   vertex,
-  busy = false,
-  running = false,
   editLock = null,
   deleting,
   deleteError,
   deleteQuestion = immediateDeleteQuestion,
-  onConfirm,
   onReplace,
   onDelete,
   onSetPose,
@@ -74,10 +66,6 @@ export function VertexMoveDialog({
 }: {
   /** The stop being asked about, or null when the dialog is closed. */
   vertex: MapVertex | null;
-  /** A submit is in flight. */
-  busy?: boolean;
-  /** A task is already running, so this one cannot be dispatched. */
-  running?: boolean;
   /** Why the stop is read-only (a job drives on its map). Greys Reposition and Delete. */
   editLock?: string | null;
   /** The delete is in flight. */
@@ -86,8 +74,6 @@ export function VertexMoveDialog({
   deleteError: string | null;
   /** What Delete asks before `onDelete`; by default, that it cannot be undone. */
   deleteQuestion?: (name: string) => string;
-  /** Send the robot there; omitted, the dialog offers no Move. */
-  onConfirm?: (vertex: MapVertex) => void;
   /** Hand the stop's pose to the pointer so it can be put somewhere else. */
   onReplace: (vertex: MapVertex) => void;
   /** Already confirmed by the operator; the row goes now. */
@@ -122,7 +108,7 @@ export function VertexMoveDialog({
           <>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                {onConfirm ? `Move to ${shown.name}` : shown.name}
+                {shown.name}
               </AlertDialogTitle>
               {/* No description, by request. */}
             </AlertDialogHeader>
@@ -154,12 +140,6 @@ export function VertexMoveDialog({
               </div>
             )}
 
-            {onConfirm && running && (
-              <p className="text-[11px] leading-snug text-signal-caution">
-                A task is already running. Cancel it first — the robot takes one
-                goal at a time.
-              </p>
-            )}
             {editLock && (
               <p className="text-[11px] leading-snug text-signal-caution">
                 {editLock}
@@ -204,7 +184,7 @@ export function VertexMoveDialog({
               <Button
                 variant="destructive"
                 size="sm"
-                disabled={deleting || busy || editLock !== null}
+                disabled={deleting || editLock !== null}
                 onClick={() => {
                   if (window.confirm(deleteQuestion(shown.name))) {
                     onDelete(shown);
@@ -214,16 +194,6 @@ export function VertexMoveDialog({
                 <Trash2Icon data-icon="inline-start" />
                 Delete
               </Button>
-              {onConfirm && (
-                <Button
-                  size="sm"
-                  disabled={busy || running || deleting}
-                  onClick={() => onConfirm(shown)}
-                >
-                  <SendIcon data-icon="inline-start" />
-                  Move
-                </Button>
-              )}
             </AlertDialogFooter>
           </>
         )}
