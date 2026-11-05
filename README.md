@@ -55,7 +55,7 @@ SYNCAI_DEV_ORIGINS=robot-01.lan,10.8.140.138 npm run dev
 | `/maps/[name]/edit` | The map's editor, on its 3D map: ground patches (Fill / Erase), waypoints and forbidden zones. Changes are staged and sent by **Save**. |
 | `/recordings` | Start, watch and manage recordings on the robot. |
 | `/tasks`, `/tasks/editor` | Saved tasks by map, each with its schedules; the step editor. |
-| `/history` | Finished runs, with counts and success rate. |
+| `/history` | Finished runs, with counts and success rate. A failed run, opened, offers Retry from the step it failed at: a new job (`POST /api/v1/tasks` with `continue_from`), whose steps before that one read SKIPPED. |
 | `/settings` | Planner, Controller, Wi-Fi, Preferences, and **Restart**. |
 | `/drive` | Full-screen drive sticks for a phone (unlisted). |
 | `/webrtc-test` | The WHIP/WHEP bench (unlisted, but in every build). |

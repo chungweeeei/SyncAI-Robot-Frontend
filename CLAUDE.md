@@ -301,7 +301,11 @@ components/
                 (param-fields), not written per type)
   history/      finished-job dashboard and list: the filter toolbar (kept in
                 the URL), the counts and the outcome bar, cursor paging,
-                per-run step detail
+                per-run step detail, and for a failed run Retry from the
+                step it failed at (or the first of its group:
+                lib/task/history.ts's continuationStart, the backend's rule
+                mirrored) — a new job, sent through use-task-continue on the
+                taskDispatch key so the masthead follows it
   settings/     the /settings landing (a card per section, and Restart) and
                 its sections, each its own route: Planner and Controller (one
                 SettingsForm each, drawn from the robot's own list of that
@@ -600,7 +604,7 @@ touch one, prefer moving it toward the rule.
 - **Command hooks are mutations too**, but they answer to the robot rather
   than to the cache: `use-goal-task`, `use-posture`, `use-task-dispatch`,
   `use-initial-pose`, `use-locomotion`, `use-mode-switch`, `use-wifi-connect`,
-  `use-task-hold`.
+  `use-task-hold`, `use-task-continue`.
   They invalidate nothing — there is no cached resource a motion key or a pose
   estimate makes stale (the one exception is `use-wifi-connect`, whose join by
   SSID or rejoin of a saved network changes `wifiConnections`, invalidated on
