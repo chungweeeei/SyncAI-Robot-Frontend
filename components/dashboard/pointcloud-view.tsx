@@ -635,7 +635,13 @@ export function PointCloudView({
             />
             {/* One card at a time: an open stop carries the running goal's
               * Cancel itself, and the masthead still reads the job out. */}
-            {!askedVertex && <GoalControl task={task} className="pointer-events-auto" />}
+            {!askedVertex && (
+              <GoalControl
+                task={task}
+                name={goalVertex?.name ?? null}
+                className="pointer-events-auto"
+              />
+            )}
             <InitialPoseControl estimate={estimate} className="pointer-events-auto" />
             <AutoLocalizeControl localize={localize} className="pointer-events-auto" />
             {/* Shown while a re-place is live, and after it when the write fails

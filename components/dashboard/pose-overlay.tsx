@@ -1,6 +1,9 @@
 "use client";
 
+import { BotIcon } from "lucide-react";
+
 import { overlayPanel } from "@/components/console/instrument";
+import { CoordCell, cardHeader } from "@/components/dashboard/overlay-card";
 import { cn } from "@/lib/utils";
 import type { RobotState } from "@/lib/types/robot";
 
@@ -21,71 +24,33 @@ export function PoseOverlay({
   // mapping). Masked, since 0.00 would read as standing on the map origin.
   const localized = state.localization_valid;
 
+  const tone = localized ? "live" : "muted";
+
   return (
-    <section
-      aria-label="Pose"
-      className={cn(overlayPanel, "px-3 py-2", className)}
-    >
-      <dl className="flex items-baseline gap-4">
-        <PoseValue
-          label="X"
-          value={localized ? position.x.toFixed(2) : "—"}
-          unit="m"
-          live={localized}
-        />
-        <PoseValue
-          label="Y"
-          value={localized ? position.y.toFixed(2) : "—"}
-          unit="m"
-          live={localized}
-        />
-        <PoseValue
-          label="Z"
-          value={localized ? position.z.toFixed(2) : "—"}
-          unit="m"
-          live={localized}
-        />
-        <PoseValue
+    <section aria-label="Pose" className={cn(overlayPanel, "w-[17rem] max-w-[calc(100vw-1.5rem)] p-2.5", className)}>
+      <div className={cardHeader}>
+        <BotIcon className="size-3.5 shrink-0 text-signal-live" aria-hidden />
+        <h2 className="min-w-0 flex-1 truncate text-sm font-medium">Robot</h2>
+      </div>
+      {/* The stop and goal cards' grid, in the live hue, with the heading a
+        * fourth cell: this card has the width, and where the robot faces is
+        * read here, where a stop's is read off its arrow. */}
+      <dl className="mt-2.5 grid grid-cols-[1fr_1fr_1fr_1.2fr] gap-2">
+        <CoordCell label="X" value={localized ? position.x.toFixed(2) : "—"} unit="m" tone={tone} />
+        <CoordCell label="Y" value={localized ? position.y.toFixed(2) : "—"} unit="m" tone={tone} />
+        <CoordCell label="Z" value={localized ? position.z.toFixed(2) : "—"} unit="m" tone={tone} />
+        <CoordCell
           label="Orientation"
           value={localized ? position.theta.toFixed(1) : "—"}
           unit="°"
-          live={localized}
+          tone={tone}
         />
       </dl>
       {!localized && (
-        <p className="mt-1.5 text-[11px] leading-tight text-muted-foreground">
+        <p className="mt-2.5 text-[11px] leading-snug text-muted-foreground">
           The robot does not know where it is yet.
         </p>
       )}
     </section>
-  );
-}
-
-function PoseValue({
-  label,
-  value,
-  unit,
-  live,
-}: {
-  label: string;
-  value: string;
-  unit: string;
-  live: boolean;
-}) {
-  return (
-    <div>
-      <dt className="instrument-label text-muted-foreground">{label}</dt>
-      <dd
-        className={cn(
-          "readout mt-0.5 text-lg leading-none font-medium tabular-nums",
-          live ? "text-signal-live" : "text-muted-foreground",
-        )}
-      >
-        {value}
-        <span className="ml-0.5 text-[11px] font-normal text-muted-foreground">
-          {unit}
-        </span>
-      </dd>
-    </div>
   );
 }

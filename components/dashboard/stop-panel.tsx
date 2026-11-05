@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { Chip, Readout, overlayPanel } from "@/components/console/instrument";
+import { PositionGrid, cardAction, cardHeader } from "@/components/dashboard/overlay-card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,7 +35,7 @@ import type { MapVertex } from "@/lib/types/map";
  * the ⋯ menu; Delete still asks first, since a waypoint has no undo here.
  *
  * Go sends the stop, and the robot plans again as it sets off — a person can
- * step into the way between the two — which the footnote says. A stop with
+ * step into the way between the two. A stop with
  * no route offers no Go: it would fail for the same reason. While this
  * console's goal runs the panel is the one card over the map — the goal's
  * own read-back steps aside — so it carries that goal's Cancel. Where it
@@ -112,7 +113,7 @@ export function StopPanel({
       className={cn(overlayPanel, "w-full p-2.5", className)}
       aria-label={vertex.name}
     >
-      <div className="mb-2 flex items-center gap-2">
+      <div className={cardHeader}>
         <MapPinIcon className="size-3.5 shrink-0 text-signal-cmd" aria-hidden />
         <h2 className="min-w-0 flex-1 truncate text-sm font-medium">{vertex.name}</h2>
         {pending ? (
@@ -125,7 +126,7 @@ export function StopPanel({
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label={`More for ${vertex.name}`}
-            className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:size-10"
+            className="-mr-1 flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:size-10"
           >
             <EllipsisIcon className="size-3.5" aria-hidden />
           </DropdownMenuTrigger>
@@ -160,57 +161,41 @@ export function StopPanel({
         </DropdownMenu>
       </div>
 
-      {reachable && (
-        <div className="space-y-1">
-          <Readout label="Route" value={preview.length_m.toFixed(1)} unit="m" tone="cmd" />
-          {floors.length > 1 && (
-            <Readout label="Floors" value={floors.join(" → ")} tone="cmd" />
-          )}
-        </div>
+      {/* Where the stop is, by request no more: the route is on the map, and
+        * its heading is the arrow there. Floors stay: a route across storeys
+        * is a decision. */}
+      <PositionGrid x={vertex.x} y={vertex.y} z={vertex.z} className="mt-2.5" />
+      {reachable && floors.length > 1 && (
+        <Readout label="Floors" value={floors.join(" → ")} tone="cmd" className="mt-2.5" />
       )}
 
-      {/* role=status so a screen reader hears the answer arrive. */}
-      <div role="status">
-        {running && goalHere && (
-          <p className="text-[11px] leading-snug text-signal-cmd">The robot is on its way here.</p>
-        )}
+      {/* role=status so a screen reader hears the answer arrive; kept mounted
+        * when empty, since a live region added with its text is not read. */}
+      <div role="status" className="space-y-1.5 text-[11px] leading-snug break-words not-empty:mt-2.5">
+        {running && goalHere && <p className="text-signal-cmd">The robot is on its way here.</p>}
         {running && !goalHere && (
-          <p className="text-[11px] leading-snug text-signal-caution">
+          <p className="text-signal-caution">
             The robot is on its way to {goalName ?? "another goal"}. Go opens once it gets there.
           </p>
         )}
-        {cancelError && (
-          <p className="mt-1.5 text-[11px] leading-snug break-words text-signal-warn">
-            {cancelError}
-          </p>
-        )}
+        {cancelError && <p className="text-signal-warn">{cancelError}</p>}
         {preview && !reachable && (
-          <p className="text-[11px] leading-snug break-words text-signal-warn">
-            {stepFailureText(preview.message)}
-          </p>
+          <p className="text-signal-warn">{stepFailureText(preview.message)}</p>
         )}
-        {error && (
-          <p className="mt-1.5 text-[11px] leading-snug break-words text-signal-warn">{error}</p>
-        )}
+        {error && <p className="text-signal-warn">{error}</p>}
         {stale && reachable && (
-          <p className="mt-2 text-[11px] leading-snug text-signal-caution">
-            The robot has moved since this route was planned.
-          </p>
+          <p className="text-signal-caution">The robot has moved since this route was planned.</p>
         )}
-        {editLock && (
-          <p className="mt-1.5 text-[11px] leading-snug text-signal-caution">{editLock}</p>
-        )}
+        {editLock && <p className="text-signal-caution">{editLock}</p>}
         {deleteError && (
-          <p role="alert" className="mt-1.5 text-[11px] leading-snug break-words text-signal-warn">
+          <p role="alert" className="text-signal-warn">
             {deleteError}
           </p>
         )}
       </div>
 
-      {reachable && !stale && (
-        <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-          {goLockReason ?? "The robot plans again when it sets off."}
-        </p>
+      {reachable && !stale && goLockReason && (
+        <p className="mt-2.5 text-[11px] leading-snug text-signal-caution">{goLockReason}</p>
       )}
 
       <div className="mt-2.5 flex gap-1.5">
@@ -219,7 +204,7 @@ export function StopPanel({
             type="button"
             disabled={!cancelable}
             onClick={onCancel}
-            className="instrument-label flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border border-signal-warn/50 bg-signal-warn/12 text-signal-warn transition-colors hover:bg-signal-warn/20 disabled:opacity-50 pointer-coarse:h-10"
+            className={cardAction("warn")}
           >
             <XIcon className="size-3.5" aria-hidden />
             Cancel
@@ -229,9 +214,9 @@ export function StopPanel({
             type="button"
             disabled={pending}
             onClick={() => onAgain(vertex)}
-            className="instrument-label flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd transition-colors hover:bg-signal-cmd/20 disabled:opacity-50 pointer-coarse:h-10"
+            className={cardAction("cmd")}
           >
-            <RefreshCwIcon className="size-3.5" />
+            <RefreshCwIcon className="size-3.5" aria-hidden />
             Preview again
           </button>
         ) : (
@@ -239,18 +224,13 @@ export function StopPanel({
             type="button"
             disabled={!canGo}
             onClick={() => onGo(vertex)}
-            className="instrument-label flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd transition-colors hover:bg-signal-cmd/20 disabled:opacity-50 pointer-coarse:h-10"
+            className={cardAction("cmd")}
           >
-            <SendIcon className="size-3.5" />
+            <SendIcon className="size-3.5" aria-hidden />
             Go
           </button>
         )}
-        <button
-          type="button"
-          aria-label="Close"
-          onClick={onClose}
-          className="instrument-label flex h-7 items-center rounded-sm border border-hairline px-2 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:h-10"
-        >
+        <button type="button" aria-label="Close" onClick={onClose} className={cardAction("quiet")}>
           <XIcon className="size-3.5" aria-hidden />
         </button>
       </div>
