@@ -1,17 +1,28 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, RotateCcwIcon } from "lucide-react";
 
 import { TaskStatusChip } from "@/components/console/task-chip";
 import { GroupRail } from "@/components/tasks/group-rail";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";
+import { useConsoleActiveTasks } from "@/hooks/use-console-active-tasks";
+import { useConsoleEstop } from "@/hooks/use-console-estop";
+import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
+import { useTaskContinue } from "@/hooks/use-task-continue";
 import { useTaskRun } from "@/hooks/use-task-run";
-import type { TaskHistoryEntry } from "@/lib/api/task";
+import type { TaskHistoryEntry, TaskStepState } from "@/lib/api/task";
 import { formatDuration } from "@/lib/recording/format";
 import { stepFailureText } from "@/lib/task/failure";
-import { describeRun, runSeconds, stepSeconds } from "@/lib/task/history";
+import {
+  continuationKind,
+  continuationStart,
+  describeRun,
+  runSeconds,
+  stepSeconds,
+} from "@/lib/task/history";
 import { formatLocalRunTime, formatUtcRunTime } from "@/lib/task/schedule";
 import { wireGroupPlaces } from "@/lib/task/step";
 import { cn } from "@/lib/utils";
@@ -56,9 +67,81 @@ function useFinishedReadout(closedAt: string | null): {
     : { value: formatUtcRunTime(closedAt), unit: "UTC" };
 }
 
+/**
+ * Run a failed job again from the step it failed at, as a new job the
+ * masthead then follows. The steps before it are not run again; the new job
+ * lists them as SKIPPED. Greyed, with the reason on hover, while anything
+ * would make the robot refuse it; the backend's own sentence otherwise.
+ */
+function RetryFromFailure({
+  entry,
+  steps,
+}: {
+  entry: TaskHistoryEntry;
+  steps: readonly TaskStepState[];
+}) {
+  const start = continuationStart(steps);
+  const { state } = useConsoleRobotState();
+  const { engaged: stopped } = useConsoleEstop();
+  const { tasks, status } = useConsoleActiveTasks();
+  const send = useTaskContinue();
+
+  if (!start) return null;
+
+  const robotId = state?.robot_id ?? null;
+  const blocked =
+    robotId === null
+      ? "The robot cannot be reached."
+      : stopped
+        ? "The emergency stop is engaged."
+        : status !== "ok"
+          ? "Whether a job is running cannot be read."
+          : tasks.length > 0
+            ? "Another job is running; it has to finish first."
+            : null;
+
+  return (
+    <div className="space-y-1.5 pt-1">
+      <Button
+        size="sm"
+        variant="outline"
+        title={
+          blocked ??
+          `Run this job again from step ${start.ordinal}; the steps before it are not run again.`
+        }
+        // Once sent, the job is the new one's to follow, not this one's to send again.
+        disabled={blocked !== null || send.isPending || send.isSuccess}
+        onClick={() => {
+          if (!robotId) return;
+          // mutate, not mutateAsync: the refusal is read off `send.error`.
+          send.mutate({
+            robot: robotId,
+            failedId: entry.id,
+            kind: continuationKind(entry.kind),
+            name: entry.name,
+          });
+        }}
+      >
+        <RotateCcwIcon data-icon="inline-start" aria-hidden />
+        Retry from step {start.ordinal}
+      </Button>
+      {send.error && (
+        <p role="alert" className="text-[11px] leading-snug break-words text-signal-warn">
+          {send.error.message}
+        </p>
+      )}
+      {send.data && (
+        <p role="status" className="text-[11px] leading-snug text-muted-foreground">
+          Sent as <span className="readout">{send.data}</span>. Follow it on the bar above.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** What each step did. Mounted only while the row is open, so it is read on demand. */
-function RunSteps({ id }: { id: string }) {
-  const { status, steps, error } = useTaskRun(id);
+function RunSteps({ entry }: { entry: TaskHistoryEntry }) {
+  const { status, steps, error } = useTaskRun(entry.id);
 
   if (status === "loading") {
     return (
@@ -91,38 +174,41 @@ function RunSteps({ id }: { id: string }) {
   const groupPlaces = wireGroupPlaces(steps);
   const railed = groupPlaces.some(Boolean);
   return (
-    <ol className="space-y-1">
-      {steps.map((step, index) => {
-        const took = stepSeconds(step);
-        return (
-          <li key={step.id} className={cn("space-y-0.5", railed && "relative pl-2.5")}>
-            <GroupRail place={groupPlaces[index] ?? null} gap="1" />
-            <div className="flex items-center gap-2">
-              <span className="readout w-5 shrink-0 text-right text-[11px] text-muted-foreground">
-                {index + 1}
-              </span>
-              <span className="readout min-w-0 flex-1 truncate text-[12px]">
-                {step.id}
-              </span>
-              {/* The step's own time; a hold while it ran is said beside it,
-                * not counted in it. Nothing for a step that never ran. */}
-              {took && (
-                <span className="readout shrink-0 text-[11px] text-muted-foreground">
-                  {formatDuration(took.active)}
-                  {took.paused > 0 && ` · held ${formatDuration(took.paused)}`}
+    <>
+      <ol className="space-y-1">
+        {steps.map((step, index) => {
+          const took = stepSeconds(step);
+          return (
+            <li key={step.id} className={cn("space-y-0.5", railed && "relative pl-2.5")}>
+              <GroupRail place={groupPlaces[index] ?? null} gap="1" />
+              <div className="flex items-center gap-2">
+                <span className="readout w-5 shrink-0 text-right text-[11px] text-muted-foreground">
+                  {index + 1}
                 </span>
+                <span className="readout min-w-0 flex-1 truncate text-[12px]">
+                  {step.id}
+                </span>
+                {/* The step's own time; a hold while it ran is said beside it,
+                  * not counted in it. Nothing for a step that never ran. */}
+                {took && (
+                  <span className="readout shrink-0 text-[11px] text-muted-foreground">
+                    {formatDuration(took.active)}
+                    {took.paused > 0 && ` · held ${formatDuration(took.paused)}`}
+                  </span>
+                )}
+                <TaskStatusChip status={step.status} />
+              </div>
+              {step.error_msg && (
+                <p className="pl-7 text-[11px] leading-snug break-words text-signal-warn">
+                  {stepFailureText(step.error_msg)}
+                </p>
               )}
-              <TaskStatusChip status={step.status} />
-            </div>
-            {step.error_msg && (
-              <p className="pl-7 text-[11px] leading-snug break-words text-signal-warn">
-                {stepFailureText(step.error_msg)}
-              </p>
-            )}
-          </li>
-        );
-      })}
-    </ol>
+            </li>
+          );
+        })}
+      </ol>
+      {entry.status === "FAILED" && <RetryFromFailure entry={entry} steps={steps} />}
+    </>
   );
 }
 
@@ -202,7 +288,7 @@ export function HistoryRow({ entry }: { entry: TaskHistoryEntry }) {
               <span className="readout min-w-0 truncate text-[12px]">{entry.map_name}</span>
             </div>
           )}
-          <RunSteps id={entry.id} />
+          <RunSteps entry={entry} />
         </div>
       )}
     </li>

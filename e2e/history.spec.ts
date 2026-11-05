@@ -398,6 +398,82 @@ test.describe("the job history", () => {
     await expect(page.getByText("2-move")).toBeVisible();
     await expect(page.getByText("Goal is blocked.")).toBeVisible();
   });
+
+  test("runs a failed job again from the step it failed at, as a new job", async ({
+    page,
+  }) => {
+    const writes = await mockBackend(page, {
+      taskHistory: finished,
+      taskStates: {
+        "nightly-2026-09-18T01:00:00Z": {
+          id: "nightly-2026-09-18T01:00:00Z",
+          status: "FAILED",
+          steps: [
+            { id: "1-move", status: "COMPLETED", error_msg: "" },
+            { id: "2-move", status: "FAILED", error_msg: "Goal is blocked." },
+          ],
+        },
+      },
+      // The new job, done before the list's next poll: every step, the one
+      // its failed job got past SKIPPED.
+      dispatchedTaskState: (id) => ({
+        id,
+        status: "COMPLETED",
+        steps: [
+          { id: "1-move", status: "SKIPPED", error_msg: "" },
+          { id: "2-move", status: "COMPLETED", error_msg: "" },
+        ],
+      }),
+    });
+    await page.goto("/history");
+    await page.getByText("Morning round").click();
+
+    const sent = page.waitForRequest(
+      (request) =>
+        new URL(request.url()).pathname === "/api/v1/tasks" &&
+        request.method() === "POST",
+    );
+    await page.getByRole("button", { name: "Retry from step 2" }).click();
+    await sent;
+
+    // The failed job named, never its steps or a map; a schedule's is a task.
+    const posted = writes.find((write) => write.path === "/api/v1/tasks");
+    expect(posted?.body).toMatchObject({
+      kind: "task",
+      continue_from: "nightly-2026-09-18T01:00:00Z",
+    });
+    expect(posted?.body).not.toHaveProperty("steps");
+    expect(posted?.body).not.toHaveProperty("map_name");
+
+    await expect(page.getByText(/Sent as robot01-task-/)).toBeVisible();
+    // Sent once: the button is the new job's to follow now, not to press again.
+    await expect(page.getByRole("button", { name: "Retry from step 2" })).toBeDisabled();
+    // And the masthead follows it as a job this console sent, by the failed
+    // job's name.
+    await expect(
+      page.getByRole("link", { name: /^Morning round — open the job list/ }),
+    ).toContainText("Completed");
+  });
+
+  test("offers no retry for a job that did not fail", async ({ page }) => {
+    await mockBackend(page, {
+      taskHistory: finished,
+      taskStates: {
+        "robot01-task-1758000000-1": {
+          id: "robot01-task-1758000000-1",
+          status: "COMPLETED",
+          steps: [{ id: "1-move", status: "COMPLETED", error_msg: "" }],
+        },
+      },
+    });
+    await page.goto("/history");
+    await page
+      .getByRole("button", { name: /^COMPLETED Task Started directly/ })
+      .click();
+
+    await expect(page.getByText("1-move")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Retry from step/ })).toHaveCount(0);
+  });
 });
 
 test.describe("the job history when the robot cannot answer", () => {
