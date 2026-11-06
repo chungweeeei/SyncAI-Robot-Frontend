@@ -119,16 +119,42 @@ describe("useActiveRun's ended run", () => {
     await waitFor(() => expect(result.current.run?.status).toBe("IN_PROGRESS"));
     const before = reads.length;
 
-    states.set(ID, "FAILED");
+    states.set(ID, "CANCELED");
     listing({ tasks: [] });
 
-    await waitFor(() => expect(result.current.ended?.status).toBe("FAILED"));
+    await waitFor(() => expect(result.current.ended?.status).toBe("CANCELED"));
     expect(reads.length).toBe(before + 1);
 
     // One read, not a poll: a run off the list has nothing left to report.
     await act(() => vi.advanceTimersByTimeAsync(ENDED_RUN_LINGER_MS + 2_000));
     expect(reads.length).toBe(before + 1);
     expect(result.current.ended).toBeNull();
+  });
+
+  it("keeps a failed run past the linger, until it is dismissed", async () => {
+    states.set(ID, "FAILED");
+    const { result, listing } = setup([activeTask()]);
+    await waitFor(() => expect(result.current.run?.status).toBe("FAILED"));
+    listing({ tasks: [] });
+
+    await act(() => vi.advanceTimersByTimeAsync(ENDED_RUN_LINGER_MS * 4));
+    expect(result.current.ended?.task.id).toBe(ID);
+    expect(result.current.ended?.status).toBe("FAILED");
+
+    act(() => result.current.dismiss());
+    expect(result.current.ended).toBeNull();
+  });
+
+  it("gives a failed run's place to the next run at once", async () => {
+    states.set(ID, "FAILED");
+    const { result, listing } = setup([activeTask()]);
+    await waitFor(() => expect(result.current.run?.status).toBe("FAILED"));
+    listing({ tasks: [] });
+    expect(result.current.ended).not.toBeNull();
+
+    listing({ tasks: [activeTask("robot01-task-1758000100-1")] });
+    expect(result.current.ended).toBeNull();
+    expect(result.current.run?.task.id).toBe("robot01-task-1758000100-1");
   });
 
   it("shows nothing for a run whose last read did not say it closed", async () => {
@@ -185,7 +211,10 @@ describe("useActiveRun and a job this console sent", () => {
     expect(result.current.ended?.task.name).toBe("Morning round");
     expect(result.current.ended?.task.kind).toBe("task");
 
+    // Failed, so it waits for a Retry or a dismiss rather than the clock.
     await act(() => vi.advanceTimersByTimeAsync(ENDED_RUN_LINGER_MS));
+    expect(result.current.ended?.status).toBe("FAILED");
+    act(() => result.current.dismiss());
     expect(result.current.ended).toBeNull();
   });
 
@@ -254,7 +283,7 @@ describe("useActiveRun and a run the backend lists as just ended", () => {
     expect(result.current.ended?.task.schedule_id).toBe("robot01-sched-001");
 
     await act(() => vi.advanceTimersByTimeAsync(ENDED_RUN_LINGER_MS));
-    expect(result.current.ended).toBeNull();
+    expect(result.current.ended?.status).toBe("FAILED");
   });
 
   it("says nothing of a run that closed before this console first looked", async () => {
