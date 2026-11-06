@@ -302,7 +302,15 @@ components/
                 action's fields drawn from the step catalogue
                 (param-fields), not written per type)
   history/      finished-job dashboard and list: the filter toolbar (kept in
-                the URL), the counts and the outcome bar, cursor paging,
+                the URL; its windows stop at 5 days, the orchestrator's
+                retention, while the export reaches 30), the counts and the
+                outcome bar, cursor paging (history-pager: above the list
+                alone, "11–20 of 47 jobs" with the
+                total taken from the counts — lib/task/history.ts's
+                historyPageWindow, which drops a count the rows contradict —
+                Newest rather than Last, since the cursor only runs forward,
+                and Per page, `size` in the URL beside the filter but not
+                part of it; the next page prefetched),
                 per-run step detail, and for a failed run Retry from the
                 step it failed at (or the first of its group:
                 lib/task/history.ts's continuationStart, the backend's rule

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { queryKeys } from "@/lib/api/query-keys";
 import {
@@ -9,10 +9,7 @@ import {
   type TaskHistoryEntry,
   type TaskHistoryFilterQuery,
 } from "@/lib/api/task";
-import { historyQueryKey } from "@/lib/task/history";
-
-/** Half the backend's default, so a page of expandable rows and its pager fit one screen. */
-const HISTORY_PAGE_SIZE = 10;
+import { historyQueryKey, type HistoryPageSize } from "@/lib/task/history";
 
 export interface UseTaskHistory {
   /** Newest close first. */
@@ -28,6 +25,8 @@ export interface UseTaskHistory {
   hasPrev: boolean;
   next: () => void;
   prev: () => void;
+  /** Back to the newest page, whose cursor is always known. */
+  first: () => void;
   refresh: () => void;
 }
 
@@ -40,10 +39,20 @@ export interface UseTaskHistory {
  * page one — which is why the caller must hold the window's `since` still
  * across page turns (see useHistoryFilter).
  *
+ * The page size is part of the cursor's key for the same reason: a cursor
+ * marks a row count, so a new size starts over too.
+ *
+ * The next page is prefetched once its cursor arrives, so Next answers at
+ * once; one extra read per page turned, never a poll.
+ *
  * No poll: the active-task poll invalidates `taskHistory` when a run finishes.
  */
-export function useTaskHistory(filter: TaskHistoryFilterQuery): UseTaskHistory {
-  const filterKey = historyQueryKey(filter);
+export function useTaskHistory(
+  filter: TaskHistoryFilterQuery,
+  pageSize: HistoryPageSize,
+): UseTaskHistory {
+  const queryClient = useQueryClient();
+  const filterKey = JSON.stringify([historyQueryKey(filter), pageSize]);
 
   const [cursor, setCursor] = React.useState<{
     filterKey: string;
@@ -58,17 +67,17 @@ export function useTaskHistory(filter: TaskHistoryFilterQuery): UseTaskHistory {
   );
   const pageToken = tokens[tokens.length - 1];
 
+  const pageQuery = React.useCallback(
+    (token: string | null) => ({
+      queryKey: queryKeys.taskHistoryPage(filterKey, token),
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        fetchTaskHistory({ ...filter, pageToken: token ?? undefined, pageSize }, signal),
+    }),
+    [filter, filterKey, pageSize],
+  );
+
   const { data, isPending, isError, error, isPlaceholderData, refetch } = useQuery({
-    queryKey: queryKeys.taskHistoryPage(filterKey, pageToken),
-    queryFn: ({ signal }) =>
-      fetchTaskHistory(
-        {
-          ...filter,
-          pageToken: pageToken ?? undefined,
-          pageSize: HISTORY_PAGE_SIZE,
-        },
-        signal,
-      ),
+    ...pageQuery(pageToken),
     // Only across pages of one filter, or excluded jobs would show.
     placeholderData: (previous, previousQuery) =>
       previousQuery?.queryKey[2] === filterKey
@@ -77,6 +86,10 @@ export function useTaskHistory(filter: TaskHistoryFilterQuery): UseTaskHistory {
   });
 
   const nextToken = isPlaceholderData ? null : (data?.next_page_token ?? null);
+
+  React.useEffect(() => {
+    if (nextToken) void queryClient.prefetchQuery(pageQuery(nextToken));
+  }, [nextToken, pageQuery, queryClient]);
 
   const next = React.useCallback(() => {
     if (!nextToken) return;
@@ -87,6 +100,10 @@ export function useTaskHistory(filter: TaskHistoryFilterQuery): UseTaskHistory {
     if (tokens.length < 2) return;
     setCursor({ filterKey, tokens: tokens.slice(0, -1) });
   }, [filterKey, tokens]);
+
+  const first = React.useCallback(() => {
+    setCursor({ filterKey, tokens: [null] });
+  }, [filterKey]);
 
   const refresh = React.useCallback(() => {
     void refetch();
@@ -102,6 +119,7 @@ export function useTaskHistory(filter: TaskHistoryFilterQuery): UseTaskHistory {
     hasPrev: tokens.length > 1,
     next,
     prev,
+    first,
     refresh,
   };
 }

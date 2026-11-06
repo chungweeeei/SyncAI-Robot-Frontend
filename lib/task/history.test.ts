@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_HISTORY_FILTER,
+  DEFAULT_HISTORY_PAGE_SIZE,
   continuationKind,
   continuationBlocked,
   continuationStart,
@@ -14,13 +15,17 @@ import {
   exportFilename,
   formatPercent,
   historyNameOptions,
+  historyPageWindow,
   historyQueryKey,
+  historySearch,
   isDefaultHistoryFilter,
   isoToLocalInput,
   kindLabel,
   localInputToIso,
+  matchingTotal,
   outcomeSegments,
   parseHistoryFilter,
+  parseHistoryPageSize,
   resolveTimeRange,
   runSeconds,
   serializeHistoryFilter,
@@ -281,6 +286,87 @@ describe("parseHistoryFilter / serializeHistoryFilter", () => {
 
   it("treats an empty name as no name", () => {
     expect(parse("name=").name).toBeNull();
+  });
+});
+
+describe("the page size", () => {
+  const parse = (query: string) => parseHistoryPageSize(new URLSearchParams(query));
+
+  it("reads one of the offered sizes, else the default", () => {
+    expect(parse("size=25")).toBe(25);
+    expect(parse("")).toBe(DEFAULT_HISTORY_PAGE_SIZE);
+    // The backend would take 37; the picker could not show it.
+    expect(parse("size=37")).toBe(DEFAULT_HISTORY_PAGE_SIZE);
+    expect(parse("size=many")).toBe(DEFAULT_HISTORY_PAGE_SIZE);
+  });
+
+  it("rides beside the filter in the address, left out at its default", () => {
+    const filter: HistoryFilter = { ...DEFAULT_HISTORY_FILTER, status: "FAILED" };
+    expect(historySearch(filter, DEFAULT_HISTORY_PAGE_SIZE)).toBe("status=FAILED");
+    const search = new URLSearchParams(historySearch(filter, 50));
+    expect(parseHistoryFilter(search)).toEqual(filter);
+    expect(parseHistoryPageSize(search)).toBe(50);
+  });
+
+  it("is not part of the filter, so clearing the filters keeps it", () => {
+    expect(historySearch(DEFAULT_HISTORY_FILTER, 25)).toBe("size=25");
+    expect(isDefaultHistoryFilter(DEFAULT_HISTORY_FILTER)).toBe(true);
+  });
+});
+
+describe("matchingTotal", () => {
+  const stats = {
+    as_of: "2026-09-18T10:00:00Z",
+    total: 47,
+    by_status: { COMPLETED: 40, FAILED: 5, CANCELED: 2 },
+    success_rate: 40 / 47,
+  };
+
+  it("is the window's total, or one outcome's tile when the list is narrowed to it", () => {
+    expect(matchingTotal(stats, "ALL")).toBe(47);
+    expect(matchingTotal(stats, "FAILED")).toBe(5);
+  });
+
+  it("is unknown before the counts arrive, never 0", () => {
+    expect(matchingTotal(null, "ALL")).toBeNull();
+  });
+});
+
+describe("historyPageWindow", () => {
+  it("places a page in the whole", () => {
+    expect(
+      historyPageWindow({ page: 2, pageSize: 10, shown: 10, total: 47, hasNext: true }),
+    ).toEqual({ from: 11, to: 20, total: 47, pageCount: 5 });
+    expect(
+      historyPageWindow({ page: 5, pageSize: 10, shown: 7, total: 47, hasNext: false }),
+    ).toEqual({ from: 41, to: 47, total: 47, pageCount: 5 });
+  });
+
+  it("still gives the rows' span while the count is unknown", () => {
+    expect(
+      historyPageWindow({ page: 2, pageSize: 10, shown: 10, total: null, hasNext: true }),
+    ).toEqual({ from: 11, to: 20, total: null, pageCount: null });
+  });
+
+  it("drops a count the rows contradict rather than show it", () => {
+    // A job finished after the counts were read: more rows than the total.
+    expect(
+      historyPageWindow({ page: 3, pageSize: 10, shown: 10, total: 25, hasNext: true }).total,
+    ).toBeNull();
+    // The list has ended, yet the count claims more.
+    expect(
+      historyPageWindow({ page: 1, pageSize: 10, shown: 7, total: 9, hasNext: false }).total,
+    ).toBeNull();
+  });
+
+  it("takes a cursor handed at a page boundary as the end it turns out to be", () => {
+    expect(
+      historyPageWindow({ page: 2, pageSize: 10, shown: 10, total: 20, hasNext: true }),
+    ).toEqual({ from: 11, to: 20, total: 20, pageCount: 2 });
+    // …and the empty page after it.
+    expect(
+      historyPageWindow({ page: 3, pageSize: 10, shown: 0, total: 20, hasNext: false }),
+    ).toEqual({ from: 0, to: 20, total: 20, pageCount: 3 });
   });
 });
 

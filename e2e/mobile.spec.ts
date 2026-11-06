@@ -8,6 +8,7 @@ import {
   mockBackend,
   octomapBt,
   robotState,
+  taskHistoryEntry,
   taskState,
   withOctomap,
 } from "./backend";
@@ -128,6 +129,42 @@ test.describe("the console on a phone", () => {
       await expectOnScreen(page, name, box);
       expect(box!.height).toBeGreaterThanOrEqual(TARGET);
     }
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+  });
+
+  test("fits the history pager on one phone row, its page buttons under a finger", async ({
+    page,
+  }) => {
+    await mockBackend(page, {
+      taskHistory: Array.from({ length: 23 }, (_, i) =>
+        taskHistoryEntry({
+          id: `robot01-task-${i}`,
+          run_id: `run-${i}`,
+          closed_at: new Date(Date.parse("2026-09-18T09:59:00Z") - i * 60_000).toISOString(),
+        }),
+      ),
+    });
+    await page.clock.setFixedTime(new Date("2026-09-18T10:00:00Z"));
+    await page.goto("/history");
+
+    const pager = page.getByRole("navigation", { name: "History pages" });
+    await pager.scrollIntoViewIfNeeded();
+    await expect(pager.getByText("1–10 of 23 jobs")).toBeVisible();
+    const boxes = [];
+    for (const name of ["Newest", "Previous", "Next"]) {
+      const box = await pager.getByRole("button", { name }).boundingBox();
+      await expectOnScreen(page, name, box);
+      expect(box!.height).toBeGreaterThanOrEqual(TARGET);
+      boxes.push(box!);
+    }
+    // Icons alone below sm, so the three share the size picker's row.
+    const size = (await pager.getByLabel("Per page").boundingBox())!;
+    const middle = (box: { y: number; height: number }) => box.y + box.height / 2;
+    for (const box of boxes) expect(Math.abs(middle(box) - middle(size))).toBeLessThan(2);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,

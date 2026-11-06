@@ -118,8 +118,11 @@ export function exportFilename(query: TaskHistoryFilterQuery, nowMs: number): st
 // ---------------------------------------------------------------------------
 // The filter
 
-export type TimeRangePreset = "1h" | "6h" | "24h";
+export type TimeRangePreset = "1h" | "6h" | "24h" | "5d";
 
+// The list stops at 5 days because the list and the counts read the
+// orchestrator's index, which forgets a closed run after its retention (5 days
+// on the robot); a longer preset would promise rows that are not there.
 export const TIME_RANGE_PRESETS: readonly {
   value: TimeRangePreset;
   label: string;
@@ -128,6 +131,7 @@ export const TIME_RANGE_PRESETS: readonly {
   { value: "1h", label: "Last 1 h", hours: 1 },
   { value: "6h", label: "Last 6 h", hours: 6 },
   { value: "24h", label: "Last 24 h", hours: 24 },
+  { value: "5d", label: "Last 5 days", hours: 5 * 24 },
 ];
 
 /** A preset reaching back from now, or two ISO 8601 UTC bounds the operator typed. */
@@ -352,6 +356,93 @@ export function serializeHistoryFilter(filter: HistoryFilter): URLSearchParams {
   if (filter.kind) params.set("kind", filter.kind);
   if (filter.name) params.set("name", filter.name);
   return params;
+}
+
+// ---------------------------------------------------------------------------
+// The pager
+
+/** Rows a page asks for. Capped well under the backend's 100, since every row expands in place. */
+export const HISTORY_PAGE_SIZES = [10, 25, 50] as const;
+
+export type HistoryPageSize = (typeof HISTORY_PAGE_SIZES)[number];
+
+/** A page of expandable rows and its pager fit one screen. */
+export const DEFAULT_HISTORY_PAGE_SIZE: HistoryPageSize = 10;
+
+/**
+ * The `size` search param. Not a field of HistoryFilter: it narrows nothing,
+ * so Clear filters keeps it and the counts never see it.
+ */
+export function parseHistoryPageSize(params: URLSearchParams): HistoryPageSize {
+  const size = Number(params.get("size"));
+  return (HISTORY_PAGE_SIZES as readonly number[]).includes(size)
+    ? (size as HistoryPageSize)
+    : DEFAULT_HISTORY_PAGE_SIZE;
+}
+
+/** The address for a filter and a page size, the default size left out like every default. */
+export function historySearch(filter: HistoryFilter, pageSize: HistoryPageSize): string {
+  const params = serializeHistoryFilter(filter);
+  if (pageSize !== DEFAULT_HISTORY_PAGE_SIZE) params.set("size", String(pageSize));
+  return params.toString();
+}
+
+/**
+ * How many runs the list's filter matches, off the counts: those are taken
+ * without the outcome (see toHistoryStatsQuery), so one outcome's tile is the
+ * list's total. Null before the counts arrive.
+ */
+export function matchingTotal(
+  stats: TaskHistoryStats | null,
+  status: HistoryStatusFilter,
+): number | null {
+  if (!stats) return null;
+  return status === "ALL" ? stats.total : stats.by_status[status];
+}
+
+export interface HistoryPageWindow {
+  /** 1-based position of the page's first row; 0 on an empty page. */
+  from: number;
+  to: number;
+  /** Null when the count is unknown or disagrees with the list. */
+  total: number | null;
+  pageCount: number | null;
+}
+
+/**
+ * Where a page sits in the whole: "11–20 of 47 · Page 2 of 5".
+ *
+ * The list pages by cursor and is never counted; the total is a second read
+ * that can lag it by a finished job, either way. So the cursor decides: the
+ * page count is never below the page on screen, a missing next page makes this
+ * the last one, and a count the rows contradict is dropped rather than shown.
+ */
+export function historyPageWindow({
+  page,
+  pageSize,
+  shown,
+  total,
+  hasNext,
+}: {
+  page: number;
+  pageSize: number;
+  shown: number;
+  total: number | null;
+  hasNext: boolean;
+}): HistoryPageWindow {
+  const before = (page - 1) * pageSize;
+  const from = shown ? before + 1 : 0;
+  const to = before + shown;
+  // `hasNext` with `total === to` is not a contradiction: the backend can hand
+  // a cursor at a page boundary and only learn on the next read it was the end.
+  const contradicted = total !== null && (total < to || (!hasNext && total > to));
+  if (total === null || contradicted) return { from, to, total: null, pageCount: null };
+  return {
+    from,
+    to,
+    total,
+    pageCount: Math.max(page, Math.ceil(total / pageSize)),
+  };
 }
 
 /**

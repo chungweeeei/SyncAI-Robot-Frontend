@@ -38,7 +38,8 @@ export const queryKeys = {
    * One history page by its cursor (null for the first). `filterKey` is the
    * whole filter: the backend's token is valid only under the filter it was
    * issued with. It includes `since`, which is why useHistoryFilter anchors
-   * the window once per gesture.
+   * the window once per gesture, and the page size, since a cursor marks a
+   * row count.
    */
   taskHistoryPage: (filterKey: string, pageToken: string | null) =>
     ["task-history", "page", filterKey, pageToken ?? "first"] as const,

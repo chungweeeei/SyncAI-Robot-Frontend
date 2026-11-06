@@ -109,10 +109,10 @@ test.describe("the job history", () => {
     // 09:40:00 → 09:44:12, measured between the backend's own timestamps.
     await expect(page.getByText("4:12", { exact: true })).toBeVisible();
     await expect(page.getByText("12:30", { exact: true })).toBeVisible();
-    // Everything fits on one page, so there is nothing to page through.
-    await expect(
-      page.getByRole("navigation", { name: "History pages" }),
-    ).toBeHidden();
+    // Everything fits on one page: the span is said, there is nothing to turn.
+    const pager = page.getByRole("navigation", { name: "History pages" });
+    await expect(pager.getByText("1–2 of 2 jobs")).toBeVisible();
+    await expect(pager.getByRole("button", { name: "Next" })).toBeHidden();
 
     // The id is still there for whoever needs it: on expand.
     await page
@@ -337,31 +337,81 @@ test.describe("the job history", () => {
     await expect(page.getByText("Started directly")).toBeVisible();
   });
 
+  /** `count` finished runs, a minute apart, newest first, inside the default day. */
+  const many = (count: number) =>
+    Array.from({ length: count }, (_, i) =>
+      taskHistoryEntry({
+        id: `robot01-task-${i}`,
+        run_id: `run-${i}`,
+        name: `Round ${i + 1}`,
+        closed_at: new Date(Date.parse("2026-09-18T09:59:00Z") - i * 60_000).toISOString(),
+      }),
+    );
+
   test("pages forward with the cursor it was handed, and back without one", async ({
     page,
   }) => {
-    await mockBackend(page, { taskHistory: finished, taskHistoryPageSize: 1 });
-    await page.goto("/history");
-    await expect(page.getByText("Started directly")).toBeVisible();
-    await expect(page.getByText("Page 1")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Previous" })).toBeDisabled();
-
-    const next = page.waitForRequest(
+    await mockBackend(page, { taskHistory: many(23) });
+    // The next page is read as soon as its cursor arrives, so Next answers at once.
+    const prefetched = page.waitForRequest(
       (request) =>
-        new URL(request.url()).searchParams.get("page_token") === "1",
+        new URL(request.url()).pathname === "/api/v1/task_history" &&
+        new URL(request.url()).searchParams.get("page_token") === "10",
     );
-    await page.getByRole("button", { name: "Next" }).click();
-    await next;
+    await page.goto("/history");
+    const pager = page.getByRole("navigation", { name: "History pages" });
 
-    // Replaced, not appended: this is page two, and it is the last one.
-    await expect(page.getByText("Scheduled · nightly")).toBeVisible();
-    await expect(page.getByText("Started directly")).toBeHidden();
-    await expect(page.getByText("Page 2")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Next" })).toBeDisabled();
+    await expect(page.getByText("Round 1", { exact: true })).toBeVisible();
+    // The total is the dashboard's count, which the list itself never gives.
+    await expect(pager.getByText("1–10 of 23 jobs · Page 1 of 3")).toBeVisible();
+    await expect(pager.getByRole("button", { name: "Previous" })).toBeDisabled();
+    await expect(pager.getByRole("button", { name: "Newest" })).toBeDisabled();
+    await prefetched;
 
-    await page.getByRole("button", { name: "Previous" }).click();
-    await expect(page.getByText("Started directly")).toBeVisible();
-    await expect(page.getByText("Page 1")).toBeVisible();
+    await pager.getByRole("button", { name: "Next" }).click();
+    // Replaced, not appended.
+    await expect(page.getByText("Round 11", { exact: true })).toBeVisible();
+    await expect(page.getByText("Round 1", { exact: true })).toBeHidden();
+    await expect(pager.getByText("11–20 of 23 jobs · Page 2 of 3")).toBeVisible();
+
+    await pager.getByRole("button", { name: "Next" }).click();
+    await expect(pager.getByText("21–23 of 23 jobs · Page 3 of 3")).toBeVisible();
+    await expect(pager.getByRole("button", { name: "Next" })).toBeDisabled();
+
+    await pager.getByRole("button", { name: "Previous" }).click();
+    await expect(pager.getByText("Page 2 of 3")).toBeVisible();
+
+    // Newest is the first page's cursor, which is no cursor at all.
+    await pager.getByRole("button", { name: "Newest" }).click();
+    await expect(page.getByText("Round 1", { exact: true })).toBeVisible();
+    await expect(pager.getByText("Page 1 of 3")).toBeVisible();
+  });
+
+  test("a page size starts over at page one and stays through Clear filters", async ({
+    page,
+  }) => {
+    await mockBackend(page, { taskHistory: many(23) });
+    await page.goto("/history?status=COMPLETED");
+    const pager = page.getByRole("navigation", { name: "History pages" });
+    await pager.getByRole("button", { name: "Next" }).click();
+    await expect(pager.getByText("Page 2 of 3")).toBeVisible();
+
+    const resized = page.waitForRequest(
+      (request) =>
+        new URL(request.url()).pathname === "/api/v1/task_history" &&
+        new URL(request.url()).searchParams.get("page_size") === "25",
+    );
+    await pager.getByLabel("Per page").click();
+    await page.getByRole("option", { name: "25" }).click();
+    const params = new URL((await resized).url()).searchParams;
+    // A cursor marks a row count, so a new size never carries the old one.
+    expect(params.get("page_token")).toBeNull();
+    await expect(pager.getByText("1–23 of 23 jobs")).toBeVisible();
+    await expect(pager.getByRole("button", { name: "Next" })).toBeHidden();
+    await expect(page).toHaveURL(/size=25/);
+
+    await page.getByRole("button", { name: "Reset" }).click();
+    await expect(page).toHaveURL(/\/history\?size=25$/);
   });
 
   test("opens a job from anywhere on its row, with the reason a step failed", async ({

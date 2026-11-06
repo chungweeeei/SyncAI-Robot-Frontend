@@ -5,11 +5,13 @@ import { usePathname, useSearchParams } from "next/navigation";
 
 import type { TaskHistoryFilterQuery } from "@/lib/api/task";
 import {
+  historySearch,
   parseHistoryFilter,
-  serializeHistoryFilter,
+  parseHistoryPageSize,
   toHistoryQuery,
   toHistoryStatsQuery,
   type HistoryFilter,
+  type HistoryPageSize,
 } from "@/lib/task/history";
 
 export interface UseHistoryFilter {
@@ -20,6 +22,9 @@ export interface UseHistoryFilter {
   /** The dashboard's wire filter: the same window, never the outcome. */
   statsQuery: TaskHistoryFilterQuery;
   setFilter: (next: HistoryFilter) => void;
+  /** Rows a page asks for; kept in the address beside the filter. */
+  pageSize: HistoryPageSize;
+  setPageSize: (next: HistoryPageSize) => void;
 }
 
 /**
@@ -40,20 +45,30 @@ export function useHistoryFilter(): UseHistoryFilter {
   const pathname = usePathname();
   const search = useSearchParams();
 
-  const filter = React.useMemo(
-    () => parseHistoryFilter(new URLSearchParams(search.toString())),
-    [search],
-  );
+  const { filter, pageSize } = React.useMemo(() => {
+    const params = new URLSearchParams(search.toString());
+    return { filter: parseHistoryFilter(params), pageSize: parseHistoryPageSize(params) };
+  }, [search]);
 
   const [anchorMs, setAnchorMs] = React.useState(() => Date.now());
 
-  const setFilter = React.useCallback(
-    (next: HistoryFilter) => {
+  // A new page size starts over at page one, so it re-anchors like a filter.
+  const write = React.useCallback(
+    (nextFilter: HistoryFilter, nextSize: HistoryPageSize) => {
       setAnchorMs(Date.now());
-      const params = serializeHistoryFilter(next).toString();
+      const params = historySearch(nextFilter, nextSize);
       window.history.replaceState(null, "", params ? `${pathname}?${params}` : pathname);
     },
     [pathname],
+  );
+
+  const setFilter = React.useCallback(
+    (next: HistoryFilter) => write(next, pageSize),
+    [write, pageSize],
+  );
+  const setPageSize = React.useCallback(
+    (next: HistoryPageSize) => write(filter, next),
+    [write, filter],
   );
 
   const query = React.useMemo(() => toHistoryQuery(filter, anchorMs), [filter, anchorMs]);
@@ -62,5 +77,5 @@ export function useHistoryFilter(): UseHistoryFilter {
     [filter, anchorMs],
   );
 
-  return { filter, query, statsQuery, setFilter };
+  return { filter, query, statsQuery, setFilter, pageSize, setPageSize };
 }
