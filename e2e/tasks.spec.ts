@@ -1552,6 +1552,9 @@ test.describe("the step editor", () => {
     expect(posted).toEqual([]);
 
     await duration.fill("90");
+    // The summary adds it up. Read before Save: a save leaves the editor for
+    // the task list, which has no summary to read.
+    await expect(page.getByLabel("Job summary")).toHaveText(/1 min 30 s of waiting/);
     await save.click();
     await page.getByRole("textbox", { name: "Task name" }).fill("pause at dock");
     await page.keyboard.press("Enter");
@@ -1560,8 +1563,7 @@ test.describe("the step editor", () => {
     expect(posted[0]!.steps).toEqual([
       { id: "1-wait", type: "WAIT", params: { seconds: 90 } },
     ]);
-    // And the summary adds it up.
-    await expect(page.getByLabel("Job summary")).toHaveText(/1 min 30 s of waiting/);
+    await expect(page).toHaveURL(/\/tasks$/);
   });
 
   test("builds its menus and its limits from the steps the robot describes", async ({
