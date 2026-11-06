@@ -161,7 +161,9 @@ components/
                 hooks obey),
                 the strip's running-job controls (a fixed pause / resume and
                 cancel pair, then one always-present bar: job id, step and
-                state) and its disclosures: the sensor alerts (where an
+                state; a failed job stays on it, the pair reading Retry —
+                from the step it failed at, the history's rule — and
+                Dismiss) and its disclosures: the sensor alerts (where an
                 overheating motor interrupts, on every screen), the drive
                 panel and camera window every screen can open, and the
                 floor picker both 3D map surfaces share (floor-picker.tsx: a
@@ -439,7 +441,8 @@ lib/
                 the masthead's rules for the running job (run.ts: which step is
                 live, what to call it, whether a hold is offered, the state
                 the bar ends in, and how long a closed run stays on it:
-                ENDED_RUN_LINGER_MS, 5 s from the read that closed it), a
+                ENDED_RUN_LINGER_MS, 5 s from the read that closed it, but a
+                failed one until it is retried or dismissed: endedRunHeld), a
                 failed step's `error_msg` in an operator's words (failure.ts:
                 the robot's known sentences in the house words, the backend's
                 wrapper and the planner's detail dropped; an unknown one is
