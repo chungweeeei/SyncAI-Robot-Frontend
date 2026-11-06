@@ -4,7 +4,9 @@ import type { TaskStepState } from "@/lib/api/task";
 import {
   ENDED_RUN_LINGER_MS,
   currentStep,
+  endedRunHeld,
   endedRunRemainingMs,
+  failedStepProgress,
   holdOffered,
   liveDock,
   pauseOffered,
@@ -286,5 +288,31 @@ describe("endedRunRemainingMs", () => {
   it("has nothing left once a lagging list let go after the linger, never a negative wait", () => {
     expect(endedRunRemainingMs(10_000, 10_000 + ENDED_RUN_LINGER_MS)).toBe(0);
     expect(endedRunRemainingMs(10_000, 60_000)).toBe(0);
+  });
+});
+
+describe("endedRunHeld", () => {
+  it("holds only a failed run, which owes the operator a Retry", () => {
+    expect(endedRunHeld("FAILED")).toBe(true);
+    expect(endedRunHeld("COMPLETED")).toBe(false);
+    expect(endedRunHeld("CANCELED")).toBe(false);
+    expect(endedRunHeld(null)).toBe(false);
+  });
+});
+
+describe("failedStepProgress", () => {
+  it("names the step that failed, and why in the operator's words", () => {
+    expect(
+      failedStepProgress([
+        step("1-move", "COMPLETED"),
+        { id: "2-speak", status: "FAILED", error_msg: "speaker unplugged" },
+        step("3-move", "PENDING"),
+      ]),
+    ).toEqual({ ordinal: 2, total: 3, label: "Speak", message: "Speaker unplugged" });
+  });
+
+  it("is null when no step is marked failed", () => {
+    expect(failedStepProgress([step("1-move", "CANCELED")])).toBeNull();
+    expect(failedStepProgress([])).toBeNull();
   });
 });
