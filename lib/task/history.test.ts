@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_HISTORY_FILTER,
   continuationKind,
+  continuationBlocked,
   continuationStart,
   customRangeSeed,
   countReportJobs,
@@ -515,5 +516,28 @@ describe("continuationKind", () => {
     expect(continuationKind("schedule")).toBe("task");
     expect(continuationKind(null)).toBe("task");
     expect(continuationKind("newer-kind")).toBe("task");
+  });
+});
+
+describe("continuationBlocked", () => {
+  const clear = { robotId: "robot01", stopped: false, listReadable: true, running: false };
+
+  it("lets a continuation through when nothing stands in its way", () => {
+    expect(continuationBlocked(clear)).toBeNull();
+  });
+
+  it("says the first thing the robot would refuse it for", () => {
+    expect(continuationBlocked({ ...clear, robotId: null, stopped: true })).toBe(
+      "The robot cannot be reached.",
+    );
+    expect(continuationBlocked({ ...clear, stopped: true, running: true })).toBe(
+      "The emergency stop is engaged.",
+    );
+    expect(continuationBlocked({ ...clear, listReadable: false, running: true })).toBe(
+      "Whether a job is running cannot be read.",
+    );
+    expect(continuationBlocked({ ...clear, running: true })).toBe(
+      "Another job is running; it has to finish first.",
+    );
   });
 });

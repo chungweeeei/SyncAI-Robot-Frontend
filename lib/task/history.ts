@@ -66,6 +66,32 @@ export function continuationStart(
 }
 
 /**
+ * Why a continuation would be refused right now, in the operator's words, or
+ * null when nothing stands in its way. The same reasons grey Retry in the
+ * history and on the masthead's bar, so one failed job cannot be retryable in
+ * one place and not the other. A running job is read off the active list,
+ * which is why a list that cannot be read blocks too: the backend refuses a
+ * second job.
+ */
+export function continuationBlocked({
+  robotId,
+  stopped,
+  listReadable,
+  running,
+}: {
+  robotId: string | null;
+  stopped: boolean;
+  listReadable: boolean;
+  running: boolean;
+}): string | null {
+  if (robotId === null) return "The robot cannot be reached.";
+  if (stopped) return "The emergency stop is engaged.";
+  if (!listReadable) return "Whether a job is running cannot be read.";
+  if (running) return "Another job is running; it has to finish first.";
+  return null;
+}
+
+/**
  * The kind a continuation's id and run carry: the failed job's own, but a
  * schedule's (or an unknown one) is "task", since this console sends it.
  */
