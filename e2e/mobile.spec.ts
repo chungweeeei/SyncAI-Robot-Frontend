@@ -151,7 +151,7 @@ test.describe("the console on a phone", () => {
     await page.clock.setFixedTime(new Date("2026-09-18T10:00:00Z"));
     await page.goto("/history");
 
-    const pager = page.getByRole("navigation", { name: "History pages", exact: true });
+    const pager = page.getByRole("navigation", { name: "History pages" });
     await pager.scrollIntoViewIfNeeded();
     await expect(pager.getByText("1–10 of 23 jobs")).toBeVisible();
     const boxes = [];

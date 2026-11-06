@@ -32,10 +32,8 @@ function spanText({ from, to, total }: HistoryPageWindow): string {
 }
 
 /**
- * The list's pager. Mounted above the list and again below it, one markup
- * each rather than one hidden copy: the bottom one is what a long page ends
- * on, the top one stays put while rows expand. Only the top one announces
- * the span, so a page turn is read once.
+ * The list's pager, above it: rows expand in place, so a pager below would
+ * move and fall under the fold.
  *
  * Newest, not Last: the backend pages forward only, so the first page's
  * cursor is the only one always in hand.
@@ -45,33 +43,21 @@ export function HistoryPager({
   span,
   pageSize,
   onPageSize,
-  placement,
-  onTurn,
 }: {
   history: UseTaskHistory;
   span: HistoryPageWindow;
   pageSize: HistoryPageSize;
   onPageSize: (next: HistoryPageSize) => void;
-  placement: "top" | "bottom";
-  /** Called after a page turn this pager made. */
-  onTurn?: () => void;
 }) {
   const sizeId = React.useId();
   const paged = history.hasPrev || history.hasNext;
-  const turn = (go: () => void) => () => {
-    go();
-    onTurn?.();
-  };
 
   return (
     <nav
-      aria-label={placement === "top" ? "History pages" : "History pages, bottom"}
+      aria-label="History pages"
       className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
     >
-      <p
-        className="readout text-[12px] text-muted-foreground"
-        aria-live={placement === "top" ? "polite" : undefined}
-      >
+      <p className="readout text-[12px] text-muted-foreground" aria-live="polite">
         {span.from > 0 && spanText(span)}
         {paged && (
           <span className="max-sm:hidden">
@@ -83,8 +69,7 @@ export function HistoryPager({
       </p>
 
       <div className="flex items-center gap-3">
-        {placement === "top" && (
-          <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5">
             <label htmlFor={sizeId} className="instrument-label text-muted-foreground">
               Per page
             </label>
@@ -110,22 +95,21 @@ export function HistoryPager({
                 ))}
               </SelectContent>
             </Select>
-          </div>
-        )}
+        </div>
 
         {paged && (
           <div className="flex items-center gap-1.5">
             <PageButton
               label="Newest"
               disabled={!history.hasPrev || history.switching}
-              onClick={turn(history.first)}
+              onClick={history.first}
             >
               <ChevronsLeftIcon aria-hidden />
             </PageButton>
             <PageButton
               label="Previous"
               disabled={!history.hasPrev || history.switching}
-              onClick={turn(history.prev)}
+              onClick={history.prev}
             >
               <ChevronLeftIcon aria-hidden />
             </PageButton>
@@ -133,7 +117,7 @@ export function HistoryPager({
               label="Next"
               trailing
               disabled={!history.hasNext || history.switching}
-              onClick={turn(history.next)}
+              onClick={history.next}
             >
               <ChevronRightIcon aria-hidden />
             </PageButton>

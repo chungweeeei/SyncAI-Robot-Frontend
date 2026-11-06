@@ -110,7 +110,7 @@ test.describe("the job history", () => {
     await expect(page.getByText("4:12", { exact: true })).toBeVisible();
     await expect(page.getByText("12:30", { exact: true })).toBeVisible();
     // Everything fits on one page: the span is said, there is nothing to turn.
-    const pager = page.getByRole("navigation", { name: "History pages", exact: true });
+    const pager = page.getByRole("navigation", { name: "History pages" });
     await expect(pager.getByText("1–2 of 2 jobs")).toBeVisible();
     await expect(pager.getByRole("button", { name: "Next" })).toBeHidden();
 
@@ -359,7 +359,7 @@ test.describe("the job history", () => {
         new URL(request.url()).searchParams.get("page_token") === "10",
     );
     await page.goto("/history");
-    const pager = page.getByRole("navigation", { name: "History pages", exact: true });
+    const pager = page.getByRole("navigation", { name: "History pages" });
 
     await expect(page.getByText("Round 1", { exact: true })).toBeVisible();
     // The total is the dashboard's count, which the list itself never gives.
@@ -387,26 +387,12 @@ test.describe("the job history", () => {
     await expect(pager.getByText("Page 1 of 3")).toBeVisible();
   });
 
-  test("the pager under a long page turns it and brings the list's head back", async ({
-    page,
-  }) => {
-    await mockBackend(page, { taskHistory: many(23) });
-    await page.goto("/history");
-    const bottom = page.getByRole("navigation", { name: "History pages, bottom" });
-
-    await bottom.getByRole("button", { name: "Next" }).click();
-    await expect(page.getByText("Round 11", { exact: true })).toBeVisible();
-    await expect(
-      page.getByRole("navigation", { name: "History pages", exact: true }),
-    ).toBeInViewport();
-  });
-
   test("a page size starts over at page one and stays through Clear filters", async ({
     page,
   }) => {
     await mockBackend(page, { taskHistory: many(23) });
     await page.goto("/history?status=COMPLETED");
-    const pager = page.getByRole("navigation", { name: "History pages", exact: true });
+    const pager = page.getByRole("navigation", { name: "History pages" });
     await pager.getByRole("button", { name: "Next" }).click();
     await expect(pager.getByText("Page 2 of 3")).toBeVisible();
 

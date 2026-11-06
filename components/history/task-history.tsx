@@ -115,8 +115,6 @@ function HistoryList({
   narrowed: boolean;
   clear: () => void;
 }) {
-  const listRef = React.useRef<HTMLDivElement>(null);
-
   if (history.status === "loading") return <LoadingList />;
 
   if (history.status === "error") {
@@ -166,11 +164,10 @@ function HistoryList({
     total: matchingTotal(stats.stats, status),
     hasNext: history.hasNext,
   });
-  const pager = { history, span, pageSize, onPageSize };
 
   return (
-    <div ref={listRef} className="scroll-mt-3 space-y-3">
-      <HistoryPager {...pager} placement="top" />
+    <div className="space-y-3">
+      <HistoryPager history={history} span={span} pageSize={pageSize} onPageSize={onPageSize} />
 
       {/* A last page can be empty when the one before ended on a page
         * boundary; the backend only knows once it has looked. */}
@@ -199,17 +196,6 @@ function HistoryList({
         <p role="alert" className="text-[11px] leading-snug text-signal-warn">
           {history.error}
         </p>
-      )}
-
-      {/* Below a page of rows, where reading one ends; it brings the list's
-        * head back, or the next page would open at its bottom. Not worth
-        * it under a page that fits the screen. */}
-      {(history.hasPrev || history.hasNext) && history.entries.length > 5 && (
-        <HistoryPager
-          {...pager}
-          placement="bottom"
-          onTurn={() => listRef.current?.scrollIntoView({ block: "start" })}
-        />
       )}
     </div>
   );

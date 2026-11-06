@@ -305,7 +305,7 @@ components/
                 the URL; its windows stop at 5 days, the orchestrator's
                 retention, while the export reaches 30), the counts and the
                 outcome bar, cursor paging (history-pager: above the list
-                and again under a long page, "11–20 of 47 jobs" with the
+                alone, "11–20 of 47 jobs" with the
                 total taken from the counts — lib/task/history.ts's
                 historyPageWindow, which drops a count the rows contradict —
                 Newest rather than Last, since the cursor only runs forward,
