@@ -1,10 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 
 import { HistoryDashboard } from "@/components/history/history-dashboard";
 import { HistoryFilters } from "@/components/history/history-filters";
+import { HistoryPager } from "@/components/history/history-pager";
 import { HistoryRow } from "@/components/history/history-row";
 import { Notice } from "@/components/history/notice";
 import { Button } from "@/components/ui/button";
@@ -13,9 +13,16 @@ import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";
 import { useHistoryFilter } from "@/hooks/use-history-filter";
 import { useSchedules } from "@/hooks/use-schedules";
 import { useTaskHistory, type UseTaskHistory } from "@/hooks/use-task-history";
-import { useTaskHistoryStats } from "@/hooks/use-task-history-stats";
+import { useTaskHistoryStats, type UseTaskHistoryStats } from "@/hooks/use-task-history-stats";
 import { useTaskTemplates } from "@/hooks/use-task-templates";
-import { DEFAULT_HISTORY_FILTER, historyNameOptions } from "@/lib/task/history";
+import {
+  DEFAULT_HISTORY_FILTER,
+  historyNameOptions,
+  historyPageWindow,
+  matchingTotal,
+  type HistoryPageSize,
+  type HistoryStatusFilter,
+} from "@/lib/task/history";
 import { cn } from "@/lib/utils";
 
 function LoadingList() {
@@ -45,9 +52,9 @@ function LoadingList() {
  * this screen mounts useSchedules — no more than /tasks pays.
  */
 export function TaskHistory() {
-  const { filter, query, statsQuery, setFilter } = useHistoryFilter();
+  const { filter, query, statsQuery, setFilter, pageSize, setPageSize } = useHistoryFilter();
   const stats = useTaskHistoryStats(statsQuery);
-  const history = useTaskHistory(query);
+  const history = useTaskHistory(query, pageSize);
   const { templates } = useTaskTemplates();
   const { schedules } = useSchedules();
   const timeZone = useBrowserTimeZone();
@@ -78,6 +85,10 @@ export function TaskHistory() {
 
       <HistoryList
         history={history}
+        stats={stats}
+        status={filter.status}
+        pageSize={pageSize}
+        onPageSize={setPageSize}
         narrowed={narrowed}
         clear={() => setFilter(DEFAULT_HISTORY_FILTER)}
       />
@@ -87,14 +98,25 @@ export function TaskHistory() {
 
 function HistoryList({
   history,
+  stats,
+  status,
+  pageSize,
+  onPageSize,
   narrowed,
   clear,
 }: {
   history: UseTaskHistory;
+  /** The dashboard's counts, which give the pager its total. */
+  stats: UseTaskHistoryStats;
+  status: HistoryStatusFilter;
+  pageSize: HistoryPageSize;
+  onPageSize: (next: HistoryPageSize) => void;
   /** True when something besides the window narrows the list. */
   narrowed: boolean;
   clear: () => void;
 }) {
+  const listRef = React.useRef<HTMLDivElement>(null);
+
   if (history.status === "loading") return <LoadingList />;
 
   if (history.status === "error") {
@@ -137,37 +159,18 @@ function HistoryList({
     );
   }
 
+  const span = historyPageWindow({
+    page: history.page,
+    pageSize,
+    shown: history.entries.length,
+    total: matchingTotal(stats.stats, status),
+    hasNext: history.hasNext,
+  });
+  const pager = { history, span, pageSize, onPageSize };
+
   return (
-    <div className="space-y-3">
-      {/* Above the list: rows expand in place, so a pager below would move
-        * and fall under the fold. */}
-      {(history.hasPrev || history.hasNext) && (
-        <nav aria-label="History pages" className="flex items-center justify-end gap-3">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={!history.hasPrev || history.switching}
-            onClick={history.prev}
-          >
-            <ChevronLeftIcon aria-hidden />
-            Previous
-          </Button>
-          <span className="readout text-[12px] text-muted-foreground" aria-live="polite">
-            Page {history.page}
-          </span>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={!history.hasNext || history.switching}
-            onClick={history.next}
-          >
-            Next
-            <ChevronRightIcon aria-hidden />
-          </Button>
-        </nav>
-      )}
+    <div ref={listRef} className="scroll-mt-3 space-y-3">
+      <HistoryPager {...pager} placement="top" />
 
       {/* A last page can be empty when the one before ended on a page
         * boundary; the backend only knows once it has looked. */}
@@ -196,6 +199,17 @@ function HistoryList({
         <p role="alert" className="text-[11px] leading-snug text-signal-warn">
           {history.error}
         </p>
+      )}
+
+      {/* Below a page of rows, where reading one ends; it brings the list's
+        * head back, or the next page would open at its bottom. Not worth
+        * it under a page that fits the screen. */}
+      {(history.hasPrev || history.hasNext) && history.entries.length > 5 && (
+        <HistoryPager
+          {...pager}
+          placement="bottom"
+          onTurn={() => listRef.current?.scrollIntoView({ block: "start" })}
+        />
       )}
     </div>
   );

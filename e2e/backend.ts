@@ -362,8 +362,6 @@ export interface BackendOverrides {
   recentlyEnded?: Record<string, unknown>[];
   /** Finished runs, newest close first, as GET /task_history pages them. */
   taskHistory?: Record<string, unknown>[];
-  /** Rows per history page; the fake's cursor is the offset of the next one. */
-  taskHistoryPageSize?: number;
   /**
    * GET /tasks/<id> bodies by id. An id in `activeTasks` with none answers
    * the default `taskState`; any other id with none answers 404.
@@ -612,7 +610,6 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   const schedules = over.schedules ?? [];
   const activeTasks = over.activeTasks ?? [];
   const taskHistory = over.taskHistory ?? [];
-  const taskHistoryPageSize = over.taskHistoryPageSize ?? 20;
   const taskStates = over.taskStates ?? {};
   const stepCatalogue = over.taskSteps ?? taskSteps();
   // Deep-copied: the PUT and DELETE below move its values, and a test's
@@ -776,10 +773,11 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       return json(route, historyStats(taskHistory, url.searchParams));
     }
     if (path === "/api/v1/task_history") {
-      // The fake's cursor is the offset of the next page's first row.
+      // The fake's cursor is the offset of the next page's first row, and it
+      // takes `page_size` as the backend does (default 20).
       const rows = historyRows(taskHistory, url.searchParams);
       const offset = Number(url.searchParams.get("page_token") ?? 0);
-      const end = offset + taskHistoryPageSize;
+      const end = offset + Number(url.searchParams.get("page_size") ?? 20);
       return json(route, {
         tasks: rows.slice(offset, end),
         next_page_token: end < rows.length ? String(end) : null,
