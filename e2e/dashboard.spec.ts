@@ -805,7 +805,7 @@ test.describe("tapping a stop on the dashboard", () => {
     // The tap drew the route; Go on the panel sends it.
     await page.getByRole("button", { name: "Go", exact: true }).click();
     await expect(page.getByRole("region", { name: "Navigation goal" })).toBeVisible();
-    await page.getByRole("button", { name: "Retry" }).click();
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
 
     await expect.poll(() => dispatches(writes)).toHaveLength(2);
     const [first, again] = dispatches(writes).map(
@@ -834,12 +834,12 @@ test.describe("tapping a stop on the dashboard", () => {
     await tapStop(page);
     await page.getByRole("button", { name: "Go", exact: true }).click();
     // Positive control: the failed goal's card is up before the next tap.
-    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
 
     await tapStop(page);
     await expect(page.getByRole("region", { name: stop.name })).toBeVisible();
     await expect(page.getByRole("region", { name: "Navigation goal" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
     // The tap only cleared the screen: nothing more went to the robot.
     expect(dispatches(writes)).toHaveLength(1);
     expect(errors, "the page logged errors").toEqual([]);
