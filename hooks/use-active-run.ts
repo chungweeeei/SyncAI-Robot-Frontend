@@ -13,7 +13,7 @@ import {
   type TaskStatus,
   type TaskStepState,
 } from "@/lib/api/task";
-import { endedRunRemainingMs } from "@/lib/task/run";
+import { endedRunHeld, endedRunRemainingMs } from "@/lib/task/run";
 
 /**
  * Slower than the tracker's 1 Hz: a step changes over seconds to minutes, and
@@ -41,11 +41,15 @@ export interface UseActiveRun {
   run: ActiveRun | null;
   /**
    * The run that has just left the list, for `ENDED_RUN_LINGER_MS` after the
-   * read that closed it, so its outcome can be read before the bar goes idle.
-   * Only ever a closed run, only while the list reads empty (never over an
-   * error), and gone the moment another run is listed. Nothing may act on it.
+   * read that closed it, so its outcome can be read before the bar goes idle
+   * — or, failed, until `dismiss` (`endedRunHeld`). Only ever a closed run,
+   * only while the list reads empty (never over an error), and gone the
+   * moment another run is listed. Nothing may hold or cancel it; a failed one
+   * may be continued, as a new job.
    */
   ended: ActiveRun | null;
+  /** Lets go of `ended` now, for a failed run the operator is done with. */
+  dismiss: () => void;
   /** So "no job" is never drawn for "the list cannot be read". */
   status: ActiveTasksStatus;
   /** The list's clock at its last good read. */
@@ -176,19 +180,23 @@ export function useActiveRun(): UseActiveRun {
   const closedAt = isTerminalTaskStatus(closing.data?.status)
     ? closing.dataUpdatedAt
     : null;
+  const held = endedRunHeld(closing.data?.status ?? null);
 
   // Timed from the closing read while the run may still be listed, so a list
   // that lags past the linger lets go at once rather than flashing the outcome.
   const lastId = last?.id ?? null;
   const [expiredId, setExpiredId] = React.useState<string | null>(null);
   React.useEffect(() => {
-    if (lastId === null || closedAt === null) return;
+    if (lastId === null || closedAt === null || held) return;
     const timer = window.setTimeout(
       () => setExpiredId(lastId),
       endedRunRemainingMs(closedAt, Date.now()),
     );
     return () => window.clearTimeout(timer);
-  }, [lastId, closedAt]);
+  }, [lastId, closedAt, held]);
+  const dismiss = React.useCallback(() => {
+    if (lastId !== null) setExpiredId(lastId);
+  }, [lastId]);
 
   return {
     run:
@@ -203,6 +211,7 @@ export function useActiveRun(): UseActiveRun {
             steps: closing.data?.steps ?? NO_STEPS,
           }
         : null,
+    dismiss,
     status,
     asOf,
   };

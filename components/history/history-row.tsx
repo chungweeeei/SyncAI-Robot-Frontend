@@ -17,6 +17,7 @@ import type { TaskHistoryEntry, TaskStepState } from "@/lib/api/task";
 import { formatDuration } from "@/lib/recording/format";
 import { stepFailureText } from "@/lib/task/failure";
 import {
+  continuationBlocked,
   continuationKind,
   continuationStart,
   describeRun,
@@ -89,16 +90,12 @@ function RetryFromFailure({
   if (!start) return null;
 
   const robotId = state?.robot_id ?? null;
-  const blocked =
-    robotId === null
-      ? "The robot cannot be reached."
-      : stopped
-        ? "The emergency stop is engaged."
-        : status !== "ok"
-          ? "Whether a job is running cannot be read."
-          : tasks.length > 0
-            ? "Another job is running; it has to finish first."
-            : null;
+  const blocked = continuationBlocked({
+    robotId,
+    stopped,
+    listReadable: status === "ok",
+    running: tasks.length > 0,
+  });
 
   return (
     <div className="space-y-1.5 pt-1">

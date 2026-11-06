@@ -28,6 +28,10 @@ const resumeButton = (page: Page) =>
   strip(page).getByRole("button", { name: "Resume the job" });
 const cancelButton = (page: Page) =>
   strip(page).getByRole("button", { name: "Cancel the job" });
+const retryButton = (page: Page) =>
+  strip(page).getByRole("button", { name: "Retry the job" });
+const dismissButton = (page: Page) =>
+  strip(page).getByRole("button", { name: "Dismiss the failed job" });
 
 test.describe("the running-job controls", () => {
   let errors: string[];
@@ -302,7 +306,8 @@ test.describe("the running-job controls", () => {
       ended_at: "2026-09-18T09:45:01Z",
     });
     await expect(readout(page)).toContainText("Failed");
-    await expect(cancelButton(page)).toBeDisabled();
+    await expect(retryButton(page)).toBeEnabled();
+    await expect(dismissButton(page)).toBeEnabled();
   });
 
   test("says a job this console sent failed, though the list never listed it", async ({
@@ -336,6 +341,82 @@ test.describe("the running-job controls", () => {
     await expect(
       strip(page).getByRole("link", { name: /^Morning round/ }),
     ).toBeVisible();
-    await expect(cancelButton(page)).toBeDisabled();
+    // The step it failed at, and why, in the operator's words.
+    await expect(readout(page)).toContainText("Move");
+    await expect(retryButton(page)).toBeEnabled();
+  });
+
+  test("keeps a failed job on the bar and retries it from the step it failed at", async ({
+    page,
+  }) => {
+    await page.clock.install();
+    const running = [activeTask()];
+    const state = taskState();
+    const writes = await mockBackend(page, {
+      activeTasks: running,
+      taskStates: { [ID]: state },
+      dispatchedTaskState: (id) => ({
+        id,
+        status: "COMPLETED",
+        steps: [
+          { id: "1-move", status: "SKIPPED", error_msg: "" },
+          { id: "2-move", status: "COMPLETED", error_msg: "" },
+          { id: "3-move", status: "COMPLETED", error_msg: "" },
+        ],
+      }),
+    });
+    await page.goto("/settings");
+    await expect(readout(page)).toContainText("2/3");
+
+    state.status = "FAILED";
+    state.steps = state.steps.map((step, index) =>
+      index === 1 ? { ...step, status: "FAILED" } : step,
+    );
+    running.length = 0;
+    await expect(readout(page)).toContainText("Failed");
+
+    // Past the five seconds a completed run gets, a failed one is still here,
+    // with Retry where Pause was.
+    await page.clock.fastForward(10_000);
+    await expect(readout(page)).toContainText("Failed");
+    await expect(readout(page)).toContainText("2/3");
+    await expect(pauseButton(page)).toHaveCount(0);
+
+    await retryButton(page).click();
+    await expect
+      .poll(() => writes.filter((w) => w.path === "/api/v1/tasks"))
+      .toHaveLength(1);
+    // The failed job named, never its steps or a map.
+    const posted = writes.find((write) => write.path === "/api/v1/tasks");
+    expect(posted?.body).toMatchObject({ kind: "task", continue_from: ID });
+    expect(posted?.body).not.toHaveProperty("steps");
+
+    // The bar follows the new job, under the failed job's name.
+    await expect(readout(page)).toContainText("Completed");
+    await expect(
+      strip(page).getByRole("link", { name: /^Morning round/ }),
+    ).toBeVisible();
+  });
+
+  test("lets a failed job be dismissed, and sends nothing for it", async ({ page }) => {
+    const running = [activeTask()];
+    const state = taskState();
+    const writes = await mockBackend(page, {
+      activeTasks: running,
+      taskStates: { [ID]: state },
+    });
+    await page.goto("/settings");
+    await expect(readout(page)).toContainText("2/3");
+
+    state.status = "FAILED";
+    state.steps = state.steps.map((step, index) =>
+      index === 1 ? { ...step, status: "FAILED" } : step,
+    );
+    running.length = 0;
+    await expect(readout(page)).toContainText("Failed");
+
+    await dismissButton(page).click();
+    await expect(readout(page)).toContainText("No task message in queue");
+    expect(writes.filter((w) => w.path.startsWith("/api/v1/tasks"))).toEqual([]);
   });
 });

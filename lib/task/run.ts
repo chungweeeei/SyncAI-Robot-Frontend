@@ -13,6 +13,7 @@ import {
 } from "@/lib/api/task";
 import { formatDuration } from "@/lib/recording/format";
 import type { PlanarPose } from "@/lib/types/robot";
+import { stepFailureText } from "@/lib/task/failure";
 import { isHistoryKind, kindLabel, runSeconds } from "@/lib/task/history";
 import { STEP_TYPES } from "@/lib/task/step";
 
@@ -100,6 +101,25 @@ export function stepProgress(steps: readonly TaskStepState[]): StepProgress | nu
 }
 
 /**
+ * Where a failed run stopped, read the way `stepProgress` reads a live one:
+ * the step that failed, and why in the operator's words (`stepFailureText`).
+ * Null when no step is marked FAILED.
+ */
+export function failedStepProgress(
+  steps: readonly TaskStepState[],
+): StepProgress | null {
+  const index = steps.findIndex((step) => step.status === "FAILED");
+  if (index === -1) return null;
+  const step = steps[index]!;
+  return {
+    ordinal: index + 1,
+    total: steps.length,
+    label: stepLabel(step.id),
+    message: step.error_msg ? stepFailureText(step.error_msg) : "",
+  };
+}
+
+/**
  * Whether the masthead offers a Pause for a job of this kind.
  *
  * A Stand or Lie down is one posture step, which a pause does not interrupt —
@@ -173,12 +193,22 @@ export function runClosed(state: RunState): boolean {
 }
 
 /**
- * How long the bar keeps a closed run's outcome after the read that closed
- * it. The active list drops a run within a poll of its end, which is too
- * quick to read "Completed" in; the list itself keeps meaning "running now",
- * since the map lock and the history refresh are read off it.
+ * How long the bar keeps a completed or canceled run's outcome after the read
+ * that closed it. The active list drops a run within a poll of its end, which
+ * is too quick to read "Completed" in; the list itself keeps meaning "running
+ * now", since the map lock and the history refresh are read off it.
  */
 export const ENDED_RUN_LINGER_MS = 5_000;
+
+/**
+ * Whether a closed run stays on the bar with no clock on it: a failed one
+ * does, because it owes the operator a Retry, and five seconds is not long
+ * enough to notice, decide and press. It goes when the operator dismisses it
+ * or another run takes the bar.
+ */
+export function endedRunHeld(status: TaskStatus | null): boolean {
+  return status === "FAILED";
+}
 
 /**
  * What is left of a closed run's time on the bar, from the read that closed

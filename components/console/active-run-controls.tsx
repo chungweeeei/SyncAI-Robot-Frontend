@@ -1,15 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { PauseIcon, PlayIcon, XIcon } from "lucide-react";
+import { PauseIcon, PlayIcon, RotateCcwIcon, XIcon } from "lucide-react";
 
 import { TONE_TEXT, type Tone } from "@/components/console/instrument";
 import { STATUS_TONE } from "@/components/console/task-chip";
 import { useActiveRun, type ActiveRun } from "@/hooks/use-active-run";
 import { useCancelTask } from "@/hooks/use-cancel-task";
+import { useConsoleActiveTasks } from "@/hooks/use-console-active-tasks";
+import { useConsoleEstop } from "@/hooks/use-console-estop";
+import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
+import { useTaskContinue } from "@/hooks/use-task-continue";
 import { useTaskHold } from "@/hooks/use-task-hold";
-import { describeRun } from "@/lib/task/history";
 import {
+  continuationBlocked,
+  continuationKind,
+  continuationStart,
+  describeRun,
+} from "@/lib/task/history";
+import {
+  failedStepProgress,
   holdOffered,
   runClosed,
   runElapsed,
@@ -22,7 +32,8 @@ import { cn } from "@/lib/utils";
 /**
  * The running job, on every screen: Pause / Resume and Cancel, then one bar
  * reading job, step and — flush right — state. Icon buttons by request; the
- * names are on `aria-label` and `title`.
+ * names are on `aria-label` and `title`. A failed job stays until it is
+ * retried or dismissed, and the pair reads Retry and Dismiss for it.
  *
  * **Nothing here comes and goes.** A vanishing control would slide its
  * neighbour under a finger mid-press, so an unholdable job greys Pause instead
@@ -34,7 +45,7 @@ import { cn } from "@/lib/utils";
  * gives way first, then the step name, never the state word.
  */
 export function ActiveRunControls() {
-  const { run, ended, status, asOf } = useActiveRun();
+  const { run, ended, dismiss, status, asOf } = useActiveRun();
 
   // A run that has just ended stays a moment so its outcome can be read; it
   // is closed, so RunControls greys both buttons for it.
@@ -42,7 +53,14 @@ export function ActiveRunControls() {
   if (shown) {
     // Keyed by the run so the mutations (and any refusal shown) start over
     // with the next job.
-    return <RunControls key={shown.task.id} run={shown} asOf={asOf} />;
+    return (
+      <RunControls
+        key={shown.task.id}
+        run={shown}
+        asOf={asOf}
+        onDismiss={dismiss}
+      />
+    );
   }
 
   // Loading is not idle: it gets the dash every unread instrument shows.
@@ -114,25 +132,33 @@ const HOLD_BUTTON =
 const CANCEL_BUTTON =
   "border-signal-warn/50 bg-signal-warn/12 text-signal-warn hover:bg-signal-warn/20 disabled:hover:bg-signal-warn/12";
 
+const HOLD_FACE = {
+  pause: { icon: PauseIcon, label: "Pause the job" },
+  resume: { icon: PlayIcon, label: "Resume the job" },
+  retry: { icon: RotateCcwIcon, label: "Retry the job" },
+} as const;
+
 /** The fixed pair, in the same place in every state (see above). */
 function Controls({
   hold,
   holdDisabled,
   holdTitle,
   onHold,
+  cancelLabel = "Cancel the job",
   cancelDisabled,
   cancelTitle,
   onCancel,
 }: {
-  hold: "pause" | "resume";
+  hold: keyof typeof HOLD_FACE;
   holdDisabled: boolean;
   holdTitle: string;
   onHold: () => void;
+  cancelLabel?: string;
   cancelDisabled: boolean;
   cancelTitle: string;
   onCancel: () => void;
 }) {
-  const HoldIcon = hold === "pause" ? PauseIcon : PlayIcon;
+  const { icon: HoldIcon, label: holdLabel } = HOLD_FACE[hold];
   return (
     <div
       role="group"
@@ -141,7 +167,7 @@ function Controls({
     >
       <button
         type="button"
-        aria-label={hold === "pause" ? "Pause the job" : "Resume the job"}
+        aria-label={holdLabel}
         title={holdTitle}
         disabled={holdDisabled}
         onClick={onHold}
@@ -151,7 +177,7 @@ function Controls({
       </button>
       <button
         type="button"
-        aria-label="Cancel the job"
+        aria-label={cancelLabel}
         title={cancelTitle}
         disabled={cancelDisabled}
         onClick={onCancel}
@@ -212,14 +238,91 @@ function RunBar({
   );
 }
 
-function RunControls({ run, asOf }: { run: ActiveRun; asOf: string | null }) {
+function RunControls({
+  run,
+  asOf,
+  onDismiss,
+}: {
+  run: ActiveRun;
+  asOf: string | null;
+  onDismiss: () => void;
+}) {
+  const state = runState(run.status, null);
+  // Mounted apart so a job that is going on carries no continuation hooks,
+  // and a failed one none of the hold's.
+  return state === "failed" ? (
+    <FailedRunControls run={run} asOf={asOf} onDismiss={onDismiss} />
+  ) : (
+    <LiveRunControls run={run} asOf={asOf} />
+  );
+}
+
+/**
+ * A failed job: Retry runs it again from the step it failed at, as a new job
+ * the bar then follows (the history's Retry, by the same rules), and Dismiss
+ * clears the bar. The new job takes the bar once the list shows it.
+ */
+function FailedRunControls({
+  run,
+  asOf,
+  onDismiss,
+}: {
+  run: ActiveRun;
+  asOf: string | null;
+  onDismiss: () => void;
+}) {
+  const { state: robot } = useConsoleRobotState();
+  const { engaged: stopped } = useConsoleEstop();
+  const { tasks, status } = useConsoleActiveTasks();
+  const send = useTaskContinue();
+
+  const start = continuationStart(run.steps);
+  const robotId = robot?.robot_id ?? null;
+  const blocked =
+    continuationBlocked({
+      robotId,
+      stopped,
+      listReadable: status === "ok",
+      // The failed job itself may still be listed while the list lags.
+      running: tasks.some((task) => task.id !== run.task.id),
+    }) ?? (start ? null : "The step this job failed at cannot be read.");
+
+  return (
+    <>
+      <Controls
+        hold="retry"
+        // Once sent, the job is the new one's to follow, not this one's to send again.
+        holdDisabled={blocked !== null || send.isPending || send.isSuccess}
+        holdTitle={
+          blocked ??
+          `Run this job again from step ${start!.ordinal}; the steps before it are not run again.`
+        }
+        onHold={() => {
+          if (!robotId) return;
+          // mutate, not mutateAsync: the refusal is read off `send.error`.
+          send.mutate({
+            robot: robotId,
+            failedId: run.task.id,
+            kind: continuationKind(run.task.kind),
+            name: run.task.name,
+          });
+        }}
+        cancelLabel="Dismiss the failed job"
+        cancelDisabled={false}
+        cancelTitle="Clear this job from the bar; it stays in the history."
+        onCancel={onDismiss}
+      />
+      <RunReadout run={run} asOf={asOf} state="failed" error={send.error?.message ?? null} />
+    </>
+  );
+}
+
+function LiveRunControls({ run, asOf }: { run: ActiveRun; asOf: string | null }) {
   const hold = useTaskHold(run.task.id);
   const cancel = useCancelTask();
 
   const state = runState(run.status, hold.requested);
   const held = state === "paused" || state === "resuming";
-  const progress = stepProgress(run.steps);
-  const { title } = describeRun(run.task);
   const holdable = holdOffered(run.task.kind, run.status);
   // A closed run stays on the bar a moment (the list's lag, then
   // useActiveRun's `ended`); both controls grey for it.
@@ -247,7 +350,29 @@ function RunControls({ run, asOf }: { run: ActiveRun; asOf: string | null }) {
         cancelTitle={closed ? "This job has finished." : "Cancel the job"}
         onCancel={() => cancel.mutate(run.task.id)}
       />
+      <RunReadout run={run} asOf={asOf} state={state} error={error} />
+    </>
+  );
+}
 
+/** The bar itself, and a refusal hung under the strip. */
+function RunReadout({
+  run,
+  asOf,
+  state,
+  error,
+}: {
+  run: ActiveRun;
+  asOf: string | null;
+  state: RunState;
+  error: string | null;
+}) {
+  const progress =
+    state === "failed" ? failedStepProgress(run.steps) : stepProgress(run.steps);
+  const { title } = describeRun(run.task);
+
+  return (
+    <>
       {/* A finger has no hover, so the bar links to /tasks for the detail. */}
       <Link
         href="/tasks"
