@@ -4,6 +4,7 @@ import { encodeOctomapBt } from "@/lib/map/octree";
 import { OCTREE_KEY_ORIGIN } from "@/lib/types/octree";
 
 import {
+  CHARGER_SIGHTING,
   MAP_NAME,
   activeTask,
   failOnConsoleErrors,
@@ -917,6 +918,81 @@ test.describe("the editor's 3D view", () => {
         page.getByRole("status").filter({ hasText: "Waypoints saved: 2 added" }),
       ).toBeVisible();
       await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("stages a Charger at the pose the robot measured, and sends it on Save", async ({
+      page,
+    }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      // The fake's map is the one the robot runs, which is where it can look.
+      const writes = await mockBackend(page, { vertices: [] });
+      await page.goto(EDITOR);
+      await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+
+      await chooseDraw(page, "Waypoint");
+      await page.getByRole("button", { name: "Place" }).click();
+      await pressAndAim(page);
+      const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
+      await dialog.getByLabel("Name").fill("dock-a");
+      await dialog.getByRole("combobox", { name: "Type" }).click();
+      await page.getByRole("option", { name: /^Charger/ }).click();
+      await dialog.getByRole("button", { name: "Detect charger" }).click();
+
+      await expect(dialog.getByText("Charger found.")).toBeVisible();
+      await expect(dialog.getByText("2.40")).toBeVisible();
+      await expect(dialog.getByLabel("Name")).toHaveValue("dock-a");
+      expect(writes.filter((w) => w.path === "/api/v1/landmarks/detect")).toEqual([
+        { method: "POST", path: "/api/v1/landmarks/detect", body: {} },
+      ]);
+
+      await dialog.getByRole("button", { name: "Create" }).click();
+      await expect(dialog).toHaveCount(0);
+      // Staged, like every waypoint here: nothing is written until Save.
+      expect(writes.filter((w) => w.path.startsWith(verticesPath))).toEqual([]);
+      await expect(page.getByText("Unsaved: 1 added")).toBeVisible();
+
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect.poll(() => writes.filter((w) => w.path === verticesPath)).toHaveLength(1);
+      const body = writes.find((w) => w.path === verticesPath)!.body as unknown[];
+      expect(body).toHaveLength(1);
+      // z as measured, though the press landed where this map has no ground.
+      expect(body[0]).toMatchObject({
+        name: "dock-a",
+        type: "CHARGE",
+        x: CHARGER_SIGHTING.x,
+        y: CHARGER_SIGHTING.y,
+        z: CHARGER_SIGHTING.z,
+        theta: CHARGER_SIGHTING.theta,
+      });
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("greys Detect charger on a map the robot is not running", async ({ page }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const writes = await mockBackend(page, {
+        maps: [treeOnly(), mapSummary({ name: "other", active: true })],
+        vertices: [],
+      });
+      await page.goto(EDITOR);
+      await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+
+      await chooseDraw(page, "Waypoint");
+      await page.getByRole("button", { name: "Place" }).click();
+      await pressAndAim(page);
+      const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
+      await dialog.getByRole("combobox", { name: "Type" }).click();
+      await page.getByRole("option", { name: /^Charger/ }).click();
+
+      const detect = dialog.getByRole("button", { name: "Detect charger" });
+      await expect(detect).toBeDisabled();
+      await expect(
+        dialog.getByText(`The robot is running on "other", not this map.`),
+      ).toHaveCount(1);
+      await detect.click({ force: true });
+      expect(writes.filter((w) => w.path === "/api/v1/landmarks/detect")).toEqual([]);
       expect(errors, "the page logged errors").toEqual([]);
     });
 
