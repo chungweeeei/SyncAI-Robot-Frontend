@@ -38,6 +38,19 @@ export function octomapBt(size = 4): Buffer {
   return Buffer.from(encodeOctomapBt({ res: 0.1, occupied }));
 }
 
+/** What `POST /api/v1/landmarks/detect` answers: the charger on the loaded map. */
+export const CHARGER_SIGHTING = {
+  map: MAP_NAME,
+  x: 2.4,
+  y: -1.1,
+  z: 0.03,
+  theta: -45,
+  marker_z: 0.31,
+  consecutive: 5,
+  age: 0.1,
+  reprojection_error_px: 0.6,
+};
+
 export function robotState(over: Record<string, unknown> = {}) {
   return {
     timestamp: 1_758_000_000,
@@ -1185,6 +1198,12 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         inlier_ratio: 0.87,
         candidates: 480,
       });
+    }
+    if (path === "/api/v1/landmarks/detect" && method === "POST") {
+      // A steady sighting on the loaded map, away from where the fake's robot
+      // stands so a test can tell the two poses apart. A test that needs the
+      // look to fail or take its time routes it itself.
+      return json(route, CHARGER_SIGHTING);
     }
     if (path === "/api/v1/robot/set_motion_key" && method === "POST") {
       // The backend's own answer: every key is forwarded except the

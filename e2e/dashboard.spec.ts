@@ -5,6 +5,7 @@ import { encodeOctomapBt } from "@/lib/map/octree";
 import { OCTREE_KEY_ORIGIN } from "@/lib/types/octree";
 
 import {
+  CHARGER_SIGHTING,
   MAP_NAME,
   activeTask,
   failOnConsoleErrors,
@@ -542,6 +543,190 @@ test.describe("adding a waypoint from the dashboard", () => {
       theta: 90,
     });
     expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test.describe("detecting the charger", () => {
+    const detectPath = "/api/v1/landmarks/detect";
+    const detects = (writes: { path: string }[]) =>
+      writes.filter((w) => w.path === detectPath);
+
+    /** Place a stop, name it, and make it a Charger: where Detect charger is. */
+    const placeCharger = async (page: Page, name: string) => {
+      await placeOnMap(page);
+      const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
+      await dialog.getByLabel("Name").fill(name);
+      await dialog.getByRole("combobox", { name: "Type" }).click();
+      await page.getByRole("option", { name: /^Charger/ }).click();
+      return dialog;
+    };
+
+    test("takes the pose the robot measured, keeps the typed name, and posts it as a Charger", async ({
+      page,
+    }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const writes = await mockBackend(page);
+      // Held, so the wait is on screen long enough to read.
+      let answer: () => void = () => {};
+      const held = new Promise<void>((resolve) => (answer = resolve));
+      await page.route(`**${detectPath}`, async (route) => {
+        await held;
+        await route.fallback();
+      });
+      await page.goto("/");
+
+      const dialog = await placeCharger(page, "dock-a");
+      const detect = dialog.getByRole("button", { name: "Detect charger" });
+      await detect.click();
+
+      await expect(dialog.getByText("Looking for the charger… up to 8 s")).toBeVisible();
+      await expect(detect).toBeDisabled();
+      await expect(dialog.getByRole("button", { name: "Create" })).toBeDisabled();
+      await expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+      await expect(
+        dialog.getByRole("button", { name: "Use robot position" }),
+      ).toBeDisabled();
+      answer();
+
+      // The readouts are the sighting's, not the drag's or the robot's.
+      await expect(dialog.getByText("Charger found.")).toBeVisible();
+      await expect(dialog.getByText("2.40")).toBeVisible();
+      await expect(dialog.getByText("-1.10")).toBeVisible();
+      await expect(dialog.getByText("0.03")).toBeVisible();
+      await expect(dialog.getByText("-45.0")).toBeVisible();
+      await expect(dialog.getByLabel("Name")).toHaveValue("dock-a");
+      await expect(dialog.getByRole("combobox", { name: "Type" })).toContainText("Charger");
+      expect(detects(writes)).toEqual([{ method: "POST", path: detectPath, body: {} }]);
+      // Measuring wrote nothing: the waypoint is still only a draft.
+      expect(writes.filter((w) => w.path === verticesPath)).toEqual([]);
+
+      // Pressed again, it measures again.
+      await detect.click();
+      await expect.poll(() => detects(writes)).toHaveLength(2);
+      await expect(detect).toBeEnabled();
+
+      await dialog.getByRole("button", { name: "Create" }).click();
+      await expect
+        .poll(() => writes.filter((w) => w.path === verticesPath))
+        .toHaveLength(1);
+      const body = writes.find((w) => w.path === verticesPath)!.body as unknown[];
+      expect(body).toHaveLength(1);
+      // z as measured: not looked up again under the point.
+      expect(body[0]).toMatchObject({
+        name: "dock-a",
+        type: "CHARGE",
+        x: CHARGER_SIGHTING.x,
+        y: CHARGER_SIGHTING.y,
+        z: CHARGER_SIGHTING.z,
+        theta: CHARGER_SIGHTING.theta,
+      });
+      await expect(dialog).toHaveCount(0);
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("keeps the dialog open with the backend's sentence when no charger is seen, and looks again", async ({
+      page,
+    }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const writes = await mockBackend(page);
+      const sentence =
+        "The charger was not seen steadily. Point the robot at it and try again.";
+      // Counted here: the refused press never reaches the fake's write log.
+      let presses = 0;
+      let refuse = true;
+      await page.route(`**${detectPath}`, (route) => {
+        presses += 1;
+        return refuse
+          ? route.fulfill({
+              status: 409,
+              contentType: "application/json",
+              body: JSON.stringify({ detail: sentence, code: "landmark_not_detected" }),
+            })
+          : route.fallback();
+      });
+      await page.goto("/");
+
+      const dialog = await placeCharger(page, "dock-a");
+      const detect = dialog.getByRole("button", { name: "Detect charger" });
+      await detect.click();
+
+      await expect(dialog.getByRole("alert")).toHaveText(sentence);
+      await expect(dialog.getByLabel("Name")).toHaveValue("dock-a");
+      // The placed pose stands: a failed look measured nothing. Read off the
+      // heading, since the drag aimed along +x and the sighting faces -45°.
+      await expect(dialog.getByText("-45.0")).toHaveCount(0);
+
+      refuse = false;
+      await detect.click();
+      await expect(dialog.getByText("Charger found.")).toBeVisible();
+      await expect(dialog.getByText("-45.0")).toBeVisible();
+      await expect(dialog.getByRole("alert")).toHaveCount(0);
+      expect(presses).toBe(2);
+      expect(writes.filter((w) => w.path === verticesPath)).toEqual([]);
+      // The refused request is Chromium's own log line (auto-localize.spec.ts).
+      expect(
+        errors.filter((text) => !/Failed to load resource/.test(text)),
+        "the page logged errors",
+      ).toEqual([]);
+    });
+
+    test("lets go of the dialog when the robot never answers", async ({ page }) => {
+      const writes = await mockBackend(page);
+      await page.route(`**${detectPath}`, (route) => route.abort("connectionfailed"));
+      await page.goto("/");
+
+      const dialog = await placeCharger(page, "dock-a");
+      await dialog.getByRole("button", { name: "Detect charger" }).click();
+
+      // No sentence came back to show, so there is nothing to keep it open for.
+      await expect(dialog).toHaveCount(0);
+      expect(writes.filter((w) => w.path === verticesPath)).toEqual([]);
+    });
+
+    test("is offered for a Charger only", async ({ page }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      await mockBackend(page);
+      await page.goto("/");
+
+      await placeOnMap(page);
+      const dialog = page.getByRole("alertdialog", { name: "Create waypoint" });
+      const detect = dialog.getByRole("button", { name: "Detect charger" });
+      // A new waypoint opens as a Move.
+      await expect(dialog.getByRole("combobox", { name: "Type" })).toContainText("Move");
+      await expect(detect).toHaveCount(0);
+
+      await dialog.getByRole("combobox", { name: "Type" }).click();
+      await page.getByRole("option", { name: /^Charger/ }).click();
+      await expect(detect).toBeEnabled();
+
+      await dialog.getByRole("combobox", { name: "Type" }).click();
+      await page.getByRole("option", { name: /^Move/ }).click();
+      await expect(detect).toHaveCount(0);
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
+    test("is greyed, saying why, while the robot does not know where it is", async ({
+      page,
+    }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const writes = await mockBackend(page, {
+        state: robotState({ localization_valid: false }),
+      });
+      await page.goto("/");
+
+      const dialog = await placeCharger(page, "dock-a");
+      const detect = dialog.getByRole("button", { name: "Detect charger" });
+      await expect(detect).toBeDisabled();
+      await expect(
+        dialog.getByText("The robot does not know where it is yet."),
+      ).toHaveCount(1);
+      await detect.click({ force: true });
+      expect(detects(writes)).toEqual([]);
+      expect(errors, "the page logged errors").toEqual([]);
+    });
   });
 
   test("writes nothing when the name is cancelled", async ({ page }) => {

@@ -263,7 +263,14 @@ components/
                 Use robot position (its z from the ground, by the rule of
                 where the numbers came from) and staged for Save like a
                 drag — the dashboard's same dialog stays read-only, since
-                it would write at once)
+                it would write at once. A new waypoint of type
+                Charger has one more source in both places' create dialog
+                (dashboard/vertex-create-dialog.tsx): Detect charger, which
+                has the robot look for the charger with its camera and
+                replaces the placed pose with the one it measured, z
+                included, as is — offered only where the robot is localized
+                on the map being edited, and written by Create as any
+                other: at once on the dashboard, staged here)
   recordings/   bag recorder and list
   tasks/        the /tasks overview: the saved tasks grouped by map (the
                 loaded one first, then the tasks bound to no map, then the
@@ -615,7 +622,9 @@ touch one, prefer moving it toward the rule.
 - **Command hooks are mutations too**, but they answer to the robot rather
   than to the cache: `use-goal-task`, `use-posture`, `use-task-dispatch`,
   `use-initial-pose`, `use-locomotion`, `use-mode-switch`, `use-wifi-connect`,
-  `use-task-hold`, `use-task-continue`.
+  `use-task-hold`, `use-task-continue`, `use-charger-detect` (which answers
+  with a measurement — the charger's pose, for the create dialog's draft —
+  and refuses one measured on another map than the one being edited).
   They invalidate nothing — there is no cached resource a motion key or a pose
   estimate makes stale (the one exception is `use-wifi-connect`, whose join by
   SSID or rejoin of a saved network changes `wifiConnections`, invalidated on

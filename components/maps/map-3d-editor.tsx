@@ -31,6 +31,7 @@ import { useMapOctomapEdits } from "@/hooks/use-map-octomap-edits";
 import { useSaveMapOctomapEdits } from "@/hooks/use-map-actions";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useMapEntry } from "@/hooks/use-maps";
+import { useChargerDetect } from "@/hooks/use-charger-detect";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { drawnGround, floorBands } from "@/lib/map/floors";
 import {
@@ -328,6 +329,8 @@ function Map3dSurface({
   /** A placed pose waiting for a name; staged only on Create. */
   const [placement, setPlacement] = React.useState<Placement | null>(null);
   const placementSeq = React.useRef(0);
+  // Offered only where `robotPose` is: on the map the robot is running.
+  const chargerDetect = useChargerDetect(name);
   /** The stop a tap is asking about; null when the dialog is closed. */
   const [askedVertex, setAskedVertex] = React.useState<MapVertex | null>(null);
   /**
@@ -734,6 +737,7 @@ function Map3dSurface({
     setVertexList((current) => [...current, staged]);
     setVertexNote({ kind: "idle" });
     setPlacement(null);
+    chargerDetect.clear();
   };
 
   /**
@@ -751,7 +755,30 @@ function Map3dSurface({
     if (!robotPose) return;
     const z = robotGround(voxels, floorBands(floors), robotPose);
     const pose = { x: robotPose.x, y: robotPose.y, theta: robotPose.theta, z };
-    setPlacement((cur) => (cur ? { ...cur, pose } : cur));
+    setPlacement((cur) => (cur ? { key: cur.key, pose } : cur));
+    chargerDetect.clear();
+  };
+
+  // The charger's pose as the robot measured it, z included: that is the
+  // ground the robot stands on, not one to look up under the point. Same key,
+  // so the name and the type survive; only for the placement that asked.
+  // Staged like any other stop: nothing is sent until Save.
+  const detectChargerPose = () => {
+    const key = placement?.key;
+    if (key === undefined) return;
+    void chargerDetect.run().then(({ pose, answered }) => {
+      if (!answered) {
+        // No answer is coming and there is no sentence to show: let go of
+        // the dialog the look was holding.
+        setPlacement((cur) => (cur && cur.key === key ? null : cur));
+        chargerDetect.clear();
+        return;
+      }
+      if (!pose) return;
+      setPlacement((cur) =>
+        cur && cur.key === key ? { key: cur.key, pose, detected: true } : cur,
+      );
+    });
   };
 
   const armReplace = (vertex: MapVertex) => {
@@ -907,9 +934,17 @@ function Map3dSurface({
         // Nothing is written on Create, so there is nothing in flight or refused.
         busy={false}
         error={null}
+        chargerDetect={{
+          busy: chargerDetect.busy,
+          error: chargerDetect.error,
+          onDetect: detectChargerPose,
+        }}
         onUseRobotPose={takeRobotPose}
         onCreate={createPlaced}
-        onClose={() => setPlacement(null)}
+        onClose={() => {
+          setPlacement(null);
+          chargerDetect.clear();
+        }}
       />
 
       {/* No Move: this page opens maps the robot is not on, and is not where

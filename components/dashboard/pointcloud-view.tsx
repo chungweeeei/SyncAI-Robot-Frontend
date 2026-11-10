@@ -34,6 +34,7 @@ import { useMapOctomapEdits } from "@/hooks/use-map-octomap-edits";
 import { useMapPointCloud } from "@/hooks/use-map-point-cloud";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useActiveMap } from "@/hooks/use-maps";
+import { useChargerDetect } from "@/hooks/use-charger-detect";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { useRoutePreview } from "@/hooks/use-route-preview";
 import { useTelemetry } from "@/hooks/use-telemetry";
@@ -221,6 +222,12 @@ export function PointCloudView({
    */
   const [placement, setPlacement] = React.useState<Placement | null>(null);
   const placementSeq = React.useRef(0);
+  const {
+    busy: chargerDetectBusy,
+    error: chargerDetectError,
+    run: runChargerDetect,
+    clear: clearChargerDetect,
+  } = useChargerDetect(activeMap?.name ?? "");
   /**
    * A stop whose new pose is being written. Keeps its marker hidden until the
    * PUT lands, or the old mark would flash back as if the move were refused.
@@ -406,11 +413,13 @@ export function PointCloudView({
   const createPlaced = React.useCallback(
     (name: string, type: VertexType) => {
       if (!placement) return;
+      // A failed look is answered by now; the line is the write's from here.
+      clearChargerDetect();
       void createVertex({ name, type, ...placement.pose }).then((created) => {
         if (created) setPlacement(null);
       });
     },
-    [placement, createVertex],
+    [placement, createVertex, clearChargerDetect],
   );
 
   // A snapshot, not a live binding: a pose that crept while the name was typed
@@ -420,8 +429,31 @@ export function PointCloudView({
     if (!robotPose) return;
     const z = robotGround(voxels, bands, robotPose);
     const pose = { x: robotPose.x, y: robotPose.y, theta: robotPose.theta, z };
-    setPlacement((cur) => (cur ? { ...cur, pose } : cur));
-  }, [robotPose, bands, voxels]);
+    setPlacement((cur) => (cur ? { key: cur.key, pose } : cur));
+    clearChargerDetect();
+  }, [robotPose, bands, voxels, clearChargerDetect]);
+
+  // The charger's pose as the robot measured it, z included: that is the
+  // ground the robot stands on, not one to look up under the point. Same key,
+  // so the name and the type survive; only for the placement that asked, so
+  // an answer that outlived its dialog names nothing.
+  const placementKey = placement?.key ?? null;
+  const detectChargerPose = React.useCallback(() => {
+    if (placementKey === null) return;
+    void runChargerDetect().then(({ pose, answered }) => {
+      if (!answered) {
+        // No answer is coming and there is no sentence to show: let go of
+        // the dialog the look was holding.
+        setPlacement((cur) => (cur && cur.key === placementKey ? null : cur));
+        clearChargerDetect();
+        return;
+      }
+      if (!pose) return;
+      setPlacement((cur) =>
+        cur && cur.key === placementKey ? { key: cur.key, pose, detected: true } : cur,
+      );
+    });
+  }, [placementKey, runChargerDetect, clearChargerDetect]);
 
 
   // A refusal leaves the panel up with the sentence in it.
@@ -445,7 +477,8 @@ export function PointCloudView({
     setPlacement(null);
     // A refusal belongs to the attempt it answered, not to the next one.
     clearWriteError();
-  }, [clearWriteError]);
+    clearChargerDetect();
+  }, [clearWriteError, clearChargerDetect]);
 
   // Focus would re-pin the target to the robot and undo the recenter.
   const recenter = React.useCallback(() => {
@@ -552,6 +585,11 @@ export function PointCloudView({
         robotPoseReason={robotPoseReason}
         busy={stops.busy}
         error={stops.writeError}
+        chargerDetect={{
+          busy: chargerDetectBusy,
+          error: chargerDetectError,
+          onDetect: detectChargerPose,
+        }}
         onUseRobotPose={useRobotPose}
         onCreate={createPlaced}
         onClose={closeCreate}
