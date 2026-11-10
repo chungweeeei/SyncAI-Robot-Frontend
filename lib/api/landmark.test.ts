@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ChargerDetectError, detectCharger } from "@/lib/api/landmark";
+import {
+  ChargerDetectError,
+  ChargerDetectNoResponseError,
+  detectCharger,
+} from "@/lib/api/landmark";
 
 /**
  * The charger sighting's wire. Its pose becomes a waypoint, so a field that
@@ -75,5 +79,21 @@ describe("detectCharger", () => {
     const error = await detectCharger().catch((thrown: unknown) => thrown);
     expect(error).not.toBeInstanceOf(ChargerDetectError);
     expect((error as Error).message).toBe("The robot cannot look right now.");
+  });
+
+  it("gives the wait a deadline of its own", async () => {
+    fetchMock.mockResolvedValue(answer(sighting));
+    await detectCharger();
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it.each([
+    ["a request that never reached the robot", new TypeError("Failed to fetch")],
+    ["a wait that ran out", new DOMException("timed out", "TimeoutError")],
+  ])("reports %s as no answer", async (_what, thrown) => {
+    fetchMock.mockRejectedValue(thrown);
+    await expect(detectCharger()).rejects.toBeInstanceOf(ChargerDetectNoResponseError);
   });
 });

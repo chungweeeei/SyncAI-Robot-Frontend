@@ -5,10 +5,21 @@ import { useMutation } from "@tanstack/react-query";
 
 import {
   ChargerDetectError,
+  ChargerDetectNoResponseError,
   detectCharger,
   type ChargerDetectCode,
 } from "@/lib/api/landmark";
 import type { PlacedPose } from "@/lib/types/robot";
+
+export interface ChargerDetectOutcome {
+  /** The charger's pose, or null when there is none to use. */
+  pose: PlacedPose | null;
+  /**
+   * False when the robot never answered (unreachable, or the wait ran out):
+   * there is no sentence to show, so the caller closes what it held open.
+   */
+  answered: boolean;
+}
 
 export interface ChargerDetect {
   /** The robot is looking (up to ~8 s). */
@@ -17,8 +28,8 @@ export interface ChargerDetect {
   error: string | null;
   /** The backend's reason for that failure, where it named one. */
   code: ChargerDetectCode | null;
-  /** Resolves with the charger's pose, or null when there is none to use. */
-  run: () => Promise<PlacedPose | null>;
+  /** Never rejects: a refusal is `error`, a robot that did not answer `answered`. */
+  run: () => Promise<ChargerDetectOutcome>;
   clear: () => void;
 }
 
@@ -46,7 +57,14 @@ export function useChargerDetect(mapName: string): ChargerDetect {
   const { mutateAsync, reset } = mutation;
 
   const run = React.useCallback(
-    () => mutateAsync().catch(() => null),
+    () =>
+      mutateAsync().then(
+        (pose): ChargerDetectOutcome => ({ pose, answered: true }),
+        (error: unknown): ChargerDetectOutcome => ({
+          pose: null,
+          answered: !(error instanceof ChargerDetectNoResponseError),
+        }),
+      ),
     [mutateAsync],
   );
 

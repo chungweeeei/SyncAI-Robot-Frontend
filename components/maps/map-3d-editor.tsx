@@ -766,7 +766,14 @@ function Map3dSurface({
   const detectChargerPose = () => {
     const key = placement?.key;
     if (key === undefined) return;
-    void chargerDetect.run().then((pose) => {
+    void chargerDetect.run().then(({ pose, answered }) => {
+      if (!answered) {
+        // No answer is coming and there is no sentence to show: let go of
+        // the dialog the look was holding.
+        setPlacement((cur) => (cur && cur.key === key ? null : cur));
+        chargerDetect.clear();
+        return;
+      }
       if (!pose) return;
       setPlacement((cur) =>
         cur && cur.key === key ? { key: cur.key, pose, detected: true } : cur,

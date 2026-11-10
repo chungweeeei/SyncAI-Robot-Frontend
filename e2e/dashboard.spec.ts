@@ -671,6 +671,19 @@ test.describe("adding a waypoint from the dashboard", () => {
       ).toEqual([]);
     });
 
+    test("lets go of the dialog when the robot never answers", async ({ page }) => {
+      const writes = await mockBackend(page);
+      await page.route(`**${detectPath}`, (route) => route.abort("connectionfailed"));
+      await page.goto("/");
+
+      const dialog = await placeCharger(page, "dock-a");
+      await dialog.getByRole("button", { name: "Detect charger" }).click();
+
+      // No sentence came back to show, so there is nothing to keep it open for.
+      await expect(dialog).toHaveCount(0);
+      expect(writes.filter((w) => w.path === verticesPath)).toEqual([]);
+    });
+
     test("is offered for a Charger only", async ({ page }) => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);

@@ -440,13 +440,20 @@ export function PointCloudView({
   const placementKey = placement?.key ?? null;
   const detectChargerPose = React.useCallback(() => {
     if (placementKey === null) return;
-    void runChargerDetect().then((pose) => {
+    void runChargerDetect().then(({ pose, answered }) => {
+      if (!answered) {
+        // No answer is coming and there is no sentence to show: let go of
+        // the dialog the look was holding.
+        setPlacement((cur) => (cur && cur.key === placementKey ? null : cur));
+        clearChargerDetect();
+        return;
+      }
       if (!pose) return;
       setPlacement((cur) =>
         cur && cur.key === placementKey ? { key: cur.key, pose, detected: true } : cur,
       );
     });
-  }, [placementKey, runChargerDetect]);
+  }, [placementKey, runChargerDetect, clearChargerDetect]);
 
 
   // A refusal leaves the panel up with the sentence in it.

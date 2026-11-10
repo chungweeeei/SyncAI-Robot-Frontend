@@ -68,6 +68,33 @@ export class ChargerDetectError extends Error {
 }
 
 /**
+ * The robot's own budget for a look is ~9 s at worst (its detector's wait, the
+ * search, the last call). Past this, no answer is coming.
+ */
+export const CHARGER_DETECT_TIMEOUT_MS = 15_000;
+
+/**
+ * No answer at all: the robot was not reached, or the wait ran out. Unlike a
+ * refusal there is nothing to read and nothing to try again against, so the
+ * caller lets go of the dialog it held for the look.
+ */
+export class ChargerDetectNoResponseError extends Error {
+  constructor() {
+    super("The robot did not answer.");
+    this.name = "ChargerDetectNoResponseError";
+  }
+}
+
+/** `fetch` rejects with a TypeError off the network, a DOMException on abort. */
+function isNoResponse(error: unknown): boolean {
+  return (
+    error instanceof TypeError ||
+    (error instanceof DOMException &&
+      (error.name === "TimeoutError" || error.name === "AbortError"))
+  );
+}
+
+/**
  * Find the charger with the robot's camera: POST /api/v1/landmarks/detect.
  *
  * Held until the robot has a steady sighting or gives up (up to ~8 s), so a
@@ -76,12 +103,22 @@ export class ChargerDetectError extends Error {
  * robot cannot look at all. Nothing is stored: the caller decides what the
  * pose becomes.
  *
- * No client timeout: the helper has none, and the backend's own budget is
- * what ends the wait.
+ * The robot ends its own wait; `CHARGER_DETECT_TIMEOUT_MS` is for the robot
+ * that never answers, which throws `ChargerDetectNoResponseError` like a
+ * request that never reached it.
  */
-export function detectCharger(): Promise<ChargerDetectResult> {
+export async function detectCharger(): Promise<ChargerDetectResult> {
+  try {
+    return await requestCharger();
+  } catch (error) {
+    throw isNoResponse(error) ? new ChargerDetectNoResponseError() : error;
+  }
+}
+
+function requestCharger(): Promise<ChargerDetectResult> {
   return requestJson<ChargerDetectResult>(apiUrl("/api/v1/landmarks/detect"), {
     method: "POST",
+    signal: AbortSignal.timeout(CHARGER_DETECT_TIMEOUT_MS),
     // No `landmark_id`: the robot's default is the charger.
     body: JSON.stringify({}),
     schema: ChargerDetectResultSchema,

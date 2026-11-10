@@ -18,7 +18,9 @@ vi.mock("@/lib/api/landmark", async (importOriginal) => ({
   detectCharger,
 }));
 
-const { ChargerDetectError } = await import("@/lib/api/landmark");
+const { ChargerDetectError, ChargerDetectNoResponseError } = await import(
+  "@/lib/api/landmark"
+);
 const { useChargerDetect } = await import("@/hooks/use-charger-detect");
 
 function sighting(over: Partial<ChargerDetectResult> = {}): ChargerDetectResult {
@@ -57,7 +59,7 @@ describe("useChargerDetect", () => {
 
     let pose: unknown;
     await act(async () => {
-      pose = await result.current.run();
+      ({ pose } = await result.current.run());
     });
 
     expect(pose).toEqual({ x: 2.4, y: -1.1, z: 0.03, theta: -45 });
@@ -92,7 +94,7 @@ describe("useChargerDetect", () => {
 
     let pose: unknown = "unset";
     await act(async () => {
-      pose = await result.current.run();
+      ({ pose } = await result.current.run());
     });
 
     expect(pose).toBeNull();
@@ -111,18 +113,36 @@ describe("useChargerDetect", () => {
 
     let pose: unknown = "unset";
     await act(async () => {
-      pose = await result.current.run();
+      ({ pose } = await result.current.run());
     });
     expect(pose).toBeNull();
     await waitFor(() => expect(result.current.error).toBe(sentence));
     expect(result.current.code).toBe("landmark_not_detected");
 
     await act(async () => {
-      pose = await result.current.run();
+      ({ pose } = await result.current.run());
     });
     expect(pose).toMatchObject({ x: 2.4, y: -1.1 });
     await waitFor(() => expect(result.current.error).toBeNull());
     expect(result.current.code).toBeNull();
+  });
+
+  it("tells a robot that never answered from one that refused", async () => {
+    detectCharger.mockRejectedValueOnce(new ChargerDetectNoResponseError());
+    detectCharger.mockRejectedValueOnce(new Error("The robot cannot look right now."));
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useChargerDetect("lab"), { wrapper });
+
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.run();
+    });
+    expect(outcome).toEqual({ pose: null, answered: false });
+
+    await act(async () => {
+      outcome = await result.current.run();
+    });
+    expect(outcome).toEqual({ pose: null, answered: true });
   });
 
   it("clear drops a failure", async () => {
