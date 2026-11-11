@@ -33,11 +33,11 @@ const REPEAT_OPTIONS = [
 ] as const satisfies readonly { value: ScheduleRepeat; label: string }[];
 
 const UNIT_OPTIONS = [
+  { value: "seconds", label: "seconds" },
   { value: "minutes", label: "minutes" },
-  { value: "hours", label: "hours" },
 ] as const satisfies readonly { value: IntervalUnit; label: string }[];
 
-const SECONDS_PER: Record<IntervalUnit, number> = { minutes: 60, hours: 3600 };
+const SECONDS_PER: Record<IntervalUnit, number> = { seconds: 1, minutes: 60 };
 
 /** What `<input type="time">` yields: `HH:MM`, or `""` when cleared. */
 const TIME_PATTERN = /^(\d{2}):(\d{2})$/;
@@ -63,7 +63,7 @@ export interface ScheduleFormProps {
  * only the selected kind is built into the request, so the backend's
  * cron-XOR-interval check cannot fail. No cron is typed: `toCron` builds it,
  * so what this console registers reads back as a sentence, and an interval is
- * in minutes or hours.
+ * in seconds or minutes.
  *
  * The preview uses the list's `describeTrigger`, so it says what the list will
  * say, plus the next run to answer "which 09:00". The timezone is the

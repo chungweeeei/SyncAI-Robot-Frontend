@@ -467,16 +467,21 @@ describe("scheduleFormSeed", () => {
     });
   });
 
-  it("opens an interval in the largest whole unit", () => {
+  it("opens an interval in whole minutes, else in seconds", () => {
     expect(scheduleFormSeed({ interval_seconds: 7200 })).toMatchObject({
       repeat: "interval",
-      amountText: "2",
-      unit: "hours",
+      amountText: "120",
+      unit: "minutes",
     });
     expect(scheduleFormSeed({ interval_seconds: 1800 })).toMatchObject({
       repeat: "interval",
       amountText: "30",
       unit: "minutes",
+    });
+    expect(scheduleFormSeed({ interval_seconds: 90 })).toMatchObject({
+      repeat: "interval",
+      amountText: "90",
+      unit: "seconds",
     });
   });
 
@@ -494,7 +499,6 @@ describe("scheduleFormSeed", () => {
   it("opens a rule it could not have written on the defaults", () => {
     expect(scheduleFormSeed({ cron: "*/5 * * * *" })).toEqual(DEFAULT_FORM_SEED);
     expect(scheduleFormSeed({ cron: "0 9 1 * *" })).toEqual(DEFAULT_FORM_SEED);
-    expect(scheduleFormSeed({ interval_seconds: 90 })).toEqual(DEFAULT_FORM_SEED);
     expect(scheduleFormSeed({ cron: null, interval_seconds: null })).toEqual(
       DEFAULT_FORM_SEED,
     );
