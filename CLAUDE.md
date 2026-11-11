@@ -203,8 +203,8 @@ components/
                 the ground it crosses, so a route up a stair is on both
                 storeys; with a floor picked,
                 only that floor's stretch),
-                with Top down and Front view (level, from the south, where
-                storeys stack); a tapped stop opens a panel beside the map, not
+                with no Top down or Front view button for now (by request;
+                the canvas keeps both framings); a tapped stop opens a panel beside the map, not
                 a dialog over it (stop-panel: the route the planner would take
                 there, asked for on the tap and drawn in the draft's hue, its
                 X, Y, Z and the floors it walks, and Go — which sends that stop —
@@ -270,7 +270,11 @@ components/
                 replaces the placed pose with the one it measured, z
                 included, as is — offered only where the robot is localized
                 on the map being edited, and written by Create as any
-                other: at once on the dashboard, staged here)
+                other: at once on the dashboard, staged here; Add charger
+                — the dashboard's Map strip, the editor's tools with
+                Waypoint chosen — is Add waypoint / Place with the type
+                fixed to Charger: the press sets the pose, and the robot
+                is asked only when Detect charger is pressed)
   recordings/   bag recorder and list
   tasks/        the /tasks overview: the saved tasks grouped by map (the
                 loaded one first, then the tasks bound to no map, then the

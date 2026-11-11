@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { GROUND_FLOOR_Z_M } from "@/lib/map/floors";
+import { GROUND_FLOOR_Z_M, drawnGround } from "@/lib/map/floors";
 import { encodeOctomapBt } from "@/lib/map/octree";
 import { OCTREE_KEY_ORIGIN } from "@/lib/types/octree";
 
@@ -21,7 +21,7 @@ import {
 
 /**
  * Two cells at the corners of a 20 × 15 m box centred on (-2.3, -0.3), at
- * key height `kz` (relative to the origin): what Top down frames once the 3D
+ * key height `kz` (relative to the origin): what Recenter frames once the 3D
  * map is up, so a test can say where a stop lands on screen. 0.1 m cells.
  */
 function framingCorners(kz: number): Array<[number, number, number]> {
@@ -32,7 +32,7 @@ function framingCorners(kz: number): Array<[number, number, number]> {
   ];
 }
 
-/** The fake's doormat floor, inside the 20 × 15 m box Top down frames. */
+/** The fake's doormat floor, inside the 20 × 15 m box Recenter frames. */
 function framedTree(): Buffer {
   const O = OCTREE_KEY_ORIGIN;
   const occupied: Array<[number, number, number]> = [];
@@ -41,6 +41,44 @@ function framedTree(): Buffer {
   }
   occupied.push(...framingCorners(-5));
   return Buffer.from(encodeOctomapBt({ res: 0.1, occupied }));
+}
+
+/**
+ * Where a map point lands on screen once Recenter has framed framingCorners'
+ * 20 × 15 m box (centred on -2.3, -0.3): lib/scene/camera.ts's frameMap,
+ * from the south span·0.6 back and span·0.8 up, looking at `viewZ`, through
+ * the viewport's 60° lens. `z` is the height the point is drawn at.
+ */
+async function recenteredOnScreen(
+  page: Page,
+  point: { x: number; y: number; z: number },
+  viewZ = 0,
+): Promise<{ x: number; y: number }> {
+  const box = (await page.getByRole("region", { name: "Map viewport" }).boundingBox())!;
+  const span = 20;
+  const target = [-2.3, -0.3, viewZ];
+  const eye = [target[0], target[1] - span * 0.6, viewZ + span * 0.8];
+  const sub = (a: number[], b: number[]) => a.map((v, i) => v - b[i]);
+  const dot = (a: number[], b: number[]) => a.reduce((sum, v, i) => sum + v * b[i], 0);
+  const norm = (a: number[]) => a.map((v) => v / Math.hypot(...a));
+  const cross = (a: number[], b: number[]) => [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+  // z-up, as every 3D view is.
+  const forward = norm(sub(target, eye));
+  const right = norm(cross(forward, [0, 0, 1]));
+  const up = cross(right, forward);
+  const d = sub([point.x, point.y, point.z], eye);
+  const depth = dot(d, forward);
+  const tanHalfFov = Math.tan(Math.PI / 6);
+  const ndcX = dot(d, right) / (depth * tanHalfFov * (box.width / box.height));
+  const ndcY = dot(d, up) / (depth * tanHalfFov);
+  return {
+    x: box.x + (box.width / 2) * (1 + ndcX),
+    y: box.y + (box.height / 2) * (1 - ndcY),
+  };
 }
 
 /**
@@ -97,7 +135,7 @@ test.describe("the dashboard's map scan layer", () => {
       page.getByRole("region", { name: "Map viewport" }),
     ).toBeVisible();
 
-    await expect(page.getByRole("button", { name: "Top down" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Recenter" })).toBeVisible();
     await expect(toggle(page)).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
@@ -226,12 +264,12 @@ test.describe("the dashboard's 3D map layer", () => {
       page.getByRole("region", { name: "Map viewport" }),
     ).toBeVisible();
 
-    await expect(page.getByRole("button", { name: "Top down" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Recenter" })).toBeVisible();
     await expect(toggle(page)).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("shows one floor at a time of a map that spans storeys, and looks at it level", async ({
+  test("shows one floor at a time of a map that spans storeys", async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -267,10 +305,7 @@ test.describe("the dashboard's 3D map layer", () => {
       "aria-pressed",
       "false",
     );
-    // Front view frames the floor on show, here one with no cells at all.
-    await page.getByRole("button", { name: "Front view" }).click();
     await floors.getByRole("button", { name: "All" }).click();
-    await page.getByRole("button", { name: "Front view" }).click();
     await page.waitForTimeout(500);
     expect(floorReads).toEqual([`/api/v1/maps/${MAP_NAME}/floors`]);
     expect(errors, "the page logged errors").toEqual([]);
@@ -281,20 +316,14 @@ test.describe("the dashboard's 3D map layer", () => {
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { maps: [mapSummary(withOctomap())] });
     await page.goto("/");
-    // Front view is the 3D map's: an empty map from the front is a line.
     await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByRole("button", { name: "Front view" })).toBeVisible();
-    await toggle(page).click();
-    await expect(page.getByRole("button", { name: "Front view" })).toHaveCount(0);
-    await toggle(page).click();
     await page.waitForTimeout(500);
     await expect(page.getByRole("group", { name: "Floor" })).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
 
   test("frames on the 3D map, and holds the operator's choice to hide it", async ({ page }) => {
-    // The tree is what the viewport has to frame, so Top down and Recenter
-    // look at it.
+    // The tree is what the viewport has to frame, so Recenter looks at it.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { maps: [mapSummary()] });
@@ -310,7 +339,6 @@ test.describe("the dashboard's 3D map layer", () => {
 
     await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
     await expect.poll(() => treeReads).toEqual([treePath]);
-    await page.getByRole("button", { name: "Top down" }).click();
     await page.getByRole("button", { name: "Recenter" }).click();
 
     // Still the operator's to hide, and the choice holds.
@@ -444,10 +472,10 @@ test.describe("adding a waypoint from the dashboard", () => {
    * the middle of the region (the opening view is centred on the map, so the
    * floor there is inside it), a drag to the right to aim it, a release.
    */
-  const placeOnMap = async (page: Page) => {
+  const placeOnMap = async (page: Page, tool = "Add waypoint") => {
     const region = page.getByRole("region", { name: "Map viewport" });
     await expect(region).toBeVisible();
-    const place = page.getByRole("button", { name: "Add waypoint" });
+    const place = page.getByRole("button", { name: tool });
     await place.click();
     await expect(place).toHaveAttribute("aria-pressed", "true");
     const box = (await region.boundingBox())!;
@@ -727,6 +755,96 @@ test.describe("adding a waypoint from the dashboard", () => {
       expect(detects(writes)).toEqual([]);
       expect(errors, "the page logged errors").toEqual([]);
     });
+
+    test.describe("from Add charger", () => {
+      test("places a Charger where the map is pressed, asking the robot nothing", async ({
+        page,
+      }) => {
+        const errors: string[] = [];
+        failOnConsoleErrors(page, errors);
+        const writes = await mockBackend(page);
+        await page.goto("/");
+
+        await placeOnMap(page, "Add charger");
+        const dialog = page.getByRole("alertdialog", { name: "Add charger" });
+        const type = dialog.getByRole("combobox", { name: "Type" });
+        await expect(type).toContainText("Charger");
+        await expect(type).toBeDisabled();
+        await expect(dialog.getByRole("button", { name: "Detect charger" })).toBeEnabled();
+        await dialog.getByLabel("Name").fill("dock-a");
+        await dialog.getByRole("button", { name: "Create" }).click();
+
+        await expect
+          .poll(() => writes.filter((w) => w.path === verticesPath))
+          .toHaveLength(1);
+        const body = writes.find((w) => w.path === verticesPath)!.body as {
+          type: string;
+          theta: number;
+        }[];
+        // The press's pose: aimed along +x, not the sighting's -45°.
+        expect(body[0]).toMatchObject({ name: "dock-a", type: "CHARGE" });
+        expect(body[0].theta).not.toBe(CHARGER_SIGHTING.theta);
+        // Only Detect charger asks the robot to look.
+        expect(detects(writes)).toEqual([]);
+        await expect(page.getByRole("button", { name: "Add charger" })).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        );
+        expect(errors, "the page logged errors").toEqual([]);
+      });
+
+      test("takes the measured pose when Detect charger is pressed", async ({ page }) => {
+        const errors: string[] = [];
+        failOnConsoleErrors(page, errors);
+        const writes = await mockBackend(page);
+        await page.goto("/");
+
+        await placeOnMap(page, "Add charger");
+        const dialog = page.getByRole("alertdialog", { name: "Add charger" });
+        await dialog.getByLabel("Name").fill("dock-a");
+        expect(detects(writes)).toEqual([]);
+        await dialog.getByRole("button", { name: "Detect charger" }).click();
+        await expect(dialog.getByText("Charger found.")).toBeVisible();
+        // Still Add charger's dialog once the pose is the measured one.
+        await expect(dialog.getByRole("combobox", { name: "Type" })).toBeDisabled();
+        await dialog.getByRole("button", { name: "Create" }).click();
+
+        await expect
+          .poll(() => writes.filter((w) => w.path === verticesPath))
+          .toHaveLength(1);
+        const body = writes.find((w) => w.path === verticesPath)!.body as unknown[];
+        expect(body[0]).toMatchObject({
+          name: "dock-a",
+          type: "CHARGE",
+          x: CHARGER_SIGHTING.x,
+          y: CHARGER_SIGHTING.y,
+          z: CHARGER_SIGHTING.z,
+          theta: CHARGER_SIGHTING.theta,
+        });
+        expect(detects(writes)).toHaveLength(1);
+        expect(errors, "the page logged errors").toEqual([]);
+      });
+
+      test("switches with Add waypoint, one armed at a time", async ({ page }) => {
+        const errors: string[] = [];
+        failOnConsoleErrors(page, errors);
+        await mockBackend(page);
+        await page.goto("/");
+
+        const waypoint = page.getByRole("button", { name: "Add waypoint" });
+        const charger = page.getByRole("button", { name: "Add charger" });
+        await charger.click();
+        await expect(charger).toHaveAttribute("aria-pressed", "true");
+        await waypoint.click();
+        await expect(waypoint).toHaveAttribute("aria-pressed", "true");
+        await expect(charger).toHaveAttribute("aria-pressed", "false");
+        await charger.click();
+        await charger.click();
+        await expect(charger).toHaveAttribute("aria-pressed", "false");
+        await expect(waypoint).toHaveAttribute("aria-pressed", "false");
+        expect(errors, "the page logged errors").toEqual([]);
+      });
+    });
   });
 
   test("writes nothing when the name is cancelled", async ({ page }) => {
@@ -861,24 +979,16 @@ test.describe("tapping a stop on the dashboard", () => {
   const stopPath = `/api/v1/maps/${MAP_NAME}/vertices/${stop.id}`;
 
   /**
-   * Open the waypoint's panel by tapping its marker. Top down first, because
-   * from overhead the floor is a plain scale (the 20 x 15 m box of
-   * framedTree, 8 % margin, 60° fov), so the waypoint lands a known number of
-   * pixels from the centre.
+   * Open the waypoint's panel by tapping its marker. Recenter first, so the
+   * view is framedTree's box and the marker stands where recenteredOnScreen
+   * says.
    */
   const tapStop = async (page: Page, target: { x: number; y: number; name: string } = stop) => {
     const region = page.getByRole("region", { name: "Map viewport" });
     await expect(region).toBeVisible();
-    await page.getByRole("button", { name: "Top down" }).click();
-    const box = (await region.boundingBox())!;
-    const tanHalfFov = Math.tan(Math.PI / 6);
-    const height =
-      Math.max(7.5 / tanHalfFov, 10 / (tanHalfFov * (box.width / box.height))) *
-      1.08;
-    const pxPerM = box.height / (2 * height * tanHalfFov);
-    const x = box.x + box.width / 2 + (target.x - -2.3) * pxPerM;
-    const y = box.y + box.height / 2 - (target.y - -0.3) * pxPerM;
-    // Polled: the camera eases into the overhead view over a few frames.
+    await page.getByRole("button", { name: "Recenter" }).click();
+    const { x, y } = await recenteredOnScreen(page, { ...target, z: GROUND_FLOOR_Z_M });
+    // Polled: the tree, and so the framing, can land a few frames late.
     await expect(async () => {
       await page.mouse.click(x, y);
       await expect(page.getByRole("region", { name: target.name })).toBeVisible({
@@ -1256,7 +1366,7 @@ test.describe("waypoints on an upper floor", () => {
 
   /**
    * Two storeys: the ground floor's 4×4 doormat half a metre under the
-   * origin, and a 2F slab whose box is the 20 × 15 m Top down frames — two
+   * origin, and a 2F slab whose box is the 20 × 15 m Recenter frames — two
    * far corners are enough for the box, which is what bounds a pick off the
    * ground floor.
    */
@@ -1287,34 +1397,14 @@ test.describe("waypoints on an upper floor", () => {
   };
 
   /**
-   * How far the view is lifted on 2F: Top down looks at the floor on show,
+   * How far the view is lifted on 2F: Recenter looks at the floor on show,
    * from 2F's ground as the 3D map shows it to the ground floor's drawn one.
    */
   const LIFT_2F_M = UPSTAIRS_M - GROUND_FLOOR_Z_M;
 
-  /**
-   * Where a stop stands on screen from Top down (see tapStop above for the
-   * framing), lifted by its height over the floor looked at (`viewZ`): a stop
-   * nearer the camera stands further from the centre, by the camera's height
-   * over the height it is still to go.
-   */
-  const onScreen = async (
-    page: Page,
-    stop: { x: number; y: number; z?: number },
-    viewZ = 0,
-  ) => {
-    const region = page.getByRole("region", { name: "Map viewport" });
-    const box = (await region.boundingBox())!;
-    const tanHalfFov = Math.tan(Math.PI / 6);
-    const height =
-      Math.max(7.5 / tanHalfFov, 10 / (tanHalfFov * (box.width / box.height))) * 1.08;
-    const lift = height / (height - ((stop.z ?? 0) - viewZ));
-    const pxPerM = (box.height / (2 * height * tanHalfFov)) * lift;
-    return {
-      x: box.x + box.width / 2 + (stop.x - -2.3) * pxPerM,
-      y: box.y + box.height / 2 - (stop.y - -0.3) * pxPerM,
-    };
-  };
+  /** Where a stop stands on screen after Recenter, the view at `viewZ`. */
+  const onScreen = (page: Page, stop: { x: number; y: number; z?: number }, viewZ = 0) =>
+    recenteredOnScreen(page, { x: stop.x, y: stop.y, z: drawnGround(stop.z ?? 0) }, viewZ);
 
   test("places a waypoint on the floor shown, at that floor's height", async ({ page }) => {
     const errors: string[] = [];
@@ -1369,7 +1459,7 @@ test.describe("waypoints on an upper floor", () => {
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
     await showFloor(page, "2F");
-    await page.getByRole("button", { name: "Top down" }).click();
+    await page.getByRole("button", { name: "Recenter" }).click();
 
     // The 2F stop opens: the positive control for the tap below.
     const up = await onScreen(page, landing, LIFT_2F_M);
@@ -1419,7 +1509,7 @@ test.describe("waypoints on an upper floor", () => {
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
     // Framed at the ground floor first; the switch alone must lift it.
-    await page.getByRole("button", { name: "Top down" }).click();
+    await page.getByRole("button", { name: "Recenter" }).click();
     const floors = page.getByRole("group", { name: "Floor" });
     await floors.getByRole("button", { name: "2F" }).click();
 

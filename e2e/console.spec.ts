@@ -130,11 +130,14 @@ test.describe("the console shell", () => {
       "Auto localize",
       "Move",
       "Focus",
-      "Top down",
       "Zoom in",
       "Zoom out",
     ]) {
       await expect(toolbar.getByRole("button", { name })).toBeVisible();
+    }
+    // Taken off for now, by request.
+    for (const name of ["Top down", "Front view"]) {
+      await expect(toolbar.getByRole("button", { name })).toHaveCount(0);
     }
     // The left strip is what is done to the map itself.
     const mapTools = page.getByRole("toolbar", { name: "Map" });
