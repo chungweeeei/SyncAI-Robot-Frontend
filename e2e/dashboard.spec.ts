@@ -311,14 +311,38 @@ test.describe("the dashboard's 3D map layer", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("offers no floors for a map of one storey", async ({ page }) => {
+  test("draws a map of one storey under its ceiling, and All puts it back", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { maps: [mapSummary(withOctomap())] });
     await page.goto("/");
     await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
-    await page.waitForTimeout(500);
-    await expect(page.getByRole("group", { name: "Floor" })).toHaveCount(0);
+    const floors = page.getByRole("group", { name: "Floor" });
+    await expect(floors).toBeVisible();
+    // The one floor, cut under its ceiling, is what opens.
+    await expect(floors.getByRole("button", { name: "1F" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // There is no other floor to follow the robot onto.
+    await expect(floors.getByRole("button", { name: "Follow robot" })).toHaveCount(0);
+    await floors.getByRole("button", { name: "All" }).click();
+    await expect(floors.getByRole("button", { name: "All" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(floors.getByRole("button", { name: "1F" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    await floors.getByRole("button", { name: "1F" }).click();
+    await expect(floors.getByRole("button", { name: "1F" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // Picked on the 3D map, so not offered while it is hidden.
+    await toggle(page).click();
+    await expect(floors).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
 

@@ -4,7 +4,7 @@
 
 import * as THREE from "three";
 
-import { FLOOR_BAND_ABOVE_M, floorBands, floorSpan } from "@/lib/map/floors";
+import { floorBands, storeyCeiling } from "@/lib/map/floors";
 import { heightRange, rampColor } from "@/lib/theme/height-ramp";
 import type { MapFloor } from "@/lib/types/map";
 import type { OccupiedVoxels } from "@/lib/types/octree";
@@ -24,15 +24,13 @@ const SNAPSHOT_FILL = 0.92;
  * The height bands a still keeps, one per floor: each floor's band as the
  * dashboard cuts it, so what is over a floor's cut — its ceiling — is left
  * out and every storey shows its ground and walls from above. A map of one
- * storey is cut over its level too, which the dashboard has no reason to
- * do (it never hides the one floor there is). No floors at all — a read
- * that failed, a map the backend found none in — keeps everything.
+ * storey is cut under its ceiling too, as the dashboard cuts it
+ * (storeyCeiling). No floors at all — a read that failed, a map the backend
+ * found none in — keeps everything: a card cannot offer All to undo a cut.
  */
 export function snapshotBands(floors: readonly MapFloor[]): Array<{ lo: number; hi: number }> {
   if (floors.length === 0) return [{ lo: -Infinity, hi: Infinity }];
-  if (floors.length === 1) {
-    return [{ lo: -Infinity, hi: floorSpan(floors[0]).top + FLOOR_BAND_ABOVE_M }];
-  }
+  if (floors.length === 1) return [{ lo: -Infinity, hi: storeyCeiling(floors) }];
   return floorBands(floors).map(({ lo, hi }) => ({ lo, hi }));
 }
 

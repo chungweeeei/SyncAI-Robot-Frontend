@@ -174,7 +174,10 @@ components/
                 the 3D map it draws is a window cut around the robot's
                 height, coloured over the whole map, that slides up the
                 stair while the floor holds: lib/map/floors.ts's
-                followWindow), and the
+                followWindow; on a dashboard map of one storey it is All
+                and 1F alone, no Follow, 1F pressed — the 3D map cut
+                under its ceiling, storeyCeiling, so a room seen from
+                above shows the robot — and All the ceiling back), and the
                 fault boundaries (fault-boundary.tsx,
                 fault-panel.tsx: what a part that threw shows instead — see
                 Conventions)

@@ -85,6 +85,20 @@ export function floorBands(floors: readonly MapFloor[]): FloorBand[] {
 }
 
 /**
+ * Where the 3D map of one storey is cut, metres: `FLOOR_BAND_ABOVE_M` over
+ * the highest height walked on it, as a floor picked on a building is cut —
+ * a room seen from above was otherwise its ceiling, with the robot and its
+ * waypoints under it. No floors is one storey too, whose level is the
+ * map frame's 0: the body height the robot's odometry started at. A map of
+ * several storeys is not cut here; picking a floor does that.
+ */
+export function storeyCeiling(floors: readonly MapFloor[]): number {
+  if (floors.length > 1) return Infinity;
+  const top = floors.length === 1 ? floorSpan(floors[0]).top : 0;
+  return top + FLOOR_BAND_ABOVE_M;
+}
+
+/**
  * The ground height a waypoint placed on `band` stands at, metres. The
  * lowest floor is 0, as every waypoint was before floors (drawn at its real
  * ground, see `drawnGround`). Any other floor is where the 3D map shows its

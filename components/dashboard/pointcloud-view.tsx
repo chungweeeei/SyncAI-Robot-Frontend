@@ -46,6 +46,7 @@ import {
   floorOfHeight,
   followHeight,
   followWindow,
+  storeyCeiling,
 } from "@/lib/map/floors";
 import { withGroundPatches } from "@/lib/map/ground-fill";
 import { previewPoints, previewStale, routeFloors } from "@/lib/map/route-preview";
@@ -143,8 +144,26 @@ export function PointCloudView({
   // by name, so a floor renamed or gone elsewhere falls back to the whole
   // map instead of to a stale band. Picked only while the layer is up —
   // the floor is what that layer is showing.
-  const { floors } = useMapFloors(hasVoxels && activeMap ? activeMap.name : null);
+  const { floors, ready: floorsReady } = useMapFloors(
+    hasVoxels && activeMap ? activeMap.name : null,
+  );
   const [floorName, setFloorName] = React.useState<string | null>(null);
+  /**
+   * A map of one storey is drawn under its ceiling (storeyCeiling), which
+   * otherwise hides the robot and its waypoints in a room seen from above;
+   * the picker's All, set here, puts the ceiling back. Only once the floors
+   * have answered: a failed read may be a building's, and a building is
+   * whole until a floor is picked.
+   */
+  const [ceilingShown, setCeilingShown] = React.useState(false);
+  const oneStorey = floorsReady && floors.length <= 1;
+  // The picker's one floor. A storey the backend found no floors in is
+  // still a floor, at the map frame's 0 (storeyCeiling's reason).
+  const storeyFloors = React.useMemo(
+    () => (floors.length === 1 ? floors : [{ name: "1F", level: 0 }]),
+    [floors],
+  );
+  const voxelCeiling = oneStorey && !ceilingShown ? storeyCeiling(floors) : Infinity;
   /**
    * Whether the floor on show is the robot's, which the picker's Follow
    * offers: an operator watching it climb a stair would otherwise switch
@@ -548,6 +567,7 @@ export function PointCloudView({
           voxels={voxels}
           voxelBand={voxelBand}
           voxelWindow={voxelWindow}
+          voxelCeiling={voxelCeiling}
           pickZ={pickZ}
           // The ground floor with every floor up: the view lifts to a floor
           // picked, and in Follow rides up with the robot's ground.
@@ -737,6 +757,17 @@ export function PointCloudView({
               }}
               following={following}
               onFollow={() => setFollowing(true)}
+            />
+          )}
+          {/* One storey: All with its ceiling or the floor without, and no
+            * Follow, since there is no other floor to follow the robot to. */}
+          {voxels && oneStorey && (
+            <FloorPicker
+              className="pointer-events-auto ml-auto shrink-0"
+              floors={storeyFloors}
+              value={ceilingShown ? null : storeyFloors[0].name}
+              allTitle="Show the ceiling too"
+              onChange={(name) => setCeilingShown(name === null)}
             />
           )}
         </div>

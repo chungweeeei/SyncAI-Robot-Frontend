@@ -46,6 +46,7 @@ export function FloorPicker({
   value,
   onChange,
   allLabel = "All",
+  allTitle = "Show every floor",
   following = false,
   onFollow,
   className,
@@ -59,6 +60,8 @@ export function FloorPicker({
   onChange: (name: string | null) => void;
   /** What the whole map is called here. */
   allLabel?: string;
+  /** What pressing it shows, as its tooltip. */
+  allTitle?: string;
   /** Whether the floor on show is the robot's; `value` is then that floor. */
   following?: boolean;
   /** Offer Follow, which shows the robot's floor until a floor is pressed. */
@@ -130,7 +133,7 @@ export function FloorPicker({
             type="button"
             aria-pressed={pressed}
             aria-current={followed || undefined}
-            title={option.key === null ? "Show every floor" : `Show ${option.label}`}
+            title={option.key === null ? allTitle : `Show ${option.label}`}
             onClick={() => onChange(option.key)}
             className={cn(
               "readout relative flex h-8 w-full items-center justify-center gap-1.5 rounded-full px-1.5 text-[11px] transition-colors pointer-coarse:h-10",
