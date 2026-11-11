@@ -137,6 +137,13 @@ interface PointCloudCanvasProps {
    */
   voxelWindow?: { lo: number; hi: number } | null;
   /**
+   * The height the 3D map's own cells are cut at, metres (see
+   * storeyCeiling): a room of one storey, drawn without its ceiling. The
+   * cells only, as Follow's window is — the waypoints, zones and route keep
+   * `voxelBand`, so a cut can never hide one of them.
+   */
+  voxelCeiling?: number;
+  /**
    * The ground height a pick lands at, metres: the floor shown, so a goal or
    * a waypoint placed with 2F up is on 2F. 0 is the ground floor, which any
    * pick may land on; any other height is bounded by the 3D map's columns,
@@ -276,6 +283,7 @@ export function PointCloudCanvas({
   voxels = null,
   voxelBand = null,
   voxelWindow = null,
+  voxelCeiling = Infinity,
   pickZ = 0,
   viewGround = 0,
   path,
@@ -355,6 +363,8 @@ export function PointCloudCanvas({
   const voxelBandRef = React.useRef(voxelBand);
   /** Follow's window as last asked for, which a rebuilt layer starts from. */
   const voxelWindowRef = React.useRef(voxelWindow);
+  /** The ceiling cut as last asked for, which a rebuilt layer starts from. */
+  const voxelCeilingRef = React.useRef(voxelCeiling);
   /**
    * How far the view is lifted off the ground floor, metres: what a floor
    * switch has carried it, part way while one is under way. The framings
@@ -1027,7 +1037,10 @@ export function PointCloudCanvas({
     }
     const band = voxelBandRef.current;
     const z =
-      voxelLayerRef.current?.zExtent(band?.lo ?? -Infinity, band?.hi ?? Infinity) ??
+      voxelLayerRef.current?.zExtent(
+        band?.lo ?? -Infinity,
+        Math.min(band?.hi ?? Infinity, voxelCeilingRef.current),
+      ) ??
       FRONT_DEFAULT_Z;
     frontView(
       ctx.camera,
@@ -1317,7 +1330,7 @@ export function PointCloudCanvas({
 
     const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const layer = createVoxelLayer(voxels, { ghostColor: theme.voxelGhost });
-    applyVoxelBand(layer, voxelBandRef.current, voxelWindowRef.current);
+    applyVoxelBand(layer, voxelBandRef.current, voxelWindowRef.current, voxelCeilingRef.current);
     ctx.scene.add(layer.points);
     // The floors under the one on show, faint. Off the shading's layer: it is
     // context, drawn over the map against its depth, and an outline would
@@ -1376,11 +1389,15 @@ export function PointCloudCanvas({
     pathRibbonRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
     previewRibbonRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
   }, [voxelBand]);
-  // Apart from the marks: Follow slides the cells' window without moving them.
+  // Apart from the marks: Follow slides the cells' window, and a ceiling cuts
+  // the cells, without moving them.
   React.useEffect(() => {
     voxelWindowRef.current = voxelWindow;
-    if (voxelLayerRef.current) applyVoxelBand(voxelLayerRef.current, voxelBand, voxelWindow);
-  }, [voxelBand, voxelWindow]);
+    voxelCeilingRef.current = voxelCeiling;
+    if (voxelLayerRef.current) {
+      applyVoxelBand(voxelLayerRef.current, voxelBand, voxelWindow, voxelCeiling);
+    }
+  }, [voxelBand, voxelWindow, voxelCeiling]);
 
   // ---- Pose picking -----------------------------------------------------
   // The anchor keeps the raw pointer position beside the ground point so the
@@ -1621,7 +1638,8 @@ function applyVoxelBand(
   layer: VoxelLayer,
   band: { lo: number; hi: number } | null,
   follow: { lo: number; hi: number } | null,
+  ceiling: number,
 ) {
   if (follow) layer.setBand(follow.lo, follow.hi, { ramp: "map" });
-  else layer.setBand(band?.lo ?? -Infinity, band?.hi ?? Infinity);
+  else layer.setBand(band?.lo ?? -Infinity, Math.min(band?.hi ?? Infinity, ceiling));
 }
