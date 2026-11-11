@@ -1062,6 +1062,30 @@ test.describe("the task console", () => {
     expect(body.trigger).toEqual({ interval_seconds: 1800 });
   });
 
+  test("posts an interval typed in seconds as is", async ({ page }) => {
+    const writes = await mockBackend(page);
+    await page.goto("/tasks");
+
+    await page
+      .getByRole("button", { name: 'Schedule "Morning round"' })
+      .click();
+    await page.getByPlaceholder("Night patrol").fill("every-45s");
+    await page.getByRole("button", { name: "Interval" }).click();
+    await page.getByRole("button", { name: "seconds" }).click();
+    await page.getByLabel("Every").fill("45");
+    await expect(page.getByText("Runs every 45 s.")).toBeVisible();
+
+    await page.getByRole("button", { name: "Create schedule" }).click();
+
+    await expect
+      .poll(() => writes.filter((w) => w.method === "POST"))
+      .toHaveLength(1);
+    const body = writes.find((w) => w.method === "POST")?.body as {
+      trigger: { cron?: string; timezone?: string; interval_seconds?: number };
+    };
+    expect(body.trigger).toEqual({ interval_seconds: 45 });
+  });
+
   test.describe("from a browser in Taipei", () => {
     // Pinned so the local-time assertion below is one number, and so the row
     // has no reason to name a zone: the schedule's and the browser's agree.
@@ -1974,8 +1998,7 @@ test.describe("a schedule edit the robot refuses", () => {
     await page.getByRole("button", { name: "Edit schedule" }).click();
     // An interval opens as one, in the unit it reads best in.
     await expect(page.getByLabel("Every")).toHaveValue("30");
-    await page.getByLabel("Every").fill("2");
-    await page.getByRole("button", { name: "hours" }).click();
+    await page.getByLabel("Every").fill("120");
     await page.getByRole("button", { name: "Save schedule" }).click();
 
     // Under the form's own fields, not the list's error line.

@@ -99,7 +99,7 @@ export function fromCron(cron: string): TimeOfDay | null {
 /** The form's Repeat picker: three one-click day sets, a free pick, an interval. */
 export type ScheduleRepeat = "daily" | "weekdays" | "weekends" | "custom" | "interval";
 
-export type IntervalUnit = "minutes" | "hours";
+export type IntervalUnit = "seconds" | "minutes";
 
 /** What the schedule form's fields start at. */
 export interface ScheduleFormSeed {
@@ -131,8 +131,7 @@ function sameDays(a: readonly number[], b: readonly number[]): boolean {
  * The form's fields for editing a registered trigger.
  *
  * A preset day set opens as that preset, not as Custom. A trigger the form
- * could not have written (a foreign cron, an interval that is not whole
- * minutes) opens on the defaults: an approximation would show a rule the
+ * could not have written (a foreign cron) opens on the defaults: an approximation would show a rule the
  * schedule does not follow, and one Save would make it the rule.
  */
 export function scheduleFormSeed(trigger: ScheduleTrigger): ScheduleFormSeed {
@@ -153,13 +152,10 @@ export function scheduleFormSeed(trigger: ScheduleTrigger): ScheduleFormSeed {
   }
   const seconds = trigger.interval_seconds;
   if (!seconds || seconds <= 0) return DEFAULT_FORM_SEED;
-  if (seconds % 3600 === 0) {
-    return { ...DEFAULT_FORM_SEED, repeat: "interval", amountText: String(seconds / 3600), unit: "hours" };
-  }
   if (seconds % 60 === 0) {
     return { ...DEFAULT_FORM_SEED, repeat: "interval", amountText: String(seconds / 60), unit: "minutes" };
   }
-  return DEFAULT_FORM_SEED;
+  return { ...DEFAULT_FORM_SEED, repeat: "interval", amountText: String(seconds), unit: "seconds" };
 }
 
 /**
