@@ -17,6 +17,7 @@ import {
   nextFloor,
   sameFloors,
   snapToGroundFloor,
+  storeyCeiling,
 } from "@/lib/map/floors";
 import { ROBOT_BASE_HEIGHT_M } from "@/lib/scene/robot-model";
 
@@ -100,6 +101,31 @@ describe("followWindow", () => {
     const mid = followWindow(2.65);
     expect(mid.lo).toBeCloseTo(2.65 - FLOOR_BAND_BELOW_M);
     expect(mid.hi).toBeCloseTo(2.65 + FLOOR_BAND_ABOVE_M);
+  });
+});
+
+describe("storeyCeiling", () => {
+  it("cuts one storey over the highest height walked on it, not its level", () => {
+    // A ramp's top end keeps its walls; a cut over the level alone took them.
+    expect(storeyCeiling([{ name: "1F", level: -0.2, low: -0.4, high: 0.6 }])).toBeCloseTo(
+      0.6 + FLOOR_BAND_ABOVE_M,
+    );
+    expect(storeyCeiling([{ name: "1F", level: -0.2 }])).toBeCloseTo(-0.2 + FLOOR_BAND_ABOVE_M);
+  });
+
+  it("cuts a map with no floors over the frame's 0, where the robot started", () => {
+    expect(storeyCeiling([])).toBe(FLOOR_BAND_ABOVE_M);
+  });
+
+  it("leaves a map of several storeys whole, which picking a floor cuts", () => {
+    expect(storeyCeiling(TWO)).toBe(Infinity);
+  });
+
+  it("keeps the walls a robot stands between and drops the ceiling over them", () => {
+    // A room's ceiling is a good 2.5 m over the ground, which is a body height under 0.
+    const ceiling = storeyCeiling([]);
+    expect(ceiling).toBeGreaterThan(GROUND_FLOOR_Z_M + 1.8);
+    expect(ceiling).toBeLessThan(GROUND_FLOOR_Z_M + 2.5);
   });
 });
 
