@@ -4,6 +4,11 @@
 // come from lib/theme/signal.ts; only the hue these marks add is written out
 // below.
 
+import {
+  CHARGER_ICON_PATH,
+  CHARGER_MARK_BOLT,
+  CHARGER_MARK_FILL,
+} from "@/lib/map/vertex";
 import { SIGNAL, cssHex } from "@/lib/theme/signal";
 
 export interface Palette {
@@ -42,6 +47,13 @@ export const MARKER_HALO = "rgba(255, 255, 255, 0.85)";
 export const VERTEX_DOT_RADIUS = 4.5;
 export const VERTEX_ARROW_PX = 18;
 
+/**
+ * A charger's mark: a filled rounded square with the bolt in it, where a stop
+ * is a 4.5 px dot. Bigger, since a bolt narrower than this is a smudge; still
+ * inside the click slop, so it is hit where it is drawn.
+ */
+export const CHARGER_MARK_HALF_PX = 7;
+
 /** Click slop around a marker centre. */
 export const VERTEX_HIT_RADIUS = 11;
 /** Under a finger, which covers ~22 px and can't see the dot. */
@@ -58,19 +70,30 @@ export interface MarkerSpec {
   glyph: string | null;
   label: string | null;
   dashed: boolean;
+  /** A charger: the square and bolt instead of the dot (CHARGER_MARK_HALF_PX). */
+  charger?: boolean;
 }
 
 /** One marker: a ring, a heading arrow, and a `G · name` caption, each over a MARKER_HALO stroke. */
 export function drawMarker(ctx: CanvasRenderingContext2D, spec: MarkerSpec): void {
-  const { cx, cy, colour, emphasis, dashed } = spec;
+  const { cx, cy, emphasis, dashed } = spec;
+  const charger = spec.charger ?? false;
+  // A charger at rest is black (CHARGER_MARK_FILL); one the job goes to takes
+  // the job's hue like any stop, so the route still reads as one colour.
+  const colour = charger && !emphasis ? CHARGER_MARK_FILL : spec.colour;
   const radians = (spec.theta * Math.PI) / 180;
   // Screen y grows downward, map y grows upward.
   const tipX = cx + Math.cos(radians) * VERTEX_ARROW_PX;
   const tipY = cy - Math.sin(radians) * VERTEX_ARROW_PX;
 
   const shape = new Path2D();
-  shape.moveTo(cx + VERTEX_DOT_RADIUS, cy);
-  shape.arc(cx, cy, VERTEX_DOT_RADIUS, 0, Math.PI * 2);
+  if (charger) {
+    const half = CHARGER_MARK_HALF_PX;
+    shape.roundRect(cx - half, cy - half, half * 2, half * 2, 3);
+  } else {
+    shape.moveTo(cx + VERTEX_DOT_RADIUS, cy);
+    shape.arc(cx, cy, VERTEX_DOT_RADIUS, 0, Math.PI * 2);
+  }
   const arrow = new Path2D();
   arrow.moveTo(cx, cy);
   arrow.lineTo(tipX, tipY);
@@ -98,9 +121,20 @@ export function drawMarker(ctx: CanvasRenderingContext2D, spec: MarkerSpec): voi
   ctx.setLineDash([]);
   ctx.stroke(arrow);
 
-  if (emphasis && !dashed) {
+  // A charger is always filled: the bolt is drawn light on its colour.
+  if ((emphasis || charger) && !dashed) {
     ctx.fillStyle = colour;
     ctx.fill(shape);
+  }
+  if (charger) {
+    // The icon's 24-unit grid fitted to the square, a pixel in from its edge.
+    const size = CHARGER_MARK_HALF_PX * 2 - 2;
+    ctx.save();
+    ctx.translate(cx - size / 2, cy - size / 2);
+    ctx.scale(size / 24, size / 24);
+    ctx.fillStyle = CHARGER_MARK_BOLT;
+    ctx.fill(new Path2D(CHARGER_ICON_PATH));
+    ctx.restore();
   }
 
   const caption = [spec.glyph, spec.label].filter(Boolean).join(" · ");
