@@ -17,6 +17,7 @@ import {
   SunMediumIcon,
   Trash2Icon,
   Undo2Icon,
+  ZapIcon,
   ZoomInIcon,
   ZoomOutIcon,
 } from "lucide-react";
@@ -92,6 +93,8 @@ export function Map3dToolBar({
   tool,
   onToolChange,
   placeLock = null,
+  placingCharger,
+  onArmCharger,
   zoneLock = null,
   radius,
   onRadiusChange,
@@ -114,6 +117,9 @@ export function Map3dToolBar({
   onToolChange: (tool: Map3dTool) => void;
   /** Why no waypoint may be placed or removed (a job drives on the map), or null. */
   placeLock?: string | null;
+  /** The armed Place is Add charger's (tool "waypoint", the type set). */
+  placingCharger: boolean;
+  onArmCharger: () => void;
   /** Why no forbidden zone may be drawn or removed (a job, or the zones unread), or null. */
   zoneLock?: string | null;
   /** Brush radius, metres; one of BRUSH_RADII_M. */
@@ -208,9 +214,18 @@ export function Map3dToolBar({
               label="Place"
               hint={placeLock ?? "press to place a waypoint, drag to aim it; right-drag to turn"}
               icon={MapPinPlusIcon}
-              pressed={tool === "waypoint"}
+              pressed={tool === "waypoint" && !placingCharger}
               disabled={placeLock !== null}
               onClick={() => onToolChange("waypoint")}
+            />
+            {/* Place with the type set to Charger, as on the dashboard. */}
+            <ToolButton
+              label="Add charger"
+              hint={placeLock ?? "press to place a charger, drag to aim it; right-drag to turn"}
+              icon={ZapIcon}
+              pressed={tool === "waypoint" && placingCharger}
+              disabled={placeLock !== null}
+              onClick={onArmCharger}
             />
             <ToolButton
               label="Move"

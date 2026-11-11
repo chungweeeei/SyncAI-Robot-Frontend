@@ -969,6 +969,43 @@ test.describe("the editor's 3D view", () => {
       expect(errors, "the page logged errors").toEqual([]);
     });
 
+    test("stages a Charger from Add charger where the map is pressed", async ({ page }) => {
+      const errors: string[] = [];
+      failOnConsoleErrors(page, errors);
+      const writes = await mockBackend(page, { vertices: [] });
+      await page.goto(EDITOR);
+      await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+
+      await chooseDraw(page, "Waypoint");
+      const place = page.getByRole("button", { name: "Place" });
+      const charger = page.getByRole("button", { name: "Add charger" });
+      await charger.click();
+      await expect(charger).toHaveAttribute("aria-pressed", "true");
+      await expect(place).toHaveAttribute("aria-pressed", "false");
+      await pressAndAim(page);
+      const dialog = page.getByRole("alertdialog", { name: "Add charger" });
+      await expect(dialog.getByRole("combobox", { name: "Type" })).toBeDisabled();
+      await dialog.getByLabel("Name").fill("dock-a");
+      await dialog.getByRole("button", { name: "Create" }).click();
+      await expect(dialog).toHaveCount(0);
+      // Nothing asked of the robot, nothing written until Save.
+      expect(writes.filter((w) => w.path === "/api/v1/landmarks/detect")).toEqual([]);
+      expect(writes.filter((w) => w.path.startsWith(verticesPath))).toEqual([]);
+      // Still armed, as Place is, for the next one.
+      await expect(charger).toHaveAttribute("aria-pressed", "true");
+
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect.poll(() => writes.filter((w) => w.path === verticesPath)).toHaveLength(1);
+      const body = writes.find((w) => w.path === verticesPath)!.body as unknown[];
+      expect(body[0]).toMatchObject({ name: "dock-a", type: "CHARGE" });
+
+      // Place is the plain one again.
+      await place.click();
+      await expect(place).toHaveAttribute("aria-pressed", "true");
+      await expect(charger).toHaveAttribute("aria-pressed", "false");
+      expect(errors, "the page logged errors").toEqual([]);
+    });
+
     test("greys Detect charger on a map the robot is not running", async ({ page }) => {
       const errors: string[] = [];
       failOnConsoleErrors(page, errors);

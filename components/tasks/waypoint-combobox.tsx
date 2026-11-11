@@ -5,10 +5,10 @@ import Link from "next/link";
 import { Combobox } from "@base-ui/react/combobox";
 import { CheckIcon, ChevronsUpDownIcon } from "lucide-react";
 
+import { VertexTypeMark } from "@/components/console/vertex-type-mark";
 import type { ActiveVerticesStatus } from "@/hooks/use-active-map-vertices";
 import { floorOfHeight } from "@/lib/map/floors";
 import type { WaypointEditor } from "@/lib/map/links";
-import { vertexGlyph } from "@/lib/map/vertex";
 import type { MapFloor, MapVertex } from "@/lib/types/map";
 import { cn } from "@/lib/utils";
 
@@ -142,8 +142,8 @@ export function WaypointCombobox({
       value={item}
       className="relative flex cursor-default items-center gap-2 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground pointer-coarse:py-2.5"
     >
-      <span className="readout w-3 shrink-0 text-center text-[11px] text-muted-foreground" aria-hidden>
-        {vertexGlyph(item.vertex.type)}
+      <span className="readout flex w-3 shrink-0 justify-center text-[11px] text-muted-foreground" aria-hidden>
+        <VertexTypeMark type={item.vertex.type} />
       </span>
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       {item.marks.length > 0 && (

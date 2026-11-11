@@ -39,6 +39,11 @@ export interface Placement {
    * else.
    */
   detected?: boolean;
+  /**
+   * Placed with Add charger: the type is Charger from the start and stays
+   * so. The pose is still the press's until a source replaces it.
+   */
+  charger?: boolean;
 }
 
 /** Detect charger as the dialog sees it: one request, owned by the caller. */
@@ -58,7 +63,9 @@ export interface ChargerDetectControl {
  * The pose is shown, not editable: the map sets it, Use robot position is one
  * other source, and for a Charger, Detect charger is the third: the robot
  * looks for the charger and the pose becomes the one it measured. Either
- * needs the robot localized on this map (`robotPose`).
+ * needs the robot localized on this map (`robotPose`), and only the press
+ * of its button asks the robot anything. Add charger is Add waypoint with
+ * the type set (`Placement.charger`).
  */
 export function VertexCreateDialog({
   placement,
@@ -108,6 +115,7 @@ export function VertexCreateDialog({
             key={shown.key}
             pose={shown.pose}
             detected={shown.detected ?? false}
+            charger={shown.charger ?? false}
             lockedReason={lockedReason}
             robotPose={robotPose}
             robotPoseReason={robotPoseReason}
@@ -129,6 +137,7 @@ const TYPE_ITEMS = VERTEX_TYPES.map(({ value, label }) => ({ value, label }));
 function NameForm({
   pose,
   detected,
+  charger,
   lockedReason,
   robotPose,
   robotPoseReason,
@@ -141,6 +150,7 @@ function NameForm({
 }: {
   pose: PlacedPose;
   detected: boolean;
+  charger: boolean;
   lockedReason: string | null;
   robotPose: PlanarPose | null;
   robotPoseReason: string | null;
@@ -152,7 +162,9 @@ function NameForm({
   onClose: () => void;
 }) {
   const [name, setName] = React.useState("");
-  const [type, setType] = React.useState<VertexType>(DEFAULT_VERTEX_TYPE);
+  const [type, setType] = React.useState<VertexType>(
+    charger ? "CHARGE" : DEFAULT_VERTEX_TYPE,
+  );
   const nameId = React.useId();
   const typeId = React.useId();
   const detectNoteId = React.useId();
@@ -175,7 +187,7 @@ function NameForm({
       }}
     >
       <AlertDialogHeader>
-        <AlertDialogTitle>Create waypoint</AlertDialogTitle>
+        <AlertDialogTitle>{charger ? "Add charger" : "Create waypoint"}</AlertDialogTitle>
       </AlertDialogHeader>
 
       <div>
@@ -205,7 +217,8 @@ function NameForm({
           items={TYPE_ITEMS}
           value={type}
           // Held while the robot looks: Detect charger belongs to the type.
-          disabled={busy || detecting}
+          // Fixed for Add charger: it was pressed to place one.
+          disabled={busy || detecting || charger}
           onValueChange={(next) => {
             if (next) setType(next);
           }}

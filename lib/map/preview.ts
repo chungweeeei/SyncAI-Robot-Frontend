@@ -8,6 +8,7 @@ import {
   drawMarker,
   type Palette,
 } from "@/lib/map/draw";
+import { hasChargerMark } from "@/lib/map/vertex";
 import type { MapVertex } from "@/lib/types/map";
 
 /** The route's legs, thin enough to leave the markers and walls legible. */
@@ -164,6 +165,7 @@ export function drawStops(
       glyph: null,
       label: captioned.has(vertex.id) ? label(vertex) : null,
       dashed: false,
+      charger: hasChargerMark(vertex.type),
     });
   }
 

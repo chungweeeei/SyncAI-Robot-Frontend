@@ -3,11 +3,9 @@
 import * as React from "react";
 import {
   BanIcon,
-  Building2Icon,
   CrosshairIcon,
   CuboidIcon,
   FocusIcon,
-  Grid2x2Icon,
   HandIcon,
   LocateFixedIcon,
   MapPinIcon,
@@ -16,6 +14,7 @@ import {
   RouteIcon,
   ScanLineIcon,
   ScanSearchIcon,
+  ZapIcon,
   ZoomInIcon,
   ZoomOutIcon,
 } from "lucide-react";
@@ -50,8 +49,6 @@ export function ViewportToolbar({
   onAutoLocalize,
   cameraMode,
   onCameraMode,
-  onTopDown,
-  onFront,
   onZoomIn,
   onZoomOut,
   layers,
@@ -72,13 +69,6 @@ export function ViewportToolbar({
   onAutoLocalize: () => void;
   cameraMode: CameraMode;
   onCameraMode: (mode: CameraMode) => void;
-  onTopDown: () => void;
-  /**
-   * Look at the map level from the front. Omitted, no button: from the
-   * front an empty map is a line, so it is offered while the 3D map is up,
-   * which also keeps the strip to one row on a phone the rest of the time.
-   */
-  onFront?: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   /** Only the layers that have something to draw. */
@@ -143,23 +133,8 @@ export function ViewportToolbar({
             onClick={() => onCameraMode("focus")}
           />
         </ToolGroup>
-        {/* Not a camera mode and never pressed: the next drag can orbit out
-          * of it, so a lit button would claim a view no longer held. */}
-        <ToolButton
-          label="Top down"
-          hint="look straight down at the map"
-          icon={Grid2x2Icon}
-          onClick={onTopDown}
-        />
-        {/* Its pair: level, from the south, where storeys stack as bands. */}
-        {onFront && (
-          <ToolButton
-            label="Front view"
-            hint="look at the map level, from the front"
-            icon={Building2Icon}
-            onClick={onFront}
-          />
-        )}
+        {/* Top down and Front view are off the strip for now, by request; the
+          * canvas still takes topDownNonce and frontNonce. */}
 
         {layers.length > 0 && (
           <>
@@ -210,7 +185,8 @@ export function ViewportToolbar({
 
 /**
  * The left strip: what is done to the map itself. Recenter is one-shot and
- * never lit, like Top down. Add waypoint is a pick mode, greyed with no map.
+ * never lit: the next drag can orbit out of the view it frames. Add waypoint is a pick mode, greyed with no map.
+ * Add charger is the same pick with the waypoint's type set to Charger.
  */
 export function MapToolbar({
   placing,
@@ -218,6 +194,8 @@ export function MapToolbar({
   placeLock = null,
   onRecenter,
   onArmPlace,
+  placingCharger,
+  onArmCharger,
   className,
 }: {
   /** The Add waypoint pick is armed. */
@@ -228,6 +206,9 @@ export function MapToolbar({
   placeLock?: string | null;
   onRecenter: () => void;
   onArmPlace: () => void;
+  /** The Add charger pick is armed. */
+  placingCharger: boolean;
+  onArmCharger: () => void;
   className?: string;
 }) {
   return (
@@ -249,6 +230,18 @@ export function MapToolbar({
           pressed={placing}
           disabled={!canPlace || placeLock !== null}
           onClick={onArmPlace}
+        />
+        <ToolButton
+          label="Add charger"
+          hint={
+            !canPlace
+              ? "no map is loaded to put one on"
+              : (placeLock ?? "press the map to place a charger, drag to aim")
+          }
+          icon={ZapIcon}
+          pressed={placingCharger}
+          disabled={!canPlace || placeLock !== null}
+          onClick={onArmCharger}
         />
     </ToolStrip>
   );

@@ -248,6 +248,8 @@ function Map3dSurface({
     openOnWaypoint ? "waypoint" : null,
   );
   const [tool, setTool] = React.useState<Map3dTool>("pan");
+  /** The Place armed is Add charger's: the stops it places are Chargers. */
+  const [placingCharger, setPlacingCharger] = React.useState(false);
   /**
    * A link's ask to open on Waypoint, held until the run lock first reads
    * clear rather than armed at once: on a fresh load the job list may not
@@ -392,6 +394,7 @@ function Map3dSurface({
   const changeTool = React.useCallback(
     (next: Map3dTool) => {
       setTool(next);
+      setPlacingCharger(false);
       setWaypointAsked(false);
       if (next !== "waypoint") setMoving(null);
       if (next !== "zone") dropZoneShape();
@@ -719,7 +722,7 @@ function Map3dSurface({
       setVertexNote({ kind: "idle" });
       changeTool("pan");
     } else {
-      setPlacement({ key: ++placementSeq.current, pose: placed });
+      setPlacement({ key: ++placementSeq.current, pose: placed, charger: placingCharger });
     }
   };
 
@@ -755,7 +758,7 @@ function Map3dSurface({
     if (!robotPose) return;
     const z = robotGround(voxels, floorBands(floors), robotPose);
     const pose = { x: robotPose.x, y: robotPose.y, theta: robotPose.theta, z };
-    setPlacement((cur) => (cur ? { key: cur.key, pose } : cur));
+    setPlacement((cur) => (cur ? { ...cur, pose, detected: false } : cur));
     chargerDetect.clear();
   };
 
@@ -775,10 +778,22 @@ function Map3dSurface({
         return;
       }
       if (!pose) return;
+      // Spread, so a placement from Add charger stays one.
       setPlacement((cur) =>
-        cur && cur.key === key ? { key: cur.key, pose, detected: true } : cur,
+        cur && cur.key === key ? { ...cur, pose, detected: true } : cur,
       );
     });
+  };
+
+  // Place with the type set: armed, pressed again it is put down, and like
+  // Place it stays armed for a run of stops.
+  const armCharger = () => {
+    if (tool === "waypoint" && placingCharger && !moving) {
+      changeTool("pan");
+      return;
+    }
+    changeTool("waypoint");
+    setPlacingCharger(true);
   };
 
   const armReplace = (vertex: MapVertex) => {
@@ -786,6 +801,7 @@ function Map3dSurface({
     setMoving(vertex);
     setDrawKind("waypoint");
     setTool("waypoint");
+    setPlacingCharger(false);
   };
 
   // Asked once, as the dialog's Delete asks: a finger's tap on the wrong
@@ -982,6 +998,8 @@ function Map3dSurface({
             tool={tool}
             onToolChange={changeTool}
             placeLock={placeLock}
+            placingCharger={placingCharger}
+            onArmCharger={armCharger}
             zoneLock={zoneLock}
             radius={radiusM}
             onRadiusChange={setRadiusM}

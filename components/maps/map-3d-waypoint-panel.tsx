@@ -4,8 +4,8 @@ import * as React from "react";
 import { SearchIcon, Trash2Icon } from "lucide-react";
 
 import { Chip, overlayPanel } from "@/components/console/instrument";
+import { VertexTypeMark } from "@/components/console/vertex-type-mark";
 import { Input } from "@/components/ui/input";
-import { vertexGlyph } from "@/lib/map/vertex";
 import { cn } from "@/lib/utils";
 import type { MapVertex } from "@/lib/types/map";
 
@@ -158,8 +158,8 @@ function VertexList({
                     : "hover:bg-elevated",
                 )}
               >
-                <span className="instrument-label w-3 shrink-0 text-muted-foreground">
-                  {vertexGlyph(vertex.type)}
+                <span className="instrument-label flex w-3 shrink-0 justify-center text-muted-foreground">
+                  <VertexTypeMark type={vertex.type} />
                 </span>
                 <span className="readout min-w-0 flex-1 truncate text-[12px]">
                   {vertex.name}

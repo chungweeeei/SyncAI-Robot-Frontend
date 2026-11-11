@@ -33,3 +33,26 @@ export function vertexGlyph(type: VertexType): string {
   // A row may hold a type since retired from the enum.
   return GLYPHS[type] ?? "?";
 }
+
+/**
+ * A charger's mark is a bolt rather than its letter: beside a dozen M badges
+ * a C was the same round badge in the same hue, and still not a colour of its
+ * own, for the reason above. lucide's `zap`, on its 24-unit grid, so the 3D
+ * badge draws the icon the lists and the Add charger button show.
+ */
+export const CHARGER_ICON_PATH =
+  "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z";
+
+/**
+ * A charger's mark in its own colours, by request: a black square, a red
+ * bolt. Not the waypoint hue and not a signal one — the red is the bolt's,
+ * not a fault's. CSS strings; the 3D layer converts them. Shared by the 3D
+ * marks and the route map's, so the two cannot drift.
+ */
+export const CHARGER_MARK_FILL = "#111111";
+export const CHARGER_MARK_BOLT = "#e5322d";
+
+/** Whether a stop's mark is the charger's bolt rather than a glyph. */
+export function hasChargerMark(type: VertexType): boolean {
+  return type === "CHARGE";
+}

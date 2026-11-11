@@ -198,8 +198,6 @@ export function PointCloudView({
   );
   const [cameraMode, setCameraMode] = React.useState<"move" | "focus">("move");
   // Counters, not booleans: the button must work again after orbiting away.
-  const [topDownNonce, setTopDownNonce] = React.useState(0);
-  const [frontNonce, setFrontNonce] = React.useState(0);
   const [recenterNonce, setRecenterNonce] = React.useState(0);
   const { zoomStep, zoomIn, zoomOut } = useViewCommands();
   /**
@@ -207,7 +205,9 @@ export function PointCloudView({
    * vertex cannot exist.
    */
   const [pick, setPick] = React.useState<
-    | { mode: "goal" | "initial-pose" | "place" }
+    | { mode: "goal" | "initial-pose" }
+    // Add waypoint, or with `charger` Add charger: the same press, typed.
+    | { mode: "place"; charger: boolean }
     | { mode: "vertex"; vertex: MapVertex }
     | null
   >(null);
@@ -273,7 +273,7 @@ export function PointCloudView({
   );
 
   const armPick = React.useCallback(
-    (mode: "goal" | "initial-pose" | "place") => {
+    (mode: "goal" | "initial-pose") => {
       // Re-arming drops the last estimate, so the panel describes the drag in
       // progress. useInitialPose's timed clear covers an operator who walks away.
       if (mode === "initial-pose") clearEstimate();
@@ -281,6 +281,12 @@ export function PointCloudView({
     },
     [clearEstimate],
   );
+  // A press of the armed one puts it down; of the other, switches to it.
+  const armPlace = React.useCallback((charger: boolean) => {
+    setPick((cur) =>
+      cur?.mode === "place" && cur.charger === charger ? null : { mode: "place", charger },
+    );
+  }, []);
 
   const armReplace = React.useCallback(
     (vertex: MapVertex) => {
@@ -323,7 +329,7 @@ export function PointCloudView({
       if (pick?.mode === "initial-pose") {
         commitPose(floorBand ? placed : picked);
       } else if (pick?.mode === "place") {
-        setPlacement({ key: ++placementSeq.current, pose: placed });
+        setPlacement({ key: ++placementSeq.current, pose: placed, charger: pick.charger });
       } else if (pick?.mode === "vertex") {
         const target = pick.vertex;
         setSavingVertex(target);
@@ -429,7 +435,7 @@ export function PointCloudView({
     if (!robotPose) return;
     const z = robotGround(voxels, bands, robotPose);
     const pose = { x: robotPose.x, y: robotPose.y, theta: robotPose.theta, z };
-    setPlacement((cur) => (cur ? { key: cur.key, pose } : cur));
+    setPlacement((cur) => (cur ? { ...cur, pose, detected: false } : cur));
     clearChargerDetect();
   }, [robotPose, bands, voxels, clearChargerDetect]);
 
@@ -449,8 +455,9 @@ export function PointCloudView({
         return;
       }
       if (!pose) return;
+      // Spread, so a placement from Add charger stays one.
       setPlacement((cur) =>
-        cur && cur.key === placementKey ? { key: cur.key, pose, detected: true } : cur,
+        cur && cur.key === placementKey ? { ...cur, pose, detected: true } : cur,
       );
     });
   }, [placementKey, runChargerDetect, clearChargerDetect]);
@@ -569,8 +576,6 @@ export function PointCloudView({
           previewPath={previewPath}
           initialPose={estimate.pose}
           initialPoseGround={initialPoseGround}
-          topDownNonce={topDownNonce}
-          frontNonce={frontNonce}
           recenterNonce={recenterNonce}
           zoomStep={zoomStep}
           pickMode={pick?.mode ?? null}
@@ -601,11 +606,13 @@ export function PointCloudView({
         <div className="flex flex-wrap items-start justify-between gap-2">
           <MapToolbar
             className="pointer-events-auto"
-            placing={pick?.mode === "place"}
+            placing={pick?.mode === "place" && !pick.charger}
+            placingCharger={pick?.mode === "place" && pick.charger}
             canPlace={stops.mapName !== null}
             placeLock={runLock.reason}
             onRecenter={recenter}
-            onArmPlace={() => armPick("place")}
+            onArmPlace={() => armPlace(false)}
+            onArmCharger={() => armPlace(true)}
           />
 
           <ViewportToolbar
@@ -624,8 +631,6 @@ export function PointCloudView({
             onAutoLocalize={localize.run}
             cameraMode={cameraMode}
             onCameraMode={setCameraMode}
-            onTopDown={() => setTopDownNonce((n) => n + 1)}
-            onFront={voxels ? () => setFrontNonce((n) => n + 1) : undefined}
             onZoomIn={zoomIn}
             onZoomOut={zoomOut}
             layers={layers}
