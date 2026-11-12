@@ -129,8 +129,8 @@ const length = ([ax, ay, bx, by]: number[]) => Math.hypot(bx - ax, by - ay);
 
 describe("dashPieces", () => {
   it("never runs a dash past the end of the line", () => {
-    // A dock's approach ends on the dock; a dash poking past it would draw
-    // onto the charger as if the robot were meant to walk through it.
+    // A dashed line ends where the robot means to stop; a dash poking past
+    // it would draw on as if the robot were meant to walk on through.
     for (const end of [0.05, 0.3, 1, 1.07]) {
       const pieces = dashPieces([0, 0, end, 0]);
       for (const piece of pieces) {
@@ -232,7 +232,7 @@ describe("the route's chevrons", () => {
 
 describe("dashPieces over a route's triples", () => {
   it("walks x and y and steps over z", () => {
-    // A dock's approach arrives as a PlannedPath, three numbers a point.
+    // A local plan arrives as a PlannedPath, three numbers a point.
     const pieces = dashPieces([0, 0, 0, 1, 0, 0], 0.12, 0.08, 3);
     expect(pieces[0]).toEqual([0, 0, 0.12, 0]);
     expect(pieces.at(-1)![2]).toBeLessThanOrEqual(1 + 1e-9);

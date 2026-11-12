@@ -311,8 +311,8 @@ components/
                 laptop: the name, Save (Save as copy and Delete in its
                 menu; running and scheduling stay on /tasks), and two
                 columns from lg — the
-                map (route-map: a click on a waypoint adds a stop, a Dock on
-                a charger, after the stop selected, else at the end;
+                map (route-map: a click on a waypoint adds a Move stop,
+                after the stop selected, else at the end;
                 route-canvas-3d: the tree in 3D with flat marks
                 projected over it at screen size, since a metre-sized pin is
                 two pixels over a building; the card under the pointer
@@ -451,9 +451,8 @@ lib/
                 resize-then-draw, the frame loop, a lost GPU context's
                 events and the teardown, for every 3D view), theme, markers,
                 vertex layer, zone layer (a banded zone on its floor's ground,
-                one of every floor at the floor shown), path ribbon, the running dock's
-                staging point and leg (dock-layer.ts), what the robot sees
-                and means to drive around it while it navigates
+                one of every floor at the floor shown), path ribbon, what the
+                robot sees and means to drive around it while it navigates
                 (local-nav-layer.ts: its costmap as one texture, each cost's
                 opacity, draped over the 3D map's ground when the map is up,
                 and its trajectory), the 3D map's voxel
@@ -480,7 +479,7 @@ lib/
   task/         step, schedule and history domain helpers, template name limit,
                 the /tasks list (library.ts: grouping by map, the natural
                 name order, a card's route line, summary and read-only stops),
-                the group rule (step.ts: one Move, Dock, Patrol, Stand or Lie per group,
+                the group rule (step.ts: one Move, Patrol, Stand or Lie per group,
                 refused as it is built by stepLinkProblem / stepMoveProblem,
                 with stepGroupError as the backstop for a list handed in),
                 the masthead's rules for the running job (run.ts: which step is
@@ -504,9 +503,10 @@ lib/
                 as five kinds — waypoint, waypoints (a Patrol's ordered list,
                 `min_items` 2), text, integer, number — served by
                 GET /task_steps, with a local copy for a robot without it,
-                read only through use-step-catalogue). The stops are Move,
-                Dock and Patrol (isStopStep); isNavStep is the two with one
-                pose. A Patrol is one stop and one body step that drives
+                read only through use-step-catalogue). The stops are Move
+                and Patrol (isStopStep); isNavStep is the Move, the one with
+                one pose (there is no Dock or Undock step since 2026-11-12).
+                A Patrol is one stop and one body step that drives
                 through ≥ 2 waypoints without stopping, facing only the last
                 one's heading; on the wire `params.waypoints` (each with its
                 floor's `z`) and, in a template, `vertex_ids` aligned with
@@ -752,9 +752,9 @@ touch one, prefer moving it toward the rule.
   `fetchHeldTaskState` — see the key's note. Sharing an entry is not sharing
   a poll: every observer of a polled key runs its own interval, and only
   requests in flight together are folded. So `useActiveRun` is mounted once,
-  from the strip, and another surface that draws the run (the dashboard's
-  dock staging point) reads `useLiveRun`, which observes the same two
-  entries without fetching. The history screen
+  from the strip; another surface that needs the run must observe the same
+  two entries without fetching (`enabled: false`), not mount it again. The
+  history screen
   polls nothing: `taskHistory` is the prefix of both its page keys and its
   stats keys, so the one invalidation the active-task poll fires when a run
   finishes refreshes the list and the dashboard's counts together.
@@ -842,9 +842,7 @@ As built:
   which re-rendered a barely-memoised viewport subtree up to ~40 times a
   second. `path` stays state because it is ~0.333 Hz *and* has a consumer that
   branches on it outside the canvas. A value only a render loop reads does not
-  belong in state; a value a component branches on does. `dockPath` (the
-  robot's predicted last metre onto a dock, 2 Hz, its own frame type so a
-  dock's clear never erases the route) is state for the same reason. The
+  belong in state; a value a component branches on does. The
   robot's local picture — `localCostmap` (2 Hz, the costmap its controller
   steers on, base64 cells) and `localPlan` (5 Hz, the next 2 s it means to
   drive) — is on the feed as refs beside pose and joints, because only the
@@ -854,11 +852,7 @@ As built:
   draped over the ground the map shows instead (`setSurface`, the column
   surface nearest the robot's ground, a metre either way). The backend sends both only while
   a navigation it sent is running, and once empty when it ends; the path
-  toggle hides them with the route. The
-  staging point is not on the socket at all: the robot does not publish it,
-  so the dashboard derives it with `stagingPose` from the dock pose the
-  running job's `GET /tasks/{id}` step carries (`liveDock` in
-  `lib/task/run.ts`).
+  toggle hides them with the route.
 - **A still view is not redrawn.** Every 3D view draws a frame only when
   something changed: the camera moved, a layer or a mark changed, a stream
   delivered. The dashboard marks its frame dirty after any React render, on

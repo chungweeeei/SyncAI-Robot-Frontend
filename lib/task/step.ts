@@ -29,10 +29,8 @@ export interface StepTypeSpec {
 
 /**
  * Order is the add row's order; the fillable steps first, the bare ones last.
- * There is no Undock step (removed 2026-10-15): the backend backs the robot
- * off the dock by itself before a Move that starts on the dock it last
- * docked at, standing it up first if it lay down, so an operator never
- * authors one. A template stored with an UNDOCK step no longer loads.
+ * There is no Dock or Undock step: docking was removed from the robot and the
+ * backend (2026-11-12), stored templates included.
  */
 export const STEP_TYPES: readonly StepTypeSpec[] = [
   { value: "MOVE", label: "Move", hint: "Walk to a waypoint." },
@@ -42,13 +40,6 @@ export const STEP_TYPES: readonly StepTypeSpec[] = [
     value: "PATROL",
     label: "Patrol",
     hint: "Drive through the waypoints in order without stopping; face the last one\u2019s heading.",
-  },
-  // Named for what the operator asks of the robot. The drive to the approach
-  // point in front of the waypoint is part of it, and the hint says so.
-  {
-    value: "DOCK",
-    label: "Dock",
-    hint: "Go to a waypoint, then walk straight onto the charger there and stay standing on it.",
   },
   { value: "SPEAK", label: "Speak", hint: "Say a line on the robot\u2019s speaker." },
   // "Stay put", not "pause": Pause is the masthead's hold on a running job.
@@ -93,11 +84,11 @@ export const DEFAULT_STEP_LIMITS: StepLimits = {
   patrolWaypointsMin: PATROL_WAYPOINTS_MIN,
 };
 
-const NAV_STEP_TYPES: ReadonlySet<StepType> = new Set<NavStepType>(["MOVE", "DOCK"]);
+const NAV_STEP_TYPES: ReadonlySet<StepType> = new Set<NavStepType>(["MOVE"]);
 
 /**
- * Whether a step is set by a waypoint: a Move or a Dock. Both carry a pose in
- * the map's frame, follow a vertex once saved and tie the job to its map.
+ * Whether a step is set by one waypoint: a Move. It carries a pose in the
+ * map's frame, follows a vertex once saved and ties the job to its map.
  */
 export function isNavStep<T extends { type: StepType }>(
   step: T,
@@ -105,12 +96,12 @@ export function isNavStep<T extends { type: StepType }>(
   return NAV_STEP_TYPES.has(step.type);
 }
 
-const STOP_STEP_TYPES: ReadonlySet<StepType> = new Set<StopStepType>(["MOVE", "DOCK", "PATROL"]);
+const STOP_STEP_TYPES: ReadonlySet<StepType> = new Set<StopStepType>(["MOVE", "PATROL"]);
 
 /**
- * Whether a step is a stop: a Move or a Dock, or a Patrol, which is one stop
- * however many waypoints it drives through. Every one is set in the map's
- * frame and ties the job to its map; only isNavStep's two carry one pose.
+ * Whether a step is a stop: a Move, or a Patrol, which is one stop however
+ * many waypoints it drives through. Both are set in the map's frame and tie
+ * the job to its map; only isNavStep's Move carries one pose.
  */
 export function isStopStep<T extends { type: StepType }>(
   step: T,
@@ -141,7 +132,7 @@ export interface StepDraft {
   /** Client-only identity: the React key, and what add / remove / move address. */
   key: number;
   type: StepType;
-  /** MOVE / DOCK only. Raw text — see parseCoordinate. */
+  /** MOVE only. Raw text — see parseCoordinate. */
   x: string;
   y: string;
   theta: string;
@@ -158,7 +149,7 @@ export interface StepDraft {
   waypoints: PatrolWaypointDraft[];
   /**
    * The vertex the numbers were prefilled from, or null once hand edited.
-   * **Saving** sends it, so a stored MOVE or DOCK can follow its vertex; **dispatching**
+   * **Saving** sends it, so a stored MOVE can follow its vertex; **dispatching**
    * never does — `POST /api/v1/tasks` has no notion of provenance.
    */
   vertexId: string | null;
@@ -232,7 +223,7 @@ export function reissueStepKeys(drafts: readonly StepDraft[]): StepDraft[] {
 }
 
 /**
- * The fields a waypoint sets on a Move or Dock row, as one patch so no frame
+ * The fields a waypoint sets on a Move row, as one patch so no frame
  * shows the new numbers under the old label. normalizeTheta on the way in: the
  * vertex table has no range constraint and can hold exactly -180, which the
  * task endpoint rejects.
@@ -251,17 +242,9 @@ export function stepPatchFromVertex(
 }
 
 /**
- * The step a tap on a waypoint adds: a Dock on a charger, since walking onto
- * it is the only reason a job goes there, and a Move anywhere else.
- */
-export function stepTypeForVertex(vertex: MapVertex): NavStepType {
-  return vertex.type === "CHARGE" ? "DOCK" : "MOVE";
-}
-
-/**
  * A stop row changed to another kind of stop, keeping where it goes: a Move
- * or Dock becomes a Patrol that starts at its waypoint, and a Patrol becomes
- * a Move or Dock to its last waypoint, where it would have ended. Anything
+ * becomes a Patrol that starts at its waypoint, and a Patrol becomes a Move
+ * to its last waypoint, where it would have ended. Anything
  * else only changes the type.
  */
 export function changeStopType(row: StepDraft, type: StopStepType): StepDraft {
@@ -383,8 +366,7 @@ export function stepSummary(
       const [x, y] = [last.x, last.y].map((v) => v.trim());
       return patrolSummary(draft.waypoints.length, waypointName ?? (x && y ? `(${x}, ${y})` : null));
     }
-    case "MOVE":
-    case "DOCK": {
+    case "MOVE": {
       const [x, y, theta] = [draft.x, draft.y, draft.theta].map((v) => v.trim());
       if (!x || !y || !theta) return null;
       const pose = `(${x}, ${y}) · ${theta}°`;
@@ -405,14 +387,14 @@ export function stepSummary(
 
 /**
  * A Patrol in one line, as its folded row and its saved card read it:
- * `Patrol · 5 waypoints → dock`. Only the last is named, since it is the one
+ * `Patrol · 5 waypoints → lobby`. Only the last is named, since it is the one
  * the robot stops at; the count says how much driving there is before it.
  */
 export function patrolSummary(count: number, lastName: string | null): string {
   return `Patrol · ${patrolRoute(count, lastName)}`;
 }
 
-/** patrolSummary without the step's name, for beside its label: `5 waypoints → dock`. */
+/** patrolSummary without the step's name, for beside its label: `5 waypoints → lobby`. */
 export function patrolRoute(count: number, lastName: string | null): string {
   const words = `${count} ${count === 1 ? "waypoint" : "waypoints"}`;
   return lastName ? `${words} → ${lastName}` : words;
@@ -420,8 +402,8 @@ export function patrolRoute(count: number, lastName: string | null): string {
 
 /**
  * Which waypoints the job goes to, as which steps: vertex id → the 1-based
- * ordinals of the rows picked from it (Move or dock), for the editor's floor
- * plan. A list because a patrol returns to `dock` ("steps 1, 4"). A
+ * ordinals of the rows picked from it (Move or Patrol), for the editor's floor
+ * plan. A list because a patrol returns to `lobby` ("steps 1, 4"). A
  * hand-edited row has no vertex and marks nothing.
  */
 export function stepWaypointOrdinals(
@@ -440,8 +422,8 @@ export function stepWaypointOrdinals(
 }
 
 /**
- * The vertices a stop row goes to, in the order it drives them: a Move's or
- * Dock's one, a Patrol's each. Free points (no vertex) are left out.
+ * The vertices a stop row goes to, in the order it drives them: a Move's
+ * one, a Patrol's each. Free points (no vertex) are left out.
  */
 export function stopVertexIds(draft: StepDraft): string[] {
   if (draft.type === "PATROL") {
@@ -593,7 +575,6 @@ export function stepGroupNames(drafts: readonly StepDraft[]): (string | null)[] 
 /** The steps that move the robot's body; the backend refuses two in one group. */
 const BODY_STEP_TYPES: ReadonlySet<StepType> = new Set([
   "MOVE",
-  "DOCK",
   "PATROL",
   "STANDUP",
   "LIEDOWN",
@@ -604,7 +585,7 @@ export function stepOccupiesBody(type: StepType): boolean {
   return BODY_STEP_TYPES.has(type);
 }
 
-const ONE_BODY_STEP = "The robot does one Move, Dock, Patrol, Stand or Lie down at a time";
+const ONE_BODY_STEP = "The robot does one Move, Patrol, Stand or Lie down at a time";
 
 function spanMoves(drafts: readonly StepDraft[], span: StepSpan | undefined): boolean {
   if (!span) return false;
@@ -924,7 +905,7 @@ export function toTemplateSteps(
  * Load a template's steps back into the editor.
  *
  * From `resolved_params`, **not** `params`: the server applies "the vertex's
- * current pose wins, the snapshot is the fallback", so a moved dock shows up
+ * current pose wins, the snapshot is the fallback", so a moved waypoint shows up
  * here. The formatters match the vertex picker's, so save/load round-trips.
  */
 export function fromTemplateSteps(steps: readonly TemplateStep[]): StepDraft[] {
@@ -990,7 +971,6 @@ export function toDispatchSteps(steps: readonly TemplateStep[]): TaskStepRequest
 function dispatchStep(step: TemplateStep): TaskStepRequest {
   switch (step.type) {
     case "MOVE":
-    case "DOCK":
       return {
         id: step.id,
         type: step.type,

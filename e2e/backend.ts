@@ -181,11 +181,11 @@ export function taskTemplate(over: Record<string, unknown> = {}) {
  * so a drift between the two fails at the schema.
  */
 export function taskSteps(): { steps: Record<string, unknown>[] } {
-  const waypoint = (label: string, filter: string | null = null) => ({
+  const waypoint = (label: string) => ({
     kind: "waypoint",
     key: "target",
     label,
-    filter,
+    filter: null,
   });
   return {
     steps: [
@@ -196,13 +196,6 @@ export function taskSteps(): { steps: Record<string, unknown>[] } {
         hint: "Drive through the waypoints in order without stopping; face the last one\u2019s heading.",
         occupies_body: true, while_walking: false,
         params: [{ kind: "waypoints", key: "waypoints", label: "Waypoints", min_items: 2 }],
-      },
-      {
-        type: "DOCK",
-        label: "Dock",
-        hint: "Go to a waypoint, then walk straight onto the charger there and stay standing on it.",
-        occupies_body: true, while_walking: false,
-        params: [waypoint("Charger", "charger")],
       },
       {
         type: "SPEAK",

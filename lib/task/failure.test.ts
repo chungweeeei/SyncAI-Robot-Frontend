@@ -17,14 +17,12 @@ describe("stepFailureText", () => {
     ).toBe("The goal is inside a forbidden zone.");
   });
 
-  it("reads a patrol's and a dock's failure the same as a move's", () => {
-    for (const label of ["patrol", "dock", "undock"]) {
-      expect(
-        stepFailureText(
-          `${label} ended in aborted: Planning failed: the robot stands inside a keepout zone (x)`,
-        ),
-      ).toBe("The robot is standing inside a forbidden zone.");
-    }
+  it("reads a patrol's failure the same as a move's", () => {
+    expect(
+      stepFailureText(
+        "patrol ended in aborted: Planning failed: the robot stands inside a keepout zone (x)",
+      ),
+    ).toBe("The robot is standing inside a forbidden zone.");
   });
 
   it("does not take a sentence's own parentheses for the detail", () => {
@@ -37,8 +35,8 @@ describe("stepFailureText", () => {
   });
 
   it("drops only the wrapper from a sentence it does not know", () => {
-    expect(stepFailureText("move ended in aborted: Docking failed: the dock was not seen (x)")).toBe(
-      "Docking failed: the dock was not seen (x)",
+    expect(stepFailureText("move ended in aborted: Following failed: the robot is stuck (x)")).toBe(
+      "Following failed: the robot is stuck (x)",
     );
     expect(stepFailureText("Goal is blocked.")).toBe("Goal is blocked.");
   });

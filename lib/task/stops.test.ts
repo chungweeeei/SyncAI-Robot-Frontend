@@ -47,7 +47,7 @@ function row(name: string, type?: StepType, linked = false): StepDraft {
   const draft = {
     ...newStepDraft(resolved),
     withPrevious: linked,
-    vertexId: resolved === "MOVE" || resolved === "DOCK" ? `v-${name}` : null,
+    vertexId: resolved === "MOVE" ? `v-${name}` : null,
   };
   names.set(draft.key, name);
   return draft;
@@ -333,13 +333,13 @@ describe("jobSummary", () => {
       row("A"),
       { ...row("pause", "WAIT"), seconds: "30" },
       { ...row("half", "WAIT"), seconds: "1." },
-      row("C", "DOCK"),
+      row("C"),
       { ...row("rest", "WAIT"), seconds: "60" },
     ];
     expect(jobSummary(steps, (id) => (id === "v-C" ? "Charger" : null))).toEqual({
       stops: 2,
       waitSeconds: 91,
-      end: { name: "Charger", dock: true },
+      end: { name: "Charger" },
     });
   });
 
@@ -399,17 +399,16 @@ describe("a patrol as a stop", () => {
     );
   });
 
-  it("ends the job at its last waypoint, not docked", () => {
-    const steps = [row("A", "DOCK"), patrolRow("P", "v-1", "v-end")];
+  it("ends the job at its last waypoint", () => {
+    const steps = [row("A"), patrolRow("P", "v-1", "v-end")];
     expect(jobSummary(steps, (id) => (id === "v-end" ? "Gate" : null))).toEqual({
       stops: 2,
       waitSeconds: 0,
-      end: { name: "Gate", dock: false },
+      end: { name: "Gate" },
     });
     // A last waypoint picked off the map has no name to end at.
     expect(jobSummary([patrolRow("Q", "v-1", null)], () => "x").end).toEqual({
       name: null,
-      dock: false,
     });
   });
 

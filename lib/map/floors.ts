@@ -122,7 +122,7 @@ export const GROUND_FLOOR_Z_M = -FLOOR_GROUND_BELOW_LEVEL_M;
 /**
  * The map-frame height a ground height is drawn at, metres. 0 is the
  * console's word for the ground floor (`floorGround`'s answer for it, a
- * planar route, a dock's approach, every waypoint from before floors) and
+ * planar route, every waypoint from before floors) and
  * stands for `GROUND_FLOOR_Z_M`; any other height was read off the 3D map or
  * a floor's level, which are in the map frame already. Drawing only: the
  * wire keeps its 0, which a backend without floors reads as "no height".

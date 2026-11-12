@@ -305,7 +305,7 @@ function StopCard({
   const name = `stop ${ordinal}`;
   const patrol = stop.type === "PATROL";
   /**
-   * The vertex the stop leaves the robot at: a Move's or Dock's own, a
+   * The vertex the stop leaves the robot at: a Move's own, a
    * Patrol's last waypoint's — the one it stops at.
    */
   const endVertex = patrol

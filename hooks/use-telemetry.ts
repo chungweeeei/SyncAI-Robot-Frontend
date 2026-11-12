@@ -31,11 +31,6 @@ export interface Telemetry {
    * clear is sent, not inferred from silence (see the backend's get_path).
    */
   path: PlannedPath | undefined;
-  /**
-   * A dock's final approach, from the robot to the dock (2 Hz while it
-   * drives). Empty `points` when the dock goal ends, however it ends.
-   */
-  dockPath: PlannedPath | undefined;
 }
 
 /**
@@ -45,8 +40,7 @@ export interface Telemetry {
  * **The two rates are split, and that split is the point.** Pose and joints
  * are ~20 Hz each; as state they re-rendered the viewport subtree ~40 times a
  * second, so they are refs drained by the canvas's frame loop. `path` stays
- * state: it is ~0.333 Hz and a component outside the canvas branches on it,
- * and so does `dockPath` (2 Hz, only for the last metre of a dock).
+ * state: it is ~0.333 Hz and a component outside the canvas branches on it.
  * A value a component branches on belongs in state; one only a render loop
  * reads does not — which is why the local costmap (2 Hz) and the local plan
  * (5 Hz) are refs on the feed, beside pose and joints.
@@ -57,7 +51,6 @@ export function useTelemetry(): Telemetry {
   const localCostmap = React.useRef<LocalCostmap | undefined>(undefined);
   const localPlan = React.useRef<PlannedPath | undefined>(undefined);
   const [path, setPath] = React.useState<PlannedPath | undefined>(undefined);
-  const [dockPath, setDockPath] = React.useState<PlannedPath | undefined>(undefined);
 
   const feed = React.useMemo<TelemetryFeed>(
     () => ({ pose, joints, localCostmap, localPlan }),
@@ -73,7 +66,6 @@ export function useTelemetry(): Telemetry {
         joints.current = next;
       },
       onPath: setPath,
-      onDockPath: setDockPath,
       onLocalCostmap: (next) => {
         localCostmap.current = next;
       },
@@ -84,5 +76,5 @@ export function useTelemetry(): Telemetry {
     return () => stream.close();
   }, []);
 
-  return { feed, path, dockPath };
+  return { feed, path };
 }

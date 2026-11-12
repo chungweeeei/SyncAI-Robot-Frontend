@@ -68,12 +68,6 @@ export interface TaskStepState {
   message?: string;
   /** Steps sharing a group ran side by side; null on its own (or absent). */
   group?: string | null;
-  /**
-   * A DOCK step's dock pose as dispatched (map frame, theta in degrees); null
-   * on every other step, absent from older backends. What the dashboard
-   * derives the staging point from while the dock runs.
-   */
-  dock?: PlanarPose | null;
   /** ISO 8601 UTC; null until the step starts. Absent from older backends. */
   started_at?: string | null;
   /** ISO 8601 UTC; null until the step ends, however it ends. */
@@ -103,7 +97,6 @@ const TaskStateResponseSchema: z.ZodType<TaskStateResponse> = z.object({
       error_msg: z.string(),
       message: z.string().optional(),
       group: z.string().nullish(),
-      dock: z.object({ x: z.number(), y: z.number(), theta: z.number() }).nullish(),
       started_at: z.string().nullish(),
       ended_at: z.string().nullish(),
       paused_seconds: z.number().optional(),
@@ -143,14 +136,14 @@ const TaskContinuationAckSchema: z.ZodType<TaskContinuationAck> = z.object({
 export type Posture = "STANDUP" | "LIEDOWN";
 
 /**
- * The steps set by a pose in the map frame, which is what ties a job to its
- * map. DOCK carries the *dock* pose: the robot works out the approach point in
- * front of it (lib/map/dock.ts).
+ * The steps set by one pose in the map frame, which is what ties a job to its
+ * map: a Move. Kept as a name so the next one-pose step is one more member
+ * rather than a sweep.
  */
-export type NavStepType = "MOVE" | "DOCK";
+export type NavStepType = "MOVE";
 
 /**
- * Every step set by poses in the map frame: a Move or a Dock (one pose) and a
+ * Every step set by poses in the map frame: a Move (one pose) and a
  * Patrol (an ordered list of them). Each is a stop in the editor, ties a job
  * to its map and occupies the robot's body.
  */
@@ -276,7 +269,7 @@ const stepRequestBase = {
 export const TaskStepRequestSchema: z.ZodType<TaskStepRequest> = z.union([
   z.object({
     ...stepRequestBase,
-    type: z.enum(["MOVE", "DOCK"]),
+    type: z.literal("MOVE"),
     params: MoveStepParamsSchema,
   }),
   z.object({
