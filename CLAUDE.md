@@ -289,7 +289,9 @@ components/
                 (dashboard/vertex-create-dialog.tsx): Detect charger, which
                 has the robot look for the charger with its camera and
                 replaces the placed pose with the one it measured, z
-                included, as is — offered only where the robot is localized
+                included, as is, its heading turned round from the mark's
+                (out of the wall) to the one the robot docks on (into it:
+                lib/map/dock.ts's dockHeadingFromMark) — offered only where the robot is localized
                 on the map being edited, and written by Create as any
                 other: at once on the dashboard, staged here; Add charger
                 — the dashboard's Map strip, the editor's tools with

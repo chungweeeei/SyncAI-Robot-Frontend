@@ -9,6 +9,7 @@ import {
   detectCharger,
   type ChargerDetectCode,
 } from "@/lib/api/landmark";
+import { dockHeadingFromMark } from "@/lib/map/dock";
 import type { PlacedPose } from "@/lib/types/robot";
 
 export interface ChargerDetectOutcome {
@@ -50,8 +51,9 @@ export function useChargerDetect(mapName: string): ChargerDetect {
           `The robot found the charger on "${found.map}", not on this map, so its position was not used.`,
         );
       }
-      // `z` as measured: it is the ground the robot stands on.
-      return { x: found.x, y: found.y, z: found.z, theta: found.theta };
+      // `z` as measured: it is the ground the robot stands on. The heading
+      // is the mark's turned round, the way the robot docks.
+      return { x: found.x, y: found.y, z: found.z, theta: dockHeadingFromMark(found.theta) };
     },
   });
   const { mutateAsync, reset } = mutation;

@@ -4,7 +4,7 @@
 // the leg no row of the operator's names: the dashboard while a dock runs
 // (lib/scene/dock-layer.ts).
 
-import { toRadians } from "@/lib/angle";
+import { normalizeTheta, toRadians } from "@/lib/angle";
 import type { PlanarPose } from "@/lib/types/robot";
 
 /**
@@ -26,4 +26,15 @@ export function stagingPose(dock: PlanarPose): PlanarPose {
     y: dock.y - DOCK_STAGING_DISTANCE_M * Math.sin(radians),
     theta: dock.theta,
   };
+}
+
+/**
+ * A dock's heading from its charger's mark as the robot sees it (degrees).
+ * The detector answers with the mark's normal, out of the wall towards a
+ * robot in front of it; a dock pose's heading is the one the robot walks on
+ * facing, into the wall. Stored as seen, the staging point above lands a
+ * metre inside the wall, facing away from the charger.
+ */
+export function dockHeadingFromMark(markTheta: number): number {
+  return normalizeTheta(markTheta + 180);
 }
