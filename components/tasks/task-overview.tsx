@@ -18,7 +18,7 @@ import { useTaskDispatch } from "@/hooks/use-task-dispatch";
 import { useTaskDraft } from "@/hooks/use-task-draft";
 import type { TaskTemplate } from "@/lib/api/task-template";
 import { draftFromTemplate, draftWouldBeLost } from "@/lib/task/draft-store";
-import { survivingSchedulesNote } from "@/lib/task/library";
+import { deletedSchedulesNote } from "@/lib/task/library";
 import { fromTemplateSteps, toDispatchSteps, toTemplateSteps } from "@/lib/task/step";
 import { TASK_TEMPLATE_NAME_MAX } from "@/lib/task/template";
 
@@ -169,7 +169,7 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
         {orphans.length > 0 && (
           <InstrumentGroup
             label="Schedules no saved task owns"
-            caption="These run steps that are not a saved task, so they are listed apart. Delete one, and schedule a task in its place, to see it on its card."
+            caption="These run steps of their own rather than a saved task, so they are listed apart and do not change when a task is edited. Delete one, and schedule a task in its place, to see it on its card."
           >
             <ScheduleList
               schedules={orphans}
@@ -188,8 +188,8 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
         onClose={() => setDeleting(null)}
       >
         This cannot be undone.
-        {/* Named because they keep running, on their own copy of the steps. */}
-        {deletingSchedules > 0 && ` ${survivingSchedulesNote(deletingSchedules)}`}
+        {/* Named because the robot deletes them too: they run the task itself. */}
+        {deletingSchedules > 0 && ` ${deletedSchedulesNote(deletingSchedules)}`}
       </ConfirmDialog>
 
       <ConfirmDialog

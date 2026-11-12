@@ -120,11 +120,6 @@ export const queryKeys = {
   taskTemplates: ["task-templates"] as const,
   /** GET /api/v1/schedules */
   schedules: ["schedules"] as const,
-  /**
-   * GET /api/v1/schedules/<id> — one schedule with its frozen steps. Not under
-   * `["schedules", …]`, so invalidating the list does not re-read every row.
-   */
-  schedule: (id: string) => ["schedule", id] as const,
   /** GET /api/v1/recordings — shared by the list and the recorder panel. */
   recordings: ["recordings"] as const,
   /**

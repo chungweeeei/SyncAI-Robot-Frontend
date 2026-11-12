@@ -170,7 +170,6 @@ export function TaskTemplateRow({
             schedules={schedules}
             source={template}
             templates={[template]}
-            checkDrift={open}
             {...scheduleActions}
           />
         </section>

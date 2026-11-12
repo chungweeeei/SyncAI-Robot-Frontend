@@ -6,10 +6,7 @@ import { ClockIcon, PauseIcon, PencilIcon, PlayIcon, Trash2Icon } from "lucide-r
 import { ConfirmDialog } from "@/components/console/confirm-dialog";
 import { Chip } from "@/components/console/instrument";
 import { IconButton } from "@/components/tasks/icon-button";
-import {
-  ScheduleDrift,
-  ScheduleSourceChip,
-} from "@/components/tasks/schedule-steps";
+import { ScheduleSourceChip } from "@/components/tasks/schedule-steps";
 import { ScheduleTriggerForm } from "@/components/tasks/schedule-trigger-form";
 import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";
 import type { ScheduleState } from "@/lib/api/schedule";
@@ -40,19 +37,13 @@ export function ScheduleList({
   schedules,
   source,
   templates,
-  checkDrift = false,
   ...actions
 }: ScheduleActions & {
   schedules: readonly ScheduleState[];
-  /** The task they run, compared against what each still runs; null for orphans. */
+  /** The task they run, as it is when each fires; null for orphans. */
   source: TaskTemplate | null;
   /** The library, so an orphan can say why no task owns it. */
   templates: readonly TaskTemplate[];
-  /**
-   * Compare each with what the task does now. One describe RPC a schedule,
-   * so only while the card is open, never for every row the page paints.
-   */
-  checkDrift?: boolean;
 }) {
   return (
     <ul className="space-y-1.5">
@@ -62,7 +53,6 @@ export function ScheduleList({
           schedule={schedule}
           source={source}
           templates={templates}
-          checkDrift={checkDrift}
           {...actions}
         />
       ))}
@@ -74,7 +64,6 @@ function ScheduleRow({
   schedule,
   source,
   templates,
-  checkDrift,
   readAtMs,
   busy,
   onPause,
@@ -84,7 +73,6 @@ function ScheduleRow({
   schedule: ScheduleState;
   source: TaskTemplate | null;
   templates: readonly TaskTemplate[];
-  checkDrift: boolean;
 }) {
   const [editing, setEditing] = React.useState(false);
   const [confirmingDelete, setConfirmingDelete] = React.useState(false);
@@ -181,8 +169,6 @@ function ScheduleRow({
       >
         The robot will stop running it on its own. This cannot be undone.
       </ConfirmDialog>
-
-      {source && checkDrift && <ScheduleDrift scheduleId={schedule.id} source={source} />}
 
       {editing && (
         <ScheduleTriggerForm schedule={schedule} onDone={() => setEditing(false)} />

@@ -1215,6 +1215,18 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         message: key === "4" ? "Emergency stop is not forwarded." : "Sent.",
       });
     }
+    const templateMatch = /^\/api\/v1\/task_templates\/([^/]+)$/.exec(path);
+    if (templateMatch && method === "DELETE") {
+      // The backend deletes a task's schedules with it, so the list the hook
+      // re-reads has to lose them too.
+      const id = decodeURIComponent(templateMatch[1]);
+      for (let at = schedules.length - 1; at >= 0; at -= 1) {
+        if (schedules[at].task_template_id === id) schedules.splice(at, 1);
+      }
+      const at = templates.findIndex((row) => row.id === id);
+      if (at >= 0) templates.splice(at, 1);
+      return json(route, { message: `Task template ${id} has been deleted.` });
+    }
     if (method === "DELETE") return route.fulfill({ status: 204, body: "" });
 
     return json(route, { message: "ok" });

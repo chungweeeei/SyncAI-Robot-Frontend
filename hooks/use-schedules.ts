@@ -13,7 +13,6 @@ import { queryKeys } from "@/lib/api/query-keys";
 import { readStatus } from "@/lib/api/read-state";
 import {
   deleteSchedule,
-  getSchedule,
   listSchedules,
   pauseSchedule,
   resumeSchedule,
@@ -214,29 +213,6 @@ export function useSchedules(): UseSchedules {
 const ok = () => true;
 const no = () => false;
 
-export interface UseSchedule {
-  /** The schedule with its frozen steps, or null until the describe answers. */
-  schedule: ScheduleState | null;
-  status: SchedulesStatus;
-}
-
-/**
- * One schedule including its frozen step list — the per-row describe the list
- * endpoint cannot afford. Mounted when a row is expanded, and under its own key
- * so the list's refresh-on-every-write does not re-describe every open row.
- */
-export function useSchedule(id: string): UseSchedule {
-  const query = useQuery({
-    queryKey: queryKeys.schedule(id),
-    queryFn: ({ signal }) => getSchedule(id, signal),
-  });
-
-  return {
-    schedule: query.data ?? null,
-    status: readStatus(query),
-  };
-}
-
 export interface ScheduleTaskTemplateVariables {
   templateId: string;
   scheduleId: string;
@@ -244,9 +220,10 @@ export interface ScheduleTaskTemplateVariables {
 }
 
 /**
- * POST /api/v1/task_templates/{id}/schedule — freeze a template's current
- * resolution into a schedule. The backend re-resolves, records provenance in
- * the memo, and refuses a run against another map or a deleted vertex.
+ * POST /api/v1/task_templates/{id}/schedule — a schedule that runs the
+ * template as it is each time it fires, so a later edit reaches the next run.
+ * The backend records the template in the memo, and refuses one for another
+ * map than the loaded one or with a deleted waypoint.
  *
  * On success the list is settled until the new row is in it. On a refusal the
  * template library is re-read: the reason is a `vertex_status` or
@@ -294,7 +271,6 @@ export function useUpdateScheduleTrigger() {
           entry.id === id ? { ...entry, trigger, next_run_times: [] } : entry,
         ),
       );
-      void queryClient.invalidateQueries({ queryKey: queryKeys.schedule(id) });
       void settleSchedules(queryClient, (list) => {
         const row = list.find((entry) => entry.id === id);
         return !row || sameTrigger(row.trigger, trigger);

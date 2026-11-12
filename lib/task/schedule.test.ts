@@ -16,13 +16,10 @@ import {
   nextTimedRun,
   sameTrigger,
   scheduleFormSeed,
-  scheduleDrift,
   toCron,
   glanceSchedules,
   upcomingRun,
 } from "@/lib/task/schedule";
-import type { TaskStepRequest } from "@/lib/api/task";
-import type { TemplateStep } from "@/lib/api/task-template";
 
 /**
  * The boundary these guard: the operator sees a time and some weekdays, the
@@ -315,132 +312,6 @@ describe("nextScheduleRefetchMs", () => {
   });
 });
 
-describe("scheduleDrift", () => {
-  // A schedule dispatches the steps it froze at registration. Drift is the
-  // template having moved on since, which the row's "stale" badge counts.
-  const ref = { vertex_id: null, vertex_name: null, vertex_status: "NONE" as const, group: null };
-  const moveT = (id: string, x: number, y: number, theta: number): TemplateStep => ({
-    id,
-    type: "MOVE",
-    params: { x, y, theta },
-    resolved_params: { x, y, theta },
-    ...ref,
-  });
-  const speakT = (id: string, text: string): TemplateStep => ({
-    id,
-    type: "SPEAK",
-    params: { text },
-    resolved_params: { text },
-    ...ref,
-  });
-  const waitT = (id: string, seconds: number): TemplateStep => ({
-    id,
-    type: "WAIT",
-    params: { seconds },
-    resolved_params: { seconds },
-    ...ref,
-  });
-  const standT = (id: string): TemplateStep => ({
-    id,
-    type: "STANDUP",
-    params: null,
-    resolved_params: null,
-    ...ref,
-  });
-  const move = (id: string, x: number, y: number, theta: number): TaskStepRequest => ({
-    id,
-    type: "MOVE",
-    params: { x, y, theta },
-  });
-  const speak = (id: string, text: string): TaskStepRequest => ({
-    id,
-    type: "SPEAK",
-    params: { text },
-  });
-
-  it("is zero when the template still dispatches what was frozen", () => {
-    const frozen = [{ id: "1", type: "STANDUP" as const }, move("2", 1, 2, 90), speak("3", "Hi")];
-    const template = [standT("1"), moveT("2", 1, 2, 90), speakT("3", "Hi")];
-    expect(scheduleDrift(frozen, template)).toBe(0);
-  });
-
-  it("counts a Speak whose count changed, and reads a missing one as once", () => {
-    const said = (repeat: number): TemplateStep => ({
-      id: "1",
-      type: "SPEAK",
-      params: { text: "Hi", repeat },
-      resolved_params: { text: "Hi", repeat },
-      ...ref,
-    });
-    expect(scheduleDrift([speak("1", "Hi")], [said(3)])).toBe(1);
-    // Frozen before the field existed, against a template saying it once.
-    expect(scheduleDrift([speak("1", "Hi")], [said(1)])).toBe(0);
-  });
-
-  it("counts a waypoint that moved", () => {
-    expect(scheduleDrift([move("1", 1, 2, 90)], [moveT("1", 1.5, 2, 90)])).toBe(1);
-  });
-
-  it("ignores a difference the console cannot display or dispatch", () => {
-    // Float noise below the third decimal, and below the heading's first.
-    expect(scheduleDrift([move("1", 1, 2, 90)], [moveT("1", 1.0000001, 2, 90.04)])).toBe(0);
-  });
-
-  it("counts a heading that changed at the precision shown", () => {
-    expect(scheduleDrift([move("1", 1, 2, 90)], [moveT("1", 1, 2, 90.06)])).toBe(1);
-  });
-
-  it("counts an edited line, since the schedule still says the old one", () => {
-    expect(scheduleDrift([speak("1", "Hello")], [speakT("1", "Hello there")])).toBe(1);
-  });
-
-  it("counts an edited duration, and not an unchanged one", () => {
-    const frozen: TaskStepRequest[] = [{ id: "1", type: "WAIT", params: { seconds: 10 } }];
-    expect(scheduleDrift(frozen, [waitT("1", 30)])).toBe(1);
-    expect(scheduleDrift(frozen, [waitT("1", 10)])).toBe(0);
-  });
-
-  it("counts a step whose type changed", () => {
-    expect(scheduleDrift([speak("1", "Hi")], [moveT("1", 0, 0, 0)])).toBe(1);
-  });
-
-  it("counts a step that now starts together with the one above, or no longer does", () => {
-    const frozen = [move("1-move", 1, 2, 0), speak("2-speak", "hi")];
-    const grouped = [
-      { ...moveT("1-move", 1, 2, 0), group: "g1" },
-      { ...speakT("2-speak", "hi"), group: "g1" },
-    ];
-    expect(scheduleDrift(frozen, grouped)).toBe(1);
-    expect(
-      scheduleDrift(
-        frozen.map((step) => ({ ...step, group: "g1" })),
-        [moveT("1-move", 1, 2, 0), speakT("2-speak", "hi")],
-      ),
-    ).toBe(1);
-    // A group renamed in place is the same job.
-    expect(
-      scheduleDrift(frozen.map((step) => ({ ...step, group: "a" })), grouped),
-    ).toBe(0);
-  });
-
-  it("counts each drifted step once", () => {
-    const frozen = [move("1", 0, 0, 0), speak("2", "a"), move("3", 5, 5, 0)];
-    const template = [moveT("1", 1, 0, 0), speakT("2", "b"), moveT("3", 5, 5, 0)];
-    expect(scheduleDrift(frozen, template)).toBe(2);
-  });
-
-  it("is not comparable when the step count changed", () => {
-    // A per-step diff after steps were added or removed would be a number
-    // that means nothing.
-    expect(scheduleDrift([move("1", 0, 0, 0)], [moveT("1", 0, 0, 0), standT("2")])).toBeNull();
-  });
-
-  it("is not comparable when a template step has nothing to dispatch", () => {
-    const unresolved: TemplateStep = { ...moveT("1", 0, 0, 0), resolved_params: null };
-    expect(scheduleDrift([move("1", 0, 0, 0)], [unresolved])).toBeNull();
-  });
-});
-
 describe("scheduleFormSeed", () => {
   it("opens a preset day set as that preset, not as a custom pick", () => {
     expect(scheduleFormSeed({ cron: "0 9 * * *" })).toMatchObject({
@@ -530,32 +401,5 @@ describe("sameTrigger", () => {
       ),
     ).toBe(true);
     expect(sameTrigger({ interval_seconds: 1800 }, { cron: "0 9 * * *" })).toBe(false);
-  });
-});
-
-describe("scheduleDrift for a patrol", () => {
-  const poses = (...xs: number[]) => xs.map((x) => ({ x, y: 0, theta: 0, z: 0 }));
-  const patrolT = (xs: number[]): TemplateStep => ({
-    id: "1-patrol",
-    type: "PATROL",
-    vertex_id: null,
-    vertex_name: null,
-    vertex_status: "NONE",
-    group: null,
-    params: { waypoints: poses(...xs) },
-    resolved_params: { waypoints: poses(...xs) },
-    vertex_ids: xs.map(() => null),
-    vertex_names: xs.map(() => null),
-    vertex_statuses: xs.map(() => "NONE" as const),
-  });
-  const frozen = (xs: number[]): TaskStepRequest[] => [
-    { id: "1-patrol", type: "PATROL", params: { waypoints: poses(...xs) } },
-  ];
-
-  it("is one stale step when a waypoint moved or one was added", () => {
-    expect(scheduleDrift(frozen([1, 2]), [patrolT([1, 2])])).toBe(0);
-    expect(scheduleDrift(frozen([1, 2]), [patrolT([1, 2.0004])])).toBe(0);
-    expect(scheduleDrift(frozen([1, 2]), [patrolT([1, 3])])).toBe(1);
-    expect(scheduleDrift(frozen([1, 2]), [patrolT([1, 2, 3])])).toBe(1);
   });
 });
