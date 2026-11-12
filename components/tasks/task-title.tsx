@@ -77,7 +77,7 @@ export function TaskTitle({
         aria-invalid={missing || undefined}
         aria-describedby={missing || duplicate ? hintId : undefined}
         placeholder="Name this task"
-        className="h-9 -ml-2.5 border-transparent bg-transparent text-xl font-semibold tracking-tight hover:border-input md:text-xl dark:bg-transparent"
+        className="h-9 -ml-2.5 border-transparent bg-transparent text-xl font-semibold tracking-tight hover:border-input pointer-coarse:text-xl dark:bg-transparent"
       />
       {missing ? (
         <p id={hintId} className="text-[11px] leading-tight text-signal-warn">

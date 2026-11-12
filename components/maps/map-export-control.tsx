@@ -2,6 +2,7 @@
 
 import { DownloadIcon } from "lucide-react";
 
+import { ErrorLine } from "@/components/console/error-line";
 import { useExportMap } from "@/hooks/use-map-actions";
 import type { MapSummary } from "@/lib/types/map";
 
@@ -55,12 +56,9 @@ export function MapExportControl({ map }: { map: MapSummary }) {
         </span>
       </button>
       {error && (
-        <p
-          role="alert"
-          className="basis-full text-[11px] leading-snug text-signal-warn"
-        >
+        <ErrorLine className="basis-full">
           {error}
-        </p>
+        </ErrorLine>
       )}
     </>
   );

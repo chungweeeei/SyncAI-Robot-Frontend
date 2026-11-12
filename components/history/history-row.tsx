@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ChevronDownIcon, RotateCcwIcon } from "lucide-react";
 
+import { ErrorLine } from "@/components/console/error-line";
 import { TaskStatusChip } from "@/components/console/task-chip";
 import { GroupRail } from "@/components/tasks/group-rail";
 import { Button } from "@/components/ui/button";
@@ -123,9 +124,9 @@ function RetryFromFailure({
         Retry from step {start.ordinal}
       </Button>
       {send.error && (
-        <p role="alert" className="text-[11px] leading-snug break-words text-signal-warn">
+        <ErrorLine>
           {send.error.message}
-        </p>
+        </ErrorLine>
       )}
       {send.data && (
         <p role="status" className="text-[11px] leading-snug text-muted-foreground">
@@ -152,9 +153,9 @@ function RunSteps({ entry }: { entry: TaskHistoryEntry }) {
   // The backend's sentence — most often that the job has aged out.
   if (status === "error") {
     return (
-      <p role="alert" className="text-[11px] leading-snug text-signal-warn">
+      <ErrorLine>
         {error}
-      </p>
+      </ErrorLine>
     );
   }
 

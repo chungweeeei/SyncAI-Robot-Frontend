@@ -3,8 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import { scanWifiNetworks, type WifiNetwork } from "@/lib/api/network";
 import { queryKeys } from "@/lib/api/query-keys";
+import { readStatus } from "@/lib/api/read-state";
+import type { ReadStatus } from "@/lib/types/read";
 
-export type WifiScanStatus = "loading" | "ok" | "error";
+export type WifiScanStatus = ReadStatus;
 
 export interface UseWifiScan {
   /** The last successful scan; a failed rescan keeps it. */
@@ -40,7 +42,7 @@ export function useWifiScan(): UseWifiScan {
 
   return {
     networks: data ?? null,
-    status: isPending ? "loading" : isError ? "error" : "ok",
+    status: readStatus({ isPending, isError }),
     scanning: isFetching,
     error: error ? (error instanceof Error ? error.message : String(error)) : null,
     rescan,

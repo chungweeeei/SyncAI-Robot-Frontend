@@ -1,17 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeftIcon, Trash2Icon, XIcon } from "lucide-react";
+import { XIcon } from "lucide-react";
 
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/console/confirm-dialog";
 import { useDeleteRecording } from "@/hooks/use-recorder";
 import type { RecordingSummary } from "@/lib/api/recording";
 import { formatSize } from "@/lib/recording/format";
@@ -75,7 +67,7 @@ export function RecordingDeleteControl({
           aria-label={`Delete ${recording.name}`}
           title={`Delete ${recording.name}`}
           className={cn(
-            "flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors",
+            "flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors pointer-coarse:size-10",
             "hover:bg-signal-warn/12 hover:text-signal-warn",
           )}
         >
@@ -83,47 +75,17 @@ export function RecordingDeleteControl({
         </button>
       )}
 
-      <AlertDialog
+      <ConfirmDialog
         open={confirming}
-        onOpenChange={(open) => {
-          if (!open && !busy) close();
-        }}
+        title={<>Delete {recording.name}?</>}
+        busy={busy}
+        error={error}
+        onConfirm={submit}
+        onClose={close}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            {/* wrap-anywhere: names have no spaces and the popup is phone-wide. */}
-            <AlertDialogTitle className="wrap-anywhere">
-              Delete {recording.name}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {formatSize(recording.size_bytes)} of sensor data. The only way
-              back is to drive the same route again.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {error && (
-            <p role="alert" className="text-[11px] leading-tight text-signal-warn">
-              {error}
-            </p>
-          )}
-
-          <AlertDialogFooter>
-            <Button variant="ghost" size="sm" disabled={busy} onClick={close}>
-              <ArrowLeftIcon data-icon="inline-start" />
-              Keep
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={busy}
-              onClick={submit}
-            >
-              <Trash2Icon data-icon="inline-start" />
-              {busy ? "Deleting…" : "Delete"}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        {formatSize(recording.size_bytes)} of sensor data. The only way back is
+        to drive the same route again.
+      </ConfirmDialog>
     </>
   );
 }

@@ -1,7 +1,7 @@
 // The map catalogue: /api/v1/maps and everything under /api/v1/maps/{name}/.
 
 import { apiUrl } from "@/lib/api/config";
-import { z } from "zod";
+import * as z from "zod";
 
 import { readBlob, requestJson, requestRaw } from "@/lib/api/http";
 import { decodeOctomapBt } from "@/lib/map/octree";

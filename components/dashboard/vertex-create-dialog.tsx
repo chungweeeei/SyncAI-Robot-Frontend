@@ -3,7 +3,8 @@
 import * as React from "react";
 import { Loader2Icon, LocateFixedIcon, MapPinPlusIcon, ScanSearchIcon } from "lucide-react";
 
-import { Readout } from "@/components/console/instrument";
+import { ErrorLine } from "@/components/console/error-line";
+import { PoseReadouts } from "@/components/console/instrument";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -22,29 +23,12 @@ import {
 } from "@/components/ui/select";
 import { DEFAULT_VERTEX_TYPE, VERTEX_TYPES } from "@/lib/map/vertex";
 import type { VertexType } from "@/lib/types/map";
+import type { Placement } from "@/lib/types/placement";
 import type { PlacedPose, PlanarPose } from "@/lib/types/robot";
 
-/**
- * One placement awaiting a name. The form remounts per `key`, so a typed name
- * never carries to the next stop; Use robot position and Detect charger keep
- * the key and the name.
- */
-export interface Placement {
-  key: number;
-  /** With the ground height of the floor it was placed on. */
-  pose: PlacedPose;
-  /**
-   * The pose is the charger's as the robot measured it. Part of the placement
-   * rather than of the request, so it is gone the moment the pose is anything
-   * else.
-   */
-  detected?: boolean;
-  /**
-   * Placed with Add charger: the type is Charger from the start and stays
-   * so. The pose is still the press's until a source replaces it.
-   */
-  charger?: boolean;
-}
+// In lib/types because useWaypointPlacement holds one, and a hook may not
+// import from components/.
+export type { Placement };
 
 /** Detect charger as the dialog sees it: one request, owned by the caller. */
 export interface ChargerDetectControl {
@@ -280,16 +264,13 @@ function NameForm({
 
       {/* The same readouts as the goal read-back, so the aim can be checked. */}
       <div className="space-y-1 rounded-md border border-hairline bg-elevated/50 p-2.5">
-        <Readout label="X" value={pose.x.toFixed(2)} unit="m" tone="cmd" />
-        <Readout label="Y" value={pose.y.toFixed(2)} unit="m" tone="cmd" />
-        <Readout label="Z" value={pose.z.toFixed(2)} unit="m" tone="cmd" />
-        <Readout label="Orientation" value={pose.theta.toFixed(1)} unit="°" tone="cmd" />
+        <PoseReadouts pose={pose} tone="cmd" />
       </div>
 
       {shownError && (
-        <p role="alert" className="text-[11px] leading-snug break-words text-signal-warn">
+        <ErrorLine>
           {shownError}
-        </p>
+        </ErrorLine>
       )}
       {lockedReason && (
         <p className="text-[11px] leading-snug text-signal-caution">{lockedReason}</p>

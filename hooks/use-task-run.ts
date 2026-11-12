@@ -4,9 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import { queryKeys } from "@/lib/api/query-keys";
 import { fetchTaskState, type TaskStepState } from "@/lib/api/task";
+import type { ReadStatus } from "@/lib/types/read";
 
 export interface UseTaskRun {
-  status: "loading" | "ok" | "error";
+  status: ReadStatus;
   steps: TaskStepState[];
   error: string | null;
 }

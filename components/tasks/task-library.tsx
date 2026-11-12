@@ -107,7 +107,7 @@ export function TaskLibrary({
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search tasks"
           aria-label="Search tasks"
-          className="h-8 pl-7 md:text-[13px]"
+          className="h-8 pl-7 text-[13px]"
         />
       </label>
 

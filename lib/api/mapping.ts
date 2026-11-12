@@ -1,6 +1,6 @@
 // The mapping run: mode switch, start, save, discard, and its state.
 
-import { z } from "zod";
+import * as z from "zod";
 
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";

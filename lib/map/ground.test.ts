@@ -59,6 +59,17 @@ describe("columnStacks", () => {
     expect(stacks.kz.length).toBe(voxels.count);
   });
 
+  it("sorts a column the tree handed over highest first", () => {
+    const voxels = site();
+    // The same cells back to front: every column of more than one cell is
+    // now out of order, and the single-cell ones must come through untouched.
+    const cells = [...voxels.keys];
+    const reversed: number[] = [];
+    for (let i = cells.length - 3; i >= 0; i -= 3) reversed.push(cells[i], cells[i + 1], cells[i + 2]);
+    const stacks = columnStacks({ ...voxels, keys: Uint16Array.from(reversed) });
+    expect(stacks).toEqual(columnStacks(voxels));
+  });
+
   it("answers whether a column holds a cell in a height range", () => {
     const stacks = columnStacks(site());
     expect(occupiedIn(stacks, index(6, 6), 1, 29)).toBe(false);

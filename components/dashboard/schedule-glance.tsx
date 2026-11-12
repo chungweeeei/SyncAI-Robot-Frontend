@@ -3,7 +3,6 @@
 import * as React from "react";
 import Link from "next/link";
 import {
-  ArrowLeftIcon,
   ArrowUpRightIcon,
   EllipsisIcon,
   PauseIcon,
@@ -11,16 +10,9 @@ import {
   Trash2Icon,
 } from "lucide-react";
 
+import { ErrorLine } from "@/components/console/error-line";
 import { InstrumentGroup } from "@/components/console/instrument";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/console/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -118,57 +110,28 @@ export function ScheduleGlance() {
 
       {/* A delete's refusal is the dialog's to show. */}
       {error && !deleting && (
-        <p role="alert" className="text-[11px] leading-snug text-signal-warn">
+        <ErrorLine>
           {error}
-        </p>
+        </ErrorLine>
       )}
 
       {/* A refusal keeps it open with the backend's sentence. */}
-      <AlertDialog
+      <ConfirmDialog
         open={deleting !== null}
-        onOpenChange={(open) => {
-          if (!open && !busy) closeDelete();
+        title={<>Delete {deleting?.name}?</>}
+        busy={busy}
+        error={deleting ? error : null}
+        onConfirm={() => {
+          if (!deleting) return;
+          void remove(deleting.id).then((gone) => {
+            if (gone) setDeleting(null);
+          });
         }}
+        onClose={closeDelete}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="wrap-anywhere">
-              Delete {deleting?.name}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              The robot will stop running it on its own. This cannot be undone —
-              it would have to be scheduled again from Tasks.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {error && deleting && (
-            <p role="alert" className="text-[11px] leading-tight text-signal-warn">
-              {error}
-            </p>
-          )}
-
-          <AlertDialogFooter>
-            <Button variant="ghost" size="sm" disabled={busy} onClick={closeDelete}>
-              <ArrowLeftIcon data-icon="inline-start" />
-              Keep
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={busy}
-              onClick={() => {
-                if (!deleting) return;
-                void remove(deleting.id).then((gone) => {
-                  if (gone) setDeleting(null);
-                });
-              }}
-            >
-              <Trash2Icon data-icon="inline-start" />
-              {busy ? "Deleting…" : "Delete"}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        The robot will stop running it on its own. This cannot be undone — it
+        would have to be scheduled again from Tasks.
+      </ConfirmDialog>
     </InstrumentGroup>
   );
 }

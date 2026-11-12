@@ -42,7 +42,13 @@ export function snapshotBands(floors: readonly MapFloor[]): Array<{ lo: number; 
 export function snapshotPoints(
   voxels: OccupiedVoxels,
   bands: ReadonlyArray<{ lo: number; hi: number }>,
-): { positions: Float32Array; colors: Float32Array; count: number } {
+): {
+  positions: Float32Array;
+  colors: Float32Array;
+  count: number;
+  /** The heights the colours run over, for `pointsBox`: a sort not made twice. */
+  heights: { lo: number; hi: number };
+} {
   const all = voxelPositions(voxels);
   const positions = new Float32Array(all.length);
   let count = 0;
@@ -65,7 +71,7 @@ export function snapshotPoints(
     colors[i + 1] = rgb[1];
     colors[i + 2] = rgb[2];
   }
-  return { positions: kept, colors, count };
+  return { positions: kept, colors, count, heights: { lo, hi } };
 }
 
 /**
@@ -74,10 +80,12 @@ export function snapshotPoints(
  * shrink the building to the middle of the card. What lies past it is drawn
  * all the same, at the edge of the frame or just past it.
  */
-export function pointsBox(positions: Float32Array): THREE.Box3 {
+export function pointsBox(
+  positions: Float32Array,
+  z: { lo: number; hi: number } = heightRange(positions, 2, 3),
+): THREE.Box3 {
   const x = heightRange(positions, 0, 3);
   const y = heightRange(positions, 1, 3);
-  const z = heightRange(positions, 2, 3);
   return new THREE.Box3(new THREE.Vector3(x.lo, y.lo, z.lo), new THREE.Vector3(x.hi, y.hi, z.hi));
 }
 
@@ -134,14 +142,14 @@ export function fitCamera(camera: THREE.PerspectiveCamera, box: THREE.Box3): voi
  * pixel of the still, and an attenuated sprite that small drops out.
  */
 export function renderVoxelSnapshot(voxels: OccupiedVoxels, floors: readonly MapFloor[]): string | null {
-  const { positions, colors, count } = snapshotPoints(voxels, snapshotBands(floors));
+  const { positions, colors, count, heights } = snapshotPoints(voxels, snapshotBands(floors));
   if (count === 0) return null;
 
   const camera = new THREE.PerspectiveCamera(
     SNAPSHOT_FOV_DEG,
     SNAPSHOT_WIDTH_PX / SNAPSHOT_HEIGHT_PX,
   );
-  const box = pointsBox(positions);
+  const box = pointsBox(positions, heights);
   fitCamera(camera, box);
   const distance = camera.position.distanceTo(box.getCenter(new THREE.Vector3()));
   const pxPerMetre =

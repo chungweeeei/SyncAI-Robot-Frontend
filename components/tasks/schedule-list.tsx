@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ClockIcon, PauseIcon, PencilIcon, PlayIcon, Trash2Icon } from "lucide-react";
 
+import { ConfirmDialog } from "@/components/console/confirm-dialog";
 import { Chip } from "@/components/console/instrument";
 import { IconButton } from "@/components/tasks/icon-button";
 import {
@@ -86,6 +87,7 @@ function ScheduleRow({
   checkDrift: boolean;
 }) {
   const [editing, setEditing] = React.useState(false);
+  const [confirmingDelete, setConfirmingDelete] = React.useState(false);
   const timezone = useBrowserTimeZone();
 
   /** See upcomingRun for paused rows and runs already past. */
@@ -158,21 +160,27 @@ function ScheduleRow({
             label="Delete schedule"
             disabled={busy}
             className="text-signal-warn hover:bg-signal-warn/12"
-            onClick={() => {
-              // A confirm, since there is no undo.
-              if (
-                window.confirm(
-                  `Delete schedule "${schedule.id}"? This cannot be undone.`,
-                )
-              ) {
-                onDelete(schedule.id);
-              }
-            }}
+            // Asked first, since there is no undo: the dashboard's dialog
+            // for the same act.
+            onClick={() => setConfirmingDelete(true)}
           >
             <Trash2Icon className="size-3.5" aria-hidden />
           </IconButton>
         </div>
       </div>
+
+      {/* Closes on the answer: a refusal is the list's own error line. */}
+      <ConfirmDialog
+        open={confirmingDelete}
+        title={<>Delete schedule {schedule.id}?</>}
+        onConfirm={() => {
+          setConfirmingDelete(false);
+          onDelete(schedule.id);
+        }}
+        onClose={() => setConfirmingDelete(false)}
+      >
+        The robot will stop running it on its own. This cannot be undone.
+      </ConfirmDialog>
 
       {source && checkDrift && <ScheduleDrift scheduleId={schedule.id} source={source} />}
 

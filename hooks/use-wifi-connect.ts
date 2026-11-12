@@ -11,6 +11,7 @@ import {
   type WifiConnection,
 } from "@/lib/api/network";
 import { mutationKeys, queryKeys } from "@/lib/api/query-keys";
+import type { ReadStatus } from "@/lib/types/read";
 import type { RobotNetworkStatus } from "@/lib/types/robot";
 
 /** How a connect attempt ended. */
@@ -28,7 +29,7 @@ type JoinRequest =
 export interface WifiConnect {
   /** RobotState.network_status from the shared 1 Hz poll. */
   current: RobotNetworkStatus | null;
-  stateStatus: "loading" | "ok" | "error";
+  stateStatus: ReadStatus;
   /**
    * The SSID a connect is heading for. Derived: null the moment a state frame
    * reports that SSID, as with useModeSwitch's `pending`.

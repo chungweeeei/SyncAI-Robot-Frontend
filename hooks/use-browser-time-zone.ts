@@ -2,9 +2,8 @@
 
 import * as React from "react";
 
+import { neverChanges } from "@/hooks/use-mounted";
 import { browserTimeZone } from "@/lib/task/schedule";
-
-const neverChanges = () => () => {};
 
 /**
  * The browser's time zone (`Asia/Taipei`), or "" on the server. Every consumer

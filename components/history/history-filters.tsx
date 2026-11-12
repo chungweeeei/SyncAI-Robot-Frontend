@@ -83,7 +83,7 @@ function Picker({
           if (next !== null) onPick(next);
         }}
       >
-        <SelectTrigger id={id} size="sm" className="h-7 min-w-32 rounded-sm text-[12px] pointer-coarse:h-10">
+        <SelectTrigger id={id} size="sm" className="min-w-32 rounded-sm text-[12px]">
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
@@ -210,7 +210,7 @@ export function HistoryFilters({ filter, onChange, names, timeZone }: HistoryFil
               value={isoToLocalInput(custom.from)}
               max={isoToLocalInput(custom.to)}
               onChange={(event) => setBound("from", event.target.value)}
-              className="h-7 w-auto rounded-sm text-[12px] md:text-[12px] pointer-coarse:h-10"
+              className="h-7 w-auto rounded-sm text-[12px] pointer-coarse:h-10"
             />
           </label>
           <label htmlFor={toId} className="flex flex-col gap-1">
@@ -221,7 +221,7 @@ export function HistoryFilters({ filter, onChange, names, timeZone }: HistoryFil
               value={isoToLocalInput(custom.to)}
               min={isoToLocalInput(custom.from)}
               onChange={(event) => setBound("to", event.target.value)}
-              className="h-7 w-auto rounded-sm text-[12px] md:text-[12px] pointer-coarse:h-10"
+              className="h-7 w-auto rounded-sm text-[12px] pointer-coarse:h-10"
             />
           </label>
           {/* Which clock the fields are in; unknown to the server render, so

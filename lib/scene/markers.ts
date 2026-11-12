@@ -2,6 +2,7 @@
 
 import * as THREE from "three";
 
+import { toRadians } from "@/lib/angle";
 import { drawnGround } from "@/lib/map/floors";
 import type { PlanarPose } from "@/lib/types/robot";
 
@@ -77,7 +78,7 @@ export function placePoseMarker(
   marker.visible = pose !== null;
   if (!pose) return;
   marker.position.set(pose.x, pose.y, drawnGround(pose.z ?? 0) + MARKER_Z_M);
-  marker.rotation.z = (pose.theta * Math.PI) / 180;
+  marker.rotation.z = toRadians(pose.theta);
 }
 
 /** Recolour a marker built by `createPoseMarker` (shared material). */

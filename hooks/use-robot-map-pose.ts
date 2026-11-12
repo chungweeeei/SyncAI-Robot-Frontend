@@ -2,9 +2,9 @@
 
 import * as React from "react";
 
-import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
+import { useRobotStateSelect } from "@/hooks/use-console-robot-state";
 import { useActiveMap } from "@/hooks/use-maps";
-import type { PlanarPose } from "@/lib/types/robot";
+import type { PlanarPose, RobotState } from "@/lib/types/robot";
 
 export interface UseRobotMapPose {
   /**
@@ -25,19 +25,24 @@ export interface UseRobotMapPose {
  * `localization_valid`: the socket cannot say its last frame stopped being
  * true.
  */
+function localizedPose(state: RobotState) {
+  const { x, y, theta, z } = state.localization_status.position;
+  return { valid: state.localization_valid, x, y, theta, z: z ?? 0 };
+}
+
 export function useRobotMapPose(name: string): UseRobotMapPose {
-  const { state } = useConsoleRobotState();
+  // The fields this answer is made of and nothing else: the frame's
+  // timestamp moves every second and would re-render the editor while the
+  // robot stands still.
+  const fix = useRobotStateSelect(localizedPose);
   const { map: activeMap, status: mapsStatus } = useActiveMap();
 
-  const position = state?.localization_status.position;
-  // Primitives, not `state`, whose timestamp moves every second and would
-  // re-render the editor while the robot stands still.
-  const hasState = state !== null;
-  const valid = state?.localization_valid ?? false;
-  const x = position?.x ?? 0;
-  const y = position?.y ?? 0;
-  const theta = position?.theta ?? 0;
-  const z = position?.z ?? 0;
+  const hasState = fix !== undefined;
+  const valid = fix?.valid ?? false;
+  const x = fix?.x ?? 0;
+  const y = fix?.y ?? 0;
+  const theta = fix?.theta ?? 0;
+  const z = fix?.z ?? 0;
 
   const activeName = activeMap?.name ?? null;
 

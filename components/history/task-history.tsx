@@ -2,11 +2,12 @@
 
 import * as React from "react";
 
+import { ErrorLine } from "@/components/console/error-line";
 import { HistoryDashboard } from "@/components/history/history-dashboard";
 import { HistoryFilters } from "@/components/history/history-filters";
 import { HistoryPager } from "@/components/history/history-pager";
 import { HistoryRow } from "@/components/history/history-row";
-import { Notice } from "@/components/history/notice";
+import { LoadingList, Notice } from "@/components/console/notice";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";
@@ -24,22 +25,6 @@ import {
   type HistoryStatusFilter,
 } from "@/lib/task/history";
 import { cn } from "@/lib/utils";
-
-function LoadingList() {
-  return (
-    <div
-      className="divide-y divide-hairline rounded-md border border-hairline bg-panel"
-      aria-busy
-    >
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="flex items-center gap-3 px-4 py-3">
-          <Skeleton className="h-5 w-20" />
-          <Skeleton className="h-4 w-40" />
-        </div>
-      ))}
-    </div>
-  );
-}
 
 /**
  * Finished jobs on this robot: counted, then listed newest first.
@@ -115,7 +100,14 @@ function HistoryList({
   narrowed: boolean;
   clear: () => void;
 }) {
-  if (history.status === "loading") return <LoadingList />;
+  if (history.status === "loading") {
+    return (
+      <LoadingList rowClassName="flex items-center gap-3">
+        <Skeleton className="h-5 w-20" />
+        <Skeleton className="h-4 w-40" />
+      </LoadingList>
+    );
+  }
 
   if (history.status === "error") {
     return (
@@ -193,9 +185,9 @@ function HistoryList({
       </ul>
 
       {history.error && (
-        <p role="alert" className="text-[11px] leading-snug text-signal-warn">
+        <ErrorLine>
           {history.error}
-        </p>
+        </ErrorLine>
       )}
     </div>
   );

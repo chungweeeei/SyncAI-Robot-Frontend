@@ -380,7 +380,7 @@ function SettingRow({
               onChange={(event) => onChange(event.target.value)}
               aria-invalid={invalid ? true : undefined}
               aria-describedby={cn(descriptionId, invalid && errorId, field.unit && unitId)}
-              className={cn("readout text-right md:text-[13px]", field.unit && "pr-14")}
+              className={cn("readout text-right text-[13px]", field.unit && "pr-14")}
             />
             {field.unit && (
               <span

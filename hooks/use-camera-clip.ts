@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { useLeaveGuard } from "@/hooks/use-leave-guard";
+import { neverChanges } from "@/hooks/use-mounted";
 import {
   pickClipFormat,
   startClipCapture,
@@ -17,8 +18,6 @@ function clipFormat(): ClipFormat | null {
   if (probed === undefined) probed = pickClipFormat();
   return probed;
 }
-
-const neverChanges = () => () => {};
 
 export interface CameraClip {
   /** False when this browser can write no video file at all. */

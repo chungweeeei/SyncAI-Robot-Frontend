@@ -21,7 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { IconButton } from "@/components/tasks/icon-button";
+import { IconButton, iconButtonClass } from "@/components/tasks/icon-button";
 import { ScheduleList, type ScheduleActions } from "@/components/tasks/schedule-list";
 import { useStepCatalogue } from "@/hooks/use-step-catalogue";
 import type { ScheduleState } from "@/lib/api/schedule";
@@ -38,6 +38,7 @@ import {
 } from "@/lib/task/library";
 import { patrolRoute, repeatSuffix } from "@/lib/task/step";
 import { formatDuration } from "@/lib/task/stops";
+import { cn } from "@/lib/utils";
 
 export interface TaskTemplateRowProps {
   template: TaskTemplate;
@@ -142,7 +143,7 @@ export function TaskTemplateRow({
             <DropdownMenuTrigger
               aria-label={`More for "${template.name}"`}
               disabled={busy}
-              className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-30 pointer-coarse:size-10"
+              className={cn(iconButtonClass, "disabled:opacity-30")}
             >
               <EllipsisIcon className="size-3.5" aria-hidden />
             </DropdownMenuTrigger>

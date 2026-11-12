@@ -31,7 +31,7 @@ import {
   LIVE_POINT_SIZE,
   MAP_POINT_SIZE,
   MAX_LIVE_POINTS,
-  heightColor,
+  writeHeightColor,
 } from "@/lib/scene/live-cloud";
 import {
   createPoseMarker,
@@ -49,10 +49,16 @@ import {
   createPathRibbon,
   type PathRibbon,
 } from "@/lib/scene/path-ribbon";
-import { aimRaycaster, intersectGround } from "@/lib/scene/picking";
-import { drawnGround, snapToGroundFloor } from "@/lib/map/floors";
+import {
+  aimRaycaster,
+  createRectCache,
+  intersectGround,
+  pickVertex as pickLayerVertex,
+} from "@/lib/scene/picking";
+import { toRadians } from "@/lib/angle";
+import { bandRange, drawnGround, snapToGroundFloor } from "@/lib/map/floors";
 import { columnAt, columnStacks, surfaceTopNear } from "@/lib/map/ground";
-import { POSE_EASE_TAU_S, type SmoothPose } from "@/lib/scene/pose";
+import { POSE_EASE_TAU_S, poseMoved, type SmoothPose } from "@/lib/scene/pose";
 import {
   ROBOT_BASE_HEIGHT_M,
   loadRobotModel,
@@ -69,7 +75,12 @@ import {
   createVertexLayer,
   type VertexLayer,
 } from "@/lib/scene/vertex-layer";
-import { headingDegrees, isDrag } from "@/lib/map/gesture";
+import {
+  isDrag,
+  placeGesture,
+  type PlaceAnchor,
+  type PlaceEvent,
+} from "@/lib/map/gesture";
 import type { MapVertex, ZonePolygon } from "@/lib/types/map";
 import type { OccupiedVoxels } from "@/lib/types/octree";
 import type {
@@ -84,6 +95,13 @@ import type { StreamStatus } from "@/lib/types/stream";
 // robot does not read as a pose already set. Small enough to stay lined up with
 // the marker ring on the floor below it.
 const CARRY_LIFT_M = 0.35;
+
+/**
+ * How far a joint has to turn from the angle last applied before it is
+ * applied again, radians. A standing robot's joints arrive twenty times a
+ * second with their last digits moving; each would otherwise be a redraw.
+ */
+const JOINT_REDRAW_RAD = 0.0005;
 
 /**
  * The kinds of pose a drag on the viewport can produce.
@@ -315,7 +333,30 @@ export function PointCloudCanvas({
 }: PointCloudCanvasProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
+  // One object per theme, so an effect that draws in its hues can list it.
+  const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
   const gpu = useGpuContext();
+
+  /**
+   * Set when the picture is out of date. The loop draws only then, or while
+   * the camera or the robot moves: a still view is not redrawn sixty times a
+   * second, which with the 3D map up is the whole map into the shading pass
+   * and a full-screen draw a frame for nothing, on a robot's GPU or a
+   * phone's battery. What changes the picture outside a render says so here:
+   * a scan frame, a streamed map frame, the robot's model landing, a floor
+   * switch's lift.
+   */
+  const frameDirtyRef = React.useRef(true);
+  const invalidate = React.useCallback(() => {
+    frameDirtyRef.current = true;
+  }, []);
+  // And every render says so for itself, with no deps on purpose: a prop or
+  // a state that changed may have moved a layer, a marker or a band, in any
+  // of thirty effects, and one frame drawn for a render that moved nothing
+  // is cheaper than the effect that forgot to ask.
+  React.useEffect(() => {
+    frameDirtyRef.current = true;
+  });
 
   // Pose being carried / dragged. State so the marker effect runs per pointer
   // move; that costs a marker transform, not a scene rebuild.
@@ -446,7 +487,6 @@ export function PointCloudCanvas({
         "position",
         new THREE.BufferAttribute(frame.positions, 3),
       );
-      const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
       // Dim and solid like the static map cloud, so the live scan reads on top.
       const points = new THREE.Points(
         geom,
@@ -460,8 +500,9 @@ export function PointCloudCanvas({
       points.frustumCulled = false;
       ctx.streamedMapPoints = points;
       ctx.scene.add(points);
+      invalidate();
     },
-    [resolvedTheme],
+    [theme, invalidate],
   );
 
   // Through a ref so a theme change re-tints via the setup effect's re-apply
@@ -503,11 +544,16 @@ export function PointCloudCanvas({
   const latestJointsRef = React.useRef<Record<string, number> | undefined>(
     undefined,
   );
+  /** The angle each joint was last turned to, which the next is measured from. */
+  const appliedJointsRef = React.useRef(new Map<string, number>());
 
+  /** Turn the model's joints to the latest angles; true when any moved enough to show. */
   const applyJoints = React.useCallback(() => {
     const nodes = jointNodesRef.current;
     const target = latestJointsRef.current;
-    if (!nodes || !target) return;
+    if (!nodes || !target) return false;
+    const applied = appliedJointsRef.current;
+    let moved = false;
     for (const [name, q] of Object.entries(target)) {
       const joint = nodes.get(name);
       if (!joint) {
@@ -520,13 +566,20 @@ export function PointCloudCanvas({
       // The GLB is baked at the URDF zero configuration with identity joint
       // rotations (no rpy on any joint origin), so q is absolute: overwrite
       // the quaternion, leave the baked position (the joint origin) alone.
+      // Against the angle applied, not the last message's, so a slow creep
+      // adds up and is applied once it shows.
+      const last = applied.get(name);
+      if (last !== undefined && Math.abs(q - last) <= JOINT_REDRAW_RAD) continue;
+      applied.set(name, q);
       joint.node.quaternion.setFromAxisAngle(joint.axis, q);
+      moved = true;
     }
+    return moved;
   }, []);
 
   /** Record where the robot should be; the render loop eases toward it. */
   const setTargetPose = React.useCallback((next: RobotPose) => {
-    const yaw = (next.theta * Math.PI) / 180;
+    const yaw = toRadians(next.theta);
     const cur = renderedPoseRef.current;
     targetPoseRef.current = {
       x: next.x,
@@ -550,11 +603,15 @@ export function PointCloudCanvas({
   /**
    * Drain the live feed once per drawn frame. A 60 Hz loop reads a 20 Hz feed
    * about three times per message, so both channels are guarded on object
-   * identity (the stream hands out a fresh object per message).
+   * identity (the stream hands out a fresh object per message). True when
+   * what it took changes the picture: a joint turned, a costmap or a
+   * trajectory replaced. A new pose does not by itself — the ease says when
+   * the robot has moved (stepPose).
    */
   const pumpTelemetry = React.useCallback(() => {
     const feed = telemetryRef.current;
-    if (!feed) return;
+    if (!feed) return false;
+    let changed = false;
 
     const nextPose = feed.pose.current;
     if (nextPose && nextPose !== feedPoseRef.current) {
@@ -565,7 +622,7 @@ export function PointCloudCanvas({
     const nextJoints = feed.joints.current;
     if (nextJoints && nextJoints !== latestJointsRef.current) {
       latestJointsRef.current = nextJoints;
-      applyJoints();
+      if (applyJoints()) changed = true;
     }
 
     // Only while a navigation runs; the backend's empty frames clear them.
@@ -575,13 +632,16 @@ export function PointCloudCanvas({
       if (nextCostmap !== appliedLocalCostmapRef.current) {
         appliedLocalCostmapRef.current = nextCostmap;
         localNav.setCostmap(nextCostmap);
+        changed = true;
       }
       const nextPlan = feed.localPlan.current;
       if (nextPlan !== appliedLocalPlanRef.current) {
         appliedLocalPlanRef.current = nextPlan;
         localNav.setPlan(nextPlan);
+        changed = true;
       }
     }
+    return changed;
   }, [setTargetPose, applyJoints]);
 
   // ---- Scene setup (rebuilds on map / theme change) --------------------
@@ -589,7 +649,6 @@ export function PointCloudCanvas({
     const container = containerRef.current;
     if (!container) return;
 
-    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     // Set by dispose(). The GLB can land after this scene was torn down, and
     // checks it first.
     let cancelled = false;
@@ -614,6 +673,9 @@ export function PointCloudCanvas({
       openingViewRef.current = false;
     };
     controls.addEventListener("start", claimView);
+    // Any camera move the controls make themselves, beside what update() reports.
+    controls.addEventListener("change", invalidate);
+    frameDirtyRef.current = true;
     if (liftFrameRef.current !== null) cancelAnimationFrame(liftFrameRef.current);
     liftFrameRef.current = null;
     liftRef.current = 0;
@@ -706,20 +768,15 @@ export function PointCloudCanvas({
           jointNodesRef.current = nodes;
         }
         applyJoints();
+        // The model itself is new to the picture, whether or not a joint turned.
+        invalidate();
       })
       .catch((err) => console.error("robot model failed to load", err));
 
-    // The canvas's client rect, cached: castFromPointer runs per pointermove,
-    // and a live read would force a layout each time. In this closure so it
-    // dies with this renderer.
-    let cachedRect: DOMRect | null = null;
-    const invalidateRect = () => {
-      cachedRect = null;
-    };
-    canvasRectRef.current = (fresh) => {
-      if (fresh) cachedRect = null;
-      return (cachedRect ??= renderer.domElement.getBoundingClientRect());
-    };
+    // The canvas's client rect, cached: castFromPointer runs per pointermove.
+    // Made here so it dies with this renderer.
+    const rect = createRectCache(renderer.domElement);
+    canvasRectRef.current = rect.get;
 
     const draw = () => {
       const edl = edlRef.current;
@@ -727,17 +784,15 @@ export function PointCloudCanvas({
       else renderer.render(scene, camera);
     };
 
-    // A scroll moves the canvas without resizing it (the page scrolls below
-    // lg). Capture phase, since scroll does not bubble from an ancestor.
-    window.addEventListener("scroll", invalidateRect, {
-      capture: true,
-      passive: true,
-    });
+    // The robot as the last drawn frame showed it, which the next is measured
+    // from (poseMoved).
+    let shownPose: SmoothPose | null = null;
 
     /**
      * Ease the drawn pose toward the reported one. The factor comes from dt so
      * any refresh rate converges at the same wall-clock rate, and a tab
-     * restored from the background snaps.
+     * restored from the background snaps. True when the robot now stands
+     * somewhere the last drawn frame did not show it.
      */
     const stepPose = (dt: number) => {
       const target = targetPoseRef.current;
@@ -792,36 +847,44 @@ export function PointCloudCanvas({
       // An initial-pose drag draws the robot at the dragged pose, un-eased so
       // it tracks the pointer 1:1.
       const drawn = posePreviewRef.current ?? cur;
+      const moved = poseMoved(shownPose, drawn);
+      if (moved) shownPose = drawn && { ...drawn };
       if (!drawn) {
         robotGroup.visible = false;
-        return;
+        return moved;
       }
       robotGroup.position.set(drawn.x, drawn.y, drawn.z);
       robotGroup.rotation.z = drawn.yaw;
       robotGroup.visible = true;
+      return moved;
     };
 
     viewport.start({
       draw,
       onResize: (width, height, pixelRatio) => {
-        invalidateRect();
+        rect.invalidate();
         edlRef.current?.setSize(width, height, pixelRatio);
       },
       onContextLost: gpu.onContextLost,
       onContextRestored: gpu.onContextRestored,
       frame: (dt) => {
         // Before the ease, so this frame walks toward the newest pose.
-        pumpTelemetry();
-        stepPose(dt);
-        controls.update();
+        if (pumpTelemetry()) frameDirtyRef.current = true;
+        if (stepPose(dt)) frameDirtyRef.current = true;
+        // True while the camera moves: a drag, damping's coast after one,
+        // focus following the robot, a framing an effect just made.
+        if (controls.update()) frameDirtyRef.current = true;
+        if (!frameDirtyRef.current) return;
+        frameDirtyRef.current = false;
         draw();
       },
     });
 
     const dispose = () => {
       cancelled = true;
-      window.removeEventListener("scroll", invalidateRect, { capture: true });
+      rect.dispose();
       controls.removeEventListener("start", claimView);
+      controls.removeEventListener("change", invalidate);
       // Detach the cached robot model first, or the sweep would dispose it for
       // every later mount.
       robotGroup.clear();
@@ -856,10 +919,11 @@ export function PointCloudCanvas({
       sceneRef.current = null;
     };
   }, [
-    resolvedTheme,
+    theme,
     applyJoints,
     applyMapStreamFrame,
     pumpTelemetry,
+    invalidate,
     gpu.onContextLost,
     gpu.onContextRestored,
   ]);
@@ -867,11 +931,9 @@ export function PointCloudCanvas({
   // ---- Live body_cloud stream (independent of scene rebuilds) ----------
   // Opened once per mount and written into whatever geometry sceneRef holds,
   // so a scene rebuild never closes a still-connecting socket.
-  const liveColorRef = React.useRef(new THREE.Color());
   const applyLiveFrame = React.useCallback((frame: PointCloudFrame) => {
     const ctx = sceneRef.current;
     if (!ctx) return;
-    const color = liveColorRef.current;
     const posAttr = ctx.liveGeom.getAttribute(
       "position",
     ) as THREE.BufferAttribute;
@@ -887,15 +949,13 @@ export function PointCloudCanvas({
       dstPos[j] = src[j];
       dstPos[j + 1] = src[j + 1];
       dstPos[j + 2] = src[j + 2];
-      heightColor(src[j + 2], color);
-      dstCol[j] = color.r;
-      dstCol[j + 1] = color.g;
-      dstCol[j + 2] = color.b;
+      writeHeightColor(src[j + 2], dstCol, j);
     }
     posAttr.needsUpdate = true;
     colAttr.needsUpdate = true;
     ctx.liveGeom.setDrawRange(0, n);
-  }, []);
+    invalidate();
+  }, [invalidate]);
   usePointCloudStream("live", applyLiveFrame, (s) => onStatusRef.current?.(s));
 
   // ---- Streamed "map so far" cloud (mapping runs) ------------------------
@@ -953,7 +1013,7 @@ export function PointCloudCanvas({
       ctx.camera.position.set(p.x, p.y - 8, p.z + 6);
     }
     ctx.controls.update();
-  }, [cameraMode, resolvedTheme]);
+  }, [cameraMode, theme]);
 
   // ---- Floor switch: carry the view (see liftView) ----------------------
   // Lists the scene's rebuild deps: a rebuilt scene opens at the ground
@@ -981,6 +1041,7 @@ export function PointCloudCanvas({
       const at = from + (to - from) * easeInOut(t);
       liftView(ctx.camera, ctx.controls, at - liftRef.current);
       liftRef.current = at;
+      invalidate();
       liftFrameRef.current = t < 1 ? requestAnimationFrame(step) : null;
     };
     liftFrameRef.current = requestAnimationFrame(step);
@@ -988,7 +1049,7 @@ export function PointCloudCanvas({
       if (liftFrameRef.current !== null) cancelAnimationFrame(liftFrameRef.current);
       liftFrameRef.current = null;
     };
-  }, [viewGround, resolvedTheme]);
+  }, [viewGround, theme, invalidate]);
 
   // ---- Top-down view (one-shot) ----------------------------------------
   // Nonce-only deps: a map load or theme toggle must not re-frame a view the
@@ -1035,12 +1096,9 @@ export function PointCloudCanvas({
       frontViewAround(ctx.camera, ctx.controls);
       return;
     }
-    const band = voxelBandRef.current;
+    const [lo, hi] = bandRange(voxelBandRef.current);
     const z =
-      voxelLayerRef.current?.zExtent(
-        band?.lo ?? -Infinity,
-        Math.min(band?.hi ?? Infinity, voxelCeilingRef.current),
-      ) ??
+      voxelLayerRef.current?.zExtent(lo, Math.min(hi, voxelCeilingRef.current)) ??
       FRONT_DEFAULT_Z;
     frontView(
       ctx.camera,
@@ -1088,13 +1146,12 @@ export function PointCloudCanvas({
     const ctx = sceneRef.current;
     if (!ctx) return;
     applyCameraMode(ctx.controls, cameraModeRef.current, pickMode !== null);
-  }, [pickMode, cameraMode, resolvedTheme]);
+  }, [pickMode, cameraMode, theme]);
 
   // ---- Pose markers (no scene rebuild) ---------------------------------
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx) return;
-    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
 
     placePoseMarker(ctx.goalMarker, goal);
     placePoseMarker(ctx.previewMarker, previewGoal);
@@ -1107,7 +1164,7 @@ export function PointCloudCanvas({
       pickMode === "initial-pose" ? theme.initialPoseDraft : theme.goalDraft,
     );
     placePoseMarker(ctx.draftMarker, pickMode && draft ? { ...draft, z: pickZ } : null);
-  }, [goal, previewGoal, initialPose, draft, pickMode, pickZ, resolvedTheme]);
+  }, [goal, previewGoal, initialPose, draft, pickMode, pickZ, theme]);
 
   // ---- Initial-pose pick: the robot itself is the preview ----------------
   // An initial pose asserts where the machine is, so the machine moves: what
@@ -1129,7 +1186,7 @@ export function PointCloudCanvas({
           ? drawnGround(initialPoseGround) + ROBOT_BASE_HEIGHT_M
           : (renderedPoseRef.current?.z ?? drawnGround(pickZ) + ROBOT_BASE_HEIGHT_M)) +
         (carrying ? CARRY_LIFT_M : 0),
-      yaw: (draft.theta * Math.PI) / 180,
+      yaw: toRadians(draft.theta),
     };
   }, [draft, carrying, pickMode, initialPoseGround, pickZ]);
 
@@ -1141,7 +1198,6 @@ export function PointCloudCanvas({
     const ctx = sceneRef.current;
     if (!ctx || !showVertices || !vertices?.length) return;
 
-    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const layer = createVertexLayer(vertices, theme);
     ctx.scene.add(layer.group);
     vertexLayerRef.current = layer;
@@ -1149,7 +1205,7 @@ export function PointCloudCanvas({
     // patching the list mid-gesture).
     layer.setHovered(hoverIdRef.current);
     layer.setMoving(movingIdRef.current);
-    layer.setBand(voxelBandRef.current?.lo ?? -Infinity, voxelBandRef.current?.hi ?? Infinity);
+    layer.setBand(...bandRange(voxelBandRef.current));
 
     return () => {
       // `ctx.scene` may already be discarded; the dispose is what matters,
@@ -1158,7 +1214,7 @@ export function PointCloudCanvas({
       layer.dispose();
       vertexLayerRef.current = null;
     };
-  }, [vertices, showVertices, resolvedTheme]);
+  }, [vertices, showVertices, theme]);
 
   // Its own effect so arming a re-place does not rebuild the layer.
   React.useEffect(() => {
@@ -1173,7 +1229,6 @@ export function PointCloudCanvas({
     const ctx = sceneRef.current;
     if (!ctx || !showZones || !zones?.length) return;
 
-    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const layer = createZoneLayer(zones, theme);
     ctx.scene.add(layer.group);
 
@@ -1181,7 +1236,7 @@ export function PointCloudCanvas({
       ctx.scene.remove(layer.group);
       layer.dispose();
     };
-  }, [zones, showZones, resolvedTheme]);
+  }, [zones, showZones, theme]);
 
   // ---- Planned path band ------------------------------------------------
   // Each new `path` replaces the last, and the backend's empty-points sample
@@ -1190,7 +1245,6 @@ export function PointCloudCanvas({
     const ctx = sceneRef.current;
     if (!ctx || !showPath || !path || path.points.length < 6) return;
 
-    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const ribbon = createPathRibbon(path.points, theme);
     if (!ribbon) return;
     const band = voxelBandRef.current;
@@ -1206,7 +1260,7 @@ export function PointCloudCanvas({
       ctx.scene.remove(ribbon.mesh);
       ribbon.dispose();
     };
-  }, [path, showPath, resolvedTheme]);
+  }, [path, showPath, theme]);
 
   // ---- A route preview's band ---------------------------------------------
   // The route's band in the preview's hues, under the route's floor and 3D
@@ -1217,7 +1271,6 @@ export function PointCloudCanvas({
     const ctx = sceneRef.current;
     if (!ctx || !previewPath || previewPath.length < 6) return;
 
-    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const ribbon = createPathRibbon(previewPath, {
       ...theme,
       path: theme.preview,
@@ -1236,7 +1289,7 @@ export function PointCloudCanvas({
       ctx.scene.remove(ribbon.mesh);
       ribbon.dispose();
     };
-  }, [previewPath, resolvedTheme]);
+  }, [previewPath, theme]);
 
   // ---- The robot's local costmap and trajectory ---------------------------
   // Built with the scene and fed by the render loop; only the path toggle
@@ -1253,7 +1306,6 @@ export function PointCloudCanvas({
     const ctx = sceneRef.current;
     if (!ctx || !showPath || !dockPath || dockPath.points.length < 6) return;
 
-    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const ribbon = createDashedRibbon(dockPath.points, theme.dock, { stride: 3 });
     if (!ribbon) return;
     ctx.scene.add(ribbon.mesh);
@@ -1262,7 +1314,7 @@ export function PointCloudCanvas({
       ctx.scene.remove(ribbon.mesh);
       ribbon.dispose();
     };
-  }, [dockPath, showPath, resolvedTheme]);
+  }, [dockPath, showPath, theme]);
 
   // ---- A dock's staging point --------------------------------------------
   // Keyed on the pose's numbers, not its identity: the run is re-read every
@@ -1275,7 +1327,6 @@ export function PointCloudCanvas({
     if (!ctx || !showPath || dockX === undefined || dockY === undefined) return;
     if (dockTheta === undefined) return;
 
-    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const layer = createDockLayer({ x: dockX, y: dockY, theta: dockTheta }, theme);
     ctx.scene.add(layer.group);
 
@@ -1283,14 +1334,13 @@ export function PointCloudCanvas({
       ctx.scene.remove(layer.group);
       layer.dispose();
     };
-  }, [dockX, dockY, dockTheta, showPath, resolvedTheme]);
+  }, [dockX, dockY, dockTheta, showPath, theme]);
 
   // ---- Optional static map cloud (toggle) ------------------------------
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx || !mapCloud) return;
 
-    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const geom = new THREE.BufferGeometry();
     // References the cached frame's array, so a re-add costs no copy.
     geom.setAttribute("position", new THREE.BufferAttribute(mapCloud.positions, 3));
@@ -1315,7 +1365,7 @@ export function PointCloudCanvas({
       points.material.dispose();
       if (ctx.mapPoints === points) ctx.mapPoints = null;
     };
-  }, [mapCloud, resolvedTheme]);
+  }, [mapCloud, theme]);
 
   // ---- Optional 3D map (toggle) -----------------------------------------
   // Same shape as the map scan above, and the same rebuild deps for the same
@@ -1328,7 +1378,6 @@ export function PointCloudCanvas({
     const ctx = sceneRef.current;
     if (!ctx || !voxels || !voxelStacks) return;
 
-    const theme = THEMES[resolvedTheme === "dark" ? "dark" : "light"];
     const layer = createVoxelLayer(voxels, { ghostColor: theme.voxelGhost });
     applyVoxelBand(layer, voxelBandRef.current, voxelWindowRef.current, voxelCeilingRef.current);
     ctx.scene.add(layer.points);
@@ -1376,7 +1425,7 @@ export function PointCloudCanvas({
       previewRibbonRef.current?.setOverMap(false);
       if (voxelFrameRef.current === layer.frame) voxelFrameRef.current = null;
     };
-  }, [voxels, voxelStacks, resolvedTheme]);
+  }, [voxels, voxelStacks, theme]);
 
   // ---- 3D map floor (band) ----------------------------------------------
   // Two numbers on the layer, not a rebuild. Declared after the layer effect
@@ -1385,9 +1434,10 @@ export function PointCloudCanvas({
   React.useEffect(() => {
     voxelBandRef.current = voxelBand;
     // The waypoints and the route follow the floor shown, by their own ground height.
-    vertexLayerRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
-    pathRibbonRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
-    previewRibbonRef.current?.setBand(voxelBand?.lo ?? -Infinity, voxelBand?.hi ?? Infinity);
+    const [lo, hi] = bandRange(voxelBand);
+    vertexLayerRef.current?.setBand(lo, hi);
+    pathRibbonRef.current?.setBand(lo, hi);
+    previewRibbonRef.current?.setBand(lo, hi);
   }, [voxelBand]);
   // Apart from the marks: Follow slides the cells' window, and a ceiling cuts
   // the cells, without moving them.
@@ -1403,13 +1453,7 @@ export function PointCloudCanvas({
   // The anchor keeps the raw pointer position beside the ground point so the
   // heading deadzone is in screen pixels; a metric one would vary wildly with
   // perspective depth.
-  const anchorRef = React.useRef<{
-    pointerId: number;
-    wx: number;
-    wy: number;
-    cx: number;
-    cy: number;
-  } | null>(null);
+  const anchorRef = React.useRef<PlaceAnchor | null>(null);
   /** A press outside pick mode that may still turn out to be a tap on a stop. */
   const tapRef = React.useRef<{ pointerId: number; cx: number; cy: number } | null>(
     null,
@@ -1444,10 +1488,7 @@ export function PointCloudCanvas({
     const layer = vertexLayerRef.current;
     if (!layer) return null;
     const raycaster = castFromPointer(event);
-    if (!raycaster) return null;
-    const hit = raycaster.intersectObjects(layer.pickables, false)[0];
-    const id = hit?.object.userData.vertexId as string | undefined;
-    return id ? (layer.byId.get(id) ?? null) : null;
+    return raycaster ? pickLayerVertex(raycaster, layer) : null;
   };
 
   /** Light the marker under the pointer, or clear the highlight. */
@@ -1459,6 +1500,7 @@ export function PointCloudCanvas({
     if (id === hoverIdRef.current) return;
     hoverIdRef.current = id;
     setHoveredVertex(vertex);
+    invalidate();
   };
 
   /**
@@ -1471,16 +1513,43 @@ export function PointCloudCanvas({
   };
 
   /**
-   * The heading a draft starts at, before any drag aims it. A re-place keeps
-   * the stop's own heading, so nudging it does not spin it; the other modes
-   * start from the robot's heading at the moment of the press.
+   * The heading a draft starts at when it has none to keep, before any drag
+   * aims it. A re-place starts from the stop's own heading, so nudging it
+   * does not spin it; the other modes from the robot's at the moment of the
+   * press.
    */
   const seedTheta = () =>
-    draft?.theta ??
     (pickMode === "vertex"
       ? movingVertex?.theta
-      : telemetryRef.current?.pose.current?.theta) ??
-    0;
+      : telemetryRef.current?.pose.current?.theta) ?? 0;
+
+  /**
+   * Take the placing gesture one step (placeGesture) and act on where it
+   * left the pose: the draft the markers follow, and the pointer capture,
+   * which is held exactly while a press is planted. The pose it commits, or
+   * null.
+   */
+  const place = (event: PlaceEvent): PlanarPose | null => {
+    const before = anchorRef.current;
+    const { state, commit } = placeGesture({ anchor: before, draft, carrying }, event);
+    anchorRef.current = state.anchor;
+    // On the canvas, not this container: capturing higher would steal the
+    // pointer from OrbitControls and strand its pointerup.
+    const canvas = sceneRef.current?.renderer.domElement;
+    if (before && !state.anchor && canvas?.hasPointerCapture(before.pointerId)) {
+      canvas.releasePointerCapture(before.pointerId);
+    }
+    if (!before && state.anchor) canvas?.setPointerCapture(state.anchor.pointerId);
+    setDraft(state.draft);
+    setCarrying(state.carrying);
+    return commit;
+  };
+
+  /** Where a pointer meets the ground a pose may stand on, or null off it. */
+  const castOnMap = (event: React.PointerEvent) => {
+    const hit = pickGround(event);
+    return hit && insideMap(hit.wx, hit.wy) ? hit : null;
+  };
 
   const handlePointerDown = (event: React.PointerEvent) => {
     // Re-measure on every press. A banner appearing above the viewport moves
@@ -1498,25 +1567,17 @@ export function PointCloudCanvas({
     }
     if (event.button !== 0) return;
     // A second finger is a pinch or orbit, never a second placement, and the
-    // first finger's lift must not then commit what it was aiming.
-    if (anchorRef.current || !event.isPrimary) {
-      abandonPick();
-      return;
-    }
-    const hit = pickGround(event);
-    if (!hit || !insideMap(hit.wx, hit.wy)) return;
-    anchorRef.current = {
-      ...hit,
+    // first finger's lift must not then commit what it was aiming: the
+    // gesture abandons the pose on a press it already holds one for.
+    place({
+      type: "press",
       pointerId: event.pointerId,
+      primary: event.isPrimary,
       cx: event.clientX,
       cy: event.clientY,
-    };
-    // On the canvas, not this container: capturing higher would steal the
-    // pointer from OrbitControls and strand its pointerup.
-    sceneRef.current?.renderer.domElement.setPointerCapture(event.pointerId);
-    setCarrying(false);
-    // Keep the carried heading so a plain click does not snap to 0deg.
-    setDraft({ x: hit.wx, y: hit.wy, theta: seedTheta() });
+      cast: () => castOnMap(event),
+      seedTheta: seedTheta(),
+    });
   };
 
   const handlePointerMove = (event: React.PointerEvent) => {
@@ -1527,33 +1588,22 @@ export function PointCloudCanvas({
     }
     // While placing a pose nothing on the map is a target.
     hoverVertex(null);
-    if (!event.isPrimary) return;
-
-    const anchor = anchorRef.current;
-
-    // No press yet: carry the pose under the pointer. Not in goal mode, where a
-    // trailing arrow would read as a goal already set; the other modes move
-    // something that exists. Off the map nothing is carried.
-    if (!anchor) {
-      if (pickMode === "goal") return;
-      const hit = pickGround(event);
-      if (!hit || !insideMap(hit.wx, hit.wy)) {
-        setDraft(null);
-        return;
-      }
-      setCarrying(true);
-      setDraft({ x: hit.wx, y: hit.wy, theta: seedTheta() });
-      return;
-    }
-
-    // Planted: the drag only aims, past the shared deadzone.
-    let theta = seedTheta();
-    if (isDrag(anchor.cx, anchor.cy, event.clientX, event.clientY)) {
-      // World-space, not the screen delta: the camera may face any azimuth.
-      const hit = pickGround(event);
-      if (hit) theta = headingDegrees(hit.wx - anchor.wx, hit.wy - anchor.wy) ?? theta;
-    }
-    setDraft({ x: anchor.wx, y: anchor.wy, theta });
+    place({
+      type: "move",
+      pointerId: event.pointerId,
+      primary: event.isPrimary,
+      cx: event.clientX,
+      cy: event.clientY,
+      // Carried under the pointer until a press, though not in goal mode,
+      // where a trailing arrow would read as a goal already set; the other
+      // modes move something that exists. Off the map nothing is carried.
+      carries: pickMode !== "goal",
+      cast: () => castOnMap(event),
+      // A planted pose may be aimed at a point off the map: only where it
+      // stands has to be on it.
+      aim: () => pickGround(event),
+      seedTheta: seedTheta(),
+    });
   };
 
   const handlePointerUp = (event: React.PointerEvent) => {
@@ -1570,36 +1620,15 @@ export function PointCloudCanvas({
         if (vertex) onVertexActivate?.(vertex);
       }
     }
-    const anchor = anchorRef.current;
-    if (!anchor || anchor.pointerId !== event.pointerId) return;
-    anchorRef.current = null;
-    const canvas = sceneRef.current?.renderer.domElement;
-    if (canvas?.hasPointerCapture(event.pointerId)) {
-      canvas.releasePointerCapture(event.pointerId);
-    }
-    if (draft && pickMode) onPickCommit?.(draft);
-    setDraft(null);
-    setCarrying(false);
+    // Only the lift of the pointer that planted the pose commits it.
+    const pose = place({ type: "release", pointerId: event.pointerId });
+    if (pose && pickMode) onPickCommit?.(pose);
   };
 
-  /**
-   * Drop a planted press without committing. A second finger or a
-   * pointercancel is not a deliberate release; only handlePointerUp commits.
-   */
-  const abandonPick = () => {
-    const anchor = anchorRef.current;
-    anchorRef.current = null;
-    const canvas = sceneRef.current?.renderer.domElement;
-    if (anchor && canvas?.hasPointerCapture(anchor.pointerId)) {
-      canvas.releasePointerCapture(anchor.pointerId);
-    }
-    setDraft(null);
-    setCarrying(false);
-  };
-
+  // A cancelled pointer is not a deliberate release; only handlePointerUp commits.
   const handlePointerCancel = (event: React.PointerEvent) => {
     if (tapRef.current?.pointerId === event.pointerId) tapRef.current = null;
-    if (anchorRef.current?.pointerId === event.pointerId) abandonPick();
+    if (anchorRef.current?.pointerId === event.pointerId) place({ type: "abandon" });
   };
 
   // Leaving the viewport drops the carried draft (a captured drag survives).
@@ -1607,9 +1636,7 @@ export function PointCloudCanvas({
   const handlePointerLeave = () => {
     hoverVertex(null);
     tapRef.current = null;
-    if (anchorRef.current) return;
-    setDraft(null);
-    setCarrying(false);
+    place({ type: "leave" });
   };
 
   return (
@@ -1641,5 +1668,8 @@ function applyVoxelBand(
   ceiling: number,
 ) {
   if (follow) layer.setBand(follow.lo, follow.hi, { ramp: "map" });
-  else layer.setBand(band?.lo ?? -Infinity, Math.min(band?.hi ?? Infinity, ceiling));
+  else {
+    const [lo, hi] = bandRange(band);
+    layer.setBand(lo, Math.min(hi, ceiling));
+  }
 }

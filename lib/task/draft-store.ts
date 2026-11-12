@@ -9,7 +9,7 @@
 // Storage is injected (the server has none, tests pass a Map) and every access
 // is wrapped: a private window or full quota must cost the cache, not /tasks.
 
-import { z } from "zod";
+import * as z from "zod";
 
 import type { TaskTemplate } from "@/lib/api/task-template";
 import { fromTemplateSteps, reissueStepKeys, type StepDraft } from "@/lib/task/step";

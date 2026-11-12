@@ -91,7 +91,10 @@ export function FloorPicker({
       aria-label="Floor"
       className={cn(
         overlayPanel,
-        "relative flex w-14 flex-col gap-1 rounded-full p-1 pointer-coarse:w-16",
+        // Scrolls where its place is shorter than its floors (a phone held
+        // sideways), the buttons keeping their height; no scrollbar, which
+        // would not fit a pill this narrow.
+        "relative flex min-h-0 w-14 flex-col gap-1 overflow-y-auto rounded-full p-1 [scrollbar-width:none] pointer-coarse:w-16",
         className,
       )}
     >
@@ -113,7 +116,7 @@ export function FloorPicker({
           title="Show the floor the robot is on, and keep up as it changes floors"
           onClick={onFollow}
           className={cn(
-            "relative flex h-8 w-full items-center justify-center rounded-full transition-colors pointer-coarse:h-10",
+            "relative flex h-8 w-full shrink-0 items-center justify-center rounded-full transition-colors pointer-coarse:h-10",
             "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
             following
               ? "text-primary-foreground"
@@ -136,7 +139,7 @@ export function FloorPicker({
             title={option.key === null ? allTitle : `Show ${option.label}`}
             onClick={() => onChange(option.key)}
             className={cn(
-              "readout relative flex h-8 w-full items-center justify-center gap-1.5 rounded-full px-1.5 text-[11px] transition-colors pointer-coarse:h-10",
+              "readout relative flex h-8 w-full shrink-0 items-center justify-center gap-1.5 rounded-full px-1.5 text-[11px] transition-colors pointer-coarse:h-10",
               "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
               pressed
                 ? "font-semibold text-primary-foreground"

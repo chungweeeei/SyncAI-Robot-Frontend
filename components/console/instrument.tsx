@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { formatDegrees, formatMetres } from "@/lib/readout";
 import { SIGNAL_BARS } from "@/lib/robot/levels";
 import type { Tone } from "@/lib/types/tone";
 import { cn } from "@/lib/utils";
@@ -109,6 +110,31 @@ export function Readout({
         )}
       </span>
     </div>
+  );
+}
+
+/**
+ * A pose as its rows: X, Y, the height when the pose has one, and where it
+ * faces. One component so every card that reads a pose back prints the same
+ * labels, units and digits (lib/readout.ts).
+ */
+export function PoseReadouts({
+  pose,
+  tone,
+}: {
+  pose: { x: number; y: number; theta: number; z?: number };
+  tone: Tone;
+}) {
+  return (
+    <>
+      <Readout label="X" value={formatMetres(pose.x)} unit="m" tone={tone} />
+      <Readout label="Y" value={formatMetres(pose.y)} unit="m" tone={tone} />
+      {/* The stored height: which floor the pose is on, and the z it is sent with. */}
+      {pose.z !== undefined && (
+        <Readout label="Z" value={formatMetres(pose.z)} unit="m" tone={tone} />
+      )}
+      <Readout label="Orientation" value={formatDegrees(pose.theta)} unit="°" tone={tone} />
+    </>
   );
 }
 

@@ -17,7 +17,7 @@ const BUILDING_REASON =
  * = 38 px (`right-9.5`). Same surface as the other tiles, copied.
  */
 const CORNER =
-  "absolute top-2 right-9.5 z-10 flex size-6 items-center justify-center rounded-sm border border-hairline bg-panel/90 backdrop-blur-sm";
+  "absolute top-2 right-9.5 z-10 flex size-6 pointer-coarse:right-14 pointer-coarse:size-10 items-center justify-center rounded-sm border border-hairline bg-panel/90 backdrop-blur-sm";
 
 /**
  * The way into the map's editor, as a pencil tile beside the X: the top

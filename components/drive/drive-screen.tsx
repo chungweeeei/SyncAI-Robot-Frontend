@@ -46,7 +46,9 @@ export function DriveScreen() {
 
   return (
     <div className="relative h-full bg-background">
-      <div className="absolute inset-x-3 bottom-3 flex flex-col gap-3">
+      {/* Clear of a notch or a rounded corner: held sideways, that is where
+        * the sticks are. */}
+      <div className="absolute right-[max(0.75rem,env(safe-area-inset-right))] bottom-3 left-[max(0.75rem,env(safe-area-inset-left))] flex flex-col gap-3">
         <section
           aria-label="Manual drive"
           className="flex w-full max-w-72 flex-col self-center rounded-2xl border border-foreground/15 bg-panel/60 px-3 py-2 shadow-sm backdrop-blur-sm"

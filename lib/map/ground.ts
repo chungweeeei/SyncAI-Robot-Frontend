@@ -69,7 +69,11 @@ export function columnStacks(voxels: OccupiedVoxels): ColumnStacks {
     kz[at[c]] = keys[i + 2];
     at[c] += 1;
   }
-  for (let c = 0; c < columns; c += 1) kz.subarray(start[c], start[c + 1]).sort();
+  // Most columns are empty or one cell (open floor), which is sorted as it
+  // is: a view and a sort call for each was a million of both on a wide map.
+  for (let c = 0; c < columns; c += 1) {
+    if (start[c + 1] - start[c] > 1) kz.subarray(start[c], start[c + 1]).sort();
+  }
   return { width, height, start, kz };
 }
 

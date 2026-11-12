@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import { TONE_TEXT, type Tone } from "@/components/console/instrument";
-import { Notice } from "@/components/history/notice";
+import { Notice } from "@/components/console/notice";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";

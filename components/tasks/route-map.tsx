@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 
 import { FloorPicker } from "@/components/console/floor-picker";
-import { RouteCanvas3d } from "@/components/tasks/route-canvas-3d";
+import { useFloorBand } from "@/hooks/use-floor-band";
 import { useMapFloors } from "@/hooks/use-map-floors";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
 import { drawnGround, floorBands, floorGround } from "@/lib/map/floors";
@@ -14,8 +15,21 @@ import type { MapVertex } from "@/lib/types/map";
  * Tall enough to plan on beside the stops from lg, a band above them below.
  * From lg it fills the screen under the page chrome, so Save stays in view,
  * and the cap only stops a tall monitor from stretching the plan past use.
+ * `--route-map-chrome` is what else stands above it: the editor sets it
+ * while the running-job banner shows, which the 16rem does not count.
  */
-const MAP_HEIGHT = "h-72 sm:h-96 lg:h-[min(56rem,calc(100dvh-16rem))]";
+const MAP_HEIGHT =
+  "h-72 sm:h-96 lg:h-[min(56rem,calc(100dvh-16rem-var(--route-map-chrome,0rem)))]";
+
+/**
+ * In its own chunk and client-only: the 3D library is most of the editor's
+ * script, and a job with no map never needs it. The blank keeps the map's
+ * height, so the stops beside it do not move when it arrives.
+ */
+const RouteCanvas3d = dynamic(
+  () => import("@/components/tasks/route-canvas-3d").then((mod) => mod.RouteCanvas3d),
+  { ssr: false, loading: () => <div aria-hidden className={MAP_HEIGHT} /> },
+);
 
 export interface RouteMapProps {
   mapName: string;
@@ -57,7 +71,8 @@ export function RouteMap({
   const bands = React.useMemo(() => floorBands(floors), [floors]);
   const [floorName, setFloorName] = React.useState<string | null>(null);
   const floor = bands.find((each) => each.name === floorName) ?? null;
-  const band = React.useMemo(() => (floor ? { lo: floor.lo, hi: floor.hi } : null), [floor]);
+  // Stable across a floors refetch, or the canvas repaints every cell.
+  const band = useFloorBand(floor);
 
   // Nothing picks while the job runs; a no-op keeps the view's tap path whole.
   const pick = onPick ?? (() => {});

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeTheta } from "@/lib/angle";
+import { normalizeTheta, toRadians } from "@/lib/angle";
 
 /** (-180, 180], not [-180, 180): the backend rejects exactly -180. */
 describe("normalizeTheta", () => {
@@ -41,5 +41,13 @@ describe("normalizeTheta", () => {
       expect(folded).toBeGreaterThan(-180);
       expect(folded).toBeLessThanOrEqual(180);
     }
+  });
+});
+
+describe("toRadians", () => {
+  it("keeps the sign, so a clockwise heading stays clockwise", () => {
+    expect(toRadians(180)).toBeCloseTo(Math.PI, 12);
+    expect(toRadians(-90)).toBeCloseTo(-Math.PI / 2, 12);
+    expect(toRadians(0)).toBe(0);
   });
 });

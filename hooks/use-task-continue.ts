@@ -2,7 +2,7 @@
 
 import { useMutation } from "@tanstack/react-query";
 
-import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
+import { refuseIfStopped, useConsoleEstop } from "@/hooks/use-console-estop";
 import { mutationKeys } from "@/lib/api/query-keys";
 import { continueTask, type TaskKind } from "@/lib/api/task";
 
@@ -29,7 +29,7 @@ export function useTaskContinue() {
       name: string | null;
     }) => {
       // Refused here as well as greyed at the button: see useGoalTask.
-      if (stopped) throw new Error(ESTOP_REFUSAL);
+      refuseIfStopped(stopped);
       return continueTask(robot, failedId, kind);
     },
   });

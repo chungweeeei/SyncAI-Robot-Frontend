@@ -3,6 +3,7 @@
 import * as React from "react";
 import { CalendarCheckIcon, CalendarPlusIcon } from "lucide-react";
 
+import { ErrorLine } from "@/components/console/error-line";
 import { Segmented } from "@/components/console/instrument";
 import { Input } from "@/components/ui/input";
 import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";
@@ -194,7 +195,7 @@ export function ScheduleForm({
               onChange={(event) => setId(event.target.value)}
               placeholder="Night patrol"
               aria-describedby={nameHintId}
-              className="readout mt-0.5 h-7 rounded-sm md:text-[13px]"
+              className="readout mt-0.5 h-7 rounded-sm text-[13px]"
             />
           </label>
           {/* Said before it is typed: the name is the robot's id for the
@@ -239,7 +240,7 @@ export function ScheduleForm({
               value={amountText}
               disabled={busy}
               onChange={(event) => setAmountText(event.target.value)}
-              className="readout h-7 w-16 rounded-sm md:text-[13px]"
+              className="readout h-7 w-16 rounded-sm text-[13px]"
             />
           </label>
           <Segmented
@@ -259,7 +260,7 @@ export function ScheduleForm({
             value={time}
             disabled={busy}
             onChange={(event) => setTime(event.target.value)}
-            className="readout h-7 w-32 rounded-sm md:text-[13px]"
+            className="readout h-7 w-32 rounded-sm text-[13px]"
           />
         </label>
       )}
@@ -269,12 +270,9 @@ export function ScheduleForm({
       )}
 
       {error && (
-        <p
-          role="alert"
-          className="text-[11px] leading-snug break-words text-signal-warn"
-        >
+        <ErrorLine>
           {error}
-        </p>
+        </ErrorLine>
       )}
 
       <button

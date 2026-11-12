@@ -1,7 +1,7 @@
 // Mirrors the backend's robot models, snake_case, so a response parses
 // straight into RobotState. The schemas at the bottom are the runtime check.
 
-import { z } from "zod";
+import * as z from "zod";
 
 export type RobotMode = "MAINTENANCE" | "MANUAL" | "AUTO";
 

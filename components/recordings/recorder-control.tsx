@@ -3,6 +3,7 @@
 import * as React from "react";
 import { CircleIcon, SquareIcon } from "lucide-react";
 
+import { ErrorLine } from "@/components/console/error-line";
 import { RecordDot, Readout } from "@/components/console/instrument";
 import { TopicPicker, DEFAULT_TOPICS } from "@/components/recordings/topic-picker";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { useActiveRecording } from "@/hooks/use-recordings";
 import type { ActiveRecording, StoppedRecording } from "@/lib/api/recording";
 import { formatDuration, formatSize, formatTimestamp } from "@/lib/recording/format";
 import {
+  RECORDING_NAME_HINT,
   RECORDING_NAME_RE,
   RESERVED_RECORDING_NAME,
 } from "@/lib/recording/name";
@@ -192,7 +194,7 @@ export function RecorderControl() {
             <p className="text-[11px] leading-snug text-signal-caution">
               {name === RESERVED_RECORDING_NAME
                 ? "“active” is a reserved name — please choose another."
-                : "Letters, digits, dot, dash and underscore only, up to 64 characters."}
+                : RECORDING_NAME_HINT}
             </p>
           )}
 
@@ -223,12 +225,9 @@ export function RecorderControl() {
       )}
 
       {error && (
-        <p
-          role="alert"
-          className="mt-3 text-[11px] leading-snug break-words text-signal-warn"
-        >
+        <ErrorLine className="mt-3">
           {error}
-        </p>
+        </ErrorLine>
       )}
     </section>
   );

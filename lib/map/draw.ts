@@ -4,6 +4,7 @@
 // come from lib/theme/signal.ts; only the hue these marks add is written out
 // below.
 
+import { toRadians } from "@/lib/angle";
 import {
   CHARGER_ICON_PATH,
   CHARGER_MARK_BOLT,
@@ -81,7 +82,7 @@ export function drawMarker(ctx: CanvasRenderingContext2D, spec: MarkerSpec): voi
   // A charger at rest is black (CHARGER_MARK_FILL); one the job goes to takes
   // the job's hue like any stop, so the route still reads as one colour.
   const colour = charger && !emphasis ? CHARGER_MARK_FILL : spec.colour;
-  const radians = (spec.theta * Math.PI) / 180;
+  const radians = toRadians(spec.theta);
   // Screen y grows downward, map y grows upward.
   const tipX = cx + Math.cos(radians) * VERTEX_ARROW_PX;
   const tipY = cy - Math.sin(radians) * VERTEX_ARROW_PX;

@@ -1,6 +1,6 @@
 // Shared plumbing for the backend REST clients in this directory.
 
-import type { z } from "zod";
+import type * as z from "zod";
 
 /** A refusal as the backend describes it. */
 export interface ErrorBody {

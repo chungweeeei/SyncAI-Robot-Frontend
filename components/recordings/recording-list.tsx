@@ -1,27 +1,11 @@
 "use client";
 
 import { Chip } from "@/components/console/instrument";
+import { LoadingList, Notice, TwoLineSkeleton } from "@/components/console/notice";
 import { RecordingDeleteControl } from "@/components/recordings/recording-delete-control";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useRecordings } from "@/hooks/use-recordings";
 import type { RecordingSummary } from "@/lib/api/recording";
 import { formatSize, formatTimestamp } from "@/lib/recording/format";
-
-/** The empty / failed panel /maps and /settings use. */
-function Notice({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-md border border-hairline bg-panel p-4">
-      <p className="instrument-label text-muted-foreground">{label}</p>
-      <p className="mt-2 text-sm">{children}</p>
-    </div>
-  );
-}
 
 /**
  * A row's chip, or nothing for a healthy recording — a column of "fine" would
@@ -124,22 +108,6 @@ function RecordingRow({ recording }: { recording: RecordingSummary }) {
   );
 }
 
-function LoadingList() {
-  return (
-    <div
-      className="divide-y divide-hairline rounded-md border border-hairline bg-panel"
-      aria-busy
-    >
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="space-y-2 px-4 py-3">
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-3 w-2/3" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /**
  * Every recording on the robot, newest first (the backend's order).
  *
@@ -157,7 +125,11 @@ export function RecordingList() {
         </Notice>
       );
     }
-    return <LoadingList />;
+    return (
+      <LoadingList rowClassName="space-y-2">
+        <TwoLineSkeleton />
+      </LoadingList>
+    );
   }
 
   if (recordings.length === 0) {

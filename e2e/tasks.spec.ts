@@ -335,13 +335,17 @@ test.describe("the task console", () => {
       await page.getByRole("menuitem", { name: "Delete" }).click();
     };
 
-    page.once("dialog", (dialog) => void dialog.dismiss());
+    // The editor's dialog for the same act, not the browser's.
+    const dialog = page.getByRole("alertdialog");
     await remove();
+    await expect(dialog).toContainText("Delete Morning round?");
+    await dialog.getByRole("button", { name: "Keep" }).click();
+    await expect(dialog).toHaveCount(0);
     await expect(page.getByRole("menu")).toHaveCount(0);
     expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
 
-    page.once("dialog", (dialog) => void dialog.accept());
     await remove();
+    await dialog.getByRole("button", { name: "Delete" }).click();
     await expect
       .poll(() => writes.filter((w) => w.method === "DELETE").map((w) => w.path))
       .toEqual(["/api/v1/task_templates/22222222-2222-2222-2222-222222222222"]);

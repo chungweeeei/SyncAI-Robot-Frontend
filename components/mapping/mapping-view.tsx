@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import {
   ArrowLeftIcon,
   Grid2x2Icon,
@@ -12,7 +13,6 @@ import {
 
 import { ViewportBoundary } from "@/components/console/fault-boundary";
 import { overlayPanel } from "@/components/console/instrument";
-import { PointCloudCanvas } from "@/components/dashboard/pointcloud-canvas";
 import { ModeControl } from "@/components/mapping/mode-control";
 import { RunError } from "@/components/mapping/run-error";
 import { RunStrip, type RunPending } from "@/components/mapping/run-strip";
@@ -59,6 +59,15 @@ type Confirming =
  * `MANUAL` and `AUTO` destroy nothing but tear the stack down for ~30 s. Only
  * the unrecoverable ones are `destructive`, so red keeps meaning that.
  */
+/**
+ * In its own chunk and client-only, as on the dashboard: the 3D library is
+ * most of this route's script. The blank fills the viewport's section.
+ */
+const PointCloudCanvas = dynamic(
+  () => import("@/components/dashboard/pointcloud-canvas").then((mod) => mod.PointCloudCanvas),
+  { ssr: false, loading: () => <div aria-hidden className="h-full w-full" /> },
+);
+
 const CONFIRM_COPY = {
   leave: {
     title: "Leave mapping without saving?",
@@ -279,7 +288,7 @@ export function MappingView() {
     <div className="flex h-full flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
       <section
         aria-label="Mapping viewport"
-        className="relative h-[55svh] shrink-0 lg:h-full lg:flex-1"
+        className="relative h-[55svh] shrink-0 short:h-full lg:h-full lg:flex-1"
       >
         <ViewportBoundary>
           {/* The mode is the pose's frame: a switch moves the robot from the
@@ -307,7 +316,7 @@ export function MappingView() {
 
           {/* Scrolls: a phone held sideways leaves ~200 px, and a refusal
             * can be three lines. */}
-          <div className="pointer-events-none flex min-h-0 w-56 flex-col gap-2 self-end overflow-y-auto empty:hidden">
+          <div className="pointer-events-none flex min-h-0 w-56 max-w-full flex-col gap-2 self-end overflow-y-auto empty:hidden">
             <RunError className="pointer-events-auto" message={runError} />
           </div>
         </div>
@@ -319,7 +328,7 @@ export function MappingView() {
             title="Look straight down at the map"
             className={cn(
               overlayPanel,
-              "instrument-label flex h-6 items-center gap-1.5 px-2 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground",
+              "instrument-label flex h-6 items-center gap-1.5 px-2 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:h-10 pointer-coarse:px-3",
             )}
           >
             <Grid2x2Icon aria-hidden className="size-3.5" />
@@ -330,9 +339,13 @@ export function MappingView() {
 
       <aside
         aria-label="Mapping controls"
-        className="w-full shrink-0 border-t border-hairline bg-panel lg:h-full lg:w-72 lg:overflow-y-auto lg:border-t-0 lg:border-l"
+        className="w-full shrink-0 border-t border-hairline bg-panel lg:h-full lg:w-72 lg:overflow-y-auto lg:border-t-0 lg:border-l 2xl:w-80"
       >
-        <ModeControl control={control} onSelect={selectMode} />
+        {/* Capped below lg: at a tablet's width the two-way switch was a
+          * 700 px control. */}
+        <div className="max-lg:max-w-md">
+          <ModeControl control={control} onSelect={selectMode} />
+        </div>
       </aside>
 
       <SaveMapDialog

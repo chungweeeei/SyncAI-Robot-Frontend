@@ -31,8 +31,9 @@ import {
   Unlink2Icon,
 } from "lucide-react";
 
+import { ErrorLine } from "@/components/console/error-line";
 import { TaskStatusChip } from "@/components/console/task-chip";
-import { IconButton } from "@/components/tasks/icon-button";
+import { IconButton, iconButtonClass } from "@/components/tasks/icon-button";
 import { ParamFields } from "@/components/tasks/param-fields";
 import { StepGroupHeader, StepSeam } from "@/components/tasks/step-group";
 import {
@@ -480,7 +481,7 @@ function ActionRow({
                   aria-label={`More actions for ${rowContext}`}
                   title="More actions"
                   disabled={disabled}
-                  className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-10"
+                  className={cn(iconButtonClass, "disabled:pointer-events-none disabled:opacity-30")}
                 >
                   <EllipsisIcon className="size-3.5" aria-hidden />
                 </DropdownMenuTrigger>
@@ -536,9 +537,9 @@ function ActionRow({
             </div>
           </div>
           {error && (
-            <p role="alert" className="mt-1 text-[11px] leading-snug break-words text-signal-warn">
+            <ErrorLine className="mt-1">
               {error}
-            </p>
+            </ErrorLine>
           )}
           {state?.message && (
             <p className="mt-1 text-[11px] leading-snug break-words text-muted-foreground">
@@ -546,9 +547,9 @@ function ActionRow({
             </p>
           )}
           {state?.error_msg && (
-            <p role="alert" className="mt-1 text-[11px] leading-snug break-words text-signal-warn">
+            <ErrorLine className="mt-1">
               {stepFailureText(state.error_msg)}
-            </p>
+            </ErrorLine>
           )}
         </div>
       </div>

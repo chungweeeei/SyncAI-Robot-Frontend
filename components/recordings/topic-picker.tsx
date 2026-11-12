@@ -83,7 +83,7 @@ function TopicChip({
         onClick={onToggle}
         title={hint}
         className={cn(
-          "readout h-6 px-1.5 text-[11px] leading-none",
+          "readout h-6 px-1.5 text-[11px] leading-none pointer-coarse:h-10 pointer-coarse:px-2.5",
           !disabled && !selected && "hover:bg-elevated hover:text-foreground",
         )}
       >

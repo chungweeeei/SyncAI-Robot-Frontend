@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ArrowLeftIcon, UploadIcon, XIcon } from "lucide-react";
 
+import { ErrorLine } from "@/components/console/error-line";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -16,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useImportMap } from "@/hooks/use-map-actions";
 import { importNameFromFilename, importSizeProblem } from "@/lib/map/archive";
-import { MAP_NAME_RE } from "@/lib/map/name";
+import { MAP_NAME_HINT, MAP_NAME_RE } from "@/lib/map/name";
 import type { MapSummary } from "@/lib/types/map";
 
 /**
@@ -185,19 +186,15 @@ export function MapImportControl({
               {/* Shown only while the name breaks the rule, as on save and rename. */}
               {!valid && (
                 <p className="text-[11px] leading-snug text-signal-caution">
-                  Letters, digits, dot, dash and underscore only, up to 64
-                  characters.
+                  {MAP_NAME_HINT}
                 </p>
               )}
             </div>
 
             {error && (
-              <p
-                role="alert"
-                className="text-[11px] leading-tight text-signal-warn"
-              >
+              <ErrorLine>
                 {error}
-              </p>
+              </ErrorLine>
             )}
 
             <AlertDialogFooter>

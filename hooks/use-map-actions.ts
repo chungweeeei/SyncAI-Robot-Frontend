@@ -219,12 +219,7 @@ export function useImportMap() {
     onSuccess: (result) => {
       // Keyed by the answer's `name`: the manifest names the map when the field
       // was left empty. A replaced map makes every per-map entry stale.
-      queryClient.removeQueries({ queryKey: queryKeys.mapVertices(result.name) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(result.name) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapKeepout(result.name) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(result.name) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapOctomapEdits(result.name) });
-      queryClient.removeQueries({ queryKey: queryKeys.mapFloors(result.name) });
+      for (const queryKey of mapScopedKeys(result.name)) queryClient.removeQueries({ queryKey });
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       // Not `taskTemplates`: the backend refuses to replace a map any template
       // still targets (409 `template_bound`).

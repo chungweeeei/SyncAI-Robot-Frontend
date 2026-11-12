@@ -1148,6 +1148,9 @@ test.describe("the editor's 3D view", () => {
       const dialog = page.getByRole("alertdialog", { name: "lobby" });
       await expect(dialog).toBeVisible();
       await dialog.getByRole("button", { name: "Cancel" }).click();
+      // Gone, not only closing: the dialog fades out over the stop, and a press
+      // made while it does lands on the dialog.
+      await expect(dialog).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
 
       await page.mouse.move(centre.x, centre.y);

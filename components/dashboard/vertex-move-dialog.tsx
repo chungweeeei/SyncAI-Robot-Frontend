@@ -9,7 +9,8 @@ import {
   Trash2Icon,
 } from "lucide-react";
 
-import { Readout } from "@/components/console/instrument";
+import { ErrorLine } from "@/components/console/error-line";
+import { PoseReadouts, Readout } from "@/components/console/instrument";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -20,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { normalizeTheta } from "@/lib/angle";
+import { formatDegrees, formatMetres } from "@/lib/readout";
 import type { MapVertex } from "@/lib/types/map";
 import type { PlacedPose, PlanarPose } from "@/lib/types/robot";
 
@@ -126,17 +128,7 @@ export function VertexMoveDialog({
             ) : (
               // The same readouts as GoalControl's: the same kind of pose.
               <div className="space-y-1 rounded-md border border-hairline bg-elevated/50 p-2.5">
-                <Readout label="X" value={shown.x.toFixed(2)} unit="m" tone="cmd" />
-                <Readout label="Y" value={shown.y.toFixed(2)} unit="m" tone="cmd" />
-                {/* The stored height: which floor the stop is on, and the z its
-                  * goal goes out with. */}
-                <Readout label="Z" value={shown.z.toFixed(2)} unit="m" tone="cmd" />
-                <Readout
-                  label="Orientation"
-                  value={shown.theta.toFixed(1)}
-                  unit="°"
-                  tone="cmd"
-                />
+                <PoseReadouts pose={shown} tone="cmd" />
               </div>
             )}
 
@@ -146,9 +138,9 @@ export function VertexMoveDialog({
               </p>
             )}
             {deleteError && (
-              <p role="alert" className="text-[11px] leading-snug break-words text-signal-warn">
+              <ErrorLine>
                 {deleteError}
-              </p>
+              </ErrorLine>
             )}
 
             {/* Wraps: four buttons are wider than a phone. */}
@@ -256,9 +248,9 @@ function PoseForm({
   // dialog was open would be a spot nobody chose.
   const takeRobotPose = () => {
     if (!robotPose) return;
-    setX(robotPose.x.toFixed(2));
-    setY(robotPose.y.toFixed(2));
-    setTheta(robotPose.theta.toFixed(1));
+    setX(formatMetres(robotPose.x));
+    setY(formatMetres(robotPose.y));
+    setTheta(formatDegrees(robotPose.theta));
     setRobotZ(robotPose.z);
   };
 
@@ -282,7 +274,7 @@ function PoseForm({
         inputMode="decimal"
         onChange={onChange}
         aria-invalid={parseMetres(value) === null || undefined}
-        className="readout h-7 min-w-0 flex-1 rounded-sm md:text-[13px]"
+        className="readout h-7 min-w-0 flex-1 rounded-sm text-[13px]"
       />
       <span aria-hidden className="w-3 text-[11px] text-muted-foreground">
         {unit}
@@ -306,7 +298,7 @@ function PoseForm({
         {field(yId, "Y", "m", y, edit(setY))}
         {field(thetaId, "Orientation", "°", theta, edit(setTheta))}
         {/* Not typed: the ground under the stop sets it, on Apply. */}
-        <Readout label="Z" value={vertex.z.toFixed(2)} unit="m" tone="cmd" />
+        <Readout label="Z" value={formatMetres(vertex.z)} unit="m" tone="cmd" />
       </div>
       {!robotPose && robotPoseReason && (
         <p className="text-[11px] leading-snug text-muted-foreground">{robotPoseReason}</p>
@@ -331,6 +323,7 @@ function PoseForm({
   );
 }
 
-function immediateDeleteQuestion(name: string): string {
+/** What a delete that is written at once asks: the dashboard's, here and on the stop's panel. */
+export function immediateDeleteQuestion(name: string): string {
   return `Delete "${name}"? This cannot be undone.`;
 }

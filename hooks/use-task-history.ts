@@ -10,6 +10,7 @@ import {
   type TaskHistoryFilterQuery,
 } from "@/lib/api/task";
 import { historyQueryKey, type HistoryPageSize } from "@/lib/task/history";
+import type { ReadStatus } from "@/lib/types/read";
 
 export interface UseTaskHistory {
   /** Newest close first. */
@@ -17,7 +18,7 @@ export interface UseTaskHistory {
   /** 1-based; there is no page count (see fetchTaskHistory). */
   page: number;
   /** "loading" until this filter's first answer. */
-  status: "loading" | "ok" | "error";
+  status: ReadStatus;
   /** A page change keeps the previous page on screen while the next loads. */
   switching: boolean;
   error: string | null;

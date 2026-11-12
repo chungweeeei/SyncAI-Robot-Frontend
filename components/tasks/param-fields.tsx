@@ -93,7 +93,7 @@ function ParamField({
           placeholder={field.placeholder ?? undefined}
           aria-label={label}
           // No size below md: iOS Safari zooms into any field under 16 px.
-          className="h-7 min-w-0 flex-1 rounded-sm md:text-[13px]"
+          className="h-7 min-w-0 flex-1 rounded-sm text-[13px]"
         />
         {/* The counter appears only near the limit. */}
         {value.length > field.max_length - 100 && (
@@ -126,7 +126,7 @@ function ParamField({
         placeholder={field.kind === "number" ? (field.placeholder ?? undefined) : String(field.default)}
         aria-label={label}
         aria-describedby={field.unit ? unitId : undefined}
-        className="h-7 w-16 rounded-sm md:text-[13px]"
+        className="h-7 w-16 rounded-sm text-[13px]"
       />
       {field.unit && (
         <span id={unitId} className="text-[11px] text-muted-foreground">

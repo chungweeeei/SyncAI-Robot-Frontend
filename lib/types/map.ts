@@ -5,7 +5,7 @@
 // the robot's map cleaning builds the 3D map (octomap.bt) minutes later. That
 // can lag or fail, which is why `octomap_status` is more than a yes or no.
 
-import { z } from "zod";
+import * as z from "zod";
 
 export const OctomapStatusSchema = z.enum([
   "none",

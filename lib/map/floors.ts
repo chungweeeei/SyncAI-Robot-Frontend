@@ -195,6 +195,14 @@ export function followWindow(z: number): { lo: number; hi: number } {
 }
 
 /**
+ * A band as the two numbers a layer's `setBand` takes: no band is every
+ * height. One place, so "no floor picked" cannot come to mean two things.
+ */
+export function bandRange(band: { lo: number; hi: number } | null | undefined): [number, number] {
+  return [band?.lo ?? -Infinity, band?.hi ?? Infinity];
+}
+
+/**
  * What is wrong with a list the operator is about to save, in the backend's
  * own words, or null. Checked here so Save is greyed with the reason rather
  * than refused, and kept in step with `_validate_floors`.

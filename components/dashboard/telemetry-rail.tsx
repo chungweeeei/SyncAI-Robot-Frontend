@@ -13,11 +13,16 @@ import type { RobotState } from "@/lib/types/robot";
  */
 export function TelemetryRail({ state }: { state: RobotState }) {
   return (
-    <div className="divide-y divide-hairline">
-      {/* First, by request: it changes the next ten minutes on its own. */}
-      <ScheduleGlance />
+    // Between md and lg the rail is still under the viewport, but a tablet's
+    // width would stretch each group across 700 px: two columns there, the
+    // motors (the longest group) beside the other two.
+    <div className="divide-y divide-hairline md:max-lg:grid md:max-lg:grid-cols-2 md:max-lg:divide-x md:max-lg:divide-y-0">
+      <div className="divide-y divide-hairline">
+        {/* First, by request: it changes the next ten minutes on its own. */}
+        <ScheduleGlance />
 
-      <LocomotionControl lowLevelMode={state.low_level_mode} />
+        <LocomotionControl lowLevelMode={state.low_level_mode} />
+      </div>
 
       {/* Last: the longest group, so Locomotion stays above the fold. */}
       <MotorStatus motors={state.motor_status} />

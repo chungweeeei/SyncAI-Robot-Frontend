@@ -188,3 +188,15 @@ export function taskStops(steps: readonly TemplateStep[]): TaskStops {
   }
   return result;
 }
+
+/**
+ * What a task's delete has to say about its schedules, or null with none:
+ * they keep running, each on its own copy of the steps, so removing the task
+ * does not stop the robot setting off. `where` names the place they are
+ * deleted from, for a screen that is not it.
+ */
+export function survivingSchedulesNote(count: number, where = ""): string | null {
+  if (count <= 0) return null;
+  const subject = count === 1 ? "Its schedule keeps" : `Its ${count} schedules keep`;
+  return `${subject} running until deleted${where ? ` ${where}` : ""}.`;
+}

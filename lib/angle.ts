@@ -8,3 +8,8 @@ export function normalizeTheta(deg: number): number {
   const wrapped = ((deg % 360) + 360) % 360; // [0, 360)
   return wrapped > 180 ? wrapped - 360 : wrapped;
 }
+
+/** Degrees to radians: the wire's headings are degrees, three.js and the trig are not. */
+export function toRadians(deg: number): number {
+  return (deg * Math.PI) / 180;
+}

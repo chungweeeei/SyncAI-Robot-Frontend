@@ -10,11 +10,12 @@ import {
   type TaskHistoryStats,
 } from "@/lib/api/task";
 import { historyQueryKey } from "@/lib/task/history";
+import type { ReadStatus } from "@/lib/types/read";
 
 export interface UseTaskHistoryStats {
   /** Null before the first answer under this filter. */
   stats: TaskHistoryStats | null;
-  status: "loading" | "ok" | "error";
+  status: ReadStatus;
   error: string | null;
   refresh: () => void;
 }

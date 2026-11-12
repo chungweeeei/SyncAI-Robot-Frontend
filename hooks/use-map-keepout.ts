@@ -4,9 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 
 import { fetchKeepout } from "@/lib/api/keepout";
 import { queryKeys } from "@/lib/api/query-keys";
+import { readStatus } from "@/lib/api/read-state";
 import type { ZonePolygon } from "@/lib/types/map";
+import type { ReadStatus } from "@/lib/types/read";
 
-export type MapKeepoutStatus = "loading" | "ok" | "error";
+export type MapKeepoutStatus = ReadStatus;
 
 export interface UseMapKeepout {
   /** The zones as last saved, or null until the read answers. */
@@ -32,7 +34,7 @@ export function useMapKeepout(name: string | null): UseMapKeepout {
   });
   return {
     zones: data?.zones ?? null,
-    status: isPending ? "loading" : isError ? "error" : "ok",
+    status: readStatus({ isPending, isError }),
     error: error?.message ?? null,
   };
 }

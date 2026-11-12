@@ -4,6 +4,7 @@
 // the leg no row of the operator's names: the dashboard while a dock runs
 // (lib/scene/dock-layer.ts).
 
+import { toRadians } from "@/lib/angle";
 import type { PlanarPose } from "@/lib/types/robot";
 
 /**
@@ -19,7 +20,7 @@ export const DOCK_STAGING_DISTANCE_M = 1.0;
  * same heading, so the last metre is a straight walk forward.
  */
 export function stagingPose(dock: PlanarPose): PlanarPose {
-  const radians = (dock.theta * Math.PI) / 180;
+  const radians = toRadians(dock.theta);
   return {
     x: dock.x - DOCK_STAGING_DISTANCE_M * Math.cos(radians),
     y: dock.y - DOCK_STAGING_DISTANCE_M * Math.sin(radians),

@@ -2,7 +2,7 @@
 
 import { RadarIcon } from "lucide-react";
 
-import { Chip, Readout, overlayPanel } from "@/components/console/instrument";
+import { Chip, PoseReadouts, Readout, overlayPanel } from "@/components/console/instrument";
 import { cn } from "@/lib/utils";
 import type { AutoLocalize } from "@/hooks/use-auto-localize";
 
@@ -31,12 +31,8 @@ export function AutoLocalizeControl({
     >
       {result && (
         <div className="space-y-1">
-          <Readout label="X" value={result.x.toFixed(2)} unit="m" tone="caution" />
-          <Readout label="Y" value={result.y.toFixed(2)} unit="m" tone="caution" />
-          <Readout
-            label="Orientation"
-            value={result.theta.toFixed(1)}
-            unit="°"
+          <PoseReadouts
+            pose={{ x: result.x, y: result.y, theta: result.theta }}
             tone="caution"
           />
           <Readout
