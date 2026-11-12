@@ -13,7 +13,7 @@
 // type="number" erasing half-typed input), and the backend still validates,
 // its refusals rendered verbatim.
 
-import { z } from "zod";
+import * as z from "zod";
 
 import type { StepType } from "@/lib/api/task";
 import {

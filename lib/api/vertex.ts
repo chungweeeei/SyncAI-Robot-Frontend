@@ -7,7 +7,7 @@
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
 import { normalizeTheta } from "@/lib/angle";
-import { z } from "zod";
+import * as z from "zod";
 
 import { MapVertexSchema } from "@/lib/types/map";
 import type { MapVertex, VertexType } from "@/lib/types/map";

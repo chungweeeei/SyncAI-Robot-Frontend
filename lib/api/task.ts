@@ -6,7 +6,7 @@
 // **finished** ones. Both read the orchestrator's index, so history only
 // reaches back as far as its retention (a day on a fresh install).
 
-import { z } from "zod";
+import * as z from "zod";
 
 import { normalizeTheta } from "@/lib/angle";
 import { apiUrl } from "@/lib/api/config";
@@ -263,39 +263,40 @@ export const WaitStepParamsSchema: z.ZodType<WaitStepParams> = z.object({
   seconds: z.number(),
 });
 
+/** The fields every step request carries, spread into each branch below. */
+const stepRequestBase = {
+  id: z.string(),
+  group: z.string().nullish(),
+};
+
 /**
  * For a schedule's step list read back. A plain union: a bare step's
  * discriminator is three literals.
  */
 export const TaskStepRequestSchema: z.ZodType<TaskStepRequest> = z.union([
   z.object({
-    id: z.string(),
+    ...stepRequestBase,
     type: z.enum(["MOVE", "DOCK"]),
     params: MoveStepParamsSchema,
-    group: z.string().nullish(),
   }),
   z.object({
-    id: z.string(),
+    ...stepRequestBase,
     type: z.literal("PATROL"),
     params: PatrolStepParamsSchema,
-    group: z.string().nullish(),
   }),
   z.object({
-    id: z.string(),
+    ...stepRequestBase,
     type: z.literal("SPEAK"),
     params: SpeakStepParamsSchema,
-    group: z.string().nullish(),
   }),
   z.object({
-    id: z.string(),
+    ...stepRequestBase,
     type: z.literal("WAIT"),
     params: WaitStepParamsSchema,
-    group: z.string().nullish(),
   }),
   z.object({
-    id: z.string(),
+    ...stepRequestBase,
     type: z.enum(["STANDUP", "LIEDOWN"]),
-    group: z.string().nullish(),
   }),
 ]);
 

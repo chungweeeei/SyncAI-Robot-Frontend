@@ -6,7 +6,7 @@
 
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
-import { z } from "zod";
+import * as z from "zod";
 
 import { ZonePolygonSchema } from "@/lib/types/map";
 import type { ZonePolygon } from "@/lib/types/map";

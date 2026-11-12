@@ -11,6 +11,7 @@ import type {
   TaskStatus,
 } from "@/lib/api/task";
 import { wireLinked } from "@/lib/task/step";
+import { pad2 } from "@/lib/time";
 
 /**
  * Seconds between a run's start and close (server timestamps), or null without
@@ -107,7 +108,7 @@ export function continuationKind(kind: string | null): TaskKind {
 export function exportFilename(query: TaskHistoryFilterQuery, nowMs: number): string {
   const day = (ms: number) => {
     const d = new Date(ms);
-    return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+    return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
   };
   const since = query.since ? Date.parse(query.since) : NaN;
   const until = query.until ? Date.parse(query.until) : nowMs;
@@ -460,10 +461,6 @@ export function customRangeSeed(range: HistoryRange, nowMs: number): { from: str
 // ---------------------------------------------------------------------------
 // datetime-local ↔ ISO
 
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
 /**
  * An ISO 8601 instant as `<input type="datetime-local">` wants it, via `Date`'s
  * local getters rather than Intl so nothing depends on a locale. Empty for an
@@ -472,7 +469,7 @@ function pad(value: number): string {
 export function isoToLocalInput(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
 /**
@@ -572,7 +569,7 @@ function dayStartMs(nowMs: number, days: number): number {
 /** `<input type="date">`'s value for the local day `ms` falls on. */
 export function dateInputValue(ms: number): string {
   const d = new Date(ms);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 /** Local midnight of a `YYYY-MM-DD` date input, or null for a half-typed one. */

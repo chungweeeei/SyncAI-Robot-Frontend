@@ -12,6 +12,7 @@ import type { ScheduleState, ScheduleTrigger } from "@/lib/api/schedule";
 import type { TaskStepRequest } from "@/lib/api/task";
 import type { TemplateStep } from "@/lib/api/task-template";
 import { isNavStep, toDispatchSteps, wireLinked } from "@/lib/task/step";
+import { DAY_MS, pad2 } from "@/lib/time";
 
 /**
  * The seven days in the order an operator expects them, each with its cron
@@ -138,7 +139,7 @@ export function scheduleFormSeed(trigger: ScheduleTrigger): ScheduleFormSeed {
   if (trigger.cron) {
     const timed = fromCron(trigger.cron);
     if (!timed) return DEFAULT_FORM_SEED;
-    const time = `${pad(timed.hour)}:${pad(timed.minute)}`;
+    const time = `${pad2(timed.hour)}:${pad2(timed.minute)}`;
     const preset: ScheduleRepeat | null = sameDays(timed.days, DAILY_DAYS)
       ? "daily"
       : sameDays(timed.days, WEEKDAY_DAYS)
@@ -184,10 +185,6 @@ export function browserTimeZone(): string {
   }
 }
 
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
 /** `Daily` / `Weekdays` / `Mon, Wed, Fri`. */
 function describeDays(days: readonly number[]): string {
   if (days.length === 7) return "Daily";
@@ -208,7 +205,6 @@ function describeDays(days: readonly number[]): string {
     .join(", ");
 }
 
-const DAY_MS = 86_400_000;
 
 function startOfDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
@@ -242,7 +238,7 @@ export function nextTimedRun({ hour, minute, days }: TimeOfDay, now: Date): Date
  * inside a week, so the weekday is never ambiguous.
  */
 export function describeNextRun(next: Date, now: Date): string {
-  const time = `${pad(next.getHours())}:${pad(next.getMinutes())}`;
+  const time = `${pad2(next.getHours())}:${pad2(next.getMinutes())}`;
   const dayDiff = Math.round((startOfDay(next) - startOfDay(now)) / DAY_MS);
   if (dayDiff === 0) return `today ${time}`;
   if (dayDiff === 1) return `tomorrow ${time}`;
@@ -256,7 +252,7 @@ export function describeNextRun(next: Date, now: Date): string {
 export function formatLocalRunTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
 /**
@@ -294,7 +290,7 @@ export function describeTrigger(trigger: ScheduleTrigger): string {
   if (trigger.cron) {
     const timed = fromCron(trigger.cron);
     const when = timed
-      ? `${describeDays(timed.days)} at ${pad(timed.hour)}:${pad(timed.minute)}`
+      ? `${describeDays(timed.days)} at ${pad2(timed.hour)}:${pad2(timed.minute)}`
       : trigger.cron;
     return trigger.timezone ? `${when} · ${trigger.timezone}` : when;
   }

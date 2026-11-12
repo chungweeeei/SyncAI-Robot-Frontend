@@ -3,7 +3,7 @@
 // against a mapping run lost without a save. Fields mirror the backend's
 // snake_case names.
 
-import { z } from "zod";
+import * as z from "zod";
 
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";

@@ -5,7 +5,7 @@
 // alias generator, so `intervalSeconds` is silently ignored and the request
 // 422s naming a field the client never sent.
 
-import { z } from "zod";
+import * as z from "zod";
 
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";

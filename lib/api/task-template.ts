@@ -8,7 +8,7 @@
 // that (`toDispatchSteps`) rather than re-deciding vertex vs snapshot here,
 // since only the server holds every map's vertices.
 
-import { z } from "zod";
+import * as z from "zod";
 
 import { apiUrl } from "@/lib/api/config";
 import { requestJson, type ErrorBody } from "@/lib/api/http";
@@ -131,26 +131,34 @@ export type TaskTemplateChanges = Partial<TaskTemplateDraft>;
 /** A plain union, as for TaskStepRequestSchema: a bare step's discriminator is three literals. */
 const VertexRefStatusSchema = z.enum(["NONE", "CURRENT", "MISSING"]);
 
+/**
+ * What every stored step carries, spread into each branch below so a field
+ * added to TemplateStepBase is written once. A PATROL overrides the vertex
+ * fields after the spread.
+ */
+const templateStepBase = {
+  id: z.string(),
+  vertex_id: z.string().nullable(),
+  vertex_name: z.string().nullable(),
+  vertex_status: VertexRefStatusSchema,
+  group: z.string().nullish().transform((group) => group ?? null),
+};
+
 const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
   z.object({
-    id: z.string(),
-    vertex_id: z.string().nullable(),
-    vertex_name: z.string().nullable(),
-    vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
-    group: z.string().nullish().transform((group) => group ?? null),
+    ...templateStepBase,
     type: z.enum(["MOVE", "DOCK"]),
     params: MoveStepParamsSchema.nullable(),
     resolved_params: MoveStepParamsSchema.nullable(),
   }),
   z.object({
-    id: z.string(),
+    ...templateStepBase,
     // On a PATROL the backend sends the singular id and name as null and the
     // status as the worst waypoint's; read leniently, so one that leaves them
     // out does not drop the template list.
     vertex_id: z.string().nullish().transform((id) => id ?? null),
     vertex_name: z.string().nullish().transform((name) => name ?? null),
     vertex_status: VertexRefStatusSchema.default("NONE"),
-    group: z.string().nullish().transform((group) => group ?? null),
     type: z.literal("PATROL"),
     params: PatrolStepParamsSchema.nullable(),
     resolved_params: PatrolStepParamsSchema.nullable(),
@@ -159,31 +167,19 @@ const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
     vertex_statuses: z.array(VertexRefStatusSchema).default([]),
   }),
   z.object({
-    id: z.string(),
-    vertex_id: z.string().nullable(),
-    vertex_name: z.string().nullable(),
-    vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
-    group: z.string().nullish().transform((group) => group ?? null),
+    ...templateStepBase,
     type: z.literal("SPEAK"),
     params: SpeakStepParamsSchema.nullable(),
     resolved_params: SpeakStepParamsSchema.nullable(),
   }),
   z.object({
-    id: z.string(),
-    vertex_id: z.string().nullable(),
-    vertex_name: z.string().nullable(),
-    vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
-    group: z.string().nullish().transform((group) => group ?? null),
+    ...templateStepBase,
     type: z.literal("WAIT"),
     params: WaitStepParamsSchema.nullable(),
     resolved_params: WaitStepParamsSchema.nullable(),
   }),
   z.object({
-    id: z.string(),
-    vertex_id: z.string().nullable(),
-    vertex_name: z.string().nullable(),
-    vertex_status: z.enum(["NONE", "CURRENT", "MISSING"]),
-    group: z.string().nullish().transform((group) => group ?? null),
+    ...templateStepBase,
     type: z.enum(["STANDUP", "LIEDOWN"]),
     params: z.null(),
     resolved_params: z.null(),

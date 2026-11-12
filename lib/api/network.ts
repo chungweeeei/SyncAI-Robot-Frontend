@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 import { apiUrl } from "@/lib/api/config";
 import { requestJson, type ErrorBody } from "@/lib/api/http";
