@@ -39,14 +39,18 @@ const layerOf = (vertices: MapVertex[]) => {
 /**
  * The world box of what one stop draws: its marker group's shown parts, so
  * neither the invisible hit disc nor the badge (hung off the layer) counts.
+ * `keep` narrows it to the parts whose own box passes.
  */
-const markerBox = (layer: ReturnType<typeof createVertexLayer>, above = -Infinity) => {
+const markerBox = (
+  layer: ReturnType<typeof createVertexLayer>,
+  keep: (own: THREE.Box3) => boolean = () => true,
+) => {
   const marker = layer.group.children.find((child) => child instanceof THREE.Group)!;
   const box = new THREE.Box3();
   for (const part of marker.children) {
     if (!part.visible) continue;
     const own = new THREE.Box3().setFromObject(part);
-    if (own.min.z > above) box.union(own);
+    if (keep(own)) box.union(own);
   }
   return box;
 };
@@ -75,12 +79,18 @@ describe("createVertexLayer", () => {
     expect(flat.min.z).toBeGreaterThan(drawnGround(0));
   });
 
-  it("faces a charger's post back down its heading, its back to the wall", () => {
-    // Heading +y. What stands off the plate (the post, its bolt) is all on
-    // the wall's side of the waypoint, the bolt on the face towards it.
+  it("lays a charger's plate under the waypoint and stands its post on the floor past it", () => {
+    // Heading +y, into the wall. The plate is where the robot stands docked;
+    // the post is beyond its far edge, not on it, the bolt on the face
+    // towards the plate.
     const layer = layerOf([stop({ type: "CHARGE", theta: 90 })]);
-    const post = markerBox(layer, drawnGround(0) + 0.02);
-    expect(post.min.y).toBeGreaterThan(0);
+    const ground = drawnGround(0);
+    const plate = markerBox(layer, (own) => own.max.z < ground + 0.05);
+    const post = markerBox(layer, (own) => own.max.z > ground + 0.1);
+    expect(plate.min.y).toBeLessThan(0);
+    expect(plate.max.y).toBeGreaterThan(0);
+    expect(post.min.y).toBeGreaterThanOrEqual(plate.max.y - 0.01);
+    expect(post.min.z).toBeCloseTo(ground);
     const marker = layer.group.children.find((child) => child instanceof THREE.Group)!;
     const bolt = marker.children.find(
       (part) =>
