@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { writeState } from "@/lib/api/mutation-state";
 import { queryKeys } from "@/lib/api/query-keys";
+import { readStatus } from "@/lib/api/read-state";
 import {
   createTaskTemplate,
   deleteTaskTemplate,
@@ -15,8 +16,9 @@ import {
   type TaskTemplateChanges,
   type TaskTemplateDraft,
 } from "@/lib/api/task-template";
+import type { ReadStatus } from "@/lib/types/read";
 
-export type TaskTemplatesStatus = "loading" | "ok" | "error";
+export type TaskTemplatesStatus = ReadStatus;
 
 export interface UseTaskTemplates {
   /** Every template on the robot, by name; scoping is the caller's. */
@@ -136,7 +138,7 @@ export function useTaskTemplates(): UseTaskTemplates {
 
   return {
     templates: query.data ?? [],
-    status: query.isPending ? "loading" : query.isError ? "error" : "ok",
+    status: readStatus(query),
     error: write.error ?? query.error?.message ?? null,
     refusedStepId: write.failure instanceof StepRefusalError ? write.failure.stepId : null,
     busy: write.busy,

@@ -4,7 +4,7 @@ import * as React from "react";
 
 import { ExportReport } from "@/components/history/export-report";
 import { TaskHistory } from "@/components/history/task-history";
-import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
+import { useRobotId } from "@/hooks/use-console-robot-state";
 import { RobotName } from "@/components/console/robot-name";
 
 /**
@@ -13,7 +13,8 @@ import { RobotName } from "@/components/console/robot-name";
  * command the robot off screen. The screen owns its scroll.
  */
 export default function HistoryPage() {
-  const { state } = useConsoleRobotState();
+  // The name alone: the whole frame moves every second, and with it this page.
+  const robotId = useRobotId();
 
   return (
     <div className="h-full overflow-y-auto">
@@ -23,7 +24,7 @@ export default function HistoryPage() {
           <div>
             <h1 className="text-xl font-semibold tracking-tight">History</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Jobs <RobotName id={state?.robot_id} />{" "}
+              Jobs <RobotName id={robotId} />{" "}
               has finished, newest first, over the window you pick. The robot
               keeps them for a limited time, so older ones no longer appear here.
             </p>

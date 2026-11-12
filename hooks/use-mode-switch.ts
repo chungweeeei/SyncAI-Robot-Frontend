@@ -4,8 +4,9 @@ import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
-import { ignore } from "@/lib/api/mutation-state";
 import { switchRobotMode, type SwitchableMode } from "@/lib/api/mapping";
+import { ignore } from "@/lib/api/mutation-state";
+import type { ReadStatus } from "@/lib/types/read";
 import type { RobotMode } from "@/lib/types/robot";
 
 export interface ModeSwitch {
@@ -15,7 +16,7 @@ export interface ModeSwitch {
    */
   reported: RobotMode | null;
   /** "error" during a switch is the expected shape. */
-  stateStatus: "loading" | "ok" | "error";
+  stateStatus: ReadStatus;
   /**
    * The mode a switch is heading for. Derived: null the moment a frame
    * reports it, as with useLocomotion's pendingPolicy.

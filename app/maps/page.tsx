@@ -1,11 +1,12 @@
 "use client";
 
-import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
+import { useRobotId } from "@/hooks/use-console-robot-state";
 import { MapLibrary } from "@/components/maps/map-library";
 import { RobotName } from "@/components/console/robot-name";
 
 export default function MapsPage() {
-  const { state } = useConsoleRobotState();
+  // The name alone: the whole frame moves every second, and with it this page.
+  const robotId = useRobotId();
 
   return (
     // The screen owns its scroll, at every library screen's width so the
@@ -17,7 +18,7 @@ export default function MapsPage() {
           {/* One line, by request: the details live where they apply. */}
           <p className="mt-1 text-sm text-muted-foreground">
             Switch, edit and manage the maps{" "}
-            <RobotName id={state?.robot_id} />{" "}
+            <RobotName id={robotId} />{" "}
             works in.
           </p>
         </header>

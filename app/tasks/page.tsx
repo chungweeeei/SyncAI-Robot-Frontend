@@ -1,6 +1,6 @@
 "use client";
 
-import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
+import { useRobotId } from "@/hooks/use-console-robot-state";
 import { CreateTaskButton } from "@/components/tasks/create-task-button";
 import { TaskOverview } from "@/components/tasks/task-overview";
 import { RobotName } from "@/components/console/robot-name";
@@ -11,7 +11,8 @@ import { RobotName } from "@/components/console/robot-name";
  * masthead's.
  */
 export default function TasksPage() {
-  const { state } = useConsoleRobotState();
+  // The name alone: the whole frame moves every second, and with it this page.
+  const robotId = useRobotId();
 
   return (
     // The screen owns its scroll: the shell's <main> is overflow-hidden.
@@ -23,14 +24,14 @@ export default function TasksPage() {
             <h1 className="text-xl font-semibold tracking-tight">Tasks</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Create tasks for{" "}
-              <RobotName id={state?.robot_id} />, run one now, or schedule it to
+              <RobotName id={robotId} />, run one now, or schedule it to
               run on its own.
             </p>
           </div>
           <CreateTaskButton />
         </header>
 
-        <TaskOverview robotId={state?.robot_id ?? null} />
+        <TaskOverview robotId={robotId} />
       </div>
     </div>
   );

@@ -65,8 +65,9 @@ export interface TaskTracker {
  * Follows one submitted task until it is terminal; shared by every flow that
  * dispatches one, so its subtleties do not drift between copies.
  *
- * A keyed query, so two surfaces following one run share a poll, and `track`
- * pointing at a new id leaves the previous run's readback behind for free.
+ * A keyed query, so two surfaces following one run share its answer (not
+ * its timer: each observer polls on its own interval, and only requests in
+ * flight together are folded), and `track` pointing at a new id leaves the previous run's readback behind for free.
  * Everything returned is derived from that one entry.
  */
 export function useTaskTracker(): TaskTracker {

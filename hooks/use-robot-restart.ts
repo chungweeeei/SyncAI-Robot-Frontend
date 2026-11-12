@@ -7,6 +7,7 @@ import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { queryKeys } from "@/lib/api/query-keys";
 import { fetchRestartStatus, restartRobotStack } from "@/lib/api/robot";
 import type { RestartRecord } from "@/lib/api/robot";
+import type { ReadStatus } from "@/lib/types/read";
 import type { RobotMode } from "@/lib/types/robot";
 
 // The rebuild takes about 30 s; a second's resolution on its end is plenty.
@@ -14,7 +15,7 @@ const RESTART_POLL_MS = 1000;
 
 export interface RobotRestart {
   reported: RobotMode | null;
-  stateStatus: "loading" | "ok" | "error";
+  stateStatus: ReadStatus;
   /** Link up, in Navigation (the backend refuses other modes), none under way. */
   canRestart: boolean;
   /** A restart is under way, whichever console asked — the backend's record. */

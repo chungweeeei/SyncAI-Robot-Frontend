@@ -4,8 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import { fetchMapOctomapEdits } from "@/lib/api/map";
 import { queryKeys } from "@/lib/api/query-keys";
+import { readStatus } from "@/lib/api/read-state";
+import type { ReadStatus } from "@/lib/types/read";
 
-export type MapOctomapEditsStatus = "loading" | "ok" | "error";
+export type MapOctomapEditsStatus = ReadStatus;
 
 export interface UseMapOctomapEdits {
   /** The patches as last saved, absolute keys, or null until the read answers. */
@@ -31,7 +33,7 @@ export function useMapOctomapEdits(name: string | null): UseMapOctomapEdits {
   });
   return {
     fillKey: data?.fill_key ?? null,
-    status: isPending ? "loading" : isError ? "error" : "ok",
+    status: readStatus({ isPending, isError }),
     error: error?.message ?? null,
   };
 }

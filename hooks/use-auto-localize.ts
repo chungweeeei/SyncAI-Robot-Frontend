@@ -3,11 +3,18 @@
 import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 
-import { useConsoleActiveTasks } from "@/hooks/use-console-active-tasks";
-import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
+import { useActiveTasksSelect } from "@/hooks/use-console-active-tasks";
+import { useRobotStateSelect } from "@/hooks/use-console-robot-state";
 import { autoLocalize, type AutoLocalizeResult } from "@/lib/api/localization";
 import { ignore } from "@/lib/api/mutation-state";
+import type { ActiveTasksResponse } from "@/lib/api/task";
 import { autoLocalizeLock } from "@/lib/map/run-lock";
+import type { RobotState } from "@/lib/types/robot";
+
+const robotMode = (state: RobotState) => state.mode;
+const anyRunning = (list: ActiveTasksResponse) => list.tasks.length > 0;
+const RUNNING: readonly unknown[] = [true];
+const IDLE: readonly unknown[] = [];
 
 /**
  * How long a match stays on screen. Longer than the initial pose's receipt:
@@ -34,11 +41,15 @@ export interface AutoLocalize {
  * itself; a failure stays beside its Retry.
  */
 export function useAutoLocalize(): AutoLocalize {
-  const { state } = useConsoleRobotState();
-  const { tasks, status } = useConsoleActiveTasks();
+  // The two facts the lock is made of, selected off the console's polls: the
+  // whole frame and the whole list move every read, and this hook is mounted
+  // in the dashboard's viewport, which would re-render with them.
+  const mode = useRobotStateSelect(robotMode) ?? null;
+  const { data: running, status } = useActiveTasksSelect(anyRunning);
   const lock = autoLocalizeLock({
-    mode: state?.mode ?? null,
-    tasks,
+    mode,
+    // The rule reads only whether there is one.
+    tasks: running ? RUNNING : IDLE,
     status,
   });
 

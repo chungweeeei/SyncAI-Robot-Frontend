@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 
-import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
+import { refuseIfStopped, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { ignore } from "@/lib/api/mutation-state";
 import { setMotionKey, type MotionKey } from "@/lib/api/robot";
@@ -62,7 +62,7 @@ export function usePosture(): PostureControl {
   const submit = useMutation({
     mutationFn: async (posture: Posture) => {
       // Refused here as well as greyed at the button: see useGoalTask.
-      if (stopped) throw new Error(ESTOP_REFUSAL);
+      refuseIfStopped(stopped);
       const result = await setMotionKey(POSTURE_KEY[posture]);
       // Always sent for these keys; honoured so a refusal never looks applied.
       if (!result.sent) throw new Error(result.message);

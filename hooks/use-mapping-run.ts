@@ -9,7 +9,9 @@ import {
   startMapping,
   type MappingStatus,
 } from "@/lib/api/mapping";
-import { queryKeys } from "@/lib/api/query-keys";
+import { mapScopedKeys, queryKeys } from "@/lib/api/query-keys";
+import { readStatus } from "@/lib/api/read-state";
+import type { ReadStatus } from "@/lib/types/read";
 
 /** The same cadence as the robot-state poll it is read beside. */
 const RUN_POLL_MS = 1000;
@@ -17,7 +19,7 @@ const RUN_POLL_MS = 1000;
 export interface UseMappingStatus {
   /** The latest answer, or null before the first one. */
   run: MappingStatus | null;
-  status: "loading" | "ok" | "error";
+  status: ReadStatus;
 }
 
 /**
@@ -36,7 +38,7 @@ export function useMappingStatus(enabled: boolean): UseMappingStatus {
 
   return {
     run: data ?? null,
-    status: isPending ? "loading" : isError ? "error" : "ok",
+    status: readStatus({ isPending, isError }),
   };
 }
 
@@ -66,16 +68,13 @@ export function useSaveMap() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
       // A save ends the run.
       void queryClient.invalidateQueries({ queryKey: queryKeys.mappingStatus });
-      // Dropped: nothing on this screen reads the scan.
-      queryClient.removeQueries({ queryKey: queryKeys.mapPointCloud(name) });
-      // The same for the 3D map: a save into the name deletes the old tree
-      // first and builds a new one minutes later.
-      queryClient.removeQueries({ queryKey: queryKeys.mapOctomap(name) });
-      // Its ground patches were painted on the old tree: read again, whatever
-      // the backend kept.
-      queryClient.removeQueries({ queryKey: queryKeys.mapOctomapEdits(name) });
-      // And its floors: they are detected from the walk the save replaces.
-      queryClient.removeQueries({ queryKey: queryKeys.mapFloors(name) });
+      // A save into a name replaces the map under it: the scan, the tree
+      // (deleted first, rebuilt minutes later), the ground patches painted
+      // on the old tree and the floors detected from the old walk. Every
+      // entry of that name is dropped rather than a list kept here by hand,
+      // which is how one went missing; nothing on this screen reads any of
+      // them, and what the backend kept (the waypoints) is read again.
+      for (const queryKey of mapScopedKeys(name)) queryClient.removeQueries({ queryKey });
     },
   });
 }

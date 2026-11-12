@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 
-import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
+import { useRobotId } from "@/hooks/use-console-robot-state";
 import { RecorderControl } from "@/components/recordings/recorder-control";
 import { RecordingList } from "@/components/recordings/recording-list";
 import { RobotName } from "@/components/console/robot-name";
@@ -13,7 +13,8 @@ import { RobotName } from "@/components/console/robot-name";
  * The screen owns its scroll.
  */
 export default function RecordingsPage() {
-  const { state } = useConsoleRobotState();
+  // The name alone: the whole frame moves every second, and with it this page.
+  const robotId = useRobotId();
 
   return (
     <div className="h-full overflow-y-auto">
@@ -28,7 +29,7 @@ export default function RecordingsPage() {
             * how a lost one is rebuilt, hence the link. */}
           <p className="mt-1 text-sm text-muted-foreground">
             Sensor recordings from{" "}
-            <RobotName id={state?.robot_id} />.
+            <RobotName id={robotId} />.
             Record a{" "}
             <Link href="/mapping" className="underline underline-offset-2">
               mapping run

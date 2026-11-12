@@ -1,11 +1,10 @@
 "use client";
 
-import * as React from "react";
-
+import { ErrorLine } from "@/components/console/error-line";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useRenameMap } from "@/hooks/use-map-actions";
-import { MAP_NAME_RE } from "@/lib/map/name";
+import { useMapRenameDraft } from "@/hooks/use-map-rename-draft";
+import { MAP_NAME_HINT } from "@/lib/map/name";
 import type { MapSummary } from "@/lib/types/map";
 
 const LOCKED_REASON =
@@ -31,41 +30,14 @@ export function MapRenameControl({
   /** The backend's sentence, for a surface that outlives this card. */
   onRenamed?: (message: string) => void;
 }) {
-  const rename = useRenameMap();
-  const [editing, setEditing] = React.useState(false);
-  const [name, setName] = React.useState(map.name);
-
-  const busy = rename.isPending;
-  // 409 (taken, in use) and 400 arrive as the backend's sentence.
-  const error = rename.error?.message ?? null;
-
-  const trimmed = name.trim();
-  const valid = MAP_NAME_RE.test(trimmed);
-  const changed = trimmed !== map.name;
+  // The draft and the write are useMapRenameDraft's, shared with the
+  // editor's title; 409 (taken, in use) and 400 arrive as the backend's sentence.
+  const draft = useMapRenameDraft(map.name);
+  const { editing, draft: name, setDraft: setName, trimmed, valid, changed } = draft;
+  const { busy, error, begin, cancel } = draft;
   const locked = map.active;
 
-  const begin = () => {
-    setName(map.name);
-    rename.reset();
-    setEditing(true);
-  };
-  const cancel = () => {
-    setEditing(false);
-    rename.reset();
-  };
-
-  const submit = () => {
-    if (!valid || !changed || busy) return;
-    rename.mutate(
-      { from: map.name, to: trimmed },
-      {
-        onSuccess: (result) => {
-          onRenamed?.(result.message);
-          setEditing(false);
-        },
-      },
-    );
-  };
+  const submit = () => draft.submit((result) => onRenamed?.(result.message));
 
   if (editing) {
     return (
@@ -91,7 +63,7 @@ export function MapRenameControl({
             aria-label="New map name"
             aria-invalid={trimmed.length > 0 && !valid ? true : undefined}
             disabled={busy}
-            className="readout h-7 min-w-0 flex-1 rounded-sm px-1.5 font-medium md:text-[15px]"
+            className="readout h-7 min-w-0 flex-1 rounded-sm px-1.5 font-medium text-[15px]"
           />
           <Button
             type="submit"
@@ -114,13 +86,13 @@ export function MapRenameControl({
         {/* Shown only while the name breaks the rule, as on save. */}
         {trimmed.length > 0 && !valid && (
           <p className="mt-1 text-[11px] leading-snug text-signal-caution">
-            Letters, digits, dot, dash and underscore only, up to 64 characters.
+            {MAP_NAME_HINT}
           </p>
         )}
         {error && (
-          <p role="alert" className="mt-1 text-[11px] leading-snug text-signal-warn">
+          <ErrorLine className="mt-1">
             {error}
-          </p>
+          </ErrorLine>
         )}
       </div>
     );
@@ -137,7 +109,7 @@ export function MapRenameControl({
         <span
           aria-disabled="true"
           title={LOCKED_REASON}
-          className="instrument-label flex h-5 shrink-0 cursor-not-allowed items-center rounded-sm px-1 text-muted-foreground opacity-40"
+          className="instrument-label flex h-5 shrink-0 cursor-not-allowed items-center rounded-sm px-1 text-muted-foreground opacity-40 pointer-coarse:h-10 pointer-coarse:px-2"
         >
           Rename
         </span>
@@ -146,7 +118,7 @@ export function MapRenameControl({
           type="button"
           onClick={begin}
           aria-label={`Rename ${map.name}`}
-          className="instrument-label flex h-5 shrink-0 items-center rounded-sm px-1 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground"
+          className="instrument-label flex h-5 shrink-0 items-center rounded-sm px-1 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:h-10 pointer-coarse:px-2"
         >
           Rename
         </button>

@@ -1,7 +1,9 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { applyVertexWrites } from "@/hooks/vertex-write-cache";
 import { queryKeys } from "@/lib/api/query-keys";
+import { readStatus } from "@/lib/api/read-state";
 import {
   createVertices,
   deleteVertex,
@@ -10,8 +12,9 @@ import {
 } from "@/lib/api/vertex";
 import type { VertexSaveLanded, VertexSavePlan } from "@/lib/map/vertex-stage";
 import type { MapVertex } from "@/lib/types/map";
+import type { ReadStatus } from "@/lib/types/read";
 
-export type MapVerticesStatus = "loading" | "ok" | "error";
+export type MapVerticesStatus = ReadStatus;
 
 /** What one Save did: everything that landed, and why it stopped, if it did. */
 export interface VertexSaveOutcome {
@@ -81,23 +84,11 @@ export function useMapVertices(name: string): UseMapVertices {
       }
     },
     onSuccess: ({ landed }) => {
-      const wrote =
-        landed.deleted.length + landed.updated.length + landed.created.length;
-      if (!wrote) return;
-      const deleted = new Set(landed.deleted);
-      const updated = new Map(landed.updated.map((vertex) => [vertex.id, vertex]));
-      queryClient.setQueryData<MapVertex[]>(
-        queryKeys.mapVertices(name),
-        (current) =>
-          current && [
-            ...current
-              .filter((vertex) => !deleted.has(vertex.id))
-              .map((vertex) => updated.get(vertex.id) ?? vertex),
-            ...landed.created.map(({ vertex }) => vertex),
-          ],
-      );
-      void queryClient.invalidateQueries({ queryKey: queryKeys.maps });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.taskTemplates });
+      applyVertexWrites(queryClient, name, {
+        deleted: landed.deleted,
+        updated: landed.updated,
+        created: landed.created.map(({ vertex }) => vertex),
+      });
     },
   });
 
@@ -110,7 +101,7 @@ export function useMapVertices(name: string): UseMapVertices {
 
   return {
     vertices: query.data ?? [],
-    status: query.isPending ? "loading" : query.isError ? "error" : "ok",
+    status: readStatus(query),
     error: query.error?.message ?? null,
     save,
   };

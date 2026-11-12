@@ -11,10 +11,7 @@ import { GoalControl } from "@/components/dashboard/goal-control";
 import { InitialPoseControl } from "@/components/dashboard/initial-pose-control";
 import { PointCloudCanvas } from "@/components/dashboard/pointcloud-canvas";
 import { StopPanel } from "@/components/dashboard/stop-panel";
-import {
-  VertexCreateDialog,
-  type Placement,
-} from "@/components/dashboard/vertex-create-dialog";
+import { VertexCreateDialog } from "@/components/dashboard/vertex-create-dialog";
 import { VertexPlaceControl } from "@/components/dashboard/vertex-place-control";
 import {
   MapToolbar,
@@ -22,7 +19,7 @@ import {
   type LayerOption,
 } from "@/components/dashboard/viewport-toolbar";
 import { useActiveMapVertices } from "@/hooks/use-active-map-vertices";
-import { useActiveRun } from "@/hooks/use-active-run";
+import { useLiveRun } from "@/hooks/use-active-run";
 import { useAutoLocalize } from "@/hooks/use-auto-localize";
 import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useGoalTask } from "@/hooks/use-goal-task";
@@ -34,7 +31,8 @@ import { useMapOctomapEdits } from "@/hooks/use-map-octomap-edits";
 import { useMapPointCloud } from "@/hooks/use-map-point-cloud";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useActiveMap } from "@/hooks/use-maps";
-import { useChargerDetect } from "@/hooks/use-charger-detect";
+import { useFloorBand } from "@/hooks/use-floor-band";
+import { useWaypointPlacement } from "@/hooks/use-waypoint-placement";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { useRoutePreview } from "@/hooks/use-route-preview";
 import { useTelemetry } from "@/hooks/use-telemetry";
@@ -50,7 +48,7 @@ import {
 } from "@/lib/map/floors";
 import { withGroundPatches } from "@/lib/map/ground-fill";
 import { previewPoints, previewStale, routeFloors } from "@/lib/map/route-preview";
-import { floorGroundOf, placedGround, robotGround } from "@/lib/map/waypoint-ground";
+import { floorGroundOf, placedGround } from "@/lib/map/waypoint-ground";
 import { liveDock } from "@/lib/task/run";
 import { cn } from "@/lib/utils";
 import type { MapVertex, VertexType } from "@/lib/types/map";
@@ -82,11 +80,11 @@ export function PointCloudView({
   const runLock = useMapRunLock(stops.mapName);
   const { engaged: stopped } = useConsoleEstop();
   const { feed, path, dockPath } = useTelemetry();
-  // A running dock's target, for its staging point. The same query entry the
-  // status strip polls, so this adds no request. Only on the map the job runs
+  // A running dock's target, for its staging point. Read off the entry the
+  // status strip polls, without a poll of its own. Only on the map the job runs
   // on: a dock pose drawn on another map would be a place that does not
   // exist there.
-  const { run } = useActiveRun();
+  const run = useLiveRun();
   const dock =
     run && activeMap && run.task.map_name === activeMap.name
       ? liveDock(run.steps)
@@ -207,14 +205,7 @@ export function PointCloudView({
   // marker drawn at, not what it is stored at (see commitPick). Memoised
   // because the measure walks every cell of the tree.
   const floorZ = React.useMemo(() => groundOf(floorBand), [groundOf, floorBand]);
-  // Keyed on the two numbers: `floors` is a fresh list on every refetch, and
-  // a fresh band object would repaint the layer for nothing.
-  const bandLo = floorBand?.lo;
-  const bandHi = floorBand?.hi;
-  const voxelBand = React.useMemo(
-    () => (bandLo === undefined || bandHi === undefined ? null : { lo: bandLo, hi: bandHi }),
-    [bandLo, bandHi],
-  );
+  const voxelBand = useFloorBand(floorBand);
   const [cameraMode, setCameraMode] = React.useState<"move" | "focus">("move");
   // Counters, not booleans: the button must work again after orbiting away.
   const [recenterNonce, setRecenterNonce] = React.useState(0);
@@ -236,17 +227,19 @@ export function PointCloudView({
   const askedDuringGoal = React.useRef(false);
   /**
    * An Add waypoint pose waiting for a name; written only on Create, so a
-   * wrong placement costs a Cancel. The key counts placements so the dialog
-   * can tell a new stop from the same one moved onto the robot.
+   * wrong placement costs a Cancel (useWaypointPlacement, shared with the
+   * map editor).
    */
-  const [placement, setPlacement] = React.useState<Placement | null>(null);
-  const placementSeq = React.useRef(0);
   const {
-    busy: chargerDetectBusy,
-    error: chargerDetectError,
-    run: runChargerDetect,
-    clear: clearChargerDetect,
-  } = useChargerDetect(activeMap?.name ?? "");
+    placement,
+    begin: beginPlacement,
+    close: closePlacement,
+    takeRobotPose: useRobotPose,
+    detectCharger: detectChargerPose,
+    detecting: chargerDetectBusy,
+    detectError: chargerDetectError,
+    clearDetect: clearChargerDetect,
+  } = useWaypointPlacement({ mapName: activeMap?.name ?? "", robotPose, voxels, bands });
   /**
    * A stop whose new pose is being written. Keeps its marker hidden until the
    * PUT lands, or the old mark would flash back as if the move were refused.
@@ -348,7 +341,7 @@ export function PointCloudView({
       if (pick?.mode === "initial-pose") {
         commitPose(floorBand ? placed : picked);
       } else if (pick?.mode === "place") {
-        setPlacement({ key: ++placementSeq.current, pose: placed, charger: pick.charger });
+        beginPlacement(placed, pick.charger);
       } else if (pick?.mode === "vertex") {
         const target = pick.vertex;
         setSavingVertex(target);
@@ -363,7 +356,7 @@ export function PointCloudView({
       }
       setPick(null);
     },
-    [pick, voxels, floorBand, bands, commitPose, sendGoal, moveVertex, clearPreview],
+    [pick, voxels, floorBand, bands, commitPose, sendGoal, moveVertex, clearPreview, beginPlacement],
   );
 
   // A tapped stop asks for its route at once — a preview moves nothing — so
@@ -441,46 +434,11 @@ export function PointCloudView({
       // A failed look is answered by now; the line is the write's from here.
       clearChargerDetect();
       void createVertex({ name, type, ...placement.pose }).then((created) => {
-        if (created) setPlacement(null);
+        if (created) closePlacement();
       });
     },
-    [placement, createVertex, clearChargerDetect],
+    [placement, createVertex, clearChargerDetect, closePlacement],
   );
-
-  // A snapshot, not a live binding: a pose that crept while the name was typed
-  // would be a stop nobody placed. Same key, so the typed name survives.
-  // On the ground under the robot, on the floor its body height is in.
-  const useRobotPose = React.useCallback(() => {
-    if (!robotPose) return;
-    const z = robotGround(voxels, bands, robotPose);
-    const pose = { x: robotPose.x, y: robotPose.y, theta: robotPose.theta, z };
-    setPlacement((cur) => (cur ? { ...cur, pose, detected: false } : cur));
-    clearChargerDetect();
-  }, [robotPose, bands, voxels, clearChargerDetect]);
-
-  // The charger's pose as the robot measured it, z included: that is the
-  // ground the robot stands on, not one to look up under the point. Same key,
-  // so the name and the type survive; only for the placement that asked, so
-  // an answer that outlived its dialog names nothing.
-  const placementKey = placement?.key ?? null;
-  const detectChargerPose = React.useCallback(() => {
-    if (placementKey === null) return;
-    void runChargerDetect().then(({ pose, answered }) => {
-      if (!answered) {
-        // No answer is coming and there is no sentence to show: let go of
-        // the dialog the look was holding.
-        setPlacement((cur) => (cur && cur.key === placementKey ? null : cur));
-        clearChargerDetect();
-        return;
-      }
-      if (!pose) return;
-      // Spread, so a placement from Add charger stays one.
-      setPlacement((cur) =>
-        cur && cur.key === placementKey ? { ...cur, pose, detected: true } : cur,
-      );
-    });
-  }, [placementKey, runChargerDetect, clearChargerDetect]);
-
 
   // A refusal leaves the panel up with the sentence in it.
   const deleteAsked = React.useCallback(
@@ -500,11 +458,10 @@ export function PointCloudView({
   }, [clearPreview, clearWriteError]);
 
   const closeCreate = React.useCallback(() => {
-    setPlacement(null);
+    closePlacement();
     // A refusal belongs to the attempt it answered, not to the next one.
     clearWriteError();
-    clearChargerDetect();
-  }, [clearWriteError, clearChargerDetect]);
+  }, [clearWriteError, closePlacement]);
 
   // Focus would re-pin the target to the robot and undo the recenter.
   const recenter = React.useCallback(() => {
@@ -621,8 +578,10 @@ export function PointCloudView({
       />
 
       {/* Pointer-transparent so the scene behind its empty stretches still
-        * takes a drag; only the panels catch the pointer. */}
-      <div className="pointer-events-none absolute inset-x-3 top-3 flex max-h-[calc(100%-1.5rem)] flex-col gap-2">
+        * takes a drag; only the panels catch the pointer. Pinned top and
+        * bottom rather than capped: a definite height is what lets the
+        * panels and the floor picker under the toolbars scroll inside it. */}
+      <div className="pointer-events-none absolute inset-3 flex flex-col gap-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <MapToolbar
             className="pointer-events-auto"
@@ -657,12 +616,12 @@ export function PointCloudView({
           />
         </div>
 
-        <div className="flex min-h-0 items-start justify-between gap-2">
+        <div className="flex min-h-0 flex-1 items-start justify-between gap-2">
           {/* Goal first: it is used on every run, an initial pose is recovery.
             * Scrolls because a sideways phone leaves the viewport ~200 px tall.
             * Pointer-transparent with each panel opting back in, so the armed
             * hint never swallows the press it asks for. */}
-          <div className="pointer-events-none flex max-h-full min-h-0 w-56 flex-col gap-2 overflow-y-auto empty:hidden">
+          <div className="pointer-events-none flex max-h-full min-h-0 w-[min(14rem,calc(100%-5rem))] flex-col gap-2 overflow-y-auto empty:hidden">
             {/* The next step happens on the map, away from the tooltip, so it
               * is spelled out here while the tool is armed. */}
             {pick?.mode === "goal" && (
@@ -748,7 +707,7 @@ export function PointCloudView({
             * is drawn, not a job, so apart from the panels on the left. */}
           {voxels && bands.length > 1 && (
             <FloorPicker
-              className="pointer-events-auto ml-auto shrink-0"
+              className="pointer-events-auto ml-auto max-h-full shrink-0"
               floors={bands}
               value={floorBand?.name ?? null}
               onChange={(name) => {
@@ -763,7 +722,7 @@ export function PointCloudView({
             * Follow, since there is no other floor to follow the robot to. */}
           {voxels && oneStorey && (
             <FloorPicker
-              className="pointer-events-auto ml-auto shrink-0"
+              className="pointer-events-auto ml-auto max-h-full shrink-0"
               floors={storeyFloors}
               value={ceilingShown ? null : storeyFloors[0].name}
               allTitle="Show the ceiling too"

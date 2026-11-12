@@ -1,13 +1,15 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { queryKeys } from "@/lib/api/query-keys";
+import { readStatus } from "@/lib/api/read-state";
 import {
   fetchActiveRecording,
   fetchRecordings,
   type ActiveRecording,
   type RecordingSummary,
 } from "@/lib/api/recording";
-import { queryKeys } from "@/lib/api/query-keys";
+import type { ReadStatus } from "@/lib/types/read";
 
 /**
  * Live recorder re-read while one runs. This poll *is* the elapsed clock: the
@@ -36,7 +38,7 @@ function pollWhileRecording(
     : false;
 }
 
-export type RecordingsStatus = "loading" | "ok" | "error";
+export type RecordingsStatus = ReadStatus;
 
 export interface UseActiveRecording {
   /** Null means "nothing is recording" — a real answer. */
@@ -61,7 +63,7 @@ export function useActiveRecording(): UseActiveRecording {
 
   return {
     active: data ?? null,
-    status: isPending ? "loading" : isError ? "error" : "ok",
+    status: readStatus({ isPending, isError }),
   };
 }
 
@@ -89,7 +91,7 @@ export function useRecordings(): UseRecordings {
 
   return {
     recordings: data ?? null,
-    status: isPending ? "loading" : isError ? "error" : "ok",
+    status: readStatus({ isPending, isError }),
     refresh,
   };
 }

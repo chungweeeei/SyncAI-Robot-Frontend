@@ -5,10 +5,7 @@ import * as React from "react";
 import { ViewportBoundary } from "@/components/console/fault-boundary";
 import { FloorPicker } from "@/components/console/floor-picker";
 import { overlayPanel } from "@/components/console/instrument";
-import {
-  VertexCreateDialog,
-  type Placement,
-} from "@/components/dashboard/vertex-create-dialog";
+import { VertexCreateDialog } from "@/components/dashboard/vertex-create-dialog";
 import { type TypedPose, VertexMoveDialog } from "@/components/dashboard/vertex-move-dialog";
 import { VertexPlaceControl } from "@/components/dashboard/vertex-place-control";
 import { Map3dCanvas, type Map3dTool } from "@/components/maps/map-3d-canvas";
@@ -24,14 +21,16 @@ import { useLeaveGuard } from "@/hooks/use-leave-guard";
 import { useMapKeepout } from "@/hooks/use-map-keepout";
 import { useUndoHistory } from "@/hooks/use-undo-history";
 import { useViewCommands } from "@/hooks/use-view-commands";
+import { useWaypointPlacement } from "@/hooks/use-waypoint-placement";
 import { useZoneEditing } from "@/hooks/use-zone-editing";
+import { useMounted } from "@/hooks/use-mounted";
 import { useMapVertices, type UseMapVertices } from "@/hooks/use-map-vertices";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
 import { useMapOctomapEdits } from "@/hooks/use-map-octomap-edits";
 import { useSaveMapOctomapEdits } from "@/hooks/use-map-actions";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useMapEntry } from "@/hooks/use-maps";
-import { useChargerDetect } from "@/hooks/use-charger-detect";
+import { useFloorBand } from "@/hooks/use-floor-band";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
 import { drawnGround, floorBands } from "@/lib/map/floors";
 import {
@@ -77,8 +76,6 @@ import { cn } from "@/lib/utils";
 import type { MapVertex, VertexType, ZonePoint, ZonePolygon } from "@/lib/types/map";
 import type { OccupiedVoxels } from "@/lib/types/octree";
 import type { PlanarPose } from "@/lib/types/robot";
-
-const subscribeNoop = () => () => {};
 
 /** One empty list for every render before the zones are read, so the canvas does not rebuild. */
 const NO_ZONES: ZonePolygon[] = [];
@@ -129,11 +126,7 @@ export function Map3dEditor({
   // The status strip reads the catalogue too, so the entry can be cached
   // before this boundary hydrates; a guard drawn from it then would not be
   // the "Loading" the server drew without one.
-  const mounted = React.useSyncExternalStore(
-    subscribeNoop,
-    () => true,
-    () => false,
-  );
+  const mounted = useMounted();
 
   if (mounted && entry && entry.octomap_status !== "ok") {
     return (
@@ -328,11 +321,15 @@ function Map3dSurface({
   const localSerialRef = React.useRef(0);
   /** The stop a re-place is carrying; Waypoint is armed while it is set. */
   const [moving, setMoving] = React.useState<MapVertex | null>(null);
-  /** A placed pose waiting for a name; staged only on Create. */
-  const [placement, setPlacement] = React.useState<Placement | null>(null);
-  const placementSeq = React.useRef(0);
-  // Offered only where `robotPose` is: on the map the robot is running.
-  const chargerDetect = useChargerDetect(name);
+  // A placed pose waiting for a name; staged only on Create. Detect charger
+  // is offered only where `robotPose` is: on the map the robot is running.
+  const placing = useWaypointPlacement({
+    mapName: name,
+    robotPose,
+    voxels,
+    bands: floorBands(floors),
+  });
+  const { placement } = placing;
   /** The stop a tap is asking about; null when the dialog is closed. */
   const [askedVertex, setAskedVertex] = React.useState<MapVertex | null>(null);
   /**
@@ -578,12 +575,7 @@ function Map3dSurface({
     () => floorBands(floors).find((floor) => floor.name === pickedFloor) ?? null,
     [floors, pickedFloor],
   );
-  const vertexLo = floorBand?.lo;
-  const vertexHi = floorBand?.hi;
-  const vertexBand = React.useMemo(
-    () => (vertexLo === undefined || vertexHi === undefined ? null : { lo: vertexLo, hi: vertexHi }),
-    [vertexLo, vertexHi],
-  );
+  const vertexBand = useFloorBand(floorBand);
   // The plane a press is cast onto: the floor's one height (memoised, since
   // the measure walks every cell), or a re-placed stop's own with none picked.
   const floorZ = React.useMemo(() => floorGroundOf(voxels, floorBand), [voxels, floorBand]);
@@ -722,7 +714,7 @@ function Map3dSurface({
       setVertexNote({ kind: "idle" });
       changeTool("pan");
     } else {
-      setPlacement({ key: ++placementSeq.current, pose: placed, charger: placingCharger });
+      placing.begin(placed, placingCharger);
     }
   };
 
@@ -739,8 +731,7 @@ function Map3dSurface({
     };
     setVertexList((current) => [...current, staged]);
     setVertexNote({ kind: "idle" });
-    setPlacement(null);
-    chargerDetect.clear();
+    placing.close();
   };
 
   /**
@@ -750,39 +741,6 @@ function Map3dSurface({
   const dropVertex = (vertex: MapVertex) => {
     setVertexList((current) => current.filter((stop) => stop.id !== vertex.id));
     setVertexNote({ kind: "idle" });
-  };
-
-  // A snapshot, not a live binding: a pose that crept while the name was typed
-  // would be a stop nobody placed. Same key, so the typed name survives.
-  const takeRobotPose = () => {
-    if (!robotPose) return;
-    const z = robotGround(voxels, floorBands(floors), robotPose);
-    const pose = { x: robotPose.x, y: robotPose.y, theta: robotPose.theta, z };
-    setPlacement((cur) => (cur ? { ...cur, pose, detected: false } : cur));
-    chargerDetect.clear();
-  };
-
-  // The charger's pose as the robot measured it, z included: that is the
-  // ground the robot stands on, not one to look up under the point. Same key,
-  // so the name and the type survive; only for the placement that asked.
-  // Staged like any other stop: nothing is sent until Save.
-  const detectChargerPose = () => {
-    const key = placement?.key;
-    if (key === undefined) return;
-    void chargerDetect.run().then(({ pose, answered }) => {
-      if (!answered) {
-        // No answer is coming and there is no sentence to show: let go of
-        // the dialog the look was holding.
-        setPlacement((cur) => (cur && cur.key === key ? null : cur));
-        chargerDetect.clear();
-        return;
-      }
-      if (!pose) return;
-      // Spread, so a placement from Add charger stays one.
-      setPlacement((cur) =>
-        cur && cur.key === key ? { ...cur, pose, detected: true } : cur,
-      );
-    });
   };
 
   // Place with the type set: armed, pressed again it is put down, and like
@@ -951,16 +909,14 @@ function Map3dSurface({
         busy={false}
         error={null}
         chargerDetect={{
-          busy: chargerDetect.busy,
-          error: chargerDetect.error,
-          onDetect: detectChargerPose,
+          busy: placing.detecting,
+          error: placing.detectError,
+          // Staged like any other stop: nothing is sent until Save.
+          onDetect: placing.detectCharger,
         }}
-        onUseRobotPose={takeRobotPose}
+        onUseRobotPose={placing.takeRobotPose}
         onCreate={createPlaced}
-        onClose={() => {
-          setPlacement(null);
-          chargerDetect.clear();
-        }}
+        onClose={placing.close}
       />
 
       {/* No Move: this page opens maps the robot is not on, and is not where
@@ -1041,8 +997,13 @@ function Map3dSurface({
             onCancel={() => changeTool("pan")}
             onDismissError={() => {}}
           />
-          <div className={cn(overlayPanel, "pointer-events-auto space-y-2 p-2.5")}>
-            <p className="instrument-label text-muted-foreground">Heights shown</p>
+          {/* Folds, like Floors under it: on a phone this column is a third
+            * of the map. Open by default, since the sliders are how a storey
+            * is found on a map with no floors named. */}
+          <details open className={cn(overlayPanel, "pointer-events-auto space-y-2 p-2.5")}>
+            <summary className="instrument-label cursor-pointer text-muted-foreground">
+              Heights shown
+            </summary>
             <label className="block text-[11px] leading-snug">
               <span className="flex justify-between text-muted-foreground">
                 <span>Lowest</span>
@@ -1051,7 +1012,7 @@ function Map3dSurface({
               <input
                 type="range"
                 aria-label="Lowest height shown"
-                className="w-full accent-signal-cmd"
+                className="w-full accent-signal-cmd pointer-coarse:h-10"
                 min={minM}
                 max={maxM}
                 step={res}
@@ -1069,7 +1030,7 @@ function Map3dSurface({
               <input
                 type="range"
                 aria-label="Highest height shown"
-                className="w-full accent-signal-cmd"
+                className="w-full accent-signal-cmd pointer-coarse:h-10"
                 min={minM}
                 max={maxM}
                 step={res}
@@ -1079,7 +1040,7 @@ function Map3dSurface({
                 }
               />
             </label>
-          </div>
+          </details>
 
           {drawKind === "waypoint" && !verticesLocked && (
             <Map3dWaypointPanel

@@ -3,9 +3,10 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 
+import { ErrorLine } from "@/components/console/error-line";
 import { Input } from "@/components/ui/input";
-import { useRenameMap } from "@/hooks/use-map-actions";
-import { MAP_NAME_RE } from "@/lib/map/name";
+import { useMapRenameDraft } from "@/hooks/use-map-rename-draft";
+import { MAP_NAME_HINT } from "@/lib/map/name";
 
 const DIRTY_REASON =
   "Save your changes first. Renaming a map reloads it, which would throw away anything you have not saved.";
@@ -26,24 +27,19 @@ const DIRTY_REASON =
  */
 export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }) {
   const router = useRouter();
-  const rename = useRenameMap();
+  // The draft and the write are useMapRenameDraft's, shared with the card.
+  const rename = useMapRenameDraft(name);
+  const { editing, draft, setDraft, trimmed, valid, changed, busy } = rename;
 
-  const [editing, setEditing] = React.useState(false);
-  const [draft, setDraft] = React.useState(name);
   /** The `dirty` refusal — not a request outcome, so not on the mutation. */
   const [refusal, setRefusal] = React.useState<string | null>(null);
   /**
-   * Held locally rather than read off `rename.data`: the success handler
+   * Held locally rather than read off the mutation: the success handler
    * navigates, and a blur-cancel racing it resets the mutation.
    */
   const [note, setNote] = React.useState<string | null>(null);
 
-  const busy = rename.isPending;
-  const error = refusal ?? rename.error?.message ?? null;
-
-  const trimmed = draft.trim();
-  const valid = MAP_NAME_RE.test(trimmed);
-  const changed = trimmed !== name;
+  const error = refusal ?? rename.error;
 
   const begin = () => {
     if (dirty) {
@@ -51,19 +47,14 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
       setRefusal(DIRTY_REASON);
       return;
     }
-    setDraft(name);
     setRefusal(null);
     setNote(null);
-    rename.reset();
-    setEditing(true);
+    rename.begin();
   };
 
   const cancel = () => {
-    setEditing(false);
     setRefusal(null);
-    // Not while pending: `disabled` fires a blur in some browsers, and a reset
-    // would detach the success handler that navigates.
-    if (!rename.isPending) rename.reset();
+    rename.cancel();
   };
 
   const submit = () => {
@@ -73,20 +64,12 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
       cancel();
       return;
     }
-    if (!valid) return;
-
-    rename.mutate(
-      { from: name, to: trimmed },
-      {
-        onSuccess: (result) => {
-          setEditing(false);
-          setNote(result.message);
-          // replace, not push: the old URL names a directory that no longer
-          // exists. The query (tool, back target) rides along.
-          router.replace(`/maps/${encodeURIComponent(trimmed)}/edit${window.location.search}`);
-        },
-      },
-    );
+    rename.submit((result, to) => {
+      setNote(result.message);
+      // replace, not push: the old URL names a directory that no longer
+      // exists. The query (tool, back target) rides along.
+      router.replace(`/maps/${encodeURIComponent(to)}/edit${window.location.search}`);
+    });
   };
 
   if (editing) {
@@ -117,14 +100,14 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
             aria-label="New map name"
             aria-invalid={trimmed.length > 0 && !valid ? true : undefined}
             disabled={busy}
-            className="readout h-7 w-56 rounded-sm px-1.5 font-medium md:text-[15px]"
+            className="readout h-7 w-56 rounded-sm px-1.5 font-medium text-[15px]"
           />
         </form>
 
         {/* Shown only while the name breaks the rule, as on the card and save. */}
         {trimmed.length > 0 && !valid && (
           <p className="mt-0.5 text-[11px] leading-snug text-signal-caution">
-            Letters, digits, dot, dash and underscore only, up to 64 characters.
+            {MAP_NAME_HINT}
           </p>
         )}
       </div>
@@ -150,9 +133,9 @@ export function MapTitleRename({ name, dirty }: { name: string; dirty: boolean }
         {name}
       </h1>
       {error && (
-        <p role="alert" className="mt-0.5 text-[11px] leading-snug text-signal-warn">
+        <ErrorLine className="mt-0.5">
           {error}
-        </p>
+        </ErrorLine>
       )}
       {/* The renamed title is the lasting receipt; this sentence (what was
         * re-keyed with it) is read once, and lost if the route remounts. */}

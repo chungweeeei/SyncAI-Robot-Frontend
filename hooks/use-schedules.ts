@@ -10,6 +10,7 @@ import {
 
 import { writeState } from "@/lib/api/mutation-state";
 import { queryKeys } from "@/lib/api/query-keys";
+import { readStatus } from "@/lib/api/read-state";
 import {
   deleteSchedule,
   getSchedule,
@@ -22,8 +23,9 @@ import {
 } from "@/lib/api/schedule";
 import { scheduleTaskTemplate } from "@/lib/api/task-template";
 import { nextScheduleRefetchMs, sameTrigger } from "@/lib/task/schedule";
+import type { ReadStatus } from "@/lib/types/read";
 
-export type SchedulesStatus = "loading" | "ok" | "error";
+export type SchedulesStatus = ReadStatus;
 
 /**
  * Delay before re-reading the list after a pause / resume. Temporal's describe
@@ -198,7 +200,7 @@ export function useSchedules(): UseSchedules {
   return {
     schedules: query.data ?? [],
     readAtMs: query.dataUpdatedAt,
-    status: query.isPending ? "loading" : query.isError ? "error" : "ok",
+    status: readStatus(query),
     error: write.error ?? query.error?.message ?? null,
     busy: write.busy,
     pause,
@@ -231,7 +233,7 @@ export function useSchedule(id: string): UseSchedule {
 
   return {
     schedule: query.data ?? null,
-    status: query.isPending ? "loading" : query.isError ? "error" : "ok",
+    status: readStatus(query),
   };
 }
 

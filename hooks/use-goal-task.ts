@@ -1,19 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { useMutation } from "@tanstack/react-query";
-
-import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
-import { useTaskTracker } from "@/hooks/use-task-tracker";
+import { useTrackedDispatch } from "@/hooks/use-tracked-dispatch";
 import { normalizeTheta } from "@/lib/angle";
-import { ignore } from "@/lib/api/mutation-state";
-import { mutationKeys } from "@/lib/api/query-keys";
-import {
-  cancelTask,
-  sendMoveTask,
-  type GoalPose,
-  type TaskStatus,
-} from "@/lib/api/task";
+import { sendMoveTask, type GoalPose, type TaskStatus } from "@/lib/api/task";
 import { currentStep } from "@/lib/task/run";
 
 export interface GoalTask {
@@ -48,40 +38,18 @@ export interface GoalTask {
  * misplaced goal is recoverable with Cancel. Which drag the viewport collects
  * is PointCloudView's single pick mode, not this hook's.
  *
- * Error order is deliberate: a failed submit (no task at all), then the task's
- * own failure, then a failed cancel — a cancel refused because the workflow
- * already closed must not hide why it closed.
+ * The send, the tracking, the cancel and the error order are
+ * useTrackedDispatch's, shared with useTaskDispatch.
  */
 export function useGoalTask(robotId: string, mapName: string | null): GoalTask {
   const [goal, setGoal] = React.useState<GoalPose | null>(null);
-  const task = useTaskTracker();
 
-  const { track, reset, taskId } = task;
-  const { engaged: stopped } = useConsoleEstop();
-
-  const submit = useMutation({
-    mutationKey: mutationKeys.taskDispatch,
-    meta: { kind: "goal" },
+  const { task, submit, cancel, clear: clearRun, busy, error } = useTrackedDispatch({
+    kind: "goal",
     // The map travels with the goal, so the backend refuses it if the robot
     // has switched maps since it was aimed.
-    mutationFn: async (staged: GoalPose) => {
-      // Refused here, not only greyed at the button, so no path can send the
-      // robot while the stop is engaged.
-      if (stopped) throw new Error(ESTOP_REFUSAL);
-      return sendMoveTask(robotId, staged, mapName);
-    },
-    // Before the request: the last run's failure under the new coordinates
-    // would read as this goal's. Callers are gated on `running`.
-    onMutate: () => reset(),
-    onSuccess: (id) => track(id),
+    dispatch: (staged: GoalPose) => sendMoveTask(robotId, staged, mapName),
   });
-
-  const cancelRun = useMutation({
-    mutationFn: (id: string) => cancelTask(id),
-  });
-
-  const { mutateAsync: submitAsync, reset: resetSubmit } = submit;
-  const { mutateAsync: cancelAsync, reset: resetCancel } = cancelRun;
 
   const sendGoal = React.useCallback(
     async (next: GoalPose) => {
@@ -89,12 +57,10 @@ export function useGoalTask(robotId: string, mapName: string | null): GoalTask {
       // dispatched heading.
       const staged = { ...next, theta: normalizeTheta(next.theta) };
       setGoal(staged);
-      // The last cancel's refusal was about a finished task.
-      resetCancel();
       // `staged`, not `goal`: setState is not visible until the next render.
-      await submitAsync(staged).catch(ignore);
+      await submit(staged);
     },
-    [submitAsync, resetCancel],
+    [submit],
   );
 
   const send = React.useCallback(async () => {
@@ -102,18 +68,11 @@ export function useGoalTask(robotId: string, mapName: string | null): GoalTask {
     await sendGoal(goal);
   }, [goal, sendGoal]);
 
-  const cancel = React.useCallback(async () => {
-    if (!taskId) return;
-    await cancelAsync(taskId).catch(ignore);
-  }, [taskId, cancelAsync]);
-
   const clear = React.useCallback(() => {
-    // Marker, status and both mutations' errors describe the same finished task.
+    // Marker, status and both requests' errors describe the same finished task.
     setGoal(null);
-    reset();
-    resetSubmit();
-    resetCancel();
-  }, [reset, resetSubmit, resetCancel]);
+    clearRun();
+  }, [clearRun]);
 
   // A goal reached is cleared on arrival: there is nothing left to retry or
   // read back, and a Clear owed on every success stops being pressed. Derived
@@ -124,7 +83,7 @@ export function useGoalTask(robotId: string, mapName: string | null): GoalTask {
       goal: null,
       taskStatus: null,
       running: false,
-      busy: submit.isPending || cancelRun.isPending,
+      busy,
       error: null,
       message: "",
       cancelable: false,
@@ -139,8 +98,8 @@ export function useGoalTask(robotId: string, mapName: string | null): GoalTask {
     goal,
     taskStatus: task.taskStatus,
     running: task.running,
-    busy: submit.isPending || cancelRun.isPending,
-    error: submit.error?.message ?? task.error ?? cancelRun.error?.message ?? null,
+    busy,
+    error,
     message: currentStep(task.steps)?.step.message ?? "",
     cancelable: task.cancelable,
     send,

@@ -1,10 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { queryKeys } from "@/lib/api/query-keys";
+import { readStatus } from "@/lib/api/read-state";
 import { fetchActiveTasks, type ActiveTask } from "@/lib/api/task";
+import type { ReadStatus } from "@/lib/types/read";
 
 // Slower than the 1 Hz robot-state poll: this discovers runs this tab did not
 // start (a schedule, another console), none perceivable to the second; this
@@ -12,7 +14,13 @@ import { fetchActiveTasks, type ActiveTask } from "@/lib/api/task";
 // 1.5 s snapshot TTL (ACTIVE_TASK_CACHE_TTL_S), so extra tabs hit its cache.
 const ACTIVE_TASK_POLL_MS = 2000;
 
-export type ActiveTasksStatus = "loading" | "ok" | "error";
+export type ActiveTasksStatus = ReadStatus;
+
+/** The entry the poll and its selectors (use-map-run-lock.ts) both observe. */
+export const activeTasksQuery = queryOptions({
+  queryKey: queryKeys.activeTasks,
+  queryFn: ({ signal }) => fetchActiveTasks(signal),
+});
 
 export interface UseActiveTasks {
   /** Running executions, or the last good list while `status` is "error". */
@@ -40,8 +48,7 @@ export function useActiveTasks(
   pollMs: number = ACTIVE_TASK_POLL_MS,
 ): UseActiveTasks {
   const { data, isPending, isError, refetch } = useQuery({
-    queryKey: queryKeys.activeTasks,
-    queryFn: ({ signal }) => fetchActiveTasks(signal),
+    ...activeTasksQuery,
     refetchInterval: pollMs,
   });
 
@@ -75,7 +82,7 @@ export function useActiveTasks(
   return {
     tasks: data?.tasks ?? [],
     recentlyEnded: data?.recently_ended ?? [],
-    status: isPending ? "loading" : isError ? "error" : "ok",
+    status: readStatus({ isPending, isError }),
     asOf: data?.as_of ?? null,
     refresh,
   };

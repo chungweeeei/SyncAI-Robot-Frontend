@@ -3,9 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { fetchMaps } from "@/lib/api/map";
 import { queryKeys } from "@/lib/api/query-keys";
+import { readStatus } from "@/lib/api/read-state";
 import type { MapSummary } from "@/lib/types/map";
+import type { ReadStatus } from "@/lib/types/read";
 
-export type MapsStatus = "loading" | "ok" | "error";
+export type MapsStatus = ReadStatus;
 
 /**
  * Catalogue re-read interval while a 3D map is being built: the robot's map
@@ -56,7 +58,7 @@ export function useMaps(): UseMaps {
 
   return {
     maps: data ?? null,
-    status: isPending ? "loading" : isError ? "error" : "ok",
+    status: readStatus({ isPending, isError }),
     refresh,
   };
 }

@@ -34,3 +34,11 @@ export function useConsoleEstop(): ConsoleEstop {
 /** Thrown by a command hook while the stop is engaged, reaching the screen like a backend refusal. */
 export const ESTOP_REFUSAL =
   "Emergency stop is engaged. Hold the stop button to release it before sending the robot anywhere.";
+
+/**
+ * The line every command hook's `mutationFn` opens with, so a command is
+ * refused where it is sent and not only greyed at its button.
+ */
+export function refuseIfStopped(stopped: boolean): void {
+  if (stopped) throw new Error(ESTOP_REFUSAL);
+}

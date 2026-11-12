@@ -12,10 +12,12 @@ import {
   type WifiConnection,
 } from "@/lib/api/network";
 import { mutationKeys, queryKeys } from "@/lib/api/query-keys";
+import { readStatus } from "@/lib/api/read-state";
+import type { ReadStatus } from "@/lib/types/read";
 
 export interface UseWifiConnections {
   connections: WifiConnection[] | null;
-  status: "loading" | "ok" | "error";
+  status: ReadStatus;
   error: string | null;
   /** When the list was read, for "… ago" — never Date.now() in render. */
   readAtMs: number;
@@ -31,7 +33,7 @@ export function useWifiConnections(): UseWifiConnections {
 
   return {
     connections: query.data ?? null,
-    status: query.isPending ? "loading" : query.isError ? "error" : "ok",
+    status: readStatus(query),
     error: query.error?.message ?? null,
     readAtMs: query.dataUpdatedAt,
     retry: () => void query.refetch(),

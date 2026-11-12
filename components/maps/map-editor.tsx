@@ -1,12 +1,22 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { ArrowLeftIcon } from "lucide-react";
 
-import { Map3dEditor } from "@/components/maps/map-3d-editor";
 import { MapTitleRename } from "@/components/maps/map-title-rename";
 import type { MapLinkFrom } from "@/lib/map/links";
+
+/**
+ * In its own chunk and client-only: the 3D library is most of this route's
+ * script and a WebGL view has nothing to prerender. The blank fills the
+ * frame under the header, so the header does not move when it arrives.
+ */
+const Map3dEditor = dynamic(
+  () => import("@/components/maps/map-3d-editor").then((mod) => mod.Map3dEditor),
+  { ssr: false, loading: () => <div aria-hidden className="h-full w-full" /> },
+);
 
 const LEAVE_PROMPT = "Leave the editor? Your unsaved changes to this map will be lost.";
 
