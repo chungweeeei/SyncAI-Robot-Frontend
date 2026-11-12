@@ -377,6 +377,38 @@ test.describe("the task console", () => {
       .toEqual(["/api/v1/task_templates/22222222-2222-2222-2222-222222222222"]);
   });
 
+  test("says a task's schedules go with it, and they leave the page", async ({ page }) => {
+    // A schedule runs the task as it is when it fires, so the robot deletes
+    // it with the task; the console sends the one delete and re-reads.
+    const template = "22222222-2222-2222-2222-222222222222";
+    const writes = await mockBackend(page, {
+      schedules: [
+        {
+          id: "half-hourly",
+          trigger: { interval_seconds: 1800 },
+          paused: false,
+          next_run_times: ["2027-01-01T01:00:00Z"],
+          task_template_id: template,
+          task_template_name: "Morning round",
+        },
+      ],
+    });
+    await page.goto("/tasks");
+    await expect(page.getByText("half-hourly", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: 'More for "Morning round"' }).click();
+    await page.getByRole("menuitem", { name: "Delete" }).click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText("Its schedule is deleted with it.");
+    await dialog.getByRole("button", { name: "Delete" }).click();
+
+    await expect(page.getByText("half-hourly", { exact: true })).toHaveCount(0);
+    // Nothing apart from the task's own delete: the robot takes the schedule.
+    expect(writes.filter((w) => w.method === "DELETE").map((w) => w.path)).toEqual([
+      `/api/v1/task_templates/${template}`,
+    ]);
+  });
+
   test("lists another map's tasks under that map, folded and not runnable", async ({
     page,
   }) => {
@@ -840,8 +872,8 @@ test.describe("the task console", () => {
     page,
   }) => {
     // Delete is in the job's menu, away from Save, and a kept dialog sends
-    // nothing; the dialog names the schedules that will outlive the job,
-    // since each keeps its own copy of the steps.
+    // nothing; the dialog says the job's schedules go with it, since each
+    // runs the job itself.
     const template = "22222222-2222-2222-2222-222222222222";
     const writes = await mockBackend(page, {
       schedules: [
@@ -873,7 +905,7 @@ test.describe("the task console", () => {
     await remove();
     const dialog = page.getByRole("alertdialog");
     await expect(dialog).toContainText("Delete Morning round?");
-    await expect(dialog).toContainText("Its schedule keeps running");
+    await expect(dialog).toContainText("Its schedule is deleted with it.");
     await dialog.getByRole("button", { name: "Keep" }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page).toHaveURL(/\/tasks\/editor$/);

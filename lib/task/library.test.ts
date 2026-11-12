@@ -7,7 +7,7 @@ import {
   routeLine,
   routeStops,
   stopPlace,
-  survivingSchedulesNote,
+  deletedSchedulesNote,
   taskStops,
   taskSummary,
 } from "@/lib/task/library";
@@ -225,17 +225,11 @@ describe("a saved patrol", () => {
 
 describe("a deleted task's schedules", () => {
   it("says nothing for a task no schedule runs", () => {
-    expect(survivingSchedulesNote(0)).toBeNull();
+    expect(deletedSchedulesNote(0)).toBeNull();
   });
 
-  it("says they keep running, since each holds its own copy of the steps", () => {
-    expect(survivingSchedulesNote(1)).toBe("Its schedule keeps running until deleted.");
-    expect(survivingSchedulesNote(3)).toBe("Its 3 schedules keep running until deleted.");
-  });
-
-  it("names where they are deleted, for a screen that is not it", () => {
-    expect(survivingSchedulesNote(1, "from Tasks")).toBe(
-      "Its schedule keeps running until deleted from Tasks.",
-    );
+  it("says they go with it, since each runs the task as it is when it fires", () => {
+    expect(deletedSchedulesNote(1)).toBe("Its schedule is deleted with it.");
+    expect(deletedSchedulesNote(3)).toBe("Its 3 schedules are deleted with it.");
   });
 });

@@ -48,7 +48,8 @@ export interface UseTaskTemplates {
  * useSchedules).
  *
  * MOVE steps resolve against a vertex's *current* pose server-side, so vertex
- * writes mark this key stale; `refresh` is the escape hatch for a long-open
+ * writes mark this key stale. A schedule runs the template as it is when it
+ * fires, so an edit needs nothing of the schedules but their name; `refresh` is the escape hatch for a long-open
  * tab. Write failures live on the mutations so a reload cannot clear them.
  */
 export function useTaskTemplates(): UseTaskTemplates {
@@ -86,12 +87,16 @@ export function useTaskTemplates(): UseTaskTemplates {
   const updateMutation = useMutation({
     mutationFn: ({ id, changes }: { id: string; changes: TaskTemplateChanges }) =>
       updateTaskTemplate(id, changes),
-    onSuccess: (updated, { id }) => {
+    onSuccess: (updated, { id, changes }) => {
       setTemplates((current) =>
         sortByName(
           current.map((template) => (template.id === id ? updated : template)),
         ),
       );
+      // A schedule's row carries the task's name, read from it on the robot.
+      if (changes.name !== undefined) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.schedules });
+      }
     },
   });
 
@@ -99,6 +104,8 @@ export function useTaskTemplates(): UseTaskTemplates {
     mutationFn: (id: string) => deleteTaskTemplate(id),
     onSuccess: (_result, id) => {
       setTemplates((current) => current.filter((template) => template.id !== id));
+      // The robot deleted the task's schedules with it.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.schedules });
     },
   });
 

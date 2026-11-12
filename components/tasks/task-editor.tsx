@@ -44,7 +44,7 @@ import { useTaskTemplates } from "@/hooks/use-task-templates";
 import { isTypingTarget } from "@/lib/keyboard";
 import type { TaskStepState } from "@/lib/api/task";
 import { canEditMap, waypointEditor } from "@/lib/map/links";
-import { survivingSchedulesNote } from "@/lib/task/library";
+import { deletedSchedulesNote } from "@/lib/task/library";
 import { draftIsUnsaved, type TaskDraft } from "@/lib/task/draft-store";
 import {
   addPatrolWaypoint,
@@ -398,8 +398,8 @@ export function TaskEditor() {
   /**
    * Delete, then leave, or Save would quietly re-create the job under a new id.
    * Confirmed in an AlertDialog (no backdrop dismiss) because nothing brings
-   * the job back. The dialog names its schedules because they survive: each
-   * holds its own copy of the steps.
+   * the job back. The dialog names its schedules because the robot deletes
+   * them with it: they run the task itself, not a copy.
    */
   const [confirmingDelete, setConfirmingDelete] = React.useState(false);
   const linkedSchedules = editing
@@ -528,7 +528,7 @@ export function TaskEditor() {
         onClose={closeDelete}
       >
         This cannot be undone.
-        {linkedSchedules > 0 && ` ${survivingSchedulesNote(linkedSchedules, "from Tasks")}`}
+        {linkedSchedules > 0 && ` ${deletedSchedulesNote(linkedSchedules)}`}
       </ConfirmDialog>
 
       <SavedNotice notice={savedNotice} onDismiss={dismissSaved} />
