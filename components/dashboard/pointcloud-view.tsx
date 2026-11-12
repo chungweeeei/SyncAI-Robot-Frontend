@@ -46,6 +46,7 @@ import {
   followWindow,
   storeyCeiling,
 } from "@/lib/map/floors";
+import { isTypingTarget } from "@/lib/keyboard";
 import { withGroundPatches } from "@/lib/map/ground-fill";
 import { previewPoints, previewStale, routeFloors } from "@/lib/map/route-preview";
 import { floorGroundOf, placedGround } from "@/lib/map/waypoint-ground";
@@ -299,6 +300,25 @@ export function PointCloudView({
       cur?.mode === "place" && cur.charger === charger ? null : { mode: "place", charger },
     );
   }, []);
+
+  // Escape puts an armed tool down, as in the map editor, and hands the
+  // primary button back to the camera. On the window, since focus stays on
+  // the toolbar button that armed it; but not over a field, and not when a
+  // dialog or a menu took the key first (it prevents the default), or one
+  // press would close the menu and the tool together. A press planted and
+  // held is dropped with it: its release no longer commits.
+  const armed = pick !== null;
+  React.useEffect(() => {
+    if (!armed) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (isTypingTarget(event.target)) return;
+      event.preventDefault();
+      setPick(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [armed]);
 
   const armReplace = React.useCallback(
     (vertex: MapVertex) => {

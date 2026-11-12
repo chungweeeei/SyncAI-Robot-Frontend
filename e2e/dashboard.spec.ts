@@ -888,6 +888,54 @@ test.describe("adding a waypoint from the dashboard", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
+  test("puts an armed tool down with Escape, and hands the map back to the camera", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page);
+    await page.goto("/");
+    const region = page.getByRole("region", { name: "Map viewport" });
+    await expect(region).toBeVisible();
+    const box = (await region.boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height * 0.6;
+    const drag = async () => {
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x + 40, y, { steps: 4 });
+      await page.mouse.up();
+    };
+
+    const place = page.getByRole("button", { name: "Add waypoint" });
+    await place.click();
+    await expect(place).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+    await expect(place).toHaveAttribute("aria-pressed", "false");
+    // The same gesture is now the camera's: no stop is asked for.
+    await drag();
+    await expect(page.getByRole("alertdialog", { name: "Create waypoint" })).toHaveCount(0);
+
+    // Escape with a goal planted and still held: the lift sends nothing.
+    const goal = page.getByRole("button", { name: "Set goal" });
+    await goal.click();
+    await expect(goal).toHaveAttribute("aria-pressed", "true");
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 40, y, { steps: 4 });
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await expect(goal).toHaveAttribute("aria-pressed", "false");
+
+    // Positive control: armed again, the same gesture does place a stop.
+    await place.click();
+    await drag();
+    await expect(page.getByRole("alertdialog", { name: "Create waypoint" })).toBeVisible();
+    expect(writes.filter((w) => w.path === "/api/v1/tasks" && w.method === "POST")).toEqual([]);
+    expect(writes.filter((w) => w.path === verticesPath)).toEqual([]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
   // No console-error guard: the browser logs the 409 itself.
   test("keeps the dialog open with the backend's refusal", async ({ page }) => {
     await mockBackend(page);
