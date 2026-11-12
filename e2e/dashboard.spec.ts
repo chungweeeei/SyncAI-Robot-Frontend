@@ -645,7 +645,8 @@ test.describe("adding a waypoint from the dashboard", () => {
       await expect(dialog.getByText("2.40")).toBeVisible();
       await expect(dialog.getByText("-1.10")).toBeVisible();
       await expect(dialog.getByText("0.03")).toBeVisible();
-      await expect(dialog.getByText("-45.0")).toBeVisible();
+      // Turned round from the mark's -45°: the heading the robot docks on.
+      await expect(dialog.getByText("135.0")).toBeVisible();
       await expect(dialog.getByLabel("Name")).toHaveValue("dock-a");
       await expect(dialog.getByRole("combobox", { name: "Type" })).toContainText("Charger");
       expect(detects(writes)).toEqual([{ method: "POST", path: detectPath, body: {} }]);
@@ -670,7 +671,8 @@ test.describe("adding a waypoint from the dashboard", () => {
         x: CHARGER_SIGHTING.x,
         y: CHARGER_SIGHTING.y,
         z: CHARGER_SIGHTING.z,
-        theta: CHARGER_SIGHTING.theta,
+        // The mark faces out of the wall (-45°); the robot docks facing into it.
+        theta: 135,
       });
       await expect(dialog).toHaveCount(0);
       expect(errors, "the page logged errors").toEqual([]);
@@ -706,13 +708,13 @@ test.describe("adding a waypoint from the dashboard", () => {
       await expect(dialog.getByRole("alert")).toHaveText(sentence);
       await expect(dialog.getByLabel("Name")).toHaveValue("dock-a");
       // The placed pose stands: a failed look measured nothing. Read off the
-      // heading, since the drag aimed along +x and the sighting faces -45°.
-      await expect(dialog.getByText("-45.0")).toHaveCount(0);
+      // heading, since the drag aimed along +x and the sighting docks at 135°.
+      await expect(dialog.getByText("135.0")).toHaveCount(0);
 
       refuse = false;
       await detect.click();
       await expect(dialog.getByText("Charger found.")).toBeVisible();
-      await expect(dialog.getByText("-45.0")).toBeVisible();
+      await expect(dialog.getByText("135.0")).toBeVisible();
       await expect(dialog.getByRole("alert")).toHaveCount(0);
       expect(presses).toBe(2);
       expect(writes.filter((w) => w.path === verticesPath)).toEqual([]);
@@ -805,9 +807,9 @@ test.describe("adding a waypoint from the dashboard", () => {
           type: string;
           theta: number;
         }[];
-        // The press's pose: aimed along +x, not the sighting's -45°.
+        // The press's pose: aimed along +x, not the sighting's 135°.
         expect(body[0]).toMatchObject({ name: "dock-a", type: "CHARGE" });
-        expect(body[0].theta).not.toBe(CHARGER_SIGHTING.theta);
+        expect(body[0].theta).not.toBe(135);
         // Only Detect charger asks the robot to look.
         expect(detects(writes)).toEqual([]);
         await expect(page.getByRole("button", { name: "Add charger" })).toHaveAttribute(
@@ -843,7 +845,8 @@ test.describe("adding a waypoint from the dashboard", () => {
           x: CHARGER_SIGHTING.x,
           y: CHARGER_SIGHTING.y,
           z: CHARGER_SIGHTING.z,
-          theta: CHARGER_SIGHTING.theta,
+          // The mark faces out of the wall (-45°); the robot docks facing into it.
+          theta: 135,
         });
         expect(detects(writes)).toHaveLength(1);
         expect(errors, "the page logged errors").toEqual([]);

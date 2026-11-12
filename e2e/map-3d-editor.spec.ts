@@ -960,7 +960,8 @@ test.describe("the editor's 3D view", () => {
         x: CHARGER_SIGHTING.x,
         y: CHARGER_SIGHTING.y,
         z: CHARGER_SIGHTING.z,
-        theta: CHARGER_SIGHTING.theta,
+        // The mark faces out of the wall (-45°); the robot docks facing into it.
+        theta: 135,
       });
       expect(errors, "the page logged errors").toEqual([]);
     });
