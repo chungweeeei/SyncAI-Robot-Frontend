@@ -35,12 +35,12 @@ function template(name: string, map_name: string | null): TaskTemplate {
 function nav(
   id: string,
   name: string | null,
-  over: { type?: "MOVE" | "DOCK"; missing?: boolean; group?: string } = {},
+  over: { missing?: boolean; group?: string } = {},
 ): TemplateStep {
   const pose = { x: 0, y: 0, theta: 0 };
   return {
     id,
-    type: over.type ?? "MOVE",
+    type: "MOVE",
     params: pose,
     resolved_params: pose,
     vertex_id: name,
@@ -120,7 +120,6 @@ describe("routeLine", () => {
   const stops = ["a", "b", "c", "d", "e", "f"].map((name) => ({
     name,
     missing: false,
-    dock: false,
   }));
 
   it("shows every stop up to the limit", () => {
@@ -139,20 +138,19 @@ describe("routeStops and taskSummary", () => {
     wait("w1", 30),
     nav("2", "hall", { missing: true }),
     wait("w2", 60),
-    nav("3", "charger", { type: "DOCK" }),
+    nav("3", "charger"),
   ];
 
   it("names each stop, and marks one whose waypoint was deleted", () => {
     expect(routeStops(steps)).toEqual([
-      { name: "lobby", missing: false, dock: false },
-      { name: "hall", missing: true, dock: false },
-      { name: "charger", missing: false, dock: true },
+      { name: "lobby", missing: false },
+      { name: "hall", missing: true },
+      { name: "charger", missing: false },
     ]);
   });
 
-  it("counts the stops, sums the waiting and says whether it ends on a charger", () => {
-    expect(taskSummary(steps)).toEqual({ stops: 3, waitSeconds: 90, endsDocked: true });
-    expect(taskSummary(steps.slice(0, 3)).endsDocked).toBe(false);
+  it("counts the stops and sums the waiting", () => {
+    expect(taskSummary(steps)).toEqual({ stops: 3, waitSeconds: 90 });
   });
 });
 
@@ -204,14 +202,14 @@ describe("a saved patrol", () => {
   });
 
   it("puts every waypoint it drives through on the route line, as one stop", () => {
-    const steps = [nav("1-move", "dock"), patrolT("2-patrol", ["a", null, "b"], [2])];
+    const steps = [nav("1-move", "lobby"), patrolT("2-patrol", ["a", null, "b"], [2])];
     expect(routeStops(steps)).toEqual([
-      { name: "dock", missing: false, dock: false },
-      { name: "a", missing: false, dock: false },
-      { name: null, missing: false, dock: false },
-      { name: "b", missing: true, dock: false },
+      { name: "lobby", missing: false },
+      { name: "a", missing: false },
+      { name: null, missing: false },
+      { name: "b", missing: true },
     ]);
-    expect(taskSummary(steps)).toEqual({ stops: 2, waitSeconds: 0, endsDocked: false });
+    expect(taskSummary(steps)).toEqual({ stops: 2, waitSeconds: 0 });
   });
 
   it("is a stop its actions belong to, named for its last waypoint", () => {
@@ -219,7 +217,7 @@ describe("a saved patrol", () => {
     const read = taskStops(steps);
     expect(read.stops).toHaveLength(1);
     expect(read.stops[0]!.arrival.map((step) => step.id)).toEqual(["2-wait"]);
-    expect(stopPlace(steps[0]!)).toEqual({ name: "b", missing: false, dock: false });
+    expect(stopPlace(steps[0]!)).toEqual({ name: "b", missing: false });
   });
 });
 

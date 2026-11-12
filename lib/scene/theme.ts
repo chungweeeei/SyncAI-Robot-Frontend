@@ -22,8 +22,8 @@ export interface Theme {
    * (lib/theme/height-ramp.ts) never reaches: violet through red covers the
    * rest of the wheel, and the old dark teal sank into the violet the ramp
    * gives the floor — the very cells a stop stands on. Clear of the zones'
-   * red and the dock leg's violet too. A step deeper in light; brighter in
-   * dark, over the near-black well.
+   * red too. A step deeper in light; brighter in dark, over the near-black
+   * well.
    */
   vertex: number;
   /**
@@ -72,13 +72,6 @@ export interface Theme {
    * and a second ramp underneath would read as more of the same storey.
    */
   voxelGhost: number;
-  /**
-   * A dock's own leg: the staging point and the approach from it onto the
-   * dock. Not a signal hue and not the route's cyan, so the last metre reads
-   * as a different kind of driving from the route that brought the robot to
-   * the staging point — the robot walks it blind, steering to the dock.
-   */
-  dock: number;
   /** Forbidden zones: `signal-warn`, the same mark as in the map editor. */
   zone: number;
   /**
@@ -129,7 +122,6 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     previewOverMap: SIGNAL.dark.elevated,
     previewCasingOverMap: 0xffffff,
     voxelGhost: 0x7d8a94,
-    dock: 0x6a4fc0,
     zone: SIGNAL.light.warn,
     localCostmap: SIGNAL.light.caution,
     localCostmapOverMap: 0xffffff,
@@ -154,7 +146,6 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     previewOverMap: SIGNAL.dark.background,
     previewCasingOverMap: 0xf2f7fa,
     voxelGhost: 0x8796a2,
-    dock: 0xa991f2,
     zone: SIGNAL.dark.warn,
     localCostmap: SIGNAL.dark.caution,
     localCostmapOverMap: 0xf2f7fa,

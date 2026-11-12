@@ -35,9 +35,9 @@ const DRAPE_REACH_M = 1.0;
  * a sheet at their tops from any oblique view. */
 const POLYGON_OFFSET = -4;
 const LOCAL_PLAN_Z_M = 0.02;
-/* Narrower than the route (0.12) and the dock's approach, so it reads as a
- * thread through the band rather than a second band; with its rim it is
- * 0.09, which still leaves the route's cyan showing either side of it. */
+/* Narrower than the route (0.12), so it reads as a thread through the band
+ * rather than a second band; with its rim it is 0.09, which still leaves the
+ * route's cyan showing either side of it. */
 const LOCAL_PLAN_WIDTH_M = 0.06;
 const LOCAL_PLAN_CASING_M = 0.015;
 /* Past the route's ghost, casing and core (render orders -3 to -1). */

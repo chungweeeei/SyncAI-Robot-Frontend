@@ -12,7 +12,7 @@
  */
 
 /** `_move_failure`'s prefix in the backend, for each nav step's label. */
-const WRAPPER = /^(?:move|patrol|dock|undock) ended in aborted: /;
+const WRAPPER = /^(?:move|patrol) ended in aborted: /;
 
 /**
  * The robot's planning sentences (the task runner's table, keyed by

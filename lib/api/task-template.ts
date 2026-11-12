@@ -31,7 +31,7 @@ import type {
 
 /** One step as it is *stored*: a task step plus where a MOVE's numbers came from. */
 export type TemplateStepRequest = TaskStepRequest & {
-  /** MOVE / DOCK only — the backend 422s any other step carrying one. */
+  /** MOVE only — the backend 422s any other step carrying one. */
   vertex_id?: string | null;
   /**
    * PATROL only, and never beside `vertex_id`: each waypoint's vertex, aligned
@@ -107,7 +107,7 @@ export interface TaskTemplate {
   id: string;
   name: string;
   description: string;
-  /** Null when the template has no MOVE / DOCK / PATROL step and so runs anywhere. */
+  /** Null when the template has no MOVE / PATROL step and so runs anywhere. */
   map_name: string | null;
   steps: TemplateStep[];
   /** False only when it names a map other than the robot's. */
@@ -120,7 +120,7 @@ export interface TaskTemplate {
 export interface TaskTemplateDraft {
   name: string;
   description?: string;
-  /** Required when any step is a MOVE, DOCK or PATROL; must be omitted otherwise. */
+  /** Required when any step is a MOVE or PATROL; must be omitted otherwise. */
   map_name?: string | null;
   steps: readonly TemplateStepRequest[];
 }
@@ -147,7 +147,7 @@ const templateStepBase = {
 const TemplateStepSchema: z.ZodType<TemplateStep> = z.union([
   z.object({
     ...templateStepBase,
-    type: z.enum(["MOVE", "DOCK"]),
+    type: z.literal("MOVE"),
     params: MoveStepParamsSchema.nullable(),
     resolved_params: MoveStepParamsSchema.nullable(),
   }),

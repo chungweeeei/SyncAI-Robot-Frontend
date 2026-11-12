@@ -12,7 +12,6 @@ import {
   type TaskStepState,
 } from "@/lib/api/task";
 import { formatDuration } from "@/lib/recording/format";
-import type { PlanarPose } from "@/lib/types/robot";
 import { stepFailureText } from "@/lib/task/failure";
 import { isHistoryKind, kindLabel, runSeconds } from "@/lib/task/history";
 import { STEP_TYPES } from "@/lib/task/step";
@@ -63,18 +62,6 @@ export interface StepProgress {
 
 function live(step: TaskStepState): boolean {
   return step.status === "IN_PROGRESS" || step.status === "PAUSED";
-}
-
-/**
- * The dock a live DOCK step is driving onto, or null.
- *
- * Any live step, not only `currentStep`: a group runs at once and holds at
- * most one Dock, which need not be its first member. A held Dock still
- * answers — the target has not moved, and the staging point is where the
- * robot will head when it resumes.
- */
-export function liveDock(steps: readonly TaskStepState[]): PlanarPose | null {
-  return steps.find((step) => live(step) && step.dock)?.dock ?? null;
 }
 
 /**

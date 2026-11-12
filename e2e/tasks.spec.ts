@@ -269,11 +269,11 @@ test.describe("the task console", () => {
               resolved_params: { seconds: 90 },
             },
             {
-              id: "4-dock",
+              id: "4-move",
               vertex_id: "77777777-7777-7777-7777-777777777777",
               vertex_name: "charger",
               vertex_status: "MISSING",
-              type: "DOCK",
+              type: "MOVE",
               params: { x: 0, y: 0, theta: 0 },
               resolved_params: { x: 0, y: 0, theta: 0 },
             },
@@ -285,7 +285,7 @@ test.describe("the task console", () => {
     await page.goto("/tasks");
 
     await expect(page.getByLabel("Route")).toHaveText("lobby → charger");
-    await expect(page.getByText("2 stops · 1 min 30 s of waiting · ends docked")).toBeVisible();
+    await expect(page.getByText("2 stops · 1 min 30 s of waiting")).toBeVisible();
     await expect(page.getByText("1 missing")).toBeVisible();
 
     await page.getByRole("button", { name: "Morning round", exact: true }).click();
@@ -740,7 +740,7 @@ test.describe("the task console", () => {
     await expect(
       page.getByRole("menuitem", { name: "Start together with the action above" }),
     ).toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByText(/one Move, Dock, Patrol, Stand or Lie down at a time/)).toBeVisible();
+    await expect(page.getByText(/one Move, Patrol, Stand or Lie down at a time/)).toBeVisible();
     expect(writes).toEqual([]);
   });
 
@@ -1746,40 +1746,6 @@ test.describe("the step editor", () => {
     await page.getByRole("combobox", { name: "Waypoint for stop 2" }).click();
     await expect(page.getByRole("option", { name: "room-a stop 1" })).toBeVisible();
     await page.keyboard.press("Escape");
-  });
-
-  test("saves a Dock on the waypoint picked", async ({ page }) => {
-    // A Dock rides the Move wire with its own type. Both halves asserted: the
-    // card on screen, and the type, waypoint and map in the body.
-    await mockBackend(page);
-    const posted: { map_name?: string; steps: Record<string, unknown>[] }[] = [];
-    await page.route("**/api/v1/task_templates", (route) => {
-      if (route.request().method() !== "POST") return route.fallback();
-      const body = route.request().postDataJSON() as (typeof posted)[number] & { name: string };
-      posted.push(body);
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(
-          taskTemplate({ id: "77777777-7777-7777-7777-777777777777", name: body.name }),
-        ),
-      });
-    });
-    await page.goto("/tasks/editor");
-    await expect(page.getByRole("heading", { name: "New task" })).toBeAttached();
-    await page.getByRole("textbox", { name: "Task name" }).fill("charge");
-
-    await page.getByRole("button", { name: "Add a Dock stop" }).click();
-    await pickWaypoint(page, 1, "dock");
-    await expect(page.getByRole("combobox", { name: "Waypoint for stop 1" })).toHaveText("dock");
-    await expect(page.getByLabel("Job summary")).toHaveText(/ends docked at dock/);
-
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect.poll(() => posted).toHaveLength(1);
-    expect(posted[0]!.map_name).toBe(MAP_NAME);
-    expect(posted[0]!.steps).toEqual([
-      { id: "1-dock", type: "DOCK", params: { x: 2.5, y: 1.25, theta: 90 }, vertex_id: vertex().id },
-    ]);
   });
 
   test("builds the route by tapping waypoints on the 3D map", async ({ page }) => {

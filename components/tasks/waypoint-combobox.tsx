@@ -36,7 +36,7 @@ export interface WaypointComboboxProps {
   floors: readonly MapFloor[];
   /** Vertex id → the stops that already go there, shown beside each name. */
   stopMarks: ReadonlyMap<string, readonly number[]>;
-  /** Chargers first, for a Dock. */
+  /** Chargers first, for a step whose catalogue field asks for a charger. */
   chargersFirst: boolean;
   value: string | null;
   disabled: boolean;

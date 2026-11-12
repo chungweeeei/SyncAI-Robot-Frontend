@@ -15,15 +15,11 @@ import type { StreamStatus } from "@/lib/types/stream";
  *   {"type": "pose",   "x", "y", "z", "yaw_deg", "stamp"}
  *   {"type": "joints", "joints": {"FL_HipX_joint": rad, ...}, "stamp"}
  *   {"type": "path",   "points": [[x, y, z], ...], "stamp"}
- *   {"type": "dock_path", "points": [[x, y], ...], "stamp"}
  *   {"type": "local_costmap", "resolution", "width", "height",
  *    "origin": {"x", "y", "yaw"}, "data": "<base64>", "stamp"}
  *   {"type": "local_plan", "points": [[x, y], ...], "stamp"}
  *
  * `path` can share it: ~8 kB per replan (~0.333 Hz) is too small to block.
- * `dock_path` is the last metre of a dock (2 Hz, a few dozen points): the
- * approach the robot predicts from where it stands to the dock, which no
- * planner draws. The staging leg before it is an ordinary `path`.
  *
  * `local_costmap` (2 Hz, ~8.5 kB) and `local_plan` (5 Hz, a few dozen
  * points) come only while a navigation runs: the costmap the controller
@@ -57,17 +53,6 @@ interface PathMessage {
   stamp: number;
 }
 
-interface DockPathMessage {
-  type: "dock_path";
-  /**
-   * Map-frame [x, y] pairs, metres, flattened with the route's z of 0: a dock
-   * is on the ground floor. Empty means "the
-   * approach is over".
-   */
-  points: [number, number, number?][];
-  stamp: number;
-}
-
 interface LocalCostmapMessage {
   type: "local_costmap";
   resolution: number;
@@ -90,7 +75,6 @@ type TelemetryMessage =
   | PoseMessage
   | JointsMessage
   | PathMessage
-  | DockPathMessage
   | LocalCostmapMessage
   | LocalPlanMessage;
 
@@ -100,8 +84,6 @@ export interface TelemetryStreamHandlers {
   onJoints?: (joints: Record<string, number>) => void;
   /** The planner's route. An empty `points` means the route is over. */
   onPath?: (path: PlannedPath) => void;
-  /** A dock's final approach. An empty `points` means the dock goal ended. */
-  onDockPath?: (path: PlannedPath) => void;
   /** The controller's costmap around the robot. `width` 0 means it ended. */
   onLocalCostmap?: (costmap: LocalCostmap) => void;
   /**
@@ -140,8 +122,6 @@ export function decodeTelemetryFrame(
     handlers.onJoints?.(msg.joints);
   } else if (msg.type === "path") {
     handlers.onPath?.(plannedPath(msg));
-  } else if (msg.type === "dock_path") {
-    handlers.onDockPath?.(plannedPath(msg));
   } else if (msg.type === "local_costmap") {
     const costmap = localCostmap(msg);
     if (costmap) handlers.onLocalCostmap?.(costmap);
@@ -178,7 +158,7 @@ function localCostmap(msg: LocalCostmapMessage): LocalCostmap | null {
  * Flattened here, the wire-to-app layer, into the layout the geometry builder
  * walks.
  */
-function plannedPath(msg: PathMessage | DockPathMessage | LocalPlanMessage): PlannedPath {
+function plannedPath(msg: PathMessage | LocalPlanMessage): PlannedPath {
   const points = new Float32Array(msg.points.length * 3);
   for (let i = 0; i < msg.points.length; i++) {
     points[i * 3] = msg.points[i][0];

@@ -69,12 +69,6 @@ describe("decodeTaskDraft", () => {
     expect(restored.steps.map(withoutKey)).toEqual(stored.steps.map(withoutKey));
   });
 
-  it("restores a dock row with its waypoint", () => {
-    const stored = { ...draft(), steps: [{ ...newStepDraft("DOCK"), x: "1", y: "2", vertexId: "v1" }] };
-    const restored = decodeTaskDraft(JSON.stringify(stored));
-    expect(restored.steps.map(withoutKey)).toEqual(stored.steps.map(withoutKey));
-  });
-
   it("still restores a draft written by an older editor", () => {
     // An unknown key from another build is stripped rather than costing the steps.
     const restored = decodeTaskDraft(
@@ -140,6 +134,23 @@ describe("createTaskDraftStore", () => {
     storage.map.set(TASK_DRAFT_KEY, JSON.stringify(draft()));
     const store = createTaskDraftStore(storage);
     expect(store.getSnapshot().name).toBe("night run");
+  });
+
+  it("discards a draft saved with a Dock or Undock step, and writes over it", () => {
+    // Both steps were removed (2026-11-12). A draft from before must open as
+    // an empty editor, as any shape the schema does not know does, never throw.
+    for (const type of ["DOCK", "UNDOCK"]) {
+      const storage = fakeStorage();
+      const stale = draft();
+      storage.map.set(
+        TASK_DRAFT_KEY,
+        JSON.stringify({ ...stale, steps: [...stale.steps, { ...stale.steps[0], type }] }),
+      );
+      const store = createTaskDraftStore(storage);
+      expect(store.getSnapshot()).toBe(EMPTY_TASK_DRAFT);
+      store.update((current) => ({ ...current, name: "fresh" }));
+      expect(JSON.parse(storage.map.get(TASK_DRAFT_KEY)!).name).toBe("fresh");
+    }
   });
 
   it("writes each update through and notifies, and keeps one identity between them", () => {
@@ -324,10 +335,6 @@ describe("draftIsUnsaved", () => {
     ).toBe(true);
     expect(
       draftIsUnsaved({ ...base, steps: [{ ...move, vertexId: "v2" }, speak] }, library),
-    ).toBe(true);
-    // The same waypoint docked onto instead of driven to is a different job.
-    expect(
-      draftIsUnsaved({ ...base, steps: [{ ...move, type: "DOCK" as const }, speak] }, library),
     ).toBe(true);
   });
 

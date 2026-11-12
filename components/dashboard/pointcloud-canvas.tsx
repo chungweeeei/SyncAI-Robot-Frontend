@@ -38,17 +38,12 @@ import {
   placePoseMarker,
   setMarkerColor,
 } from "@/lib/scene/markers";
-import { createDockLayer } from "@/lib/scene/dock-layer";
 import {
   createLocalNavLayer,
   type LocalNavLayer,
 } from "@/lib/scene/local-nav-layer";
 import { EDL_LAYER, createEdlPass, type EdlPass } from "@/lib/scene/edl";
-import {
-  createDashedRibbon,
-  createPathRibbon,
-  type PathRibbon,
-} from "@/lib/scene/path-ribbon";
+import { createPathRibbon, type PathRibbon } from "@/lib/scene/path-ribbon";
 import {
   aimRaycaster,
   createRectCache,
@@ -182,21 +177,9 @@ interface PointCloudCanvasProps {
    */
   path?: PlannedPath;
   /**
-   * A running dock's target. Drawn as its staging point and the leg onto it,
-   * so an operator can see where the route is taking the robot and why it
-   * stops short of the dock. Null when no dock runs.
-   */
-  dock?: PlanarPose | null;
-  /**
-   * The approach the robot predicts for a dock's last metre, from where it
-   * stands to the dock; an empty `points` means the dock goal ended.
-   */
-  dockPath?: PlannedPath;
-  /**
-   * Hide the path layer — the route, a dock's staging leg and approach, and
-   * what the robot sees and means to drive around it while it navigates (the
-   * telemetry feed's local costmap and trajectory) — without unmounting the
-   * canvas. Defaults to true.
+   * Hide the path layer — the route, and what the robot sees and means to
+   * drive around it while it navigates (the telemetry feed's local costmap and
+   * trajectory) — without unmounting the canvas. Defaults to true.
    */
   showPath?: boolean;
   /**
@@ -305,8 +288,6 @@ export function PointCloudCanvas({
   pickZ = 0,
   viewGround = 0,
   path,
-  dock = null,
-  dockPath,
   showPath = true,
   vertices,
   showVertices = true,
@@ -1298,43 +1279,6 @@ export function PointCloudCanvas({
     showPathRef.current = showPath;
     if (localNavRef.current) localNavRef.current.group.visible = showPath;
   }, [showPath]);
-
-  // ---- A dock's approach band ---------------------------------------------
-  // The route's rule: each sample replaces the last, the empty one erases it.
-  // Dashed, so the last metre onto the dock never reads as more of the route.
-  React.useEffect(() => {
-    const ctx = sceneRef.current;
-    if (!ctx || !showPath || !dockPath || dockPath.points.length < 6) return;
-
-    const ribbon = createDashedRibbon(dockPath.points, theme.dock, { stride: 3 });
-    if (!ribbon) return;
-    ctx.scene.add(ribbon.mesh);
-
-    return () => {
-      ctx.scene.remove(ribbon.mesh);
-      ribbon.dispose();
-    };
-  }, [dockPath, showPath, theme]);
-
-  // ---- A dock's staging point --------------------------------------------
-  // Keyed on the pose's numbers, not its identity: the run is re-read every
-  // 2 s and each read is a fresh object for the same dock.
-  const dockX = dock?.x;
-  const dockY = dock?.y;
-  const dockTheta = dock?.theta;
-  React.useEffect(() => {
-    const ctx = sceneRef.current;
-    if (!ctx || !showPath || dockX === undefined || dockY === undefined) return;
-    if (dockTheta === undefined) return;
-
-    const layer = createDockLayer({ x: dockX, y: dockY, theta: dockTheta }, theme);
-    ctx.scene.add(layer.group);
-
-    return () => {
-      ctx.scene.remove(layer.group);
-      layer.dispose();
-    };
-  }, [dockX, dockY, dockTheta, showPath, theme]);
 
   // ---- Optional static map cloud (toggle) ------------------------------
   React.useEffect(() => {
