@@ -9,9 +9,6 @@
 // opaque one.
 
 import type { ScheduleState, ScheduleTrigger } from "@/lib/api/schedule";
-import type { TaskStepRequest } from "@/lib/api/task";
-import type { TemplateStep } from "@/lib/api/task-template";
-import { isNavStep, toDispatchSteps, wireLinked } from "@/lib/task/step";
 import { DAY_MS, pad2 } from "@/lib/time";
 
 /**
@@ -344,7 +341,7 @@ export function nextScheduleRefetchMs(
 }
 
 /**
- * The schedules frozen from each template, by template id. Built from the
+ * The schedules that run each template, by template id. Built from the
  * schedule list because the template response says nothing about schedules;
  * one registered straight from the composer has no `task_template_id`.
  */
@@ -360,72 +357,6 @@ export function schedulesByTemplate(
     else byTemplate.set(id, [schedule]);
   }
   return byTemplate;
-}
-
-/**
- * How many frozen steps the template would now dispatch differently — the
- * schedule row's "stale" badge — or null when they are not comparable (a
- * changed step count, or a template step with no coordinates).
- *
- * - A MOVE compares at the precision dispatched (3 decimals x/y, 1 heading),
- *   so float noise is not drift.
- * - A PATROL compares each waypoint the same way, and its count; every
- *   heading counts, the ignored ones included, since they are dispatched.
- * - A SPEAK drifts on its line or count, a WAIT on its duration, any step on
- *   its type.
- * - A step linked to (or unlinked from) the one above drifts. Compared as
- *   links, not group names, so a renamed group is the same job.
- */
-export function scheduleDrift(
-  frozen: readonly TaskStepRequest[],
-  template: readonly TemplateStep[],
-): number | null {
-  let current: TaskStepRequest[];
-  try {
-    current = toDispatchSteps(template);
-  } catch {
-    return null;
-  }
-  if (current.length !== frozen.length) return null;
-
-  return frozen.reduce((count, step, index) => {
-    const now = current[index];
-    if (!now || now.type !== step.type) return count + 1;
-    if (wireLinked(frozen, index) !== wireLinked(current, index)) return count + 1;
-    if (step.type === "SPEAK" && now.type === "SPEAK") {
-      // A missing count is once: a schedule frozen before the field has none.
-      const same =
-        step.params.text === now.params.text &&
-        (step.params.repeat ?? 1) === (now.params.repeat ?? 1);
-      return same ? count : count + 1;
-    }
-    if (step.type === "WAIT" && now.type === "WAIT") {
-      return step.params.seconds === now.params.seconds ? count : count + 1;
-    }
-    if (step.type === "PATROL" && now.type === "PATROL") {
-      // One step, however many of its waypoints moved: the badge counts steps.
-      const before = step.params.waypoints;
-      const after = now.params.waypoints;
-      const same =
-        before.length === after.length &&
-        before.every((pose, at) => samePose(pose, after[at]!));
-      return same ? count : count + 1;
-    }
-    if (!isNavStep(step) || !isNavStep(now)) return count;
-    return samePose(step.params, now.params) ? count : count + 1;
-  }, 0);
-}
-
-/** Two poses at the precision dispatched: 3 decimals x / y, 1 on the heading. */
-function samePose(
-  a: { x: number; y: number; theta: number },
-  b: { x: number; y: number; theta: number },
-): boolean {
-  return (
-    a.x.toFixed(3) === b.x.toFixed(3) &&
-    a.y.toFixed(3) === b.y.toFixed(3) &&
-    a.theta.toFixed(1) === b.theta.toFixed(1)
-  );
 }
 
 /**

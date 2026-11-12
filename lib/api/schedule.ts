@@ -9,8 +9,6 @@ import * as z from "zod";
 
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
-import { TaskStepRequestSchema } from "@/lib/api/task";
-import type { TaskStepRequest } from "@/lib/api/task";
 
 /**
  * Exactly one of `cron` / `interval_seconds`, or the backend refuses.
@@ -34,17 +32,15 @@ export interface ScheduleState {
   paused: boolean;
   /** ISO-8601 **UTC**, soonest first. Empty while paused. */
   next_run_times: string[];
-  /** The map the frozen coordinates are in. Null for older schedules. */
+  /** The map it was registered on. Null for older schedules. */
   map_name?: string | null;
-  /** The template this was frozen from, if any. */
-  task_template_id?: string | null;
-  task_template_name?: string | null;
   /**
-   * **Only** from `getSchedule` (`[]` from the list, and for an old or
-   * undecodable one). Frozen at registration, so later waypoint edits do not
-   * reach it; comparing against the template's current resolution shows that.
+   * The task it runs, read by the robot as each run starts, so an edit reaches
+   * the next run. Null for one registered with its own steps.
    */
-  steps?: TaskStepRequest[];
+  task_template_id?: string | null;
+  /** That task's name now (the registration's, once the task is gone). */
+  task_template_name?: string | null;
 }
 
 const ScheduleTriggerSchema: z.ZodType<ScheduleTrigger> = z.object({
@@ -61,7 +57,6 @@ const ScheduleStateSchema: z.ZodType<ScheduleState> = z.object({
   map_name: z.string().nullable().optional(),
   task_template_id: z.string().nullable().optional(),
   task_template_name: z.string().nullable().optional(),
-  steps: z.array(TaskStepRequestSchema).optional(),
 });
 
 /** The operator types the id, so an unescaped `/` or `#` would change the route. */
@@ -73,24 +68,13 @@ function schedulePath(id?: string, action?: "pause" | "resume"): string {
 }
 
 /**
- * Every schedule, never their steps: those cost a describe RPC per row, so
- * `getSchedule` carries them.
+ * Every schedule. Never their steps: what a template's schedule runs is the
+ * template, which the console already reads.
  */
 export function listSchedules(signal?: AbortSignal): Promise<ScheduleState[]> {
   return requestJson<ScheduleState[]>(schedulePath(), {
     signal,
     schema: z.array(ScheduleStateSchema),
-  });
-}
-
-/** One schedule **with its frozen steps**, read when its row is expanded. */
-export function getSchedule(
-  id: string,
-  signal?: AbortSignal,
-): Promise<ScheduleState> {
-  return requestJson<ScheduleState>(schedulePath(id), {
-    signal,
-    schema: ScheduleStateSchema,
   });
 }
 
@@ -121,7 +105,7 @@ export function deleteSchedule(id: string): Promise<void> {
 
 /**
  * Replace the trigger whole, in place. Not a delete and create, so the id,
- * steps and paused state survive; the id itself cannot change.
+ * the task it runs and the paused state survive; the id itself cannot change.
  */
 export function updateScheduleTrigger(
   id: string,

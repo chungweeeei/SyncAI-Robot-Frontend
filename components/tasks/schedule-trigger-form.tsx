@@ -9,7 +9,7 @@ import type { ScheduleState } from "@/lib/api/schedule";
 
 /**
  * Change when a registered schedule fires, inside its own row. The backend
- * swaps the trigger in place, keeping the name, frozen steps, source and
+ * swaps the trigger in place, keeping the name, the task it runs and the
  * pause; only the trigger is editable.
  */
 export function ScheduleTriggerForm({
