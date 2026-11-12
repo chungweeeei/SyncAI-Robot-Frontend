@@ -39,17 +39,16 @@ const VERTEX_Z_M = 0.02;
  * on the floor in front of it, the thing the robot walks onto, so it reads
  * as a charger from any angle rather than as one more mark on the floor.
  * The waypoint is where the robot stands docked, so the plate is centred
- * on it; a dock's heading points into the wall (lib/map/dock.ts), so the
- * post stands on the floor past the plate's far edge, its back to the wall
- * and its face, bolt and all, looking back down the heading the robot
- * comes in on. Real geometry, so it writes depth and hides
+ * on it, and the post stands on the floor at the plate's back edge, behind
+ * the waypoint's heading, its face, bolt and all, looking along it: the
+ * charger points the way the waypoint's arrow does. Real geometry, so it writes depth and hides
  * the 3D map behind it the way a stop's translucent marking must not.
  */
 /** The charging plate, centred on the waypoint, metres (x along the heading). */
 const CHARGER_PLATE_M = { x: 0.44, y: 0.5, z: 0.03 } as const;
 const CHARGER_POST_M = { x: 0.14, y: 0.4, z: 0.55 } as const;
-/** The post's centre ahead of the waypoint: its face at the plate's far edge. */
-const CHARGER_POST_X_M = (CHARGER_PLATE_M.x + CHARGER_POST_M.x) / 2;
+/** The post's centre behind the waypoint: its face at the plate's back edge. */
+const CHARGER_POST_X_M = -(CHARGER_PLATE_M.x + CHARGER_POST_M.x) / 2;
 /** Across the bolt's 24-unit icon grid, metres: well inside the post's face. */
 const CHARGER_BOLT_M = 0.26;
 /** Off the face, enough not to z-fight with it from across a site. */
@@ -105,7 +104,7 @@ function shadedBox(size: { x: number; y: number; z: number }): THREE.BoxGeometry
 
 /**
  * The bolt (CHARGER_ICON_PATH's outline, its corners squared) stood up on the
- * post's face: facing -x, back down the heading, its top along +z. Icon units
+ * post's face: facing +x, along the heading, its top along +z. Icon units
  * are y-down, so (u, v) becomes (u - 12, 12 - v) in the shape's plane, which
  * the basis then turns to face -x without mirroring it.
  */
@@ -123,12 +122,12 @@ function boltGeometry(): THREE.ShapeGeometry {
     outline.map(([u, v]) => new THREE.Vector2((u - 12) * scale, (12 - v) * scale)),
   );
   const geometry = new THREE.ShapeGeometry(shape);
-  // Seen from -x with z up, right is -y: the shape's x to -y, y to z, normal to -x.
+  // Seen from +x with z up, right is +y: the shape's x to y, y to z, normal to +x.
   geometry.applyMatrix4(
     new THREE.Matrix4().makeBasis(
-      new THREE.Vector3(0, -1, 0),
+      new THREE.Vector3(0, 1, 0),
       new THREE.Vector3(0, 0, 1),
-      new THREE.Vector3(-1, 0, 0),
+      new THREE.Vector3(1, 0, 0),
     ),
   );
   return geometry;
@@ -370,7 +369,7 @@ export function createVertexLayer(
       postEdge.position.copy(post.position);
       const bolt = new THREE.Mesh(boltGeom, boltMaterial);
       bolt.position.set(
-        CHARGER_POST_X_M - CHARGER_POST_M.x / 2 - CHARGER_BOLT_OFFSET_M,
+        CHARGER_POST_X_M + CHARGER_POST_M.x / 2 + CHARGER_BOLT_OFFSET_M,
         0,
         CHARGER_POST_M.z * 0.6,
       );
