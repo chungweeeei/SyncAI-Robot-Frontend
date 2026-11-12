@@ -35,19 +35,21 @@ const VERTEX_CHEVRON_HALF_M = 0.1;
 const VERTEX_Z_M = 0.02;
 
 /*
- * A charger stands up instead of lying flat: a post on a base plate, the
- * thing the robot walks up to, so it reads as a charger from any angle
- * rather than as one more mark on the floor. A dock's heading points into
- * the wall (lib/map/dock.ts), so the post stands ahead of the waypoint with
- * its back to the wall and its face, bolt and all, looking back down the
- * heading the robot comes in on. Real geometry, so it writes depth and hides
+ * A charger stands up instead of lying flat: a post with its charging plate
+ * on the floor in front of it, the thing the robot walks onto, so it reads
+ * as a charger from any angle rather than as one more mark on the floor.
+ * The waypoint is where the robot stands docked, so the plate is centred
+ * on it; a dock's heading points into the wall (lib/map/dock.ts), so the
+ * post stands on the floor past the plate's far edge, its back to the wall
+ * and its face, bolt and all, looking back down the heading the robot
+ * comes in on. Real geometry, so it writes depth and hides
  * the 3D map behind it the way a stop's translucent marking must not.
  */
-/** The base plate, centred on the waypoint, metres (x along the heading). */
+/** The charging plate, centred on the waypoint, metres (x along the heading). */
 const CHARGER_PLATE_M = { x: 0.44, y: 0.5, z: 0.03 } as const;
 const CHARGER_POST_M = { x: 0.14, y: 0.4, z: 0.55 } as const;
-/** The post's centre ahead of the waypoint: its back flush with the plate's. */
-const CHARGER_POST_X_M = (CHARGER_PLATE_M.x - CHARGER_POST_M.x) / 2;
+/** The post's centre ahead of the waypoint: its face at the plate's far edge. */
+const CHARGER_POST_X_M = (CHARGER_PLATE_M.x + CHARGER_POST_M.x) / 2;
 /** Across the bolt's 24-unit icon grid, metres: well inside the post's face. */
 const CHARGER_BOLT_M = 0.26;
 /** Off the face, enough not to z-fight with it from across a site. */
@@ -361,7 +363,7 @@ export function createVertexLayer(
       const plate = new THREE.Mesh(plateGeom, chargerBody);
       plate.position.z = CHARGER_PLATE_M.z / 2;
       const post = new THREE.Mesh(postGeom, chargerBody);
-      post.position.set(CHARGER_POST_X_M, 0, CHARGER_PLATE_M.z + CHARGER_POST_M.z / 2);
+      post.position.set(CHARGER_POST_X_M, 0, CHARGER_POST_M.z / 2);
       const plateEdge = new THREE.LineSegments(plateEdgeGeom, chargerEdge);
       plateEdge.position.copy(plate.position);
       const postEdge = new THREE.LineSegments(postEdgeGeom, chargerEdge);
@@ -370,7 +372,7 @@ export function createVertexLayer(
       bolt.position.set(
         CHARGER_POST_X_M - CHARGER_POST_M.x / 2 - CHARGER_BOLT_OFFSET_M,
         0,
-        CHARGER_PLATE_M.z + CHARGER_POST_M.z * 0.6,
+        CHARGER_POST_M.z * 0.6,
       );
       marker.add(plate, post, plateEdge, postEdge, bolt);
       parts.solid.push(plate, post);
