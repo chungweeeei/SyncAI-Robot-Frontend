@@ -114,7 +114,12 @@ in `e2e/`. The split is by what they can actually prove, not by size:
 The stack as built. Correct this section if a choice changes.
 
 - **Next.js 16.2.10 (App Router) + React 19.** Every page is `"use client"`;
-  the root layout is the only server component that matters.
+  the root layout is the only server component that matters. The 3D views
+  (the dashboard's and mapping's viewport, the map editor, the task editor's
+  route canvas) are loaded with `next/dynamic` and `ssr: false` behind a
+  placeholder of the view's size, and the map cards import their renderer
+  inside the query that draws a still — so three.js is fetched by the
+  screens that draw with it, and never ahead of the emergency stop.
 - **shadcn/ui on `@base-ui/react`** (`components.json`, style `base-nova`),
   Tailwind 4, `lucide-react` icons, `next-themes` for light/dark. The primitives
   under `components/ui/` are owned by this repo (copied in, then edited).
@@ -123,7 +128,8 @@ The stack as built. Correct this section if a choice changes.
   `refetchOnWindowFocus: false` — poll intervals are the retry policy.
 - **Raw three.js** (no react-three-fiber) for the 3D views (the dashboard,
   the map editor, the task editor's route map), each a hand-rolled render
-  loop; the route map lays a 2D `<canvas>` of screen-sized marks over its
+  loop that draws only when the picture changed (the editor and the route
+  map share theirs: `lib/scene/voxel-view.ts`); the route map lays a 2D `<canvas>` of screen-sized marks over its
   scene.
 - **WebRTC (WHEP) in `lib/video/`** reaches the operator as the masthead's
   camera window (`useCameraStream` → `components/console/camera-window.tsx`), a
@@ -138,6 +144,9 @@ The stack as built. Correct this section if a choice changes.
   screen-reader announcements and the auto-scroll that a hand-rolled one
   would have to rebuild.
 - **zod** for runtime validation of every backend read (see Data layer).
+  Imported as `import * as z from "zod"`: the named `{ z }` is the whole
+  namespace object, which carried every locale's messages into the chunk
+  each route loads.
 - **Vitest** for unit tests, **Playwright** for e2e (see Tests). No
   `@vitejs/plugin-react`: esbuild already takes the JSX runtime from tsconfig,
   and the plugin drags in a Babel 8 peer that collides with shadcn's Babel 7.
@@ -148,9 +157,10 @@ The stack as built. Correct this section if a choice changes.
 ```
 app/            route shells; the real content belongs to a component (see deviations)
 components/
-  console/      shell: nav rail (labelled from lg by default, folded to
-                icons only — no tooltip — from the button in its top-left
-                corner; instant, held until a reload), status strip (its
+  console/      shell: nav rail (until its button is pressed the width
+                decides, in CSS: icons only from lg, labelled from xl; the
+                button in its top-left corner then folds or opens it — no
+                tooltip, instant, held until a reload), status strip (its
                 robot id is the link home, the mode chip beside it — a dot
                 in the mode's hue below sm), the three layout-level
                 providers (their contexts live in hooks/use-console-*.ts — see
@@ -180,7 +190,11 @@ components/
                 above shows the robot — and All the ceiling back), and the
                 fault boundaries (fault-boundary.tsx,
                 fault-panel.tsx: what a part that threw shows instead — see
-                Conventions)
+                Conventions), and the pieces every screen's dialogs and lists
+                are made of: confirm-dialog.tsx (Keep / Delete, the one way
+                a delete is asked), error-line.tsx (a refusal's sentence
+                under a control) and notice.tsx (a list's empty, loading
+                and failed states)
   dashboard/    3D viewport (pointcloud-canvas) with the pose laid over its
                 corner — its layers are the saved scan, the robot's 3D map
                 (the occupancy tree, on by default, one floor at a time
@@ -222,7 +236,9 @@ components/
                 translation one locked to one axis, and the
                 arm switch and speed limit in a pill above them. The drive
                 panel links here on a phone and the strip hides the panel on
-                this route; the parts both share are dashboard/drive-parts.tsx
+                this route; the parts both share are dashboard/drive-parts.tsx.
+                The link is offered to a coarse pointer at any width, and to
+                any pointer below sm
   mapping/      the mode switch (the rail), the run strip over the viewport
                 (Start, then a recording-style indicator beside Save and New
                 map — its face is lib/map/run-face.ts), the save dialog (the
@@ -347,7 +363,12 @@ hooks/          one hook per backend interaction; the only place components get 
                 The dashboard's waypoint writes are use-map-vertex-writes,
                 keyed by map name, written at once; use-active-map-vertices
                 points it at the loaded map.
-                A few talk to no backend at all (use-joystick, use-step-catalogue,
+                Shared halves of two hooks sit beside them:
+                use-tracked-dispatch (the goal and task sends),
+                use-waypoint-placement (the dashboard's and the editor's
+                placing dialog), use-map-rename-draft, vertex-write-cache.
+                A few talk to no backend at all (use-joystick, use-mounted,
+                use-floor-band, use-step-catalogue,
                 use-task-draft, use-task-draft-history, use-camera-clip,
                 use-browser-time-zone,
                 use-history-filter, use-leave-guard, use-undo-history,
@@ -517,7 +538,12 @@ lib/
   types/        shared wire types (map, robot, pointcloud, stream), the
                 decoded 3D map (octree.ts: the occupied cells and the key
                 origin), and the readout tone a lib/ rule answers in
-  angle.ts      normalizeTheta — the degree fold every heading goes through
+  angle.ts      normalizeTheta — the degree fold every heading goes through —
+                and toRadians
+  math.ts       clamp
+  readout.ts    formatMetres / formatDegrees — the two precisions every pose
+                readout is written in
+  time.ts       DAY_MS, pad2
   page-title.ts pageTitle — a tab's title, the screen before the console's name
   download.ts   downloadBlob — hands a file to the operator's own machine
   keyboard.ts   isTypingTarget — whether a focused element is really taking
@@ -580,8 +606,9 @@ touch one, prefer moving it toward the rule.
   report. The route is unlisted but reachable in every build, since testing the
   video path means testing it on the robot.
 - **The canvases are still the biggest components** (`pointcloud-canvas`
-  ~1500 lines, `map-3d-canvas` ~1000), but what is left is React: refs,
-  effects and the pointer state machines. The scene builders, the viewport,
+  ~1700 lines, `map-3d-canvas` ~1200), but what is left is React: refs,
+  effects and the pointer state machines (the placing gesture's rule is
+  `placeGesture` in `lib/map/gesture.ts`). The scene builders, the viewport,
   the route map's flat marks and the gesture rules moved to `lib/scene/`,
   `lib/map/draw.ts` and `lib/map/gesture.ts`. What stays in the handlers is
   acting on them: pointer capture and the raycasts.
@@ -694,7 +721,12 @@ touch one, prefer moving it toward the rule.
   `useRecordings` while a bag is live).
   Two console-wide polls are mounted once in `app/layout.tsx`:
   `RobotStateProvider` (1 Hz) and `ActiveTaskProvider` (2 s). Pages read those
-  providers; they do not start their own `robotState` poll. `/mapping` adds
+  providers; they do not start their own `robotState` poll. A reader that
+  wants one field takes it through a selector (`useRobotId`,
+  `useRobotStateSelect`, `useActiveTasksSelect`: a second observer of the
+  same entry, `enabled: false` with `select`, so no request of its own),
+  because the context's value is new on every read and a page that took the
+  whole frame for its robot id re-rendered every second. `/mapping` adds
   one page-level poll, `useMappingStatus` (1 Hz, `mappingStatus`), on only
   while that screen is open and the robot reports Mapping — the only time
   the answer is anything but `unknown` or changes on its own. The status strip
@@ -714,7 +746,12 @@ touch one, prefer moving it toward the rule.
   itself still means
   "running now": the map lock and the history refresh read it. It shares the
   entry with `useTaskTracker`, so every poller of that key goes through
-  `fetchHeldTaskState` — see the key's note. The history screen
+  `fetchHeldTaskState` — see the key's note. Sharing an entry is not sharing
+  a poll: every observer of a polled key runs its own interval, and only
+  requests in flight together are folded. So `useActiveRun` is mounted once,
+  from the strip, and another surface that draws the run (the dashboard's
+  dock staging point) reads `useLiveRun`, which observes the same two
+  entries without fetching. The history screen
   polls nothing: `taskHistory` is the prefix of both its page keys and its
   stats keys, so the one invalidation the active-task poll fires when a run
   finishes refreshes the list and the dashboard's counts together.
@@ -750,7 +787,8 @@ touch one, prefer moving it toward the rule.
   run state (`mappingStatus` — invalidated, never written, because the
   answer travels a latched ROS topic every console reads). Those are wired in the write
   hooks now — when adding a write, list every key its response affects in
-  its `onSuccess`, not only the key it was fetched under. A rename or delete
+  its `onSuccess`, not only the key it was fetched under. A rename, delete,
+  import or mapping save
   drops every key that belongs to the map through `mapScopedKeys`, and a
   rule test fails when a `map-…` key taken by name is missing from it.
 - **A file cache is versioned by the catalogue, not by this console's
@@ -797,7 +835,7 @@ As built:
 - **Telemetry** is split by rate in `hooks/use-telemetry.ts`, and the split is
   the rule to follow for anything added to that stream. Pose and joints are
   ~20 Hz each and are exposed as a `TelemetryFeed` of refs, drained once per
-  drawn frame by `PointCloudCanvas`'s `telemetry` prop; they used to be state,
+  animation frame by `PointCloudCanvas`'s `telemetry` prop; they used to be state,
   which re-rendered a barely-memoised viewport subtree up to ~40 times a
   second. `path` stays state because it is ~0.333 Hz *and* has a consumer that
   branches on it outside the canvas. A value only a render loop reads does not
@@ -818,6 +856,14 @@ As built:
   so the dashboard derives it with `stagingPose` from the dock pose the
   running job's `GET /tasks/{id}` step carries (`liveDock` in
   `lib/task/run.ts`).
+- **A still view is not redrawn.** Every 3D view draws a frame only when
+  something changed: the camera moved, a layer or a mark changed, a stream
+  delivered. The dashboard marks its frame dirty after any React render, on
+  each scan frame, and when the pose or a joint moved past a threshold
+  (`poseMoved` in `lib/scene/pose.ts`) — a standing robot's telemetry noise
+  is not a reason to draw a million cells sixty times a second. Anything
+  new that changes the picture outside React has to mark the frame itself,
+  or it shows only on the next redraw.
 - **A resize draws before the paint.** `renderer.setSize` reassigns the
   canvas's width and height, which clears it, and a `ResizeObserver` fires
   after the frame's render — so the viewport's resize callback renders a
@@ -925,7 +971,7 @@ it is run in, so it does not belong to any one of them.
   by the job id only when nothing labelled it (`describeRun`): the id is what
   the orchestrator calls a run, not what an operator does, so it lives in the
   row's expanded detail. The masthead's bar is the one deliberate exception,
-  by request — it carries the running job's id from `lg` up, muted and in the
+  by request — it carries the running job's id from `xl` up, muted and in the
   readout face, as the first thing to give way when the strip narrows — and
   it is *not* uppercased by `instrument-label`, because an uppercased id is a
   different string from the one an engineer greps for. The masthead names
@@ -972,7 +1018,11 @@ it is run in, so it does not belong to any one of them.
   uses Tailwind's width breakpoints and its `pointer-coarse:` variant (a
   40 px target under a finger, a 24 px one under a mouse — the `compact`
   tool strips over both map surfaces are the one opt-out, 32 px icons with no
-  label so a strip of tools fits a phone's row); there is no
+  label so a strip of tools fits a phone's row), plus one height variant,
+  `short:` (`max-height: 30rem`, `app/globals.css`), for a phone on its
+  side: the map fills the screen and the pose card goes. An input's 16 px
+  (under which iOS zooms on focus) is keyed to the pointer too, not the
+  width — a tablet is wide and still a finger. There is no
   `useIsMobile` hook and there should not be one, because a class-only rule
   cannot disagree with the server render the way a `matchMedia` read in an
   effect does. The two floating panels are the exception that proves it:
