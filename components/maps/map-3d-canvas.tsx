@@ -2,13 +2,17 @@
 
 import * as React from "react";
 import * as THREE from "three";
-import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { useTheme } from "next-themes";
 
 import { GpuLostNotice } from "@/components/console/fault-panel";
 import { useGpuContext } from "@/hooks/use-gpu-context";
-import { drawnGround } from "@/lib/map/floors";
-import { headingDegrees, isDrag } from "@/lib/map/gesture";
+import { bandRange, drawnGround } from "@/lib/map/floors";
+import {
+  isDrag,
+  placeGesture,
+  type PlaceAnchor,
+  type PlaceEvent,
+} from "@/lib/map/gesture";
 import { columnAt, kzToMetres, medianFloor } from "@/lib/map/ground";
 import {
   GroundStroke,
@@ -21,14 +25,19 @@ import {
   type GroundSession,
 } from "@/lib/map/ground-fill";
 import { applyMap3dControls, dollyStep, frameGround } from "@/lib/scene/camera";
-import { createEdlPass, type EdlPass } from "@/lib/scene/edl";
 import { createPatchLayer, type PatchLayer } from "@/lib/scene/ground-patch-layer";
 import { createPoseMarker, placePoseMarker } from "@/lib/scene/markers";
-import { aimRaycaster } from "@/lib/scene/picking";
+import {
+  aimRaycaster,
+  createRectCache,
+  intersectGround,
+  pickVertex as pickLayerVertex,
+  projectToScreen,
+  type RectCache,
+} from "@/lib/scene/picking";
 import { THEMES } from "@/lib/scene/theme";
-import { createViewport } from "@/lib/scene/viewport";
 import { createVertexLayer, type VertexLayer } from "@/lib/scene/vertex-layer";
-import { createVoxelLayer, type VoxelLayer } from "@/lib/scene/voxel-layer";
+import { createVoxelView, type VoxelView } from "@/lib/scene/voxel-view";
 import { createZoneLayer } from "@/lib/scene/zone-layer";
 import { SIGNAL } from "@/lib/theme/signal";
 import { cn } from "@/lib/utils";
@@ -212,15 +221,15 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     propsRef.current = props;
   });
 
-  const sceneRef = React.useRef<{
-    scene: THREE.Scene;
-    camera: THREE.PerspectiveCamera;
-    controls: OrbitControls;
-    layer: VoxelLayer;
-    brush: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
-    draft: THREE.Group;
-    edl: EdlPass;
-  } | null>(null);
+  const sceneRef = React.useRef<
+    | (VoxelView & {
+        brush: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+        draft: THREE.Group;
+      })
+    | null
+  >(null);
+  /** The view's client rect, which every cast is aimed through. */
+  const rectRef = React.useRef<RectCache | null>(null);
   /**
    * A press with a zone tool armed: a tap until it moves past the deadzone,
    * then a drag of the corner it landed on (`grab`), if any.
@@ -236,13 +245,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   } | null>(null);
   const vertexLayerRef = React.useRef<VertexLayer | null>(null);
   /** A Waypoint press planted and not yet released: where, and where on screen. */
-  const anchorRef = React.useRef<{
-    pointerId: number;
-    wx: number;
-    wy: number;
-    cx: number;
-    cy: number;
-  } | null>(null);
+  const anchorRef = React.useRef<PlaceAnchor | null>(null);
   /** The pose the draft marker shows: carried under the pointer, or planted and aimed. */
   const draftRef = React.useRef<PlanarPose | null>(null);
   /** A press with no tool armed that may still be a tap on a stop. */
@@ -261,6 +264,8 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     dragging: boolean;
   } | null>(null);
   const [hovering, setHovering] = React.useState(false);
+  /** The stop the layer last lit, so a move over the same one costs nothing. */
+  const hoverIdRef = React.useRef<string | null>(null);
   /**
    * Set while the brush is over a place a fill has no surface to read a
    * height from, which is otherwise a stroke that silently does nothing.
@@ -273,16 +278,21 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   /** Set when the patches changed and the marks are not yet rebuilt. */
   const patchesDirtyRef = React.useRef(true);
   /**
-   * Set when the picture is out of date. The loop draws only then, or while
-   * the camera moves (a drag, damping's coast after one): a still view is
-   * not redrawn sixty times a second, which with the shading pass is two
-   * full-screen draws a frame for nothing, on a robot's GPU or a phone's
-   * battery.
+   * Say the picture is out of date. The view draws only then, or while the
+   * camera moves (createVoxelView); a view just built draws by itself.
    */
-  const frameDirtyRef = React.useRef(true);
-  const invalidate = React.useCallback(() => {
-    frameDirtyRef.current = true;
-  }, []);
+  const invalidate = React.useCallback(() => sceneRef.current?.invalidate(), []);
+  /**
+   * The brush's hover waiting for the next frame: where the pointer last
+   * was. The aim is a pass over the map's cells, and a mouse reports more
+   * moves than there are frames to show them in.
+   */
+  const hoverPendingRef = React.useRef<{
+    frame: number;
+    clientX: number;
+    clientY: number;
+    erase: boolean;
+  } | null>(null);
   const strokeRef = React.useRef(new GroundStroke());
   const gestureRef = React.useRef<{ pointerId: number; last: Column; erase: boolean } | null>(
     null,
@@ -308,23 +318,17 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     if (!container) return;
     const { voxels } = session;
 
-    const viewport = createViewport(container, {
+    aimAtFloor();
+    const view = createVoxelView(container, voxels, {
       background: THEMES[theme].background,
-      near: 0.05,
+      band: bandRange(propsRef.current.band),
+      groundZ: planeZRef.current,
     });
-    const { scene, camera, renderer, controls } = viewport;
-    const edl = createEdlPass(voxels.res);
-    edl.enabled = propsRef.current.shading;
-
-    controls.enableDamping = true;
-    // Any camera move the controls make themselves, beside what update() reports.
-    controls.addEventListener("change", invalidate);
+    const { scene, camera, controls } = view;
+    view.edl.enabled = propsRef.current.shading;
     applyMap3dControls(controls, propsRef.current.tool !== "pan");
-
-    const layer = createVoxelLayer(voxels);
-    const { band } = propsRef.current;
-    layer.setBand(band.lo, band.hi);
-    scene.add(layer.points);
+    const rect = createRectCache(container);
+    rectRef.current = rect;
 
     // The brush's footprint on the floor it aims at. Drawn over everything,
     // since the floor's own cells would otherwise hide it.
@@ -352,36 +356,29 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     });
     scene.add(draft);
 
-    aimAtFloor();
-    frameGround(camera, controls, layer.frame, planeZRef.current);
-    sceneRef.current = { scene, camera, controls, layer, brush, draft, edl };
+    sceneRef.current = { ...view, brush, draft };
 
     let patches: PatchLayer | null = null;
     patchesDirtyRef.current = true;
-    frameDirtyRef.current = true;
 
     let distance = "";
-    viewport.start({
-      draw: () => edl.render(renderer, scene, camera),
-      onResize: (width, height, pixelRatio) => edl.setSize(width, height, pixelRatio),
+    view.start({
+      onResize: rect.invalidate,
       onContextLost: gpu.onContextLost,
       onContextRestored: gpu.onContextRestored,
-      frame: () => {
-        if (patchesDirtyRef.current) {
-          // Once per frame however many dabs landed in it.
-          patchesDirtyRef.current = false;
-          if (patches) {
-            scene.remove(patches.points);
-            patches.dispose();
-          }
-          patches = createPatchLayer(session.edits, voxels, SIGNAL[theme].cmd);
-          scene.add(patches.points);
-          frameDirtyRef.current = true;
+      beforeFrame: () => {
+        if (!patchesDirtyRef.current) return;
+        // Once per frame however many dabs landed in it.
+        patchesDirtyRef.current = false;
+        if (patches) {
+          scene.remove(patches.points);
+          patches.dispose();
         }
-        // True while the camera moves, damping's coast included.
-        if (controls.update()) frameDirtyRef.current = true;
-        if (!frameDirtyRef.current) return;
-        frameDirtyRef.current = false;
+        patches = createPatchLayer(session.edits, voxels, SIGNAL[theme].cmd);
+        scene.add(patches.points);
+        view.invalidate();
+      },
+      afterDraw: () => {
         // What the phone test reads a pinch off: the camera's distance to its
         // target, in centimetres, written only when it moves.
         const next = String(Math.round(camera.position.distanceTo(controls.target) * 100));
@@ -389,20 +386,20 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
           distance = next;
           container.dataset.distance = next;
         }
-        edl.render(renderer, scene, camera);
       },
     });
 
     return () => {
-      controls.removeEventListener("change", invalidate);
-      // Their own dispose, for what the sweep cannot reach (a layer's textures).
-      layer.dispose();
+      // A hover still waiting was aimed at this scene.
+      if (hoverPendingRef.current) cancelAnimationFrame(hoverPendingRef.current.frame);
+      hoverPendingRef.current = null;
+      rect.dispose();
+      rectRef.current = null;
       patches?.dispose();
-      edl.dispose();
-      viewport.dispose();
+      view.dispose();
       sceneRef.current = null;
     };
-  }, [session, theme, aimAtFloor, invalidate, gpu.onContextLost, gpu.onContextRestored]);
+  }, [session, theme, aimAtFloor, gpu.onContextLost, gpu.onContextRestored]);
 
   // ---- Shading follows its toggle -----------------------------------------
   React.useEffect(() => {
@@ -441,9 +438,13 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     ctx.scene.add(layer.group);
     vertexLayerRef.current = layer;
     const { vertexBand: band, movingVertex: moving, selectedVertexIds } = propsRef.current;
-    layer.setBand(band?.lo ?? -Infinity, band?.hi ?? Infinity);
+    layer.setBand(...bandRange(band));
     layer.setMoving(moving?.id ?? null);
     layer.setSelected(selectedVertexIds);
+    // The hover outlives a rebuild (a theme toggle, a stop staged under a
+    // still pointer): hoverVertex only repaints on a change of stop, so a
+    // new layer has to be told which one is lit.
+    layer.setHovered(hoverIdRef.current);
     invalidate();
     return () => {
       ctx.scene.remove(layer.group);
@@ -454,8 +455,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     };
   }, [vertices, session, theme, invalidate]);
 
-  const vertexLo = vertexBand?.lo ?? -Infinity;
-  const vertexHi = vertexBand?.hi ?? Infinity;
+  const [vertexLo, vertexHi] = bandRange(vertexBand);
   React.useEffect(() => {
     vertexLayerRef.current?.setBand(vertexLo, vertexHi);
     invalidate();
@@ -478,8 +478,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   // band is a dependency because a zone of every floor is drawn at the
   // ground the shown heights stand on, which the band moves.
   const { zones, zoneFloor, zonePlaneZ, zoneDraft } = props;
-  const zoneLo = zoneFloor?.lo ?? -Infinity;
-  const zoneHi = zoneFloor?.hi ?? Infinity;
+  const [zoneLo, zoneHi] = bandRange(zoneFloor);
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx || zones.length === 0) return;
@@ -589,52 +588,39 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     invalidate();
   }, [props.zoomStep, invalidate]);
 
+  /** Aim the shared raycaster through a pointer position, or null with no view. */
+  const aim = (event: { clientX: number; clientY: number }) => {
+    const ctx = sceneRef.current;
+    const rect = rectRef.current?.get();
+    if (!ctx || !rect) return null;
+    const raycaster = raycasterRef.current;
+    aimRaycaster(raycaster, ctx.camera, rect, event.clientX, event.clientY);
+    return raycaster;
+  };
+
   /**
    * The point under the pointer on the surface the brush aims at, metres,
    * or null; re-aims the brush on the way. The aim reaches a cell past the
    * brush's edge, so a pointer over a hole the brush covers finds its rim.
    */
-  const cast = (event: React.PointerEvent): THREE.Vector3 | null => {
-    const ctx = sceneRef.current;
-    const container = containerRef.current;
-    if (!ctx || !container) return null;
-    const raycaster = raycasterRef.current;
-    aimRaycaster(
-      raycaster,
-      ctx.camera,
-      container.getBoundingClientRect(),
-      event.clientX,
-      event.clientY,
-    );
+  const cast = (event: { clientX: number; clientY: number }) => {
+    const raycaster = aim(event);
+    if (!raycaster) return null;
     const { voxels, stacks, edits, band } = session;
     const reach = (propsRef.current.radius + 1) * voxels.res;
-    const aim = aimSurface(voxels, stacks, edits, band, raycaster.ray, reach);
-    if (aim !== null) aimKzRef.current = aim;
+    const surface = aimSurface(voxels, stacks, edits, band, raycaster.ray, reach);
+    if (surface !== null) aimKzRef.current = surface;
     const z = kzToMetres(aimKzRef.current, voxels);
-    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -z);
-    return raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+    const hit = intersectGround(raycaster, z);
+    return hit && { x: hit.wx, y: hit.wy, z };
   };
 
   /** The point on the waypoint's ground under the pointer, metres, or null off the tree. */
   const castPlace = (event: { clientX: number; clientY: number }) => {
-    const ctx = sceneRef.current;
-    const container = containerRef.current;
-    if (!ctx || !container) return null;
-    const raycaster = raycasterRef.current;
-    aimRaycaster(
-      raycaster,
-      ctx.camera,
-      container.getBoundingClientRect(),
-      event.clientX,
-      event.clientY,
-    );
-    const z = drawnGround(propsRef.current.placeZ);
-    const hit = raycaster.ray.intersectPlane(
-      new THREE.Plane(new THREE.Vector3(0, 0, 1), -z),
-      new THREE.Vector3(),
-    );
+    const raycaster = aim(event);
+    const hit = raycaster && intersectGround(raycaster, drawnGround(propsRef.current.placeZ));
     // Off the tree's box is nowhere the robot has been.
-    return hit && columnAt(session.voxels, hit.x, hit.y) ? hit : null;
+    return hit && columnAt(session.voxels, hit.wx, hit.wy) ? hit : null;
   };
 
   /** The ground a shape in flight is drawn on and a zone of every floor lies at. */
@@ -648,39 +634,17 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
 
   /** The point at height `z` under a pointer position, metres, or null off the tree. */
   const castAt = (event: { clientX: number; clientY: number }, z: number): ZonePoint | null => {
-    const ctx = sceneRef.current;
-    const container = containerRef.current;
-    if (!ctx || !container) return null;
-    const raycaster = raycasterRef.current;
-    aimRaycaster(
-      raycaster,
-      ctx.camera,
-      container.getBoundingClientRect(),
-      event.clientX,
-      event.clientY,
-    );
-    const hit = raycaster.ray.intersectPlane(
-      new THREE.Plane(new THREE.Vector3(0, 0, 1), -z),
-      new THREE.Vector3(),
-    );
+    const raycaster = aim(event);
+    const hit = raycaster && intersectGround(raycaster, z);
     // Off the tree's box is nowhere the robot can be kept out of.
-    return hit && columnAt(session.voxels, hit.x, hit.y) ? { x: hit.x, y: hit.y } : null;
+    return hit && columnAt(session.voxels, hit.wx, hit.wy) ? { x: hit.wx, y: hit.wy } : null;
   };
 
   /** Map-frame points on screen, CSS pixels in the client frame a pointer event uses. */
   const toScreen = (points: readonly { x: number; y: number; z: number }[]) => {
     const ctx = sceneRef.current;
-    const container = containerRef.current;
-    if (!ctx || !container) return [];
-    const rect = container.getBoundingClientRect();
-    ctx.camera.updateMatrixWorld();
-    return points.map(({ x, y, z }) => {
-      const v = new THREE.Vector3(x, y, z).project(ctx.camera);
-      return {
-        cx: rect.left + ((v.x + 1) / 2) * rect.width,
-        cy: rect.top + ((1 - v.y) / 2) * rect.height,
-      };
-    });
+    const rect = rectRef.current?.get();
+    return ctx && rect ? projectToScreen(ctx.camera, rect, points) : [];
   };
 
   const cornerRadius = (event: { pointerType: string }) =>
@@ -752,21 +716,9 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
 
   /** The stored stop under a pointer position, or null (also another floor's). */
   const pickVertex = (event: { clientX: number; clientY: number }) => {
-    const ctx = sceneRef.current;
     const layer = vertexLayerRef.current;
-    const container = containerRef.current;
-    if (!ctx || !layer || !container) return null;
-    const raycaster = raycasterRef.current;
-    aimRaycaster(
-      raycaster,
-      ctx.camera,
-      container.getBoundingClientRect(),
-      event.clientX,
-      event.clientY,
-    );
-    const hit = raycaster.intersectObjects(layer.pickables, false)[0];
-    const id = hit?.object.userData.vertexId as string | undefined;
-    return id ? (layer.byId.get(id) ?? null) : null;
+    const raycaster = layer && aim(event);
+    return raycaster ? pickLayerVertex(raycaster, layer) : null;
   };
 
   /** Show the draft marker at a pose, on `z` (the place plane by default), or hide it. */
@@ -785,16 +737,32 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     vertexLayerRef.current?.setMoving(propsRef.current.movingVertex?.id ?? null);
   };
 
-  /** A re-place keeps the stop's own heading until a drag aims it; a new one faces +x. */
-  const seedTheta = () => draftRef.current?.theta ?? propsRef.current.movingVertex?.theta ?? 0;
+  /**
+   * Take the placing gesture one step (placeGesture) and show where it left
+   * the stop. A re-place keeps the stop's own heading until a drag aims it;
+   * a new one faces +x. The pose it commits, or null.
+   */
+  const place = (event: PlaceEvent): PlanarPose | null => {
+    const before = { anchor: anchorRef.current, draft: draftRef.current, carrying: false };
+    const { state, commit } = placeGesture(before, event);
+    anchorRef.current = state.anchor;
+    if (state.draft !== before.draft) showDraft(state.draft);
+    return commit;
+  };
+  const placeSeed = () => propsRef.current.movingVertex?.theta ?? 0;
 
   const hoverVertex = (vertex: MapVertex | null) => {
-    vertexLayerRef.current?.setHovered(vertex?.id ?? null);
+    const id = vertex?.id ?? null;
+    // Only a change of stop redraws: this runs on every pointer move, and a
+    // redraw is the whole 3D map and its shading pass.
+    if (id === hoverIdRef.current) return;
+    hoverIdRef.current = id;
+    vertexLayerRef.current?.setHovered(id);
     setHovering(vertex !== null);
     invalidate();
   };
 
-  const columnOfHit = (hit: THREE.Vector3 | null): Column | null =>
+  const columnOfHit = (hit: { x: number; y: number } | null): Column | null =>
     hit ? columnAt(session.voxels, hit.x, hit.y) : null;
 
   const dab = (column: Column, erase: boolean) => {
@@ -842,7 +810,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
    * aims at. A fill that would find no surface to read there turns the ring
    * the caution hue and says so, rather than leaving a stroke to do nothing.
    */
-  const hover = (hit: THREE.Vector3 | null, erase: boolean) => {
+  const hover = (hit: { x: number; y: number; z: number } | null, erase: boolean) => {
     const ctx = sceneRef.current;
     const { tool, radius, reach } = propsRef.current;
     const column = columnOfHit(hit);
@@ -867,6 +835,34 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     }
   };
 
+  /** Drop a hover still waiting for its frame: a stroke or a leave overtook it. */
+  const cancelHover = () => {
+    if (hoverPendingRef.current) cancelAnimationFrame(hoverPendingRef.current.frame);
+    hoverPendingRef.current = null;
+  };
+
+  /**
+   * Aim the brush at the pointer on the next frame, once for however many
+   * moves arrive before it. Only while nothing is being painted: a stroke
+   * aims on every move, since each dab is set by the aim it was made under.
+   */
+  const hoverSoon = (event: React.PointerEvent, erase: boolean) => {
+    const pending = hoverPendingRef.current;
+    const at = { clientX: event.clientX, clientY: event.clientY, erase };
+    if (pending) {
+      Object.assign(pending, at);
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      const last = hoverPendingRef.current;
+      hoverPendingRef.current = null;
+      // The brush may have been put down in the meantime.
+      const { tool } = propsRef.current;
+      if (last && (tool === "fill" || tool === "erase")) hover(cast(last), last.erase);
+    });
+    hoverPendingRef.current = { frame, ...at };
+  };
+
   /**
    * Put a zone press down, every way one ends. A drag that moved a finished
    * zone's corner is one edit, recorded now that it is let go.
@@ -880,6 +876,10 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    // Measured again on every press: a banner over the view moves it with
+    // neither a resize nor a scroll, and a stale rect would put the press
+    // somewhere else.
+    rectRef.current?.get(true);
     const { tool } = propsRef.current;
     if (tapsZones(tool)) {
       // Resolved on release, so a drag never drops a corner; a second finger
@@ -945,23 +945,18 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     if (tool === "waypoint") {
       if (event.button !== 0) return;
       // A second finger is a pinch, never a second stop, and the first
-      // finger's lift must not then commit what it was aiming.
-      if (anchorRef.current || !event.isPrimary) {
-        anchorRef.current = null;
-        showDraft(null);
-        return;
-      }
-      const hit = castPlace(event);
-      if (!hit) return;
-      event.preventDefault();
-      anchorRef.current = {
+      // finger's lift must not then commit what it was aiming: the gesture
+      // abandons the stop on a press it already holds one for.
+      place({
+        type: "press",
         pointerId: event.pointerId,
-        wx: hit.x,
-        wy: hit.y,
+        primary: event.isPrimary,
         cx: event.clientX,
         cy: event.clientY,
-      };
-      showDraft({ x: hit.x, y: hit.y, theta: seedTheta() });
+        cast: () => castPlace(event),
+        seedTheta: placeSeed(),
+      });
+      if (anchorRef.current?.pointerId === event.pointerId) event.preventDefault();
       return;
     }
     if (event.button !== 0 || gestureRef.current) return;
@@ -979,6 +974,8 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     gestureRef.current = { pointerId: event.pointerId, last: column, erase };
     const ctx = sceneRef.current;
     if (ctx) ctx.controls.enabled = false;
+    // The stroke aims for itself from here on.
+    cancelHover();
     dab(column, erase);
     hover(hit, erase);
   };
@@ -1023,35 +1020,33 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
       return;
     }
     if (tool === "waypoint") {
-      if (!event.isPrimary) return;
-      const anchor = anchorRef.current;
-      if (!anchor) {
-        // Carried under the pointer until a press plants it; off the tree, none.
-        const hit = castPlace(event);
-        showDraft(hit ? { x: hit.x, y: hit.y, theta: seedTheta() } : null);
-        return;
-      }
-      if (anchor.pointerId !== event.pointerId) return;
-      let theta = seedTheta();
-      if (isDrag(anchor.cx, anchor.cy, event.clientX, event.clientY)) {
-        // World-space, not the screen delta: the camera may face any azimuth.
-        const hit = castPlace(event);
-        if (hit) theta = headingDegrees(hit.x - anchor.wx, hit.y - anchor.wy) ?? theta;
-      }
-      showDraft({ x: anchor.wx, y: anchor.wy, theta });
+      // Carried under the pointer until a press plants it (off the tree,
+      // none), then only aimed.
+      place({
+        type: "move",
+        pointerId: event.pointerId,
+        primary: event.isPrimary,
+        cx: event.clientX,
+        cy: event.clientY,
+        carries: true,
+        cast: () => castPlace(event),
+        seedTheta: placeSeed(),
+      });
       return;
     }
     const gesture = gestureRef.current;
-    if (gesture && gesture.pointerId !== event.pointerId) return;
-    const hit = cast(event);
-    if (gesture) {
-      const column = columnOfHit(hit);
-      if (column) {
-        dabLine(gesture.last, column, gesture.erase);
-        gesture.last = column;
-      }
+    if (!gesture) {
+      hoverSoon(event, propsRef.current.tool === "erase" || event.shiftKey);
+      return;
     }
-    hover(hit, gesture?.erase ?? (propsRef.current.tool === "erase" || event.shiftKey));
+    if (gesture.pointerId !== event.pointerId) return;
+    const hit = cast(event);
+    const column = columnOfHit(hit);
+    if (column) {
+      dabLine(gesture.last, column, gesture.erase);
+      gesture.last = column;
+    }
+    hover(hit, gesture.erase);
   };
 
   const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -1092,11 +1087,9 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
         }
       }
     }
-    const anchor = anchorRef.current;
-    if (anchor && anchor.pointerId === event.pointerId) {
-      anchorRef.current = null;
-      const pose = draftRef.current;
-      showDraft(null);
+    // Only the lift of the pointer that planted the stop puts it down.
+    if (anchorRef.current?.pointerId === event.pointerId) {
+      const pose = place({ type: "release", pointerId: event.pointerId });
       if (pose) propsRef.current.onPlaceCommit(pose);
       return;
     }
@@ -1115,8 +1108,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     if (zonePressRef.current?.pointerId === event.pointerId) endZonePress();
     // Only a deliberate release may put a stop down.
     if (anchorRef.current?.pointerId === event.pointerId) {
-      anchorRef.current = null;
-      showDraft(null);
+      place({ type: "abandon" });
       return;
     }
     endGesture(event);
@@ -1142,6 +1134,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
     // A planted or dragged stop survives the pointer leaving; a carried one does not.
     if (!anchorRef.current && !dragRef.current) showDraft(null);
     if (gestureRef.current) return;
+    cancelHover();
     setUnreadable(false);
     const ctx = sceneRef.current;
     if (ctx) ctx.brush.visible = false;
@@ -1170,6 +1163,7 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
                 : "cursor-crosshair",
           props.className,
         )}
+        onPointerEnter={() => rectRef.current?.get(true)}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

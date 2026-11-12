@@ -7,6 +7,7 @@ import {
   FOLLOW_STEP_M,
   GROUND_FLOOR_SNAP_M,
   GROUND_FLOOR_Z_M,
+  bandRange,
   drawnGround,
   floorBands,
   floorGround,
@@ -253,5 +254,16 @@ describe("floorOfHeight", () => {
 
   it("names no floor on a map of one storey", () => {
     expect(floorOfHeight(0, [])).toBeNull();
+  });
+});
+
+describe("bandRange", () => {
+  it("reads no floor picked as every height", () => {
+    expect(bandRange(null)).toEqual([-Infinity, Infinity]);
+    expect(bandRange(undefined)).toEqual([-Infinity, Infinity]);
+  });
+
+  it("hands a band through as it is", () => {
+    expect(bandRange({ lo: -1, hi: 2.5 })).toEqual([-1, 2.5]);
   });
 });

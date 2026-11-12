@@ -2,6 +2,7 @@
 
 import * as THREE from "three";
 
+import { toRadians } from "@/lib/angle";
 import { drawnGround } from "@/lib/map/floors";
 import {
   CHARGER_ICON_PATH,
@@ -334,7 +335,7 @@ export function createVertexLayer(
     const marker = new THREE.Group();
     // On the ground of its own floor, so an upstairs stop stands on that floor.
     marker.position.set(vertex.x, vertex.y, ground + VERTEX_Z_M);
-    marker.rotation.z = (vertex.theta * Math.PI) / 180;
+    marker.rotation.z = toRadians(vertex.theta);
 
     const charger = hasChargerMark(vertex.type);
     const rest = charger ? chargerRest : base;

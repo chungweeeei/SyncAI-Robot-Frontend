@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import type * as THREE from "three";
-import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { MaximizeIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 
@@ -10,14 +9,14 @@ import { GpuLostNotice } from "@/components/console/fault-panel";
 import { IconButton } from "@/components/tasks/icon-button";
 import { useGpuContext } from "@/hooks/use-gpu-context";
 import { PALETTES, VERTEX_HIT_RADIUS, VERTEX_HIT_RADIUS_TOUCH } from "@/lib/map/draw";
+import { bandRange } from "@/lib/map/floors";
 import { isDrag } from "@/lib/map/gesture";
 import { drawRoute, drawStops, type PlacedStop, type RoutePoint } from "@/lib/map/preview";
 import { applyLookControls, frameGround } from "@/lib/scene/camera";
-import { createEdlPass, type EdlPass } from "@/lib/scene/edl";
+import { createRectCache, type RectCache } from "@/lib/scene/picking";
 import { projectStops, stopNear } from "@/lib/scene/route-marks";
 import { THEMES } from "@/lib/scene/theme";
-import { createViewport } from "@/lib/scene/viewport";
-import { createVoxelLayer, type VoxelLayer } from "@/lib/scene/voxel-layer";
+import { createVoxelView, type VoxelView } from "@/lib/scene/voxel-view";
 import type { MapVertex } from "@/lib/types/map";
 import type { OccupiedVoxels } from "@/lib/types/octree";
 import { cn } from "@/lib/utils";
@@ -66,7 +65,10 @@ export interface RouteCanvas3dProps {
  * the dashboard and the map editor (applyLookControls); only a primary press lifted inside the deadzone on a waypoint picks it.
  * A second finger landing abandons the press, so a pinch begun on a stop
  * never also adds it. Draws only when something changed or the camera
- * moves, as the editor's view does.
+ * moves, as the editor's view does (createVoxelView) — and when only the
+ * marks changed (a card pointed at, a stop added), only the marks: the 3D
+ * map under them is the same picture, and a redraw of it per hovered card
+ * was the whole tree and its shading pass.
  */
 export function RouteCanvas3d({
   voxels,
@@ -88,13 +90,9 @@ export function RouteCanvas3d({
   const theme: "light" | "dark" = resolvedTheme === "dark" ? "dark" : "light";
   const gpu = useGpuContext();
 
-  const sceneRef = React.useRef<{
-    scene: THREE.Scene;
-    camera: THREE.PerspectiveCamera;
-    controls: OrbitControls;
-    layer: VoxelLayer;
-    edl: EdlPass;
-  } | null>(null);
+  const sceneRef = React.useRef<VoxelView | null>(null);
+  /** The view's client rect, which a hover is tested in on every mouse move. */
+  const rectRef = React.useRef<RectCache | null>(null);
   /** Where each shown stop was last drawn, which a tap is tested against. */
   const placedRef = React.useRef<ReadonlyMap<string, PlacedStop>>(new Map());
   /** The overlay's CSS size, from the viewport's resize. */
@@ -134,10 +132,9 @@ export function RouteCanvas3d({
     };
   });
 
-  const frameDirtyRef = React.useRef(true);
-  const invalidate = React.useCallback(() => {
-    frameDirtyRef.current = true;
-  }, []);
+  const invalidate = React.useCallback(() => sceneRef.current?.invalidate(), []);
+  /** Set when the marks are out of date and the 3D map under them is not. */
+  const marksDirtyRef = React.useRef(false);
 
   /** The overlay, redrawn with every frame of the view under it. */
   const drawMarks = React.useCallback((camera: THREE.Camera) => {
@@ -159,6 +156,7 @@ export function RouteCanvas3d({
     const dpr = canvas.width / Math.max(width, 1);
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
     context.clearRect(0, 0, width, height);
+    marksDirtyRef.current = false;
     const palette = PALETTES[hue];
     if (legs.length > 1) drawRoute(context, legs, placed, palette.cmd, bold?.key ?? null, bold?.fade);
     // A single stop is where the job starts and ends; a ring would say nothing.
@@ -176,32 +174,24 @@ export function RouteCanvas3d({
   React.useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const viewport = createViewport(container, {
-      background: THEMES[theme].background,
-      near: 0.05,
-    });
-    const { scene, camera, renderer, controls } = viewport;
-    controls.enableDamping = true;
-    applyLookControls(controls);
-    controls.addEventListener("change", invalidate);
-    const edl = createEdlPass(voxels.res);
-
-    const layer = createVoxelLayer(voxels);
     const { band: shown, groundZ: ground } = latestRef.current;
-    layer.setBand(shown?.lo ?? -Infinity, shown?.hi ?? Infinity);
-    scene.add(layer.points);
-    frameGround(camera, controls, layer.frame, ground);
-    sceneRef.current = { scene, camera, controls, layer, edl };
-    frameDirtyRef.current = true;
+    const view = createVoxelView(container, voxels, {
+      background: THEMES[theme].background,
+      band: bandRange(shown),
+      groundZ: ground,
+    });
+    applyLookControls(view.controls);
+    sceneRef.current = view;
+    const rect = createRectCache(container);
+    rectRef.current = rect;
 
-    const render = () => {
-      edl.render(renderer, scene, camera);
-      drawMarks(camera);
-    };
-    viewport.start({
-      draw: render,
+    view.start({
+      afterDraw: () => drawMarks(view.camera),
+      idle: () => {
+        if (marksDirtyRef.current) drawMarks(view.camera);
+      },
       onResize: (width, height, pixelRatio) => {
-        edl.setSize(width, height, pixelRatio);
+        rect.invalidate();
         sizeRef.current = { width, height };
         const marks = marksRef.current;
         if (marks) {
@@ -211,26 +201,18 @@ export function RouteCanvas3d({
       },
       onContextLost: gpu.onContextLost,
       onContextRestored: gpu.onContextRestored,
-      frame: () => {
-        if (controls.update()) frameDirtyRef.current = true;
-        if (!frameDirtyRef.current) return;
-        frameDirtyRef.current = false;
-        render();
-      },
     });
 
     return () => {
-      controls.removeEventListener("change", invalidate);
-      layer.dispose();
-      edl.dispose();
-      viewport.dispose();
+      rect.dispose();
+      rectRef.current = null;
+      view.dispose();
       sceneRef.current = null;
     };
-  }, [voxels, theme, invalidate, drawMarks, gpu.onContextLost, gpu.onContextRestored]);
+  }, [voxels, theme, drawMarks, gpu.onContextLost, gpu.onContextRestored]);
 
   // ---- The floor on show ---------------------------------------------------
-  const bandLo = band?.lo ?? -Infinity;
-  const bandHi = band?.hi ?? Infinity;
+  const [bandLo, bandHi] = bandRange(band);
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx) return;
@@ -241,10 +223,12 @@ export function RouteCanvas3d({
   }, [bandLo, bandHi, invalidate]);
 
   // The marks and the route are drawn from latestRef, so a new list, new
-  // step numbers or a longer route only need the next frame.
+  // step numbers or a longer route only need the next frame — and of the
+  // marks alone, since none of these moves a cell of the map under them.
+  // The floor and the theme, which do, redraw it themselves.
   React.useEffect(() => {
-    invalidate();
-  }, [vertices, steps, route, highlight, focus, invalidate]);
+    marksDirtyRef.current = true;
+  }, [vertices, steps, route, highlight, focus]);
 
   /** The last waypoint reported to onHover, so a move over the same one says nothing. */
   const hoveredRef = React.useRef<string | null>(null);
@@ -257,7 +241,7 @@ export function RouteCanvas3d({
 
   /** The stop under a pointer, by the marks as last drawn, with a finger's wider slop. */
   const stopAt = (event: React.PointerEvent<HTMLDivElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect();
+    const bounds = rectRef.current?.get() ?? event.currentTarget.getBoundingClientRect();
     return stopNear(
       placedRef.current,
       latestRef.current.vertices,
@@ -268,6 +252,8 @@ export function RouteCanvas3d({
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    // Measured again on every press, which is what a tap is tested against.
+    rectRef.current?.get(true);
     downRef.current.add(event.pointerId);
     // A second finger is a pinch, never a second press, and ends the first's tap.
     if (downRef.current.size > 1) {
@@ -333,6 +319,7 @@ export function RouteCanvas3d({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
+        onPointerEnter={() => rectRef.current?.get(true)}
         onPointerLeave={() => {
           setHovering(false);
           reportHover(null);

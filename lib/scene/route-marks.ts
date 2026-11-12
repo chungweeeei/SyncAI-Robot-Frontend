@@ -5,6 +5,7 @@
 
 import * as THREE from "three";
 
+import { toRadians } from "@/lib/angle";
 import { drawnGround } from "@/lib/map/floors";
 import type { PlacedStop } from "@/lib/map/preview";
 import type { MapVertex } from "@/lib/types/map";
@@ -38,7 +39,7 @@ export function projectStops(
     AT.set(vertex.x, vertex.y, z).project(camera);
     // Outside the depth range is behind the camera or past its far plane.
     if (AT.z < -1 || AT.z > 1) continue;
-    const radians = (vertex.theta * Math.PI) / 180;
+    const radians = toRadians(vertex.theta);
     AHEAD.set(
       vertex.x + Math.cos(radians) * HEADING_PROBE_M,
       vertex.y + Math.sin(radians) * HEADING_PROBE_M,
