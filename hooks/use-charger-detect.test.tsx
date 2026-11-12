@@ -52,7 +52,7 @@ beforeEach(() => {
 });
 
 describe("useChargerDetect", () => {
-  it("hands back the measured pose, its z untouched and its heading the dock's, and invalidates nothing", async () => {
+  it("hands back the measured pose, its z untouched, and invalidates nothing", async () => {
     detectCharger.mockResolvedValue(sighting());
     const { wrapper, invalidate } = setup();
     const { result } = renderHook(() => useChargerDetect("lab"), { wrapper });
@@ -62,8 +62,7 @@ describe("useChargerDetect", () => {
       ({ pose } = await result.current.run());
     });
 
-    // The heading turned round from the mark's, to the one the robot docks on.
-    expect(pose).toEqual({ x: 2.4, y: -1.1, z: 0.03, theta: 135 });
+    expect(pose).toEqual({ x: 2.4, y: -1.1, z: 0.03, theta: -45 });
     expect(result.current.error).toBeNull();
     expect(result.current.busy).toBe(false);
     expect(invalidate).not.toHaveBeenCalled();

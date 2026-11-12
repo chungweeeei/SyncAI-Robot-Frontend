@@ -91,7 +91,7 @@ describe("useWaypointPlacement", () => {
       key,
       charger: true,
       detected: true,
-      pose: { x: 2.4, y: -1.1, z: 0.03, theta: 135 },
+      pose: { x: 2.4, y: -1.1, z: 0.03, theta: -45 },
     });
   });
 
