@@ -214,7 +214,7 @@ function RunBar({
       title={title}
       className={cn(
         // Absorbs the spare width; only the text on the left may be cut.
-        "flex h-7 min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-sm border border-hairline bg-elevated px-2.5",
+        "flex h-7 min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-sm border border-hairline bg-elevated px-2.5 pointer-coarse:h-10",
         // No run, no state word: the tone goes on the whole frame.
         muted && (tone === "neutral" ? "text-muted-foreground" : TONE_TEXT[tone]),
       )}
@@ -384,7 +384,7 @@ function RunReadout({
       >
         <RunBar tone={STATE_TONE[state]} state={state}>
           {/* The id is an engineer's handle: muted, and first to give way. */}
-          <span className="readout hidden text-muted-foreground lg:inline">
+          <span className="readout hidden text-muted-foreground xl:inline">
             {run.task.id} ·{" "}
           </span>
           {progress ? (

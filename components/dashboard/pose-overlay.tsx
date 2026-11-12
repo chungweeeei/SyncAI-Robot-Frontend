@@ -4,6 +4,7 @@ import { BotIcon } from "lucide-react";
 
 import { overlayPanel } from "@/components/console/instrument";
 import { CoordCell, cardHeader } from "@/components/dashboard/overlay-card";
+import { formatDegrees, formatMetres } from "@/lib/readout";
 import { cn } from "@/lib/utils";
 import type { RobotState } from "@/lib/types/robot";
 
@@ -27,21 +28,22 @@ export function PoseOverlay({
   const tone = localized ? "live" : "muted";
 
   return (
-    <section aria-label="Pose" className={cn(overlayPanel, "w-[17rem] max-w-[calc(100vw-1.5rem)] p-2.5", className)}>
+    <section aria-label="Pose" className={cn(overlayPanel, "w-44 p-2.5 sm:w-[17rem]", className)}>
       <div className={cardHeader}>
         <BotIcon className="size-3.5 shrink-0 text-signal-live" aria-hidden />
         <h2 className="min-w-0 flex-1 truncate text-sm font-medium">Robot</h2>
       </div>
       {/* The stop and goal cards' grid, in the live hue, with the heading a
         * fourth cell: this card has the width, and where the robot faces is
-        * read here, where a stop's is read off its arrow. */}
-      <dl className="mt-2.5 grid grid-cols-[1fr_1fr_1fr_1.2fr] gap-2">
-        <CoordCell label="X" value={localized ? position.x.toFixed(2) : "—"} unit="m" tone={tone} />
-        <CoordCell label="Y" value={localized ? position.y.toFixed(2) : "—"} unit="m" tone={tone} />
-        <CoordCell label="Z" value={localized ? position.z.toFixed(2) : "—"} unit="m" tone={tone} />
+        * read here, where a stop's is read off its arrow. Two rows below
+        * `sm`: at its full width it reached under the floor picker. */}
+      <dl className="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_1fr_1.2fr]">
+        <CoordCell label="X" value={localized ? formatMetres(position.x) : "—"} unit="m" tone={tone} />
+        <CoordCell label="Y" value={localized ? formatMetres(position.y) : "—"} unit="m" tone={tone} />
+        <CoordCell label="Z" value={localized ? formatMetres(position.z) : "—"} unit="m" tone={tone} />
         <CoordCell
           label="Orientation"
-          value={localized ? position.theta.toFixed(1) : "—"}
+          value={localized ? formatDegrees(position.theta) : "—"}
           unit="°"
           tone={tone}
         />

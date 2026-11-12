@@ -1,17 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeftIcon, Trash2Icon, XIcon } from "lucide-react";
+import { XIcon } from "lucide-react";
 
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/console/confirm-dialog";
 import { useDeleteMap } from "@/hooks/use-map-actions";
 import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
@@ -23,7 +15,7 @@ const LOCKED_REASON =
  * `bg-panel` so the glyph doesn't sink into the tile.
  */
 const CORNER =
-  "absolute top-2 right-2 z-10 flex size-6 items-center justify-center rounded-sm border border-hairline bg-panel/90 backdrop-blur-sm";
+  "absolute top-2 right-2 z-10 flex size-6 pointer-coarse:size-10 items-center justify-center rounded-sm border border-hairline bg-panel/90 backdrop-blur-sm";
 
 /**
  * The one consequence the title doesn't state: the waypoints go too. They are
@@ -116,48 +108,16 @@ export function MapDeleteControl({
         </button>
       )}
 
-      <AlertDialog
+      <ConfirmDialog
         open={confirming}
-        onOpenChange={(open) => {
-          if (!open && !busy) close();
-        }}
+        title={<>Delete {map.name}?</>}
+        busy={busy}
+        error={error}
+        onConfirm={submit}
+        onClose={close}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {map.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {vertexWarning(map)} Remapping the site is the only way back.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {error && (
-            <p
-              role="alert"
-              className="text-[11px] leading-tight text-signal-warn"
-            >
-              {error}
-            </p>
-          )}
-
-          <AlertDialogFooter>
-            {/* Icon and label, the house pattern: the last screen before the
-              * map is removed is no place for two unlabelled buttons. */}
-            <Button variant="ghost" size="sm" disabled={busy} onClick={close}>
-              <ArrowLeftIcon data-icon="inline-start" />
-              Keep
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={busy}
-              onClick={submit}
-            >
-              <Trash2Icon data-icon="inline-start" />
-              {busy ? "Deleting…" : "Delete"}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        {vertexWarning(map)} Remapping the site is the only way back.
+      </ConfirmDialog>
     </>
   );
 }

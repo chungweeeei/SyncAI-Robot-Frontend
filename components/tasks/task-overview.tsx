@@ -4,6 +4,8 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { RefreshCwIcon } from "lucide-react";
 
+import { ConfirmDialog } from "@/components/console/confirm-dialog";
+import { ErrorLine } from "@/components/console/error-line";
 import { Chip, InstrumentGroup } from "@/components/console/instrument";
 import { ScheduleList } from "@/components/tasks/schedule-list";
 import { TaskLibrary } from "@/components/tasks/task-library";
@@ -16,6 +18,7 @@ import { useTaskDispatch } from "@/hooks/use-task-dispatch";
 import { useTaskDraft } from "@/hooks/use-task-draft";
 import type { TaskTemplate } from "@/lib/api/task-template";
 import { draftFromTemplate, draftWouldBeLost } from "@/lib/task/draft-store";
+import { survivingSchedulesNote } from "@/lib/task/library";
 import { fromTemplateSteps, toDispatchSteps, toTemplateSteps } from "@/lib/task/step";
 import { TASK_TEMPLATE_NAME_MAX } from "@/lib/task/template";
 
@@ -85,17 +88,18 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
     });
   };
 
+  /**
+   * The task Delete was pressed on, asked about before anything is sent:
+   * there is no undo. The editor's dialog, since it is the same act. The
+   * question closes on the answer; a refusal is the list's own error line.
+   */
+  const [deleting, setDeleting] = React.useState<TaskTemplate | null>(null);
+  const deletingSchedules = deleting
+    ? schedules.schedules.filter((entry) => entry.task_template_id === deleting.id).length
+    : 0;
+
   const remove = (template: TaskTemplate) => {
-    const owned = schedules.schedules.filter(
-      (entry) => entry.task_template_id === template.id,
-    ).length;
-    // A confirm, since there is no undo; it names the schedules because they
-    // keep running on their own copy of the steps.
-    const keeps =
-      owned === 0
-        ? ""
-        : ` ${owned === 1 ? "Its schedule keeps" : `Its ${owned} schedules keep`} running until deleted.`;
-    if (!window.confirm(`Delete "${template.name}"? This cannot be undone.${keeps}`)) return;
+    setDeleting(null);
     void library.remove(template.id).then((gone) => {
       // Unlink the editor; its steps stay, to save as new.
       if (!gone) return;
@@ -139,10 +143,10 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
             </div>
           }
         >
-          {library.error && <Alert>{library.error}</Alert>}
-          {schedules.error && <Alert>{schedules.error}</Alert>}
+          {library.error && <ErrorLine>{library.error}</ErrorLine>}
+          {schedules.error && <ErrorLine>{schedules.error}</ErrorLine>}
           {/* A refused Run never started, so the masthead never shows it. */}
-          {dispatch.refused && <Alert>{dispatch.refused}</Alert>}
+          {dispatch.refused && <ErrorLine>{dispatch.refused}</ErrorLine>}
           <TaskLibrary
             templates={library.templates}
             schedules={schedules.schedules}
@@ -155,7 +159,7 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
             onEdit={openInEditor}
             onSchedule={(template) => setSchedulingId(template.id)}
             onDuplicate={duplicate}
-            onDelete={remove}
+            onDelete={setDeleting}
           />
         </InstrumentGroup>
 
@@ -175,6 +179,17 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
         )}
       </div>
 
+      <ConfirmDialog
+        open={deleting !== null}
+        title={<>Delete {deleting?.name}?</>}
+        onConfirm={() => deleting && remove(deleting)}
+        onClose={() => setDeleting(null)}
+      >
+        This cannot be undone.
+        {/* Named because they keep running, on their own copy of the steps. */}
+        {deletingSchedules > 0 && ` ${survivingSchedulesNote(deletingSchedules)}`}
+      </ConfirmDialog>
+
       <TemplateScheduleDialog
         template={scheduling}
         existingIds={schedules.schedules.map((entry) => entry.id)}
@@ -182,13 +197,5 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
         onClose={() => setSchedulingId(null)}
       />
     </>
-  );
-}
-
-function Alert({ children }: { children: React.ReactNode }) {
-  return (
-    <p role="alert" className="text-[11px] leading-snug break-words text-signal-warn">
-      {children}
-    </p>
   );
 }

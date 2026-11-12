@@ -14,6 +14,7 @@ import { panelFloor } from "@/components/console/strip-disclosure";
 import { useCameraClip } from "@/hooks/use-camera-clip";
 import { useCameraStream } from "@/hooks/use-camera-stream";
 import { isDrag } from "@/lib/map/gesture";
+import { clamp } from "@/lib/math";
 import { formatDuration, formatSize } from "@/lib/recording/format";
 import type { ClipOutcome } from "@/lib/video/clip";
 import { cn } from "@/lib/utils";
@@ -30,10 +31,6 @@ const OPEN_MARGIN = 24;
 const KEY_STEP = 16;
 /** How long the "saved" line sits on the picture; it covers what the window shows. */
 const RECEIPT_MS = 6_000;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
 
 /**
  * The size the window opens and resets to, narrowed to fit a phone at 16:9.

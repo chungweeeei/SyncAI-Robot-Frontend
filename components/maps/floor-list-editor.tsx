@@ -103,7 +103,7 @@ export function FloorListEditor({ name, className }: { name: string; className?:
               <li key={row.id} className="flex items-center gap-1">
                 <input
                   aria-label="Floor name"
-                  className="h-6 w-14 min-w-0 rounded-sm border border-hairline bg-transparent px-1 pointer-coarse:h-10"
+                  className="h-6 w-14 min-w-0 rounded-sm border border-hairline bg-transparent px-1 pointer-coarse:h-10 pointer-coarse:text-base"
                   value={row.name}
                   maxLength={FLOOR_NAME_MAX}
                   onChange={(event) => update(row.id, { name: event.target.value })}
@@ -111,7 +111,7 @@ export function FloorListEditor({ name, className }: { name: string; className?:
                 <input
                   aria-label={`Height of ${row.name || "floor"}`}
                   inputMode="decimal"
-                  className="readout h-6 w-16 min-w-0 rounded-sm border border-hairline bg-transparent px-1 text-right pointer-coarse:h-10"
+                  className="readout h-6 w-16 min-w-0 rounded-sm border border-hairline bg-transparent px-1 text-right pointer-coarse:h-10 pointer-coarse:text-base"
                   value={row.level}
                   onChange={(event) =>
                     update(row.id, { level: event.target.value, low: null, high: null })

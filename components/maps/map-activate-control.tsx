@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ArrowLeftIcon, ArrowLeftRightIcon } from "lucide-react";
 
+import { ErrorLine } from "@/components/console/error-line";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -24,7 +25,7 @@ import type { MapSummary } from "@/lib/types/map";
  * are mutually exclusive, so one tile sits there on every card.
  */
 const CORNER =
-  "absolute top-2 left-2 z-10 flex size-6 items-center justify-center rounded-sm border border-hairline bg-panel/90 backdrop-blur-sm";
+  "absolute top-2 left-2 z-10 flex size-6 pointer-coarse:size-10 items-center justify-center rounded-sm border border-hairline bg-panel/90 backdrop-blur-sm";
 
 /**
  * The card-side face of POST /api/v1/maps/{name}/activate: swap arrows in the
@@ -126,12 +127,9 @@ export function MapActivateControl({
           </AlertDialogHeader>
 
           {error && (
-            <p
-              role="alert"
-              className="text-[11px] leading-tight text-signal-warn"
-            >
+            <ErrorLine>
               {error}
-            </p>
+            </ErrorLine>
           )}
 
           <AlertDialogFooter>

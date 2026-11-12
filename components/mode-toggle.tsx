@@ -1,10 +1,9 @@
 "use client";
 
-import * as React from "react";
 import { MoonIcon, SunIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 
-const subscribeNoop = () => () => {};
+import { useMounted } from "@/hooks/use-mounted";
 
 /**
  * Day / night in one click: the 56 px rail has no room for a three-way
@@ -15,11 +14,7 @@ export function ModeToggle() {
 
   // The resolved theme is unknown during SSR, so the icon *and* the aria-label
   // wait for mount — gating only the icon still mismatched on the label.
-  const mounted = React.useSyncExternalStore(
-    subscribeNoop,
-    () => true,
-    () => false,
-  );
+  const mounted = useMounted();
 
   const dark = mounted && resolvedTheme === "dark";
 

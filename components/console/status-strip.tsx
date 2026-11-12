@@ -84,16 +84,18 @@ export function StatusStrip() {
       {/* One wrapping row: below `sm` the job block wraps onto its own line
         * (`w-full order-last`). Wrapping rather than a second copy, which
         * would put two Pause buttons in the accessibility tree. */}
-      <div className="flex min-h-14 flex-wrap items-center gap-x-2 gap-y-0 px-2.5 sm:flex-nowrap sm:gap-x-3.5 sm:px-4">
-        {/* The one cluster that shrinks, the robot id the one thing that
-          * truncates. `basis-0 grow` below `sm` because a wrapping row breaks
+      <div className="flex min-h-14 flex-wrap items-center gap-x-2 gap-y-0 pr-[max(0.625rem,env(safe-area-inset-right))] pl-[max(0.625rem,env(safe-area-inset-left))] sm:flex-nowrap sm:gap-x-3.5 sm:pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(1rem,env(safe-area-inset-left))]">
+        {/* Below `sm` the one cluster that shrinks, the robot id the one
+          * thing that truncates: `basis-0 grow` because a wrapping row breaks
           * before it shrinks, which would push the health cluster onto a
-          * third line. */}
-        <div className="flex min-w-0 shrink items-center gap-1.5 max-sm:grow max-sm:basis-0 sm:gap-3.5">
+          * third line. From `sm` the row no longer wraps and this cluster
+          * holds its width (the id capped): the job bar is what gives way,
+          * or a tablet's strip squeezed the id to nothing. */}
+        <div className="flex min-w-0 shrink items-center gap-1.5 max-sm:grow max-sm:basis-0 sm:shrink-0 sm:gap-3.5">
           {/* The robot's name is the link home, like a site's logo. */}
           <Link
             href="/"
-            className="readout truncate rounded-sm text-[15px] font-medium hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="readout truncate rounded-sm text-[15px] font-medium hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:max-w-48"
           >
             {state?.robot_id ?? "—"}
           </Link>
@@ -102,9 +104,11 @@ export function StatusStrip() {
           {state && <ModeChip mode={state.mode} />}
         </div>
 
-        <StripDivider className="hidden sm:block" />
+        {/* From `xl`: narrower, the map's name took the job bar's room and
+          * was itself cut to a letter. */}
+        <StripDivider className="hidden xl:block" />
 
-        <div className="hidden min-w-0 items-baseline gap-2 sm:flex">
+        <div className="hidden max-w-40 min-w-0 shrink-0 items-baseline gap-2 xl:flex">
           <span className="instrument-label text-muted-foreground">Map</span>
           <span className="readout truncate text-[13px]">
             {activeMap?.name ?? "—"}
@@ -124,11 +128,12 @@ export function StatusStrip() {
           </FaultBoundary>
         </div>
 
-        {/* Below `sm` it drops its rules and the battery meter (the figure
+        {/* Below `md` it drops its rules and the battery meter (the figure
           * stays), by request: at full width it left the robot id ~14 px on
-          * a 375 px phone. The e2e phone test holds the id whole. */}
+          * a 375 px phone, and the job bar a sliver on a landscape one. The
+          * e2e phone test holds the id whole. */}
         <div className="flex shrink-0 items-center gap-2 sm:gap-3.5">
-          <StripDivider className="hidden sm:block" />
+          <StripDivider className="hidden md:block" />
           {/* A 2 px gap keeps two hover-lit frames from merging into one. */}
           <div className="flex items-center gap-0.5">
             {/* The stop first, by request, in a cluster that never shrinks or
@@ -160,7 +165,7 @@ export function StatusStrip() {
               * Settings beside their network. */}
           </div>
 
-          <StripDivider className="hidden sm:block" />
+          <StripDivider className="hidden md:block" />
 
           {/* No "Batt" label: the meter and the % sign already say it. */}
           <div className="flex items-center gap-2">
@@ -171,7 +176,7 @@ export function StatusStrip() {
                 <SegmentMeter
                   value={battery}
                   tone={batteryTone(battery)}
-                  className="hidden sm:flex"
+                  className="hidden md:flex"
                 />
                 <span
                   className={cn(
@@ -223,8 +228,9 @@ export function StatusStrip() {
 }
 
 /**
- * The robot's mode; a dot in the mode's hue below `sm`, where the word would
- * truncate the robot id. The word stays in the accessible name and the title.
+ * The robot's mode; a dot in the mode's hue below `md`, where the word would
+ * truncate the robot id on a phone and squeeze the job bar shut on a
+ * landscape one. The word stays in the accessible name and the title.
  * One element styled two ways, so it is in the accessibility tree once.
  */
 function ModeChip({ mode }: { mode: RobotMode }) {
@@ -233,10 +239,10 @@ function ModeChip({ mode }: { mode: RobotMode }) {
     <Chip
       tone={MODE_TONE[mode]}
       title={label}
-      className="max-sm:border-0 max-sm:bg-transparent max-sm:px-0"
+      className="max-md:border-0 max-md:bg-transparent max-md:px-0"
     >
-      <span aria-hidden className="size-2.5 rounded-full bg-current sm:hidden" />
-      <span className="max-sm:sr-only">{label}</span>
+      <span aria-hidden className="size-2.5 rounded-full bg-current md:hidden" />
+      <span className="max-md:sr-only">{label}</span>
     </Chip>
   );
 }

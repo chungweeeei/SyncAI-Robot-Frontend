@@ -3,6 +3,10 @@
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+/* A phone held sideways: ~375 px tall, of which the strip and the nav bar
+ * take 112. Height, not width, is the question for anything laid over a map
+ * view's corners, so it gets a variant of its own rather than a breakpoint. */
+@custom-variant short (@media (max-height: 30rem));
 
 /*
  * Design language: glass cockpit.

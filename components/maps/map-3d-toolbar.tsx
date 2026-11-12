@@ -284,7 +284,7 @@ export function Map3dToolBar({
         <>
           <ToolDivider />
           <Select value={`${radius}`} onValueChange={(value) => onRadiusChange(Number(value))}>
-            <SelectTrigger aria-label="Brush radius" size="sm" className="h-7 w-[5.5rem] pointer-coarse:h-8">
+            <SelectTrigger aria-label="Brush radius" size="sm" className="w-[5.5rem] pointer-coarse:data-[size=sm]:h-8">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

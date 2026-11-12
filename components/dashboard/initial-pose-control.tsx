@@ -2,7 +2,7 @@
 
 import { RadioTowerIcon } from "lucide-react";
 
-import { Chip, Readout, overlayPanel } from "@/components/console/instrument";
+import { Chip, PoseReadouts, overlayPanel } from "@/components/console/instrument";
 import { cn } from "@/lib/utils";
 import type { InitialPoseEstimate } from "@/hooks/use-initial-pose";
 
@@ -32,24 +32,8 @@ export function InitialPoseControl({
     <div className={cn(overlayPanel, "w-full p-2.5", className)}>
       {pose && (
         <div className="space-y-1">
-          <Readout
-            label="X"
-            value={pose.x.toFixed(2)}
-            unit="m"
-            tone="caution"
-          />
-          <Readout
-            label="Y"
-            value={pose.y.toFixed(2)}
-            unit="m"
-            tone="caution"
-          />
-          <Readout
-            label="Orientation"
-            value={pose.theta.toFixed(1)}
-            unit="°"
-            tone="caution"
-          />
+          {/* No height: the estimate is planar, and the localizer keeps its storey. */}
+          <PoseReadouts pose={{ x: pose.x, y: pose.y, theta: pose.theta }} tone="caution" />
         </div>
       )}
 

@@ -1,3 +1,4 @@
+import { formatMetres } from "@/lib/readout";
 import { cn } from "@/lib/utils";
 
 /**
@@ -19,9 +20,9 @@ export function PositionGrid({
 }) {
   return (
     <dl className={cn("grid grid-cols-3 gap-2", className)}>
-      <CoordCell label="X" value={x.toFixed(2)} unit="m" />
-      <CoordCell label="Y" value={y.toFixed(2)} unit="m" />
-      <CoordCell label="Z" value={z === undefined ? "—" : z.toFixed(2)} unit="m" />
+      <CoordCell label="X" value={formatMetres(x)} unit="m" />
+      <CoordCell label="Y" value={formatMetres(y)} unit="m" />
+      <CoordCell label="Z" value={z === undefined ? "—" : formatMetres(z)} unit="m" />
     </dl>
   );
 }

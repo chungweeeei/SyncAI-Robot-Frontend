@@ -249,8 +249,9 @@ test.describe("the console shell", () => {
     await expect(mapping).toBeVisible();
     const open = (await rail.boundingBox())!.width;
 
+    // No `aria-expanded` yet: until a press the width decides, in CSS, and
+    // the button's name is what follows it.
     const fold = rail.getByRole("button", { name: "Collapse the sidebar" });
-    await expect(fold).toHaveAttribute("aria-expanded", "true");
     await fold.click();
     await expect(dashboard).toBeHidden();
     await expect(mapping).toBeHidden();
@@ -271,6 +272,43 @@ test.describe("the console shell", () => {
     await unfold.click();
     await expect(dashboard).toBeVisible();
   });
+
+  test("opens the rail folded where a labelled one would crowd the page", async ({ page }) => {
+    // Between lg and xl the labelled rail left a two-column screen ~830 px.
+    // The default is the width's until the button is pressed, then the press's.
+    await page.setViewportSize({ width: 1100, height: 800 });
+    await page.goto("/maps");
+    const rail = page.getByRole("navigation", { name: "Console sections" });
+    await expect(rail.getByRole("link", { name: "Dashboard" })).toBeVisible();
+    await expect(rail.getByText("Dashboard", { exact: true })).toBeHidden();
+    await rail.getByRole("button", { name: "Expand the sidebar" }).click();
+    await expect(rail.getByText("Dashboard", { exact: true })).toBeVisible();
+    // Held when the window grows past the breakpoint and back.
+    await rail.getByRole("button", { name: "Collapse the sidebar" }).click();
+    await page.setViewportSize({ width: 1400, height: 800 });
+    await expect(rail.getByText("Dashboard", { exact: true })).toBeHidden();
+  });
+
+  for (const width of [768, 1024]) {
+    test(`keeps the robot id whole on a ${width} px strip`, async ({ page }) => {
+      // From sm the row no longer wraps, and the id's cluster used to be the
+      // one that shrank: a tablet's strip read no robot at all.
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/maps");
+      const id = page.getByRole("banner").getByRole("link", { name: "robot01" });
+      await expect(id).toBeVisible();
+      const cut = await id.evaluate((el) => el.scrollWidth - el.clientWidth);
+      expect(cut, "the robot id is cut off").toBeLessThanOrEqual(0);
+      // And the strip still fits: nothing pushed past the right edge.
+      const strip = (await page.getByRole("banner").boundingBox())!;
+      const stop = (await page
+        .getByRole("banner")
+        .getByRole("button", { name: /emergency stop/i })
+        .first()
+        .boundingBox())!;
+      expect(stop.x + stop.width).toBeLessThanOrEqual(strip.x + strip.width);
+    });
+  }
 
   test("keeps the robot id the header read on every screen", async ({ page }) => {
     // One poll for the whole console: the header and the page cannot disagree

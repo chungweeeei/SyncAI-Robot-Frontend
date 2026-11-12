@@ -35,8 +35,8 @@ import {
   type HistoryFilter,
 } from "@/lib/task/history";
 import { cn } from "@/lib/utils";
+import { DAY_MS } from "@/lib/time";
 
-const DAY_MS = 86_400_000;
 
 const OUTCOME_LABELS: Record<Exclude<HistoryFilter["status"], "ALL">, string> = {
   COMPLETED: "Completed",
@@ -54,7 +54,7 @@ function filterChips(filter: HistoryFilter): string[] {
 }
 
 const DATE_INPUT =
-  "h-8 w-auto min-w-0 flex-1 rounded-sm text-[13px] md:text-[13px] pointer-coarse:h-10";
+  "h-8 w-auto min-w-0 flex-1 rounded-sm text-[13px] pointer-coarse:h-10";
 
 /**
  * The page header's "Export report": a dialog that picks the report's window

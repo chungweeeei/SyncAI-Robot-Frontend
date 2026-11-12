@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ArrowLeftIcon, RotateCcwIcon } from "lucide-react";
 
+import { ErrorLine } from "@/components/console/error-line";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -120,12 +121,9 @@ export function RestartControl() {
           </AlertDialogHeader>
 
           {error && (
-            <p
-              role="alert"
-              className="text-[11px] leading-tight text-signal-warn"
-            >
+            <ErrorLine>
               {error}
-            </p>
+            </ErrorLine>
           )}
 
           <AlertDialogFooter>

@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import { useTheme } from "next-themes";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { useMounted } from "@/hooks/use-mounted";
 
 const themeOptions = [
   { value: "light", label: "Light" },
@@ -20,16 +20,10 @@ const themeOptions = [
   { value: "system", label: "System" },
 ];
 
-const subscribeNoop = () => () => {};
-
 export function AppearanceSettings() {
   const { theme, setTheme } = useTheme();
   // The theme is unknown until the client mounts.
-  const mounted = React.useSyncExternalStore(
-    subscribeNoop,
-    () => true,
-    () => false,
-  );
+  const mounted = useMounted();
 
   return (
     <Card>

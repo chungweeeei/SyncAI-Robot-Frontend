@@ -134,7 +134,7 @@ function VertexList({
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
           placeholder="Filter by name"
-          className="h-7 rounded-sm pl-6 md:text-[12px]"
+          className="h-7 rounded-sm pl-6 text-[12px]"
         />
       </div>
       {shown.length === 0 ? (

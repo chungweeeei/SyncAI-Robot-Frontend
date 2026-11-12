@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { RefreshCwIcon, WifiIcon } from "lucide-react";
 
 import { Chip, SignalBars, rssiToBars } from "@/components/console/instrument";
+import { Hint } from "@/components/settings/hint";
 import { PasswordInput } from "@/components/settings/password-input";
 import { Button } from "@/components/ui/button";
 import {
@@ -100,9 +101,12 @@ export function NetworkSettings() {
         }}
       >
         <CardContent className="space-y-4">
-          <div className="grid gap-2">
+          {/* min-w-0 down the chain: a grid item and a flex row both default
+            * to their content's width, and a long network name pushed Rescan
+            * past a 320 px phone's edge. */}
+          <div className="grid min-w-0 gap-2">
             <Label htmlFor="wifi-ssid">Network</Label>
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               <Select
                 // `items` makes SelectValue render the label row, not the raw SSID.
                 items={options.map((network) => ({
@@ -118,7 +122,7 @@ export function NetworkSettings() {
                 disabled={wifi.busy || (scan.scanning && options.length === 0)}
                 onValueChange={(next) => setPicked(next as string)}
               >
-                <SelectTrigger id="wifi-ssid" className="w-full min-w-0 flex-1">
+                <SelectTrigger id="wifi-ssid" className="w-0 min-w-0 flex-1">
                   <SelectValue placeholder={placeholder} />
                 </SelectTrigger>
                 <SelectContent>
@@ -223,17 +227,3 @@ function WifiOptionLabel({
   );
 }
 
-function Hint({
-  className,
-  children,
-  ...props
-}: React.ComponentProps<"p">) {
-  return (
-    <p
-      className={cn("text-[11px] leading-snug text-muted-foreground", className)}
-      {...props}
-    >
-      {children}
-    </p>
-  );
-}

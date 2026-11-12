@@ -2,17 +2,11 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { ArrowLeftIcon, PlusIcon, Trash2Icon, WifiIcon } from "lucide-react";
+import { PlusIcon, Trash2Icon, WifiIcon } from "lucide-react";
 
 import { Chip, SignalBars, rssiToBars } from "@/components/console/instrument";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ConfirmDialog } from "@/components/console/confirm-dialog";
+import { Hint } from "@/components/settings/hint";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -241,57 +235,20 @@ function SavedNetworkCard({
         </CardFooter>
       )}
 
-      <AlertDialog
+      <ConfirmDialog
         open={confirming}
-        onOpenChange={(open) => {
-          if (!open && !forget.isPending) closeDialog();
-        }}
+        title={<>Forget {connection.ssid}?</>}
+        busy={forget.isPending}
+        error={forget.error?.message ?? null}
+        errorTone={forget.error && isWifiBusy(forget.error) ? "caution" : "warn"}
+        verb="Forget"
+        busyVerb="Forgetting…"
+        onConfirm={() => forget.mutate(connection.uuid, { onSuccess: () => setConfirming(false) })}
+        onClose={closeDialog}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Forget {connection.ssid}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The robot will stop joining it, and joining it again will need its
-              password.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {forget.error && (
-            <p
-              role="alert"
-              className={cn(
-                "text-[11px] leading-tight",
-                isWifiBusy(forget.error) ? "text-signal-caution" : "text-signal-warn",
-              )}
-            >
-              {forget.error.message}
-            </p>
-          )}
-
-          <AlertDialogFooter>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={forget.isPending}
-              onClick={closeDialog}
-            >
-              <ArrowLeftIcon data-icon="inline-start" />
-              Keep
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={forget.isPending}
-              onClick={() =>
-                forget.mutate(connection.uuid, { onSuccess: () => setConfirming(false) })
-              }
-            >
-              <Trash2Icon data-icon="inline-start" />
-              {forget.isPending ? "Forgetting…" : "Forget"}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        The robot will stop joining it, and joining it again will need its
+        password.
+      </ConfirmDialog>
     </Card>
   );
 }
@@ -345,13 +302,3 @@ function Blank({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Hint({ className, children, ...props }: React.ComponentProps<"p">) {
-  return (
-    <p
-      className={cn("text-[11px] leading-snug text-muted-foreground", className)}
-      {...props}
-    >
-      {children}
-    </p>
-  );
-}

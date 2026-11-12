@@ -56,7 +56,7 @@ export function MapPicker({ maps, value, disabled, onPick }: MapPickerProps) {
           if (next !== null) onPick(next);
         }}
       >
-        <SelectTrigger id={id} size="sm" className="h-6 min-w-32 rounded-sm text-[12px]">
+        <SelectTrigger id={id} size="sm" className="min-w-32 rounded-sm text-[12px]">
           <SelectValue placeholder="Pick a map" />
         </SelectTrigger>
         <SelectContent>

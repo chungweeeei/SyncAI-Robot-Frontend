@@ -2,6 +2,7 @@
 
 import { XIcon } from "lucide-react";
 
+import { ErrorLine } from "@/components/console/error-line";
 import { TaskStatusChip } from "@/components/console/task-chip";
 import { useConsoleActiveTasks } from "@/hooks/use-console-active-tasks";
 import { useCancelTask } from "@/hooks/use-cancel-task";
@@ -28,7 +29,12 @@ export function ActiveRunBanner({
   if (status !== "ok" || !unattended.length) return null;
 
   return (
-    <div className="mb-4 space-y-1.5 rounded-md border border-signal-active/40 bg-signal-active/8 p-2.5">
+    // `data-run-banner`: the task editor's map gives up this banner's height
+    // (route-map.tsx's MAP_HEIGHT), found by a sibling selector.
+    <div
+      data-run-banner
+      className="mb-4 space-y-1.5 rounded-md border border-signal-active/40 bg-signal-active/8 p-2.5"
+    >
       <p className="instrument-label text-signal-active">
         Running outside this page
       </p>
@@ -72,12 +78,9 @@ function ActiveRunRow({ task, asOf }: { task: ActiveTask; asOf: string | null })
       </div>
 
       {error && (
-        <p
-          role="alert"
-          className="text-[11px] leading-snug break-words text-signal-warn"
-        >
+        <ErrorLine>
           {error}
-        </p>
+        </ErrorLine>
       )}
     </div>
   );

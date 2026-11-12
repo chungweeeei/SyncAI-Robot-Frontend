@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { Notice } from "@/components/console/notice";
 import { MapCard } from "@/components/maps/map-card";
 import { MapImportControl } from "@/components/maps/map-import-control";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,22 +11,6 @@ import { useMaps } from "@/hooks/use-maps";
 // More cards per row as the window widens, up to four — still wide enough
 // for a card's chips and Export on one line.
 const GRID = "grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
-
-/** The empty / failed panel /settings uses. */
-function Notice({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-md border border-hairline bg-panel p-4">
-      <p className="instrument-label text-muted-foreground">{label}</p>
-      <p className="mt-2 text-sm">{children}</p>
-    </div>
-  );
-}
 
 function LoadingGrid() {
   return (

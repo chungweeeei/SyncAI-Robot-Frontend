@@ -5,6 +5,15 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
+ * The bare square's face, for the controls that cannot be an IconButton: a
+ * menu's trigger, a link. 40 px under a finger as a real box, not a
+ * Switch-style ::after hit area: at gap-0.5 a sibling's ::after would overlap
+ * its neighbour's edge.
+ */
+export const iconButtonClass =
+  "flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:size-10";
+
+/**
  * A bare square icon button for a list row's action cluster. Not in
  * `components/ui/`, which is shadcn output.
  *
@@ -32,10 +41,9 @@ export function IconButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      // 40 px under a finger as a real box, not a Switch-style ::after hit area:
-      // at gap-0.5 a sibling's ::after would overlap its neighbour's edge.
       className={cn(
-        "flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent pointer-coarse:size-10",
+        iconButtonClass,
+        "disabled:opacity-30 disabled:hover:bg-transparent",
         className,
       )}
     >

@@ -15,6 +15,7 @@ import {
   Undo2Icon,
 } from "lucide-react";
 
+import { ErrorLine } from "@/components/console/error-line";
 import { Chip } from "@/components/console/instrument";
 import { ActiveRunBanner } from "@/components/tasks/active-run-banner";
 import { MapPicker } from "@/components/tasks/map-picker";
@@ -22,14 +23,7 @@ import { RouteMap } from "@/components/tasks/route-map";
 import { SavedNotice, type SavedNoticeValue } from "@/components/tasks/saved-notice";
 import { StopList } from "@/components/tasks/stop-list";
 import { TaskTitle } from "@/components/tasks/task-title";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { ConfirmDialog } from "@/components/console/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -50,6 +44,7 @@ import { useTaskTemplates } from "@/hooks/use-task-templates";
 import { isTypingTarget } from "@/lib/keyboard";
 import type { TaskStepState } from "@/lib/api/task";
 import { canEditMap, waypointEditor } from "@/lib/map/links";
+import { survivingSchedulesNote } from "@/lib/task/library";
 import { draftIsUnsaved, type TaskDraft } from "@/lib/task/draft-store";
 import {
   addPatrolWaypoint,
@@ -83,7 +78,7 @@ import type { MapVertex } from "@/lib/types/map";
  * A 40 px finger target from sm up, a 32 px icon square below. `!` because the
  * button's inline-start padding is more specific than a width variant.
  */
-const HEADER_BUTTON = "sm:pointer-coarse:min-h-10 max-sm:size-8 max-sm:px-0!";
+const HEADER_BUTTON = "max-sm:size-8 max-sm:px-0! max-sm:pointer-coarse:size-10";
 /** Delete ends the editor's job, so the page behind it is put away. */
 const LEAVING_OVERLAY = "bg-black/80";
 
@@ -451,14 +446,14 @@ export function TaskEditor() {
             onSubmit={() => save()}
           />
           {library.error && (
-            <p role="alert" className="mt-1 text-[11px] leading-snug break-words text-signal-warn">
+            <ErrorLine className="mt-1">
               {library.error}
-            </p>
+            </ErrorLine>
           )}
           {pressedEarly && saveReason && (
-            <p role="alert" className="mt-1 text-[11px] leading-snug text-signal-warn">
+            <ErrorLine className="mt-1">
               {saveReason}
-            </p>
+            </ErrorLine>
           )}
           {/* The draft survives leaving, so the page has to say it is unsaved.
             * Held back until the library answers for a loaded job, or it
@@ -523,40 +518,18 @@ export function TaskEditor() {
         </div>
       </header>
 
-      <AlertDialog
+      <ConfirmDialog
         open={confirmingDelete && editing !== null}
-        onOpenChange={(open) => {
-          if (!open && !library.busy) closeDelete();
-        }}
+        title={<>Delete {editing?.name}?</>}
+        busy={library.busy}
+        error={library.error}
+        overlayClassName={LEAVING_OVERLAY}
+        onConfirm={remove}
+        onClose={closeDelete}
       >
-        <AlertDialogContent overlayClassName={LEAVING_OVERLAY}>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {editing?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This cannot be undone.
-              {linkedSchedules > 0 &&
-                ` ${linkedSchedules === 1 ? "Its schedule keeps" : `Its ${linkedSchedules} schedules keep`} running until deleted from Tasks.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {library.error && (
-            <p role="alert" className="text-[11px] leading-tight text-signal-warn">
-              {library.error}
-            </p>
-          )}
-
-          <AlertDialogFooter>
-            <Button variant="ghost" size="sm" disabled={library.busy} onClick={closeDelete}>
-              <ArrowLeftIcon data-icon="inline-start" />
-              Keep
-            </Button>
-            <Button variant="destructive" size="sm" disabled={library.busy} onClick={remove}>
-              <Trash2Icon data-icon="inline-start" />
-              {library.busy ? "Deleting…" : "Delete"}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        This cannot be undone.
+        {linkedSchedules > 0 && ` ${survivingSchedulesNote(linkedSchedules, "from Tasks")}`}
+      </ConfirmDialog>
 
       <SavedNotice notice={savedNotice} onDismiss={dismissSaved} />
 
@@ -566,7 +539,7 @@ export function TaskEditor() {
       {/* From lg the map sets the row's height and the stops stretch to it,
         * so the two columns end on one line however long the route is. The
         * map takes three fifths: it is what a route is picked on. */}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] [[data-run-banner]~&]:[--route-map-chrome:5rem]">
         <section
           aria-label="Map"
           className="space-y-1.5 overflow-hidden rounded-md border border-hairline bg-panel p-2"
@@ -579,7 +552,7 @@ export function TaskEditor() {
               <Link
                 href={waypointLink.href}
                 aria-label="Add waypoints on the 3D map"
-                className="instrument-label flex h-6 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground"
+                className="instrument-label flex h-6 items-center gap-1 rounded-sm border border-hairline px-1.5 text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:h-10 pointer-coarse:px-2.5"
               >
                 <MapPinPlusIcon className="size-3.5" aria-hidden />
                 Add waypoints

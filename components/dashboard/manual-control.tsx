@@ -18,11 +18,8 @@ import { useConsoleEstop } from "@/hooks/use-console-estop";
 import { useJoystick } from "@/hooks/use-joystick";
 import { LINEAR_SCALE_DEFAULT } from "@/lib/teleop/stick";
 import { isDrag } from "@/lib/map/gesture";
+import { clamp } from "@/lib/math";
 import { cn } from "@/lib/utils";
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
 
 /**
  * Manual drive panel: translation stick (vx/vy — the G23 strafes) and
@@ -161,13 +158,14 @@ export function ManualControl({ className }: { className?: string }) {
           Manual drive
         </h2>
         <div className="flex items-center gap-1">
-          {/* Phone only: the card puts both wells under one thumb, the drive
-            * view splits them to the corners. */}
+          {/* A phone or any touch screen: the card puts both wells under one
+            * thumb, the drive view splits them to the corners. By pointer as
+            * well as width, or a phone held sideways lost the way in. */}
           <Link
             href={DRIVE_PAGE}
             aria-label="Open the full-screen drive view"
             title="Full-screen drive"
-            className="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:hidden pointer-coarse:size-10"
+            className="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none pointer-coarse:size-10 sm:pointer-fine:hidden"
           >
             <Maximize2Icon aria-hidden className="size-3.5" />
           </Link>

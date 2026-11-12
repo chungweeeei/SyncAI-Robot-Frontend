@@ -11,6 +11,8 @@ import {
 
 import { Chip, Readout, overlayPanel } from "@/components/console/instrument";
 import { PositionGrid, cardAction, cardHeader } from "@/components/dashboard/overlay-card";
+import { immediateDeleteQuestion } from "@/components/dashboard/vertex-move-dialog";
+import { iconButtonClass } from "@/components/tasks/icon-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -126,7 +128,7 @@ export function StopPanel({
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label={`More for ${vertex.name}`}
-            className="-mr-1 flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:size-10"
+            className={cn(iconButtonClass, "-mr-1")}
           >
             <EllipsisIcon className="size-3.5" aria-hidden />
           </DropdownMenuTrigger>
@@ -149,7 +151,7 @@ export function StopPanel({
               variant="destructive"
               disabled={deleting || editLock !== null}
               onClick={() => {
-                if (window.confirm(`Delete "${vertex.name}"? This cannot be undone.`)) {
+                if (window.confirm(immediateDeleteQuestion(vertex.name))) {
                   onDelete(vertex);
                 }
               }}
