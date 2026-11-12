@@ -6,12 +6,12 @@ import { createDockLayer } from "@/lib/scene/dock-layer";
 import { THEMES } from "@/lib/scene/theme";
 
 describe("createDockLayer", () => {
-  it("puts the staging point the robot's distance back from the dock", () => {
+  it("puts the staging point the robot's distance out in front of the charger", () => {
     const layer = createDockLayer({ x: 3, y: 2, theta: 90 }, THEMES.light);
     const dot = layer.group.children[0]!;
 
     expect(dot.position.x).toBeCloseTo(3);
-    expect(dot.position.y).toBeCloseTo(2 - DOCK_STAGING_DISTANCE_M);
+    expect(dot.position.y).toBeCloseTo(2 + DOCK_STAGING_DISTANCE_M);
     layer.dispose();
   });
 
@@ -34,8 +34,8 @@ describe("createDockLayer", () => {
       (_, i) => leg.geometry.getAttribute("position").getX(i),
     );
 
-    expect(Math.min(...xs)).toBeCloseTo(-DOCK_STAGING_DISTANCE_M);
-    expect(Math.max(...xs)).toBeLessThanOrEqual(1e-9);
+    expect(Math.max(...xs)).toBeCloseTo(DOCK_STAGING_DISTANCE_M);
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(-1e-9);
     layer.dispose();
   });
 });
