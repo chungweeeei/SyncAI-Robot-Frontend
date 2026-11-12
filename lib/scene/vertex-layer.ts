@@ -1,4 +1,4 @@
-// The stored-vertex layer: every saved stop, drawn as ground marking.
+// The stored-vertex layer: every saved stop, drawn as ground marking, and every charger as a post standing on its waypoint.
 
 import * as THREE from "three";
 
@@ -35,21 +35,33 @@ const VERTEX_CHEVRON_HALF_M = 0.1;
 const VERTEX_Z_M = 0.02;
 
 /*
- * A charger's ground mark: a rounded square where a stop's is round, the
- * same band widths, with a bolt laid flat in it. The ground mark is the
- * biggest part of a pin, so it is where the two have to differ; the colour
- * is its own (lib/map/vertex.ts): black, the bolt red, lit in the hover
- * hue like any stop.
+ * A charger stands up instead of lying flat: a post on a base plate, the
+ * thing the robot walks up to, so it reads as a charger from any angle
+ * rather than as one more mark on the floor. A dock's heading points into
+ * the wall (lib/map/dock.ts), so the post stands ahead of the waypoint with
+ * its back to the wall and its face, bolt and all, looking back down the
+ * heading the robot comes in on. Real geometry, so it writes depth and hides
+ * the 3D map behind it the way a stop's translucent marking must not.
  */
-const CHARGER_SQUARE_HALF_M = 0.2;
-const CHARGER_SQUARE_CORNER_M = 0.05;
-/** Across the bolt's 24-unit icon grid, metres: well inside the square. */
-const CHARGER_BOLT_M = 0.3;
+/** The base plate, centred on the waypoint, metres (x along the heading). */
+const CHARGER_PLATE_M = { x: 0.44, y: 0.5, z: 0.03 } as const;
+const CHARGER_POST_M = { x: 0.14, y: 0.4, z: 0.55 } as const;
+/** The post's centre ahead of the waypoint: its back flush with the plate's. */
+const CHARGER_POST_X_M = (CHARGER_PLATE_M.x - CHARGER_POST_M.x) / 2;
+/** Across the bolt's 24-unit icon grid, metres: well inside the post's face. */
+const CHARGER_BOLT_M = 0.26;
+/** Off the face, enough not to z-fight with it from across a site. */
+const CHARGER_BOLT_OFFSET_M = 0.004;
+/**
+ * Charcoal rather than the badge's black: the faces are shaded by darkening
+ * (shadedBox), and black darkened is still black.
+ */
+const CHARGER_BODY_HEX = 0x3a4048;
+/** The outline: what keeps a dark post's shape against a dark background. */
+const CHARGER_EDGE_HEX = 0xb8c0c8;
 /** three wants a number; the charger's colours are CSS strings for the route map. */
 const CHARGER_FILL_HEX = new THREE.Color(CHARGER_MARK_FILL).getHex();
 const CHARGER_BOLT_HEX = new THREE.Color(CHARGER_MARK_BOLT).getHex();
-/** A black square at the stop's half opacity is a grey smudge over the 3D map. */
-const CHARGER_FILL_OPACITY = 0.9;
 
 /*
  * A stem and badge, like a map pin, because a floor mark vanishes at the low
@@ -73,37 +85,27 @@ const VERTEX_BADGE_TEXTURE_PX = 128;
 /** Radius of the invisible disc that catches the pointer; wider than the mark, since a point is hard to hit. */
 const VERTEX_HIT_RADIUS_M = 0.42;
 
-/** A rounded square of half-side `half`, centred on the origin, in the XY plane. */
-function roundedSquarePath<T extends THREE.Path>(path: T, half: number, corner: number): T {
-  const r = Math.min(corner, half);
-  path.moveTo(-half + r, -half);
-  path.lineTo(half - r, -half);
-  path.absarc(half - r, -half + r, r, -Math.PI / 2, 0, false);
-  path.lineTo(half, half - r);
-  path.absarc(half - r, half - r, r, 0, Math.PI / 2, false);
-  path.lineTo(-half + r, half);
-  path.absarc(-half + r, half - r, r, Math.PI / 2, Math.PI, false);
-  path.lineTo(-half, -half + r);
-  path.absarc(-half + r, -half + r, r, Math.PI, Math.PI * 1.5, false);
-  return path;
-}
-
-/** The band between two rounded squares, the square form of a RingGeometry. */
-function squareBandGeometry(inner: number, outer: number): THREE.ShapeGeometry {
-  // Corners offset with the edges, so the band is one width all round.
-  const corner = (half: number) =>
-    Math.max(0, CHARGER_SQUARE_CORNER_M + (half - CHARGER_SQUARE_HALF_M));
-  const shape = roundedSquarePath(new THREE.Shape(), outer, corner(outer));
-  // ShapeGeometry winds a hole against its shape itself.
-  shape.holes.push(roundedSquarePath(new THREE.Path(), inner, corner(inner)));
-  return new THREE.ShapeGeometry(shape, 8);
+/**
+ * A box whose faces carry their own shade: top brightest, the face the robot
+ * meets next, the underside darkest. Not every 3D view is lit (the map
+ * editor's has no lights), so the shading is in the geometry and multiplies
+ * whatever hue the material gives it, the hover hue included.
+ */
+function shadedBox(size: { x: number; y: number; z: number }): THREE.BoxGeometry {
+  const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+  // BoxGeometry's faces in order: +x, -x, +y, -y, +z, -z; four vertices each.
+  const shades = [0.6, 0.8, 0.7, 0.7, 1, 0.45];
+  const colours = new Float32Array(shades.length * 4 * 3);
+  shades.forEach((shade, face) => colours.fill(shade, face * 12, face * 12 + 12));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colours, 3));
+  return geometry;
 }
 
 /**
- * The bolt (CHARGER_ICON_PATH's outline, its corners squared) laid flat, the
- * icon's top along +x so it points where the stop faces, as the chevron does.
- * Icon units are y-down; mapping (u, v) to (12 - v, 12 - u) keeps it unmirrored
- * seen from above.
+ * The bolt (CHARGER_ICON_PATH's outline, its corners squared) stood up on the
+ * post's face: facing -x, back down the heading, its top along +z. Icon units
+ * are y-down, so (u, v) becomes (u - 12, 12 - v) in the shape's plane, which
+ * the basis then turns to face -x without mirroring it.
  */
 function boltGeometry(): THREE.ShapeGeometry {
   const scale = CHARGER_BOLT_M / 24;
@@ -116,9 +118,18 @@ function boltGeometry(): THREE.ShapeGeometry {
     [12, 10],
   ];
   const shape = new THREE.Shape(
-    outline.map(([u, v]) => new THREE.Vector2((12 - v) * scale, (12 - u) * scale)),
+    outline.map(([u, v]) => new THREE.Vector2((u - 12) * scale, (12 - v) * scale)),
   );
-  return new THREE.ShapeGeometry(shape);
+  const geometry = new THREE.ShapeGeometry(shape);
+  // Seen from -x with z up, right is -y: the shape's x to -y, y to z, normal to -x.
+  geometry.applyMatrix4(
+    new THREE.Matrix4().makeBasis(
+      new THREE.Vector3(0, -1, 0),
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(-1, 0, 0),
+    ),
+  );
+  return geometry;
 }
 
 /** Materials for one vertex hue, shared by every marker drawn in it. */
@@ -212,11 +223,11 @@ interface VertexHandle {
   fill: THREE.Mesh[];
   line: THREE.Mesh[];
   stem: THREE.Mesh[];
+  /** A charger's plate and post: opaque, so lit by their own pair of materials. */
+  solid: THREE.Mesh[];
   badge: THREE.Sprite;
   /** Resting and hover faces of this stop's badge, swapped by `paint`. */
   badgeTextures: { base: THREE.CanvasTexture; hover: THREE.CanvasTexture };
-  /** Its materials at rest: the stop hue's, or a charger's own. */
-  rest: VertexMaterials;
   /** The mark itself, hidden as a whole while the stop is being re-placed. */
   marker: THREE.Group;
 }
@@ -252,7 +263,12 @@ export function createVertexLayer(
   const group = new THREE.Group();
   const base = createVertexMaterials(theme.vertex);
   const hover = createVertexMaterials(theme.vertexHover);
-  const chargerRest = createVertexMaterials(CHARGER_FILL_HEX, CHARGER_FILL_OPACITY);
+  const chargerBody = new THREE.MeshBasicMaterial({ color: CHARGER_BODY_HEX, vertexColors: true });
+  const chargerBodyLit = new THREE.MeshBasicMaterial({
+    color: theme.vertexHover,
+    vertexColors: true,
+  });
+  const chargerEdge = new THREE.LineBasicMaterial({ color: CHARGER_EDGE_HEX });
   const haloMaterial = new THREE.MeshBasicMaterial({
     color: theme.vertexHalo,
     transparent: true,
@@ -282,23 +298,14 @@ export function createVertexLayer(
     VERTEX_STEM_HEIGHT_M,
     6,
   );
-  // A charger's ground mark: the same three bands as a stop's, square.
-  const squareGeom = new THREE.ShapeGeometry(
-    roundedSquarePath(new THREE.Shape(), CHARGER_SQUARE_HALF_M, CHARGER_SQUARE_CORNER_M),
-    8,
-  );
-  const squareRingGeom = squareBandGeometry(VERTEX_RING_INNER_M, VERTEX_RING_OUTER_M);
-  const squareHaloGeom = squareBandGeometry(VERTEX_HALO_INNER_M, VERTEX_HALO_OUTER_M);
+  const plateGeom = shadedBox(CHARGER_PLATE_M);
+  const postGeom = shadedBox(CHARGER_POST_M);
+  const plateEdgeGeom = new THREE.EdgesGeometry(plateGeom);
+  const postEdgeGeom = new THREE.EdgesGeometry(postGeom);
   const boltGeom = boltGeometry();
-  // Transparent though it is opaque: three draws opaque objects first, so
-  // an opaque bolt went under the translucent fill it sits on. Among the
-  // transparent ones renderOrder puts it after the fill.
   const boltMaterial = new THREE.MeshBasicMaterial({
     color: CHARGER_BOLT_HEX,
-    transparent: true,
-    opacity: 1,
     side: THREE.DoubleSide,
-    depthWrite: false,
   });
   const hitGeom = new THREE.CircleGeometry(VERTEX_HIT_RADIUS_M, 12);
   // The hit discs are `visible = false` yet still picked: Raycaster tests
@@ -332,39 +339,61 @@ export function createVertexLayer(
     byId.set(vertex.id, vertex);
     const ground = drawnGround(vertex.z);
 
-    const marker = new THREE.Group();
-    // On the ground of its own floor, so an upstairs stop stands on that floor.
-    marker.position.set(vertex.x, vertex.y, ground + VERTEX_Z_M);
-    marker.rotation.z = toRadians(vertex.theta);
-
     const charger = hasChargerMark(vertex.type);
-    const rest = charger ? chargerRest : base;
-    const disc = new THREE.Mesh(charger ? squareGeom : discGeom, rest.fill);
-    // Under the ring, in draw order as well as in place: a hair below it,
-    // and drawn first, so the ring lands on the rim rather than mixing with it.
-    const halo = new THREE.Mesh(charger ? squareHaloGeom : haloGeom, haloMaterial);
-    halo.position.z = -0.001;
-    halo.renderOrder = -1;
-    const ring = new THREE.Mesh(charger ? squareRingGeom : ringGeom, rest.line);
-    const head = new THREE.Mesh(chevronGeom, rest.line);
-
-    const stem = new THREE.Mesh(stemGeom, rest.stem);
-    // The cylinder runs along +y by default; +90deg about x stands it up.
-    stem.rotation.x = Math.PI / 2;
-    stem.position.z = VERTEX_STEM_HEIGHT_M / 2;
-    stem.renderOrder = VERTEX_PIN_RENDER_ORDER;
+    const marker = new THREE.Group();
+    // On the ground of its own floor, so an upstairs stop stands on that
+    // floor; a charger's plate on it, a stop's marking a hair over it.
+    marker.position.set(vertex.x, vertex.y, ground + (charger ? 0 : VERTEX_Z_M));
+    marker.rotation.z = toRadians(vertex.theta);
 
     const hit = new THREE.Mesh(hitGeom, hitMaterial);
     hit.userData.vertexId = vertex.id;
     hit.visible = false;
+    marker.add(hit);
 
-    marker.add(halo, disc, ring, head, stem, hit);
+    const parts: Pick<VertexHandle, "fill" | "line" | "stem" | "solid"> = {
+      fill: [],
+      line: [],
+      stem: [],
+      solid: [],
+    };
     if (charger) {
-      // Over the fill, in draw order as well as a hair above it.
+      const plate = new THREE.Mesh(plateGeom, chargerBody);
+      plate.position.z = CHARGER_PLATE_M.z / 2;
+      const post = new THREE.Mesh(postGeom, chargerBody);
+      post.position.set(CHARGER_POST_X_M, 0, CHARGER_PLATE_M.z + CHARGER_POST_M.z / 2);
+      const plateEdge = new THREE.LineSegments(plateEdgeGeom, chargerEdge);
+      plateEdge.position.copy(plate.position);
+      const postEdge = new THREE.LineSegments(postEdgeGeom, chargerEdge);
+      postEdge.position.copy(post.position);
       const bolt = new THREE.Mesh(boltGeom, boltMaterial);
-      bolt.position.z = 0.001;
-      bolt.renderOrder = 1;
-      marker.add(bolt);
+      bolt.position.set(
+        CHARGER_POST_X_M - CHARGER_POST_M.x / 2 - CHARGER_BOLT_OFFSET_M,
+        0,
+        CHARGER_PLATE_M.z + CHARGER_POST_M.z * 0.6,
+      );
+      marker.add(plate, post, plateEdge, postEdge, bolt);
+      parts.solid.push(plate, post);
+    } else {
+      const disc = new THREE.Mesh(discGeom, base.fill);
+      // Under the ring, in draw order as well as in place: a hair below it,
+      // and drawn first, so the ring lands on the rim rather than mixing with it.
+      const halo = new THREE.Mesh(haloGeom, haloMaterial);
+      halo.position.z = -0.001;
+      halo.renderOrder = -1;
+      const ring = new THREE.Mesh(ringGeom, base.line);
+      const head = new THREE.Mesh(chevronGeom, base.line);
+
+      const stem = new THREE.Mesh(stemGeom, base.stem);
+      // The cylinder runs along +y by default; +90deg about x stands it up.
+      stem.rotation.x = Math.PI / 2;
+      stem.position.z = VERTEX_STEM_HEIGHT_M / 2;
+      stem.renderOrder = VERTEX_PIN_RENDER_ORDER;
+
+      marker.add(halo, disc, ring, head, stem);
+      parts.fill.push(disc);
+      parts.line.push(ring, head);
+      parts.stem.push(stem);
     }
     group.add(marker);
 
@@ -383,7 +412,8 @@ export function createVertexLayer(
     badge.renderOrder = VERTEX_PIN_RENDER_ORDER + 1;
     badge.scale.setScalar(VERTEX_BADGE_SIZE_M);
     // Hung off the layer, not the marker: a sprite ignores rotation anyway.
-    // Lifted a third of its height so it caps the stem.
+    // Lifted a third of its height so it caps the stem; a charger's has no
+    // stem, but the same height clears its post.
     badge.position.set(
       vertex.x,
       vertex.y,
@@ -392,16 +422,11 @@ export function createVertexLayer(
     badge.userData.vertexId = vertex.id;
     group.add(badge);
 
+    // Never by the post: nothing in the scene stands between a tap and a
+    // stop (a wall does not), and a post that did took the stop behind it.
+    // The disc covers the plate and the badge caps the post.
     pickables.push(hit, badge);
-    handles.set(vertex.id, {
-      fill: [disc],
-      line: [ring, head],
-      stem: [stem],
-      badge,
-      badgeTextures: faces,
-      rest,
-      marker,
-    });
+    handles.set(vertex.id, { ...parts, badge, badgeTextures: faces, marker });
   }
 
   let hovered: string | null = null;
@@ -412,10 +437,11 @@ export function createVertexLayer(
     const handle = id ? handles.get(id) : undefined;
     if (!handle || !id) return;
     const on = id === hovered || selected.has(id);
-    const set = on ? hover : handle.rest;
+    const set = on ? hover : base;
     for (const mesh of handle.fill) mesh.material = set.fill;
     for (const mesh of handle.line) mesh.material = set.line;
     for (const mesh of handle.stem) mesh.material = set.stem;
+    for (const mesh of handle.solid) mesh.material = on ? chargerBodyLit : chargerBody;
     const material = handle.badge.material as THREE.SpriteMaterial;
     material.map = on ? handle.badgeTextures.hover : handle.badgeTextures.base;
     // Swapping the map is a program change, not a uniform change.
@@ -492,14 +518,15 @@ export function createVertexLayer(
       chevronGeom,
       stemGeom,
       hitGeom,
-      squareGeom,
-      squareRingGeom,
-      squareHaloGeom,
+      plateGeom,
+      postGeom,
+      plateEdgeGeom,
+      postEdgeGeom,
       boltGeom,
     ]) {
       geometry.dispose();
     }
-    for (const set of [base, hover, chargerRest]) {
+    for (const set of [base, hover]) {
       set.fill.dispose();
       set.line.dispose();
       set.stem.dispose();
@@ -507,6 +534,9 @@ export function createVertexLayer(
     hitMaterial.dispose();
     haloMaterial.dispose();
     boltMaterial.dispose();
+    chargerBody.dispose();
+    chargerBodyLit.dispose();
+    chargerEdge.dispose();
     // Freed by hand: the scene teardown never reaches a material's texture.
     for (const texture of badgeTextures.values()) texture.dispose();
     for (const handle of handles.values()) handle.badge.material.dispose();
