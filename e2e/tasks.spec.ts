@@ -86,19 +86,22 @@ test.describe("the task console", () => {
     await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
     await page.goto("/tasks");
 
-    let asked = "";
-    page.once("dialog", (dialog) => {
-      asked = dialog.message();
-      void dialog.dismiss();
-    });
+    // Closed, the question opens nothing; Keep changes opens the kept work.
+    const asking = page.getByRole("alertdialog", { name: "Start a new task?" });
     await page.getByRole("button", { name: "Create task" }).click();
+    await expect(asking).toContainText("unsaved changes");
+    await page.keyboard.press("Escape");
+    await expect(asking).toHaveCount(0);
+    await expect(page).toHaveURL(/\/tasks$/);
+
+    await page.getByRole("button", { name: "Create task" }).click();
+    await asking.getByRole("button", { name: "Keep changes" }).click();
     await expect(page).toHaveURL(/\/tasks\/editor$/);
-    expect(asked).toMatch(/unsaved changes/);
     await expect(page.getByPlaceholder(/Delivery arrived/)).toHaveValue("Arrived");
 
     await page.goto("/tasks");
-    page.once("dialog", (dialog) => void dialog.accept());
     await page.getByRole("button", { name: "Create task" }).click();
+    await asking.getByRole("button", { name: "Clear and start" }).click();
     await expect(page).toHaveURL(/\/tasks\/editor$/);
     await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
     await expect(page.getByPlaceholder(/Delivery arrived/)).toHaveCount(0);
@@ -117,14 +120,37 @@ test.describe("the task console", () => {
     await page.getByRole("button", { name: "Go back" }).click();
     await expect(page).toHaveURL(/\/tasks$/);
 
-    const asked: string[] = [];
-    page.on("dialog", (dialog) => {
-      asked.push(dialog.message());
-      void dialog.accept();
-    });
     await page.getByRole("button", { name: "Create task" }).click();
     await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
-    expect(asked).toEqual([]);
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  });
+
+  test("asks before opening a task over unsaved steps", async ({ page }) => {
+    const writes = await mockBackend(page);
+    await page.goto("/tasks/editor");
+    await addAction(page, "Speak");
+    await page.getByPlaceholder(/Delivery arrived/).fill("Arrived");
+    await page.goto("/tasks");
+
+    const edit = page.getByRole("button", { name: 'Edit "Morning round"' });
+    const asking = page.getByRole("alertdialog", { name: "Open Morning round?" });
+    await edit.click();
+    await expect(asking).toContainText("will be replaced");
+    await page.keyboard.press("Escape");
+    await expect(asking).toHaveCount(0);
+    await expect(page).toHaveURL(/\/tasks$/);
+
+    await edit.click();
+    await asking.getByRole("button", { name: "Keep changes" }).click();
+    await expect(page).toHaveURL(/\/tasks\/editor$/);
+    await expect(page.getByPlaceholder(/Delivery arrived/)).toHaveValue("Arrived");
+
+    await page.goto("/tasks");
+    await edit.click();
+    await asking.getByRole("button", { name: "Replace" }).click();
+    await expect(page.getByRole("heading", { name: "Morning round" })).toBeVisible();
+    await expect(page.getByPlaceholder(/Delivery arrived/)).toHaveCount(0);
+    expect(writes).toEqual([]);
   });
 
   test("asks before the tab closes on unsaved work, and only then", async ({ page }) => {
@@ -437,8 +463,11 @@ test.describe("the task console", () => {
 
     // Only Create task, once confirmed, empties it — across a reload too.
     await page.goto("/tasks");
-    page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "Create task" }).click();
+    await page
+      .getByRole("alertdialog", { name: "Start a new task?" })
+      .getByRole("button", { name: "Clear and start" })
+      .click();
     await expect(page.getByRole("heading", { name: "New task" })).toBeVisible();
     await page.reload();
     await expect(

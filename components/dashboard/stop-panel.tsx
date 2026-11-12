@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import {
   EllipsisIcon,
   MapPinIcon,
@@ -9,6 +10,7 @@ import {
   XIcon,
 } from "lucide-react";
 
+import { ConfirmDialog } from "@/components/console/confirm-dialog";
 import { Chip, Readout, overlayPanel } from "@/components/console/instrument";
 import { PositionGrid, cardAction, cardHeader } from "@/components/dashboard/overlay-card";
 import { immediateDeleteQuestion } from "@/components/dashboard/vertex-move-dialog";
@@ -104,7 +106,11 @@ export function StopPanel({
   onClose: () => void;
   className?: string;
 }) {
+  // Delete's question, by id, so a tap on another stop does not open asking.
+  const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
   if (!vertex) return null;
+  const confirming = confirmingId === vertex.id;
+  const question = immediateDeleteQuestion(vertex.name);
 
   const { preview, pending, error } = state;
   const reachable = preview?.reachable === true;
@@ -150,11 +156,7 @@ export function StopPanel({
             <DropdownMenuItem
               variant="destructive"
               disabled={deleting || editLock !== null}
-              onClick={() => {
-                if (window.confirm(immediateDeleteQuestion(vertex.name))) {
-                  onDelete(vertex);
-                }
-              }}
+              onClick={() => setConfirmingId(vertex.id)}
             >
               <Trash2Icon aria-hidden />
               Delete
@@ -189,7 +191,8 @@ export function StopPanel({
           <p className="text-signal-caution">The robot has moved since this route was planned.</p>
         )}
         {editLock && <p className="text-signal-caution">{editLock}</p>}
-        {deleteError && (
+        {/* While asking, the refusal is the question's own answer. */}
+        {deleteError && !confirming && (
           <p role="alert" className="text-signal-warn">
             {deleteError}
           </p>
@@ -236,6 +239,17 @@ export function StopPanel({
           <XIcon className="size-3.5" aria-hidden />
         </button>
       </div>
+
+      <ConfirmDialog
+        open={confirming}
+        title={question.title}
+        busy={deleting}
+        error={deleteError}
+        onConfirm={() => onDelete(vertex)}
+        onClose={() => setConfirmingId(null)}
+      >
+        {question.detail}
+      </ConfirmDialog>
     </section>
   );
 }

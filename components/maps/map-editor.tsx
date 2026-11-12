@@ -3,8 +3,9 @@
 import * as React from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { ArrowLeftIcon } from "lucide-react";
+import { ArrowLeftIcon, LogOutIcon } from "lucide-react";
 
+import { ConfirmDialog } from "@/components/console/confirm-dialog";
 import { MapTitleRename } from "@/components/maps/map-title-rename";
 import type { MapLinkFrom } from "@/lib/map/links";
 
@@ -17,8 +18,6 @@ const Map3dEditor = dynamic(
   () => import("@/components/maps/map-3d-editor").then((mod) => mod.Map3dEditor),
   { ssr: false, loading: () => <div aria-hidden className="h-full w-full" /> },
 );
-
-const LEAVE_PROMPT = "Leave the editor? Your unsaved changes to this map will be lost.";
 
 /**
  * A map's editor: its 3D map with the waypoints, forbidden zones and ground
@@ -38,17 +37,18 @@ export function MapEditor({
   const router = useRouter();
 
   /**
-   * Mirrored out of the editor — its ground patches and zones (its waypoints
-   * are written as they are placed): the App Router has no navigation
-   * blocker, so Back has to ask itself, and the title's rename navigates too
-   * (see MapTitleRename).
+   * Mirrored out of the editor — its ground patches, zones and waypoints,
+   * all staged for Save, and a zone half drawn: the App Router has no
+   * navigation blocker, so Back has to ask itself, and the title's rename
+   * navigates too (see MapTitleRename).
    */
   const [dirty, setDirty] = React.useState(false);
+  const [leaving, setLeaving] = React.useState(false);
   const returnTo = from === "tasks" ? "/tasks/editor" : "/maps";
 
   const goBack = () => {
-    if (dirty && !window.confirm(LEAVE_PROMPT)) return;
-    router.push(returnTo);
+    if (dirty) setLeaving(true);
+    else router.push(returnTo);
   };
 
   return (
@@ -70,6 +70,18 @@ export function MapEditor({
       <div className="min-h-0 flex-1">
         <Map3dEditor name={name} openOnWaypoint={openOnWaypoint} onDirtyChange={setDirty} />
       </div>
+
+      <ConfirmDialog
+        open={leaving}
+        title="Leave the editor?"
+        verb="Leave"
+        verbIcon={LogOutIcon}
+        keepLabel="Keep editing"
+        onConfirm={() => router.push(returnTo)}
+        onClose={() => setLeaving(false)}
+      >
+        Your unsaved changes to this map will be lost.
+      </ConfirmDialog>
     </div>
   );
 }

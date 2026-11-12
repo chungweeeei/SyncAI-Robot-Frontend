@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { RefreshCwIcon } from "lucide-react";
+import { FileInputIcon, RefreshCwIcon } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/console/confirm-dialog";
 import { ErrorLine } from "@/components/console/error-line";
@@ -53,18 +53,20 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
       : [];
 
   /**
-   * Replacing unsaved work is asked about; declining still opens the editor
-   * on the kept work. Reopening the loaded task keeps its edits.
+   * Replacing unsaved work is asked about; Keep changes still opens the
+   * editor on the kept work, and closing the question opens nothing.
+   * Reopening the loaded task keeps its edits.
    */
-  const openInEditor = (template: TaskTemplate) => {
-    const keep =
-      draft.editing?.id === template.id ||
-      (draftWouldBeLost(draft, template.id, library.templates) &&
-        !window.confirm(
-          `Open "${template.name}"? The unsaved changes in the editor will be replaced.`,
-        ));
-    if (!keep) updateDraft((current) => draftFromTemplate(current, template));
+  const [replacing, setReplacing] = React.useState<TaskTemplate | null>(null);
+  const openEditor = (template: TaskTemplate | null) => {
+    setReplacing(null);
+    if (template) updateDraft((current) => draftFromTemplate(current, template));
     router.push("/tasks/editor");
+  };
+  const openInEditor = (template: TaskTemplate) => {
+    if (draft.editing?.id === template.id) openEditor(null);
+    else if (draftWouldBeLost(draft, template.id, library.templates)) setReplacing(template);
+    else openEditor(template);
   };
 
   /** By id, so a task deleted meanwhile closes its dialog. */
@@ -188,6 +190,19 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
         This cannot be undone.
         {/* Named because they keep running, on their own copy of the steps. */}
         {deletingSchedules > 0 && ` ${survivingSchedulesNote(deletingSchedules)}`}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={replacing !== null}
+        title={<>Open {replacing?.name}?</>}
+        verb="Replace"
+        verbIcon={FileInputIcon}
+        keepLabel="Keep changes"
+        onConfirm={() => replacing && openEditor(replacing)}
+        onKeep={() => openEditor(null)}
+        onClose={() => setReplacing(null)}
+      >
+        The unsaved changes in the editor will be replaced.
       </ConfirmDialog>
 
       <TemplateScheduleDialog

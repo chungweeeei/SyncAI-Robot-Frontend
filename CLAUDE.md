@@ -29,7 +29,7 @@ docker compose build frontend-build  # the image (behind the `build` profile)
 docker compose up -d frontend        # serve it on 3001
 ```
 
-Run one unit file with `npx vitest run lib/map/view.test.ts`, one e2e test with
+Run one unit file with `npx vitest run lib/map/floors.test.ts`, one e2e test with
 `npx playwright test -g "cancels that run"`, and add `--ui` to either for the
 interactive runner.
 
@@ -72,7 +72,7 @@ The source was ported in from `src/syncai_frontend` of the
 
 ## Tests
 
-Unit tests sit next to what they test (`lib/map/view.test.ts`), e2e tests live
+Unit tests sit next to what they test (`lib/map/floors.test.ts`), e2e tests live
 in `e2e/`. The split is by what they can actually prove, not by size:
 
 - **Vitest** covers `lib/`, which after the scene and draw extractions is where
@@ -192,7 +192,9 @@ components/
                 fault-panel.tsx: what a part that threw shows instead — see
                 Conventions), and the pieces every screen's dialogs and lists
                 are made of: confirm-dialog.tsx (Keep / Delete, the one way
-                a delete is asked), error-line.tsx (a refusal's sentence
+                a delete is asked, and with its own verb and Keep the
+                one way unsaved work is — never `window.confirm`),
+                error-line.tsx (a refusal's sentence
                 under a control) and notice.tsx (a list's empty, loading
                 and failed states)
   dashboard/    3D viewport (pointcloud-canvas) with the pose laid over its
@@ -281,8 +283,8 @@ components/
                 the heading into fields, typed or taken from
                 Use robot position (its z from the ground, by the rule of
                 where the numbers came from) and staged for Save like a
-                drag — the dashboard's same dialog stays read-only, since
-                it would write at once. A new waypoint of type
+                drag — the dashboard's stop panel shows the pose read-only,
+                since it would write at once. A new waypoint of type
                 Charger has one more source in both places' create dialog
                 (dashboard/vertex-create-dialog.tsx): Detect charger, which
                 has the robot look for the charger with its camera and
@@ -718,7 +720,8 @@ touch one, prefer moving it toward the rule.
   own, and let the status that triggered the poll switch it off (`useMaps`
   every 5 s while an `octomap_status` is `"converting"` — the robot's map
   cleaning takes minutes, and a listing walks every map directory — and
-  `useRecordings` while a bag is live).
+  `useRecordings` while a bag is live, `useRobotRestart` while its record
+  says `restarting`).
   Two console-wide polls are mounted once in `app/layout.tsx`:
   `RobotStateProvider` (1 Hz) and `ActiveTaskProvider` (2 s). Pages read those
   providers; they do not start their own `robotState` poll. A reader that
@@ -996,7 +999,7 @@ it is run in, so it does not belong to any one of them.
 - **The code keeps the engineering names.** `vertex`, `octomap`, `cloud`, `bag`
   and `topic` are the backend's vocabulary and stay in identifiers, types,
   query keys and routes. Only the strings a human reads are translated, which
-  means `VertexPicker` renders the word "waypoint" on purpose — that gap is
+  means `WaypointCombobox` renders the word "waypoint" on purpose — that gap is
   the convention, not a rename left half-done.
 - Comments in this codebase explain *why* a choice was made (backpressure,
   poll economics, a backend quirk), not what the code does. Keep that standard;
@@ -1030,7 +1033,8 @@ it is run in, so it does not belong to any one of them.
   `strip-disclosure.tsx`, which stops at the top of the nav bar), in a
   handler, never in render. The other JS-side reading is `pointerType` on
   the event itself, which is how a hit disc widens to 22 px under a finger
-  and how Remove step asks a finger twice but a mouse once.
+  and how the route map keeps its hover test to a mouse, since a finger
+  has no hover.
   **A row that has to become two rows wraps; it is not rendered twice.** The
   status strip is one `flex-wrap` row where the job block takes
   `order-last w-full` below `sm` and `w-auto` from `sm` up, so a phone gets
