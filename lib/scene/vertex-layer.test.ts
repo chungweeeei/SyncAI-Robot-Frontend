@@ -79,17 +79,17 @@ describe("createVertexLayer", () => {
     expect(flat.min.z).toBeGreaterThan(drawnGround(0));
   });
 
-  it("lays a charger's plate under the waypoint and stands its post on the floor past it", () => {
-    // Heading +y, into the wall. The plate is where the robot stands docked;
-    // the post is beyond its far edge, not on it, the bolt on the face
-    // towards the plate.
+  it("lays a charger's plate under the waypoint and stands its post behind it", () => {
+    // Heading +y. The plate is where the robot stands docked; the post is
+    // past its back edge, against the heading, not on it, the bolt on the
+    // face towards the plate, so the charger points the way the arrow does.
     const layer = layerOf([stop({ type: "CHARGE", theta: 90 })]);
     const ground = drawnGround(0);
     const plate = markerBox(layer, (own) => own.max.z < ground + 0.05);
     const post = markerBox(layer, (own) => own.max.z > ground + 0.1);
     expect(plate.min.y).toBeLessThan(0);
     expect(plate.max.y).toBeGreaterThan(0);
-    expect(post.min.y).toBeGreaterThanOrEqual(plate.max.y - 0.01);
+    expect(post.max.y).toBeLessThanOrEqual(plate.min.y + 0.01);
     expect(post.min.z).toBeCloseTo(ground);
     const marker = layer.group.children.find((child) => child instanceof THREE.Group)!;
     const bolt = marker.children.find(
@@ -98,7 +98,7 @@ describe("createVertexLayer", () => {
         (part.material as THREE.MeshBasicMaterial).color.getHex() !== 0 &&
         part.geometry.type === "ShapeGeometry",
     )!;
-    expect(new THREE.Box3().setFromObject(bolt).max.y).toBeCloseTo(post.min.y, 2);
+    expect(new THREE.Box3().setFromObject(bolt).min.y).toBeCloseTo(post.max.y, 2);
   });
 
   it("never lets a charger's post take the tap on a stop behind it", () => {
