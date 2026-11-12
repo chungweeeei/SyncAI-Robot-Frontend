@@ -2,6 +2,7 @@
 
 import * as React from "react";
 
+import { ConfirmDialog, type ConfirmQuestion } from "@/components/console/confirm-dialog";
 import { ViewportBoundary } from "@/components/console/fault-boundary";
 import { FloorPicker } from "@/components/console/floor-picker";
 import { overlayPanel } from "@/components/console/instrument";
@@ -332,6 +333,13 @@ function Map3dSurface({
   const { placement } = placing;
   /** The stop a tap is asking about; null when the dialog is closed. */
   const [askedVertex, setAskedVertex] = React.useState<MapVertex | null>(null);
+  // The one question up, and what its answer does: waypoints staged out by
+  // id, or the Save that would take forbidden zones off the robot.
+  const [asking, setAsking] = React.useState<
+    | (ConfirmQuestion & { kind: "vertices"; ids: ReadonlySet<string> })
+    | (ConfirmQuestion & { kind: "save" })
+    | null
+  >(null);
   /**
    * The stops a Delete takes, picked in the list or with Select. Held as ids
    * and read through the list, so a stop deleted another way drops out.
@@ -491,13 +499,8 @@ function Map3dSurface({
    * the waypoints, each written and reported apart, so one refused leaves
    * the others saved.
    */
-  const onSave = React.useCallback(() => {
+  const sendSave = React.useCallback(() => {
     if (runLock.locked || note.kind === "saving" || zoneNote.kind === "saving") return;
-    // A removal is staged without asking, so Undo can take it back; Save is
-    // where it opens an area to the robot, and is asked once. No means no
-    // Save at all, so a cancel never leaves half the edits sent.
-    const gone = zonesDirty ? removedZones(zoneEdit.saved ?? [], zones ?? []) : [];
-    if (gone.length > 0 && !window.confirm(zoneDeleteQuestion(gone))) return;
     if (verticesDirty && !vertexWriting) {
       // The plan as of the press; rebaseVertices folds in what landed, so a
       // stop placed mid-request stays unsaved, and a refusal keeps the rest.
@@ -541,8 +544,6 @@ function Map3dSurface({
     name,
     voxels,
     zonesDirty,
-    zoneEdit.saved,
-    zones,
     saveZoneEdits,
     verticesDirty,
     vertexWriting,
@@ -550,6 +551,29 @@ function Map3dSurface({
     savedVertices,
     vertexList,
   ]);
+
+  const onSave = React.useCallback(() => {
+    if (runLock.locked || note.kind === "saving" || zoneNote.kind === "saving") return;
+    // A removal is staged without asking, so Undo can take it back; Save is
+    // where it opens an area to the robot, and is asked once. Keep means no
+    // Save at all, so a cancel never leaves half the edits sent.
+    const gone = zonesDirty ? removedZones(zoneEdit.saved ?? [], zones ?? []) : [];
+    if (gone.length > 0) setAsking({ kind: "save", ...zoneDeleteQuestion(gone) });
+    else sendSave();
+  }, [runLock.locked, note.kind, zoneNote.kind, zonesDirty, zoneEdit.saved, zones, sendSave]);
+
+  const answerAsked = () => {
+    if (!asking) return;
+    setAsking(null);
+    if (asking.kind === "save") {
+      sendSave();
+      return;
+    }
+    const { ids } = asking;
+    setVertexList((current) => current.filter((vertex) => !ids.has(vertex.id)));
+    setSelectedIds((current) => current.filter((id) => !ids.has(id)));
+    setVertexNote({ kind: "idle" });
+  };
 
 
   useLeaveGuard(unsaved);
@@ -766,8 +790,7 @@ function Map3dSurface({
   // marker must not stage a stop's deletion unseen, and there is no undo for
   // waypoints here. Remove stays armed for the next one.
   const removeTapped = (vertex: MapVertex) => {
-    if (!window.confirm(deleteQuestion(vertex.name))) return;
-    dropVertex(vertex);
+    setAsking({ kind: "vertices", ids: new Set([vertex.id]), ...deleteQuestion(vertex.name) });
   };
 
   const deleteAsked = (vertex: MapVertex) => {
@@ -832,15 +855,15 @@ function Map3dSurface({
   // Asked once, as Remove asks: there is no undo for waypoints here.
   const deleteSelected = React.useCallback(() => {
     if (placeLock !== null || selectedVertexIds.length === 0) return;
-    const gone = new Set(selectedVertexIds);
+    const ids = new Set(selectedVertexIds);
     const question =
       selectedVertexIds.length === 1
-        ? deleteQuestion(vertexList.find((vertex) => gone.has(vertex.id))?.name ?? "")
-        : `Delete ${selectedVertexIds.length} waypoints? They are removed from the robot when you save.`;
-    if (!window.confirm(question)) return;
-    setVertexList((current) => current.filter((vertex) => !gone.has(vertex.id)));
-    setSelectedIds([]);
-    setVertexNote({ kind: "idle" });
+        ? deleteQuestion(vertexList.find((vertex) => ids.has(vertex.id))?.name ?? "")
+        : {
+            title: `Delete ${selectedVertexIds.length} waypoints?`,
+            detail: "They are removed from the robot when you save.",
+          };
+    setAsking({ kind: "vertices", ids, ...question });
   }, [placeLock, selectedVertexIds, vertexList]);
 
   // Delete or Backspace takes the selection; a zone
@@ -934,6 +957,16 @@ function Map3dSurface({
         robotPoseReason={robotPoseReason}
         onClose={() => setAskedVertex(null)}
       />
+
+      <ConfirmDialog
+        open={asking !== null}
+        title={asking?.title}
+        verb={asking?.kind === "save" ? "Delete and save" : "Delete"}
+        onConfirm={answerAsked}
+        onClose={() => setAsking(null)}
+      >
+        {asking?.detail}
+      </ConfirmDialog>
 
       {/* One row across the top, the tools left and Draw right, wrapping on a
         * phone. */}
@@ -1177,18 +1210,18 @@ function Map3dSurface({
   );
 }
 
-/** The question a stop's Delete asks: nothing leaves the robot until Save. */
 /** What Save asks before the zones it would delete leave the robot. */
-function zoneDeleteQuestion(gone: readonly ZonePolygon[]): string {
+function zoneDeleteQuestion(gone: readonly ZonePolygon[]): ConfirmQuestion {
   const what =
     gone.length === 1
       ? `forbidden zone "${gone[0].name ?? gone[0].id}"`
       : `${gone.length} forbidden zones`;
-  return `Delete ${what}? The robot may then drive there.`;
+  return { title: `Delete ${what}?`, detail: "The robot may then drive there." };
 }
 
-function deleteQuestion(stopName: string): string {
-  return `Delete "${stopName}"? It is removed from the robot when you save.`;
+/** The question a stop's Delete asks: nothing leaves the robot until Save. */
+function deleteQuestion(stopName: string): ConfirmQuestion {
+  return { title: `Delete "${stopName}"?`, detail: "It is removed from the robot when you save." };
 }
 
 /** "2 added · 1 moved — press Save to send them to the robot." */

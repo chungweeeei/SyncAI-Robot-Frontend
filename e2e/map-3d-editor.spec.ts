@@ -325,12 +325,15 @@ test.describe("the editor's 3D view", () => {
       await page.mouse.click(hole.x, hole.y);
       await expect(patched(page)).toHaveAttribute("data-patched", "4");
 
-      page.once("dialog", (dialog) => dialog.dismiss());
+      const leave = page.getByRole("alertdialog", { name: "Leave the editor?" });
       await page.getByRole("button", { name: "Back to maps" }).click();
+      await leave.getByRole("button", { name: "Keep editing" }).click();
+      await expect(leave).toHaveCount(0);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
+      await expect(patched(page)).toHaveAttribute("data-patched", "4");
 
-      page.once("dialog", (dialog) => dialog.accept());
       await page.getByRole("button", { name: "Back to maps" }).click();
+      await leave.getByRole("button", { name: "Leave" }).click();
       await expect(page.getByRole("heading", { name: "Maps", level: 1 })).toBeVisible();
       expect(errors, "the page logged errors").toEqual([]);
     });
@@ -645,13 +648,7 @@ test.describe("the editor's 3D view", () => {
       await chooseDraw(page, "Forbidden zone");
       await page.getByRole("button", { name: "Remove zone" }).click();
 
-      // Every dialog is recorded, and answered as `answer` says.
-      const asked: string[] = [];
-      let answer: "accept" | "dismiss" = "dismiss";
-      page.on("dialog", (dialog) => {
-        asked.push(dialog.message());
-        void (answer === "accept" ? dialog.accept() : dialog.dismiss());
-      });
+      const asking = page.getByRole("alertdialog", { name: 'Delete forbidden zone "middle"?' });
       const puts: string[] = [];
       page.on("request", (request) => {
         if (request.method() === "PUT" && new URL(request.url()).pathname === keepoutPath) {
@@ -665,7 +662,7 @@ test.describe("the editor's 3D view", () => {
       await page.mouse.click(centre.x, centre.y);
       await expect(unsaved).toBeVisible();
       await expect(saveButton(page)).toBeEnabled();
-      expect(asked).toEqual([]);
+      await expect(page.getByRole("alertdialog")).toHaveCount(0);
 
       // Undo puts it back: the zones match the robot's again.
       await page.getByRole("button", { name: "Undo" }).click();
@@ -674,19 +671,18 @@ test.describe("the editor's 3D view", () => {
       await page.getByRole("button", { name: "Redo" }).click();
       await expect(unsaved).toBeVisible();
 
-      // Save asks once; a No sends nothing and keeps the removal staged.
+      // Save asks once; Keep sends nothing and keeps the removal staged.
       await saveButton(page).click();
-      await expect.poll(() => asked).toEqual([
-        'Delete forbidden zone "middle"? The robot may then drive there.',
-      ]);
+      await expect(asking).toContainText("The robot may then drive there.");
+      await asking.getByRole("button", { name: "Keep" }).click();
+      await expect(asking).toHaveCount(0);
       await expect(unsaved).toBeVisible();
       expect(puts).toEqual([]);
 
-      answer = "accept";
       const put = keepoutPut(page);
       await saveButton(page).click();
+      await asking.getByRole("button", { name: "Delete and save" }).click();
       const body = (await put).postDataJSON() as { zones: Record<string, unknown>[] };
-      expect(asked).toHaveLength(2);
 
       expect(body.zones).toEqual([
         {
@@ -1047,8 +1043,10 @@ test.describe("the editor's 3D view", () => {
       await dialog.getByLabel("Name").fill("lobby");
       await dialog.getByRole("button", { name: "Create" }).click();
 
-      page.once("dialog", (confirm) => void confirm.dismiss());
       await page.getByRole("button", { name: "Back to maps" }).click();
+      const leave = page.getByRole("alertdialog", { name: "Leave the editor?" });
+      await leave.getByRole("button", { name: "Keep editing" }).click();
+      await expect(leave).toHaveCount(0);
       await expect(page.getByTestId("map-3d-canvas")).toBeVisible();
       expect(errors, "the page logged errors").toEqual([]);
     });
@@ -1068,14 +1066,12 @@ test.describe("the editor's 3D view", () => {
       // An editor, on a map the robot may not be on: nowhere to send it from.
       await expect(dialog.getByRole("button", { name: "Move" })).toHaveCount(0);
 
-      const asked: string[] = [];
-      page.once("dialog", (confirm) => {
-        asked.push(confirm.message());
-        void confirm.accept();
-      });
       await dialog.getByRole("button", { name: "Delete" }).click();
+      const asking = page.getByRole("alertdialog", { name: 'Delete "lobby"?' });
+      await expect(asking).toContainText("It is removed from the robot when you save.");
+      await asking.getByRole("button", { name: "Delete" }).click();
+      await expect(asking).toHaveCount(0);
       await expect(dialog).toHaveCount(0);
-      expect(asked).toEqual([`Delete "lobby"? It is removed from the robot when you save.`]);
       // Gone from the screen, not yet from the robot.
       expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
 
@@ -1102,21 +1098,20 @@ test.describe("the editor's 3D view", () => {
       const centre = await centreOnScreen(page);
 
       // Declined: the stop stays, and its dialog does not open either.
-      const asked: string[] = [];
-      page.once("dialog", (confirm) => {
-        asked.push(confirm.message());
-        void confirm.dismiss();
-      });
+      const asking = page.getByRole("alertdialog", { name: 'Delete "lobby"?' });
       await page.mouse.click(centre.x, centre.y);
-      await expect
-        .poll(() => asked)
-        .toEqual([`Delete "lobby"? It is removed from the robot when you save.`]);
+      await expect(asking).toContainText("It is removed from the robot when you save.");
+      await asking.getByRole("button", { name: "Keep" }).click();
+      await expect(asking).toHaveCount(0);
+      // The backdrop fades out after the question has gone, and takes a
+      // click on the map until it has.
+      await expect(page.locator('[data-slot="alert-dialog-overlay"]')).toHaveCount(0);
       await expect(page.getByRole("alertdialog", { name: "lobby" })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
 
       // Accepted: the stop goes from the screen, and Remove stays armed.
-      page.once("dialog", (confirm) => void confirm.accept());
       await page.mouse.click(centre.x, centre.y);
+      await asking.getByRole("button", { name: "Delete" }).click();
       await expect(page.getByText("Unsaved: 1 deleted")).toBeVisible();
       await expect(remove).toHaveAttribute("aria-pressed", "true");
       expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
@@ -1309,19 +1304,15 @@ test.describe("the editor's 3D view", () => {
       await expect(page.getByText("2 selected")).toBeVisible();
 
       // Declined: nothing goes.
-      const asked: string[] = [];
-      page.once("dialog", (confirm) => {
-        asked.push(confirm.message());
-        void confirm.dismiss();
-      });
+      const asking = page.getByRole("alertdialog", { name: "Delete 2 waypoints?" });
       await page.getByRole("button", { name: "Delete 2" }).click();
-      await expect
-        .poll(() => asked)
-        .toEqual(["Delete 2 waypoints? They are removed from the robot when you save."]);
+      await expect(asking).toContainText("They are removed from the robot when you save.");
+      await asking.getByRole("button", { name: "Keep" }).click();
+      await expect(asking).toHaveCount(0);
       await expect(list).toHaveCount(3);
 
-      page.once("dialog", (confirm) => void confirm.accept());
       await page.getByRole("button", { name: "Delete 2" }).click();
+      await asking.getByRole("button", { name: "Delete" }).click();
       await expect(page.getByText("Unsaved: 2 deleted")).toBeVisible();
       await expect(list).toHaveCount(1);
       await expect(page.getByRole("button", { name: /dock-a/ })).toBeVisible();

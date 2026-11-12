@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftIcon, Trash2Icon } from "lucide-react";
+import { ArrowLeftIcon, Trash2Icon, type LucideIcon } from "lucide-react";
 
 import { ErrorLine } from "@/components/console/error-line";
 import {
@@ -22,7 +22,18 @@ import { Button } from "@/components/ui/button";
  * refusal keeps the dialog up with the backend's sentence in it, and a
  * success closes it from the caller's own callback. While `busy` it cannot
  * be closed: the write is already on its way.
+ *
+ * A question that is not a delete (unsaved work about to be dropped) names
+ * its own verb, icon and Keep. Where Keep is an answer rather than a step
+ * back — open the editor on the kept work — it gets `onKeep`, so Escape
+ * still only closes.
  */
+/** A question as the dialog asks it: the title names the thing, the detail what follows. */
+export interface ConfirmQuestion {
+  title: string;
+  detail: string;
+}
+
 export function ConfirmDialog({
   open,
   title,
@@ -32,8 +43,11 @@ export function ConfirmDialog({
   errorTone = "warn",
   verb = "Delete",
   busyVerb = "Deleting…",
+  verbIcon: VerbIcon = Trash2Icon,
+  keepLabel = "Keep",
   overlayClassName,
   onConfirm,
+  onKeep,
   onClose,
 }: {
   open: boolean;
@@ -47,9 +61,13 @@ export function ConfirmDialog({
   errorTone?: "warn" | "caution";
   verb?: string;
   busyVerb?: string;
+  verbIcon?: LucideIcon;
+  keepLabel?: string;
   /** For a dialog that ends what the page behind it was for. */
   overlayClassName?: string;
   onConfirm: () => void;
+  /** Keep's own answer; by default Keep only closes. */
+  onKeep?: () => void;
   onClose: () => void;
 }) {
   return (
@@ -71,12 +89,12 @@ export function ConfirmDialog({
         <AlertDialogFooter>
           {/* Icon and label, the house pattern: the last screen before a
             * removal is no place for two unlabelled buttons. */}
-          <Button variant="ghost" size="sm" disabled={busy} onClick={onClose}>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={onKeep ?? onClose}>
             <ArrowLeftIcon data-icon="inline-start" />
-            Keep
+            {keepLabel}
           </Button>
           <Button variant="destructive" size="sm" disabled={busy} onClick={onConfirm}>
-            <Trash2Icon data-icon="inline-start" />
+            <VerbIcon data-icon="inline-start" />
             {busy ? busyVerb : verb}
           </Button>
         </AlertDialogFooter>

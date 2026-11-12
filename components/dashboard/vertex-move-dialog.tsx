@@ -9,6 +9,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 
+import { ConfirmDialog, type ConfirmQuestion } from "@/components/console/confirm-dialog";
 import { ErrorLine } from "@/components/console/error-line";
 import { PoseReadouts, Readout } from "@/components/console/instrument";
 import {
@@ -75,7 +76,7 @@ export function VertexMoveDialog({
   /** The backend's refusal of the delete, or null. Rendered verbatim. */
   deleteError: string | null;
   /** What Delete asks before `onDelete`; by default, that it cannot be undone. */
-  deleteQuestion?: (name: string) => string;
+  deleteQuestion?: (name: string) => ConfirmQuestion;
   /** Hand the stop's pose to the pointer so it can be put somewhere else. */
   onReplace: (vertex: MapVertex) => void;
   /** Already confirmed by the operator; the row goes now. */
@@ -97,6 +98,11 @@ export function VertexMoveDialog({
   const [editingId, setEditingId] = React.useState<string | null>(null);
   if (vertex === null && editingId !== null) setEditingId(null);
   const editing = onSetPose !== undefined && shown !== null && editingId === shown.id;
+  // Delete's question, asked over the dialog; by id and dropped on close, as
+  // the pose form is, so the next stop's dialog does not open asking.
+  const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
+  if (vertex === null && confirmingId !== null) setConfirmingId(null);
+  const question = shown ? deleteQuestion(shown.name) : null;
 
   return (
     <AlertDialog
@@ -177,11 +183,7 @@ export function VertexMoveDialog({
                 variant="destructive"
                 size="sm"
                 disabled={deleting || editLock !== null}
-                onClick={() => {
-                  if (window.confirm(deleteQuestion(shown.name))) {
-                    onDelete(shown);
-                  }
-                }}
+                onClick={() => setConfirmingId(shown.id)}
               >
                 <Trash2Icon data-icon="inline-start" />
                 Delete
@@ -190,6 +192,17 @@ export function VertexMoveDialog({
           </>
         )}
       </AlertDialogContent>
+
+      <ConfirmDialog
+        open={vertex !== null && confirmingId === vertex.id}
+        title={question?.title}
+        busy={deleting}
+        error={deleteError}
+        onConfirm={() => vertex && onDelete(vertex)}
+        onClose={() => setConfirmingId(null)}
+      >
+        {question?.detail}
+      </ConfirmDialog>
     </AlertDialog>
   );
 }
@@ -323,7 +336,7 @@ function PoseForm({
   );
 }
 
-/** What a delete that is written at once asks: the dashboard's, here and on the stop's panel. */
-export function immediateDeleteQuestion(name: string): string {
-  return `Delete "${name}"? This cannot be undone.`;
+/** What a delete that is written at once asks: the dashboard's stop panel, and this dialog's default. */
+export function immediateDeleteQuestion(name: string): ConfirmQuestion {
+  return { title: `Delete "${name}"?`, detail: "This cannot be undone." };
 }

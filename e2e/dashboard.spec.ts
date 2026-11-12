@@ -1078,12 +1078,11 @@ test.describe("tapping a stop on the dashboard", () => {
     await page.goto("/");
 
     await tapStop(page);
-    page.once("dialog", (confirm) => {
-      expect(confirm.message()).toContain(`Delete "${stop.name}"?`);
-      void confirm.accept();
-    });
     await page.getByRole("button", { name: `More for ${stop.name}` }).click();
     await page.getByRole("menuitem", { name: "Delete" }).click();
+    const asking = page.getByRole("alertdialog", { name: `Delete "${stop.name}"?` });
+    await expect(asking).toContainText("This cannot be undone.");
+    await asking.getByRole("button", { name: "Delete" }).click();
 
     await expect
       .poll(() =>
@@ -1317,9 +1316,11 @@ test.describe("tapping a stop on the dashboard", () => {
     await page.goto("/");
 
     await tapStop(page);
-    page.once("dialog", (confirm) => void confirm.dismiss());
     await page.getByRole("button", { name: `More for ${stop.name}` }).click();
     await page.getByRole("menuitem", { name: "Delete" }).click();
+    const asking = page.getByRole("alertdialog", { name: `Delete "${stop.name}"?` });
+    await asking.getByRole("button", { name: "Keep" }).click();
+    await expect(asking).toHaveCount(0);
 
     await expect(page.getByRole("region", { name: stop.name })).toBeVisible();
     expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
