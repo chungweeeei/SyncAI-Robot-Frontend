@@ -225,6 +225,15 @@ export function MappingView() {
     save.mutate({ name }, { onSuccess: () => setSavedRun(true) });
   };
 
+  // The receipt's own question, so no second confirm: the run is saved and
+  // the receipt has said which map Navigation comes back on. The save is not
+  // reset here, unlike the confirm's switch: the dialog would turn back into
+  // the form under its close animation, and the next open clears it anyway.
+  const saveThenSwitch = () => {
+    setSaving(false);
+    void switchTo("AUTO");
+  };
+
   // A refusal backed out of is dropped, so the dialog reopens empty.
   const closeSave = () => {
     if (save.error) save.reset();
@@ -354,7 +363,9 @@ export function MappingView() {
         error={save.error?.message ?? null}
         saved={save.data?.message ?? null}
         conversion={converting}
+        switchHeld={control.busy || pending !== null}
         onSave={submitSave}
+        onSwitchToNav={saveThenSwitch}
         onClose={closeSave}
       />
 

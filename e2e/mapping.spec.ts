@@ -100,18 +100,44 @@ test.describe("the mapping run", () => {
       { method: "POST", path: "/api/v1/maps", body: { name: "site_a" } },
     ]);
     // The dialog stays and turns into the receipt: the form is gone, the
-    // robot's sentence is there, and the only way out is Close.
+    // robot's sentence is there, and it asks whether to go back to
+    // Navigation. Staying sends nothing.
     await expect(dialog(page)).toContainText(/Mapping has stopped/);
     await expect(dialog(page).getByLabel("Map name")).toHaveCount(0);
     await expect(dialog(page).getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
-    await dialog(page).getByRole("button", { name: "Close" }).click();
+    await dialog(page).getByRole("button", { name: "Stay in Mapping" }).click();
     await expect(dialog(page)).toHaveCount(0);
+    expect(writes.filter((w) => w.path === "/api/v1/robot/mode")).toEqual([]);
 
     // The strip has followed the robot back to idle, and the receipt went
     // with the dialog: nothing under the strip repeats it.
     await expect(startButton(page)).toBeEnabled();
     await expect(resetButton(page)).toHaveCount(0);
     await expect(page.getByText(/Mapping has stopped/)).toHaveCount(0);
+  });
+
+  test("after a save, Switch to Navigation sends the switch with no second question", async ({
+    page,
+  }) => {
+    const writes = await mockBackend(page, {
+      state: mapping(),
+      mappingStatus: { state: "mapping", key_poses: 12, loop_closures: 1 },
+    });
+    await page.goto("/mapping");
+
+    await saveButton(page).click();
+    await dialog(page).getByLabel("Map name").fill("site_a");
+    await dialog(page).getByRole("button", { name: "Save", exact: true }).click();
+    // The receipt says which map Navigation comes back on.
+    await expect(dialog(page)).toContainText(/on\s+the map it was using before, not this one/);
+    await dialog(page).getByRole("button", { name: "Switch to Navigation" }).click();
+
+    // The run is saved, so the leave-guard's question is not asked.
+    await expect(dialog(page)).toHaveCount(0);
+    await expect.poll(() => writes.filter((w) => w.path === "/api/v1/robot/mode")).toEqual([
+      { method: "POST", path: "/api/v1/robot/mode", body: { mode: "AUTO" } },
+    ]);
+    await expect(page.getByText("Switching", { exact: true })).toBeVisible();
   });
 
   test("a save shows its 3D map building, then ready", async ({ page }) => {
