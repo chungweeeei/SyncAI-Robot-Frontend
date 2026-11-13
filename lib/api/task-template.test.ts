@@ -19,11 +19,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const MOVE = {
-  id: "1-move",
-  type: "MOVE",
+const CHARGE = {
+  id: "1-charge",
+  type: "CHARGE",
   vertex_id: "11111111-1111-1111-1111-111111111111",
-  vertex_name: "lobby",
+  vertex_name: "charger",
   vertex_status: "CURRENT",
   group: null,
   params: { x: 2.5, y: 1.25, theta: 90 },
@@ -31,16 +31,16 @@ const MOVE = {
 };
 
 describe("listTaskTemplates", () => {
-  it("reads a Move with its waypoint and pose", async () => {
+  it("reads a Charge with its waypoint and pose", async () => {
     fetchMock.mockResolvedValue(
       new Response(
         JSON.stringify([
           {
             id: "t1",
-            name: "lobby run",
+            name: "charge",
             description: "",
             map_name: "wh1",
-            steps: [MOVE],
+            steps: [CHARGE],
             map_matches_active: true,
             missing_vertex_count: 0,
             created_at: "2026-10-15T00:00:00Z",
@@ -51,7 +51,7 @@ describe("listTaskTemplates", () => {
       ),
     );
     const [template] = await listTaskTemplates();
-    expect(template!.steps.map((step) => step.type)).toEqual(["MOVE"]);
+    expect(template!.steps.map((step) => step.type)).toEqual(["CHARGE"]);
     expect(template!.steps[0]!.resolved_params).toEqual({ x: 2.5, y: 1.25, theta: 90 });
   });
 

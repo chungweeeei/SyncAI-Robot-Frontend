@@ -20,6 +20,9 @@ import type { StreamStatus } from "@/lib/types/stream";
  *   {"type": "local_plan", "points": [[x, y], ...], "stamp"}
  *
  * `path` can share it: ~8 kB per replan (~0.333 Hz) is too small to block.
+ * (`dock_path`, a dock's predicted last metre, went with the robot's forward
+ * docking controller on 2026-11-12: an old backend's frame of it is an
+ * unknown type, skipped.)
  *
  * `local_costmap` (2 Hz, ~8.5 kB) and `local_plan` (5 Hz, a few dozen
  * points) come only while a navigation runs: the costmap the controller

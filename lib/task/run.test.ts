@@ -8,6 +8,7 @@ import {
   endedRunRemainingMs,
   failedStepProgress,
   holdOffered,
+  liveDock,
   pauseOffered,
   requestedHold,
   runClosed,
@@ -51,6 +52,43 @@ describe("currentStep", () => {
   });
 });
 
+describe("liveDock", () => {
+  const charger = { x: 3, y: -1.5, theta: 180 };
+
+  it("is the charger being walked onto", () => {
+    const steps = [
+      step("1-move", "COMPLETED"),
+      { ...step("2-charge", "IN_PROGRESS"), charge: charger },
+    ];
+    expect(liveDock(steps)).toEqual(charger);
+  });
+
+  it("still answers while the charge is held: the charger has not moved", () => {
+    expect(liveDock([{ ...step("1-charge", "PAUSED"), charge: charger }])).toEqual(charger);
+  });
+
+  it("finds a charge that is not its group's first member", () => {
+    const steps = [
+      { ...step("1-speak", "IN_PROGRESS"), group: "a" },
+      { ...step("2-charge", "IN_PROGRESS"), group: "a", charge: charger },
+    ];
+    expect(liveDock(steps)).toEqual(charger);
+  });
+
+  it("is null before the charge starts and once it has ended", () => {
+    // A staging point drawn for a charge still queued (or done) would read as
+    // where the robot is heading now.
+    expect(
+      liveDock([step("1-move", "IN_PROGRESS"), { ...step("2-charge", "PENDING"), charge: charger }]),
+    ).toBeNull();
+    expect(liveDock([{ ...step("1-charge", "COMPLETED"), charge: charger }])).toBeNull();
+  });
+
+  it("is null for a backend that does not send the charger", () => {
+    expect(liveDock([step("1-charge", "IN_PROGRESS")])).toBeNull();
+  });
+});
+
 describe("stepLabel", () => {
   it("reads a composer step as its type's label", () => {
     expect(stepLabel("1-move")).toBe("Move");
@@ -58,7 +96,11 @@ describe("stepLabel", () => {
     expect(stepLabel("5-wait")).toBe("Wait");
     expect(stepLabel("12-standup")).toBe("Stand");
     expect(stepLabel("3-liedown")).toBe("Lie down");
+    expect(stepLabel("4-charge")).toBe("Charge");
     expect(stepLabel("6-patrol")).toBe("Patrol");
+    // A type the console no longer has (DOCK, 2026-11-12) reads verbatim in
+    // the history of a run that had one, as UNDOCK's does.
+    expect(stepLabel("4-dock")).toBe("4-dock");
   });
 
   it("reads a single-gesture step as the dashboard's word for it", () => {

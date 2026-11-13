@@ -37,6 +37,7 @@ import {
   stepRoute,
   stepSpans,
   stepSummary,
+  stepTypeForVertex,
   stepWaypointOrdinals,
   toDispatchSteps,
   toStepRequests,
@@ -303,6 +304,13 @@ describe("a step from a waypoint", () => {
     expect(patch).toMatchObject({ x: "6.834", y: "-2", z: 3.1, vertexId: "v1", vertexMissing: false });
     expect(stepDraftError({ ...newStepDraft("MOVE"), ...patch })).toBeNull();
   });
+
+  // A charger waypoint is the marker Detect saw, on the charger's face: a Dock
+  // would walk the robot onto it. A Charge finds the marker and walks on by it.
+  it("charges on a charger and moves anywhere else", () => {
+    expect(stepTypeForVertex(vertex({ type: "CHARGE" }))).toBe("CHARGE");
+    expect(stepTypeForVertex(vertex({ type: "MOVE" }))).toBe("MOVE");
+  });
 });
 
 describe("moveStep", () => {
@@ -559,7 +567,7 @@ describe("step groups", () => {
     const drafts = [move(), linked(speak("hi")), linked(newStepDraft("STANDUP"))];
     expect(stepGroupError(drafts, 0)).toBeNull();
     expect(stepGroupError(drafts, 1)).toBeNull();
-    expect(stepGroupError(drafts, 2)).toMatch(/one Move, Patrol, Stand or Lie down at a time/);
+    expect(stepGroupError(drafts, 2)).toMatch(/one Move, Charge, Patrol, Stand or Lie down at a time/);
     expect(stepDraftsSubmittable(drafts)).toBe(false);
   });
 
@@ -669,9 +677,9 @@ describe("step groups", () => {
   describe("stepLinkProblem", () => {
     it("refuses to start a body step together with one", () => {
       // Move with Stand, Move with Lie, Move with Move: the robot has one body.
-      for (const type of ["MOVE", "STANDUP", "LIEDOWN"] as const) {
+      for (const type of ["MOVE", "CHARGE", "STANDUP", "LIEDOWN"] as const) {
         expect(stepLinkProblem([move(), newStepDraft(type)], 1)).toMatch(
-          /one Move, Patrol, Stand or Lie down at a time/,
+          /one Move, Charge, Patrol, Stand or Lie down at a time/,
         );
       }
     });
@@ -696,6 +704,60 @@ describe("step groups", () => {
     const steps = [{ group: null }, { group: "g2" }, { group: "g2" }, { group: undefined }];
     expect(steps.map((_, index) => wireLinked(steps, index))).toEqual([false, false, true, false]);
   });
+});
+
+describe("charge steps", () => {
+  // A Charge is a Move to the approach point plus the last metre, on the same
+  // pose and waypoint wire as a Move; only the type tells the robot which.
+  function charge(over: Partial<StepDraft> = {}): StepDraft {
+    return { ...newStepDraft("CHARGE"), x: "2.5", y: "1.25", theta: "90", vertexId: "v-charger", ...over };
+  }
+
+  it("needs a waypoint to Charge, in the same words as a Move", () => {
+    expect(stepDraftError(newStepDraft("CHARGE"))).toBe("Pick a waypoint.");
+    expect(stepDraftError(charge())).toBeNull();
+  });
+
+  it("keeps its type on the wire, and its waypoint in a saved template", () => {
+    expect(toStepRequests([charge()])).toEqual([
+      { id: "1-charge", type: "CHARGE", params: { x: 2.5, y: 1.25, theta: 90 } },
+    ]);
+    expect(toTemplateSteps([charge()])).toEqual([
+      { id: "1-charge", type: "CHARGE", params: { x: 2.5, y: 1.25, theta: 90 }, vertex_id: "v-charger" },
+    ]);
+  });
+
+
+  it("ties a job to its map for a Charge", () => {
+    // isNavStep is the editor's map scope.
+    expect([newStepDraft("CHARGE")].some(isNavStep)).toBe(true);
+  });
+
+  it("loads back from a template and dispatches the resolved pose under its own type", () => {
+    const stored: TemplateStep[] = [
+      {
+        id: "1-charge",
+        type: "CHARGE",
+        vertex_id: "v-charger",
+        vertex_name: "charger",
+        vertex_status: "CURRENT",
+        group: null,
+        params: { x: 0, y: 0, theta: 0 },
+        resolved_params: { x: 2.5, y: 1.25, theta: 90 },
+      },
+    ];
+    const [loaded] = fromTemplateSteps(stored);
+    expect(loaded).toMatchObject({ type: "CHARGE", x: "2.5", y: "1.25", theta: "90", vertexId: "v-charger" });
+    expect(toDispatchSteps(stored)).toEqual([
+      { id: "1-charge", type: "CHARGE", params: { x: 2.5, y: 1.25, theta: 90 } },
+    ]);
+  });
+
+  it("lights its waypoint like a Move's", () => {
+    const drafts = [move({ vertexId: "v-hall" }), charge(), move({ vertexId: null })];
+    expect(stepWaypointOrdinals(drafts).get("v-charger")).toEqual([2]);
+  });
+
 });
 
 /**
@@ -869,9 +931,9 @@ describe("patrol steps", () => {
 
   it("is one body step: it cannot start together with a Move", () => {
     const drafts = [move(), { ...patrol(at("1", "2"), at("3", "4")), withPrevious: true }];
-    expect(stepGroupError(drafts, 1)).toMatch(/one Move, Patrol/);
+    expect(stepGroupError(drafts, 1)).toMatch(/one Move, Charge, Patrol/);
     expect(stepLinkProblem([move(), patrol(at("1", "2"), at("3", "4"))], 1)).toMatch(
-      /one Move, Patrol/,
+      /one Move, Charge, Patrol/,
     );
   });
 
@@ -934,8 +996,8 @@ describe("patrol steps", () => {
     expect(fromMove.waypoints[0]).toMatchObject({ x: "1.5", y: "-2", theta: "90", z: 3, vertexId: "v" });
     expect(changeStopType(newStepDraft("MOVE"), "PATROL").waypoints).toEqual([]);
 
-    const back = changeStopType(patrol(at("0", "0"), at("7", "8", { vertexId: "end", theta: "45" })), "MOVE");
-    expect(back).toMatchObject({ type: "MOVE", x: "7", y: "8", theta: "45", vertexId: "end", waypoints: [] });
+    const back = changeStopType(patrol(at("0", "0"), at("7", "8", { vertexId: "end", theta: "45" })), "CHARGE");
+    expect(back).toMatchObject({ type: "CHARGE", x: "7", y: "8", theta: "45", vertexId: "end", waypoints: [] });
   });
 
   it("empties only the waypoints picked from vertices on a map switch", () => {

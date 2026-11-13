@@ -3,12 +3,24 @@
 import * as React from "react";
 import { useTrackedDispatch } from "@/hooks/use-tracked-dispatch";
 import { normalizeTheta } from "@/lib/angle";
-import { sendMoveTask, type GoalPose, type TaskStatus } from "@/lib/api/task";
+import {
+  sendChargeTask,
+  sendMoveTask,
+  type GoalPose,
+  type TaskStatus,
+} from "@/lib/api/task";
 import { currentStep } from "@/lib/task/run";
+
+/**
+ * A goal and what to do there: `charge` sends it as a one-step CHARGE (a
+ * charger waypoint's Go), otherwise a MOVE. Kept with the goal, so a Retry
+ * re-sends the same kind of job.
+ */
+export type GoalTarget = GoalPose & { charge?: boolean };
 
 export interface GoalTask {
   /** The goal that went out, which the marker and the read-back describe. */
-  goal: GoalPose | null;
+  goal: GoalTarget | null;
   taskStatus: TaskStatus | null;
   running: boolean;
   /** A submit or cancel request is in flight. */
@@ -20,10 +32,11 @@ export interface GoalTask {
   /** Re-send the pose on screen: the only way back from a failed submit. */
   send: () => Promise<void>;
   /**
-   * Dispatch a pose as a one-step MOVE task. The only door in (a drag or a
-   * tapped waypoint), so there is one running task, read-back and Cancel.
+   * Dispatch a pose as a one-step MOVE task, or a charger as a one-step
+   * CHARGE. The only door in (a drag or a tapped waypoint), so there is one
+   * running task, read-back and Cancel.
    */
-  sendGoal: (goal: GoalPose) => Promise<void>;
+  sendGoal: (goal: GoalTarget) => Promise<void>;
   cancel: () => Promise<void>;
   clear: () => void;
 }
@@ -42,17 +55,18 @@ export interface GoalTask {
  * useTrackedDispatch's, shared with useTaskDispatch.
  */
 export function useGoalTask(robotId: string, mapName: string | null): GoalTask {
-  const [goal, setGoal] = React.useState<GoalPose | null>(null);
+  const [goal, setGoal] = React.useState<GoalTarget | null>(null);
 
   const { task, submit, cancel, clear: clearRun, busy, error } = useTrackedDispatch({
     kind: "goal",
     // The map travels with the goal, so the backend refuses it if the robot
     // has switched maps since it was aimed.
-    dispatch: (staged: GoalPose) => sendMoveTask(robotId, staged, mapName),
+    dispatch: ({ charge, ...pose }: GoalTarget) =>
+      charge ? sendChargeTask(robotId, pose, mapName) : sendMoveTask(robotId, pose, mapName),
   });
 
   const sendGoal = React.useCallback(
-    async (next: GoalPose) => {
+    async (next: GoalTarget) => {
       // Normalised here too, so the marker and read-back agree with the
       // dispatched heading.
       const staged = { ...next, theta: normalizeTheta(next.theta) };

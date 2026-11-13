@@ -184,7 +184,7 @@ export function TaskTemplateRow({
   );
 }
 
-/** `lobby → hall → charger · 3 stops · 1 min 30 s of waiting`. */
+/** `lobby → hall → charger · 3 stops · 1 min 30 s of waiting · ends docked`. */
 function TaskRoute({ steps }: { steps: readonly TemplateStep[] }) {
   const stops = routeStops(steps);
   const summary = taskSummary(steps);
@@ -193,6 +193,7 @@ function TaskRoute({ steps }: { steps: readonly TemplateStep[] }) {
       ? `no stops · ${steps.length} ${steps.length === 1 ? "action" : "actions"}`
       : `${summary.stops} ${summary.stops === 1 ? "stop" : "stops"}`,
     summary.waitSeconds > 0 ? `${formatDuration(summary.waitSeconds)} of waiting` : null,
+    summary.endsDocked ? "ends docked" : null,
   ].filter((part): part is string => part !== null);
 
   return (

@@ -158,7 +158,7 @@ const NumberFieldSchema: z.ZodType<NumberField> = z.object({
 });
 
 const StepSpecSchema: z.ZodType<StepSpec> = z.object({
-  type: z.enum(["MOVE", "PATROL", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
+  type: z.enum(["MOVE", "CHARGE", "PATROL", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
   label: z.string(),
   hint: z.string(),
   occupies_body: z.boolean(),
@@ -208,7 +208,7 @@ function spec(
 }
 
 /**
- * Today's six steps in the catalogue's shape. The limits are step.ts's, which
+ * Today's seven steps in the catalogue's shape. The limits are step.ts's, which
  * mirror the backend's validators; Speak's voice and speed are left out, as
  * the backend defaults them and the editor never sent them.
  */
@@ -217,6 +217,9 @@ export const LOCAL_STEP_CATALOGUE: StepCatalogue = {
     spec("MOVE", true, [{ kind: "waypoint", key: "target", label: "Waypoint" }]),
     spec("PATROL", true, [
       { kind: "waypoints", key: "waypoints", label: "Waypoints", min_items: PATROL_WAYPOINTS_MIN },
+    ]),
+    spec("CHARGE", true, [
+      { kind: "waypoint", key: "target", label: "Charger", filter: "charger" },
     ]),
     spec("SPEAK", false, [
       {

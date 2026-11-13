@@ -19,6 +19,7 @@ import {
   type LayerOption,
 } from "@/components/dashboard/viewport-toolbar";
 import { useActiveMapVertices } from "@/hooks/use-active-map-vertices";
+import { useLiveRun } from "@/hooks/use-active-run";
 import { useAutoLocalize } from "@/hooks/use-auto-localize";
 import { ESTOP_REFUSAL, useConsoleEstop } from "@/hooks/use-console-estop";
 import { useGoalTask } from "@/hooks/use-goal-task";
@@ -46,9 +47,11 @@ import {
   storeyCeiling,
 } from "@/lib/map/floors";
 import { isTypingTarget } from "@/lib/keyboard";
+import { CHARGE_STAGING_DISTANCE_M, stagingPose } from "@/lib/map/dock";
 import { withGroundPatches } from "@/lib/map/ground-fill";
 import { previewPoints, previewStale, routeFloors } from "@/lib/map/route-preview";
 import { floorGroundOf, placedGround } from "@/lib/map/waypoint-ground";
+import { liveDock } from "@/lib/task/run";
 import { cn } from "@/lib/utils";
 import type { MapVertex, VertexType } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
@@ -79,6 +82,15 @@ export function PointCloudView({
   const runLock = useMapRunLock(stops.mapName);
   const { engaged: stopped } = useConsoleEstop();
   const { feed, path } = useTelemetry();
+  // A running charge's charger, for its staging point. Read off the entry the
+  // status strip polls, without a poll of its own. Only on the map the job runs
+  // on: a charger drawn on another map would be a place that does not exist
+  // there.
+  const run = useLiveRun();
+  const dock =
+    run && activeMap && run.task.map_name === activeMap.name
+      ? liveDock(run.steps)
+      : null;
   // Off by default: the map scan is for checking localization. Path, waypoints
   // and zones are on: a few marks that say what the robot and map are for.
   const [showMapCloud, setShowMapCloud] = React.useState(false);
@@ -385,9 +397,17 @@ export function PointCloudView({
     ? (vertices.find((v) => v.x === sentGoal.x && v.y === sentGoal.y) ?? null)
     : null;
   const { clearWriteError } = stops;
+  // A charger's route is to its staging point: the waypoint is the marker, on
+  // the charger's face, which the planner cannot reach and the charge does
+  // not plan to.
   const previewVertex = React.useCallback(
-    (vertex: MapVertex) =>
-      requestPreview({ x: vertex.x, y: vertex.y, theta: vertex.theta, z: vertex.z }),
+    (vertex: MapVertex) => {
+      const pose =
+        vertex.type === "CHARGE"
+          ? stagingPose(vertex, CHARGE_STAGING_DISTANCE_M)
+          : { x: vertex.x, y: vertex.y, theta: vertex.theta };
+      requestPreview({ ...pose, z: vertex.z });
+    },
     [requestPreview],
   );
   const askVertex = React.useCallback(
@@ -425,12 +445,19 @@ export function PointCloudView({
     previewVertex(askedVertex);
   }, [goalBusy, askedVertex, clearGoal, previewVertex]);
 
-  // Go hands over to GoalControl, which follows the job from here.
+  // Go hands over to GoalControl, which follows the job from here. A
+  // charger's Go is a charge: a MOVE would plan to the marker itself.
   const goVertex = React.useCallback(
     (vertex: MapVertex) => {
       setAskedVertex(null);
       clearPreview();
-      void sendGoal({ x: vertex.x, y: vertex.y, theta: vertex.theta, z: vertex.z });
+      void sendGoal({
+        x: vertex.x,
+        y: vertex.y,
+        theta: vertex.theta,
+        z: vertex.z,
+        charge: vertex.type === "CHARGE",
+      });
     },
     [clearPreview, sendGoal],
   );
@@ -514,7 +541,8 @@ export function PointCloudView({
       onToggle: () => setShowZones((v) => !v),
     });
   }
-  if (path !== undefined && path.points.length > 0) {
+  const docking = dock !== null;
+  if ((path !== undefined && path.points.length > 0) || docking) {
     layers.push({
       kind: "path",
       label: "Path",
@@ -544,6 +572,7 @@ export function PointCloudView({
                 : 0
           }
           path={path}
+          dock={dock}
           showPath={showPath}
           vertices={vertices}
           showVertices={showVertices}
