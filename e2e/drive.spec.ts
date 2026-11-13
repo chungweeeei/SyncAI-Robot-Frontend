@@ -65,15 +65,23 @@ test.describe("the manual drive panel", () => {
     await page.waitForTimeout(300);
     expect(postures()).toEqual([]);
 
+    // Waits for the button to announce the key: the listener goes on with
+    // the arm's render. F follows R at once, as a hand would: a request in
+    // flight does not swallow the next key.
+    const stand = page.getByRole("button", { name: "Stand", exact: true });
+    const lieDown = page.getByRole("button", { name: "Lie down", exact: true });
     await page.getByRole("switch", { name: "Arm manual drive input" }).click();
+    await expect(stand).toHaveAttribute("aria-keyshortcuts", "R");
     await page.keyboard.press("r");
-    await expect.poll(postures).toEqual(["0"]);
+    await expect(lieDown).toHaveAttribute("aria-keyshortcuts", "F");
     await page.keyboard.press("f");
     await expect.poll(postures).toEqual(["0", "2"]);
 
     // Disarmed again, deaf again: the positive control above is what makes
     // this silence mean something.
+    await expect(stand).toHaveAttribute("aria-keyshortcuts", "R");
     await page.getByRole("switch", { name: "Arm manual drive input" }).click();
+    await expect(stand).not.toHaveAttribute("aria-keyshortcuts", /./);
     await page.keyboard.press("r");
     await page.waitForTimeout(300);
     expect(postures()).toEqual(["0", "2"]);

@@ -31,7 +31,7 @@ const COMMANDS: ReadonlyArray<{
  * R and F press them from the keyboard, but only while `keys` is on — the
  * panel's arm switch — for the reason the drive keys are: a window-level
  * key that is always live turns a stray keystroke into motion, and standing
- * up is motion. The buttons themselves stay unarmed.
+ * up is motion. The buttons themselves stay unarmed. The stop silences them.
  */
 export function PanelPostureControl({
   keys = false,
@@ -44,9 +44,16 @@ export function PanelPostureControl({
   const posture = usePosture();
   const { busy, pending, send } = posture;
   const { engaged: stopped } = useConsoleEstop();
-  const live = keys && !busy && !stopped;
+  // Not held by a request in flight, unlike the buttons: a click is held so
+  // a double click is one request, a key already fires once per press (no
+  // repeat), and an F pressed just after R must not be lost in silence — the
+  // opposite posture is always the way back.
+  const live = keys && !stopped;
 
-  React.useEffect(() => {
+  // A layout effect, in the commit that shows the key: a plain effect hears
+  // the key only after the paint, so a press just after arming fell between
+  // the two and was lost.
+  React.useLayoutEffect(() => {
     if (!live) return;
     const onKeyDown = (event: KeyboardEvent) => {
       // useJoystick's guards: chords stay the browser's, a field keeps its
@@ -75,7 +82,9 @@ export function PanelPostureControl({
             // opposite posture is always the way back. None under the stop:
             // standing up is moving.
             disabled={busy || stopped}
-            aria-keyshortcuts={keys ? POSTURE_KEYS[command.posture].label : undefined}
+            // Only while the key is heard, so it never announces one that
+            // does nothing (disarmed, or under the stop).
+            aria-keyshortcuts={live ? POSTURE_KEYS[command.posture].label : undefined}
             onClick={() => send(command.posture)}
             className={cn(
               "instrument-label flex h-8 items-center justify-center gap-1.5 rounded-sm border px-2 transition-colors disabled:opacity-40 pointer-coarse:h-10",
