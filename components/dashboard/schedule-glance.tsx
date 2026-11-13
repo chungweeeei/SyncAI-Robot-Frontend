@@ -35,8 +35,9 @@ import { cn } from "@/lib/utils";
  * What the robot will do on its own, at the top of the rail: name, next run,
  * cadence, and Pause / Delete (by request). Editing stays on /tasks.
  *
- * Actions sit behind one ⋯ per row: rows are read far more than acted on, and
- * a Delete beside Pause is one a finger hits by mistake.
+ * Pause / Resume sits on the row (by request): it is the action the rail is
+ * for, and it undoes itself. Delete stays behind the row's ⋯, since a Delete
+ * beside Pause is one a finger hits by mistake.
  *
  * Shares `useSchedules` with /tasks, so it costs no poll: the list is re-read
  * just after its soonest run (see `nextScheduleRefetchMs`).
@@ -189,12 +190,29 @@ function ScheduleGlanceRow({
         </p>
       </div>
 
+      {/* Named for the schedule: a list of bare "Pause" buttons tells a
+        * screen reader nothing about which row it is on. */}
+      <button
+        type="button"
+        aria-label={`${schedule.paused ? "Resume" : "Pause"} schedule ${name}`}
+        title={schedule.paused ? "Resume" : "Pause"}
+        disabled={busy}
+        onClick={schedule.paused ? onResume : onPause}
+        className={ROW_BUTTON}
+      >
+        {schedule.paused ? (
+          <PlayIcon className="size-3.5" aria-hidden />
+        ) : (
+          <PauseIcon className="size-3.5" aria-hidden />
+        )}
+      </button>
+
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label={`Actions for schedule ${name}`}
           title="More actions"
           disabled={busy}
-          className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-10"
+          className={ROW_BUTTON}
         >
           <EllipsisIcon className="size-3.5" aria-hidden />
         </DropdownMenuTrigger>
@@ -210,19 +228,7 @@ function ScheduleGlanceRow({
             <DropdownMenuLabel className="instrument-label truncate px-2 pt-1 pb-1.5 text-muted-foreground">
               {name}
             </DropdownMenuLabel>
-            {schedule.paused ? (
-              <DropdownMenuItem onClick={onResume} className={MENU_ITEM}>
-                <PlayIcon aria-hidden />
-                Resume
-              </DropdownMenuItem>
-            ) : (
-              <DropdownMenuItem onClick={onPause} className={MENU_ITEM}>
-                <PauseIcon aria-hidden />
-                Pause
-              </DropdownMenuItem>
-            )}
           </DropdownMenuGroup>
-          {/* Ruled off from Pause so a slip cannot land on it. */}
           <DropdownMenuSeparator className="my-1 bg-hairline" />
           <DropdownMenuItem
             onClick={() => onDelete(name)}
@@ -239,6 +245,10 @@ function ScheduleGlanceRow({
     </li>
   );
 }
+
+/** The row's two icon buttons, Pause / Resume and ⋯, at the rail's scale. */
+const ROW_BUTTON =
+  "flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground disabled:pointer-events-none disabled:opacity-30 pointer-coarse:size-10";
 
 /** One menu row at the rail's scale: 28 px tall, 12 px type, 14 px icon. */
 const MENU_ITEM =

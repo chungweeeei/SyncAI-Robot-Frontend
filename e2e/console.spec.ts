@@ -535,12 +535,13 @@ test.describe("the dashboard's schedules", () => {
       "/tasks",
     );
 
-    // The actions are behind the row's ⋯, not on the row.
-    await expect(rail.getByRole("button", { name: /^Pause/ })).toHaveCount(0);
+    // Pause is on the row; the ⋯ holds only Delete.
     await rail
       .getByRole("button", { name: "Actions for schedule Morning round" })
       .click();
-    await page.getByRole("menuitem", { name: "Pause" }).click();
+    await expect(page.getByRole("menuitem")).toHaveText(["Delete"]);
+    await page.keyboard.press("Escape");
+    await rail.getByRole("button", { name: "Pause schedule Morning round" }).click();
     await expect
       .poll(() => writes.map((w) => `${w.method} ${w.path}`))
       .toContain("POST /api/v1/schedules/morning/pause");
@@ -552,10 +553,10 @@ test.describe("the dashboard's schedules", () => {
       /Dock check.*paused/,
       /Morning round.*paused/,
     ]);
-    await rail
-      .getByRole("button", { name: "Actions for schedule Morning round" })
-      .click();
-    await expect(page.getByRole("menuitem", { name: "Resume" })).toBeVisible();
+    await rail.getByRole("button", { name: "Resume schedule Morning round" }).click();
+    await expect
+      .poll(() => writes.map((w) => `${w.method} ${w.path}`))
+      .toContain("POST /api/v1/schedules/morning/resume");
 
     expect(errors, "the page logged errors").toEqual([]);
   });
