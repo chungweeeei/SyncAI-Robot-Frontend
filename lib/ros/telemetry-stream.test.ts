@@ -4,6 +4,18 @@ import { decodeTelemetryFrame } from "@/lib/ros/telemetry-stream";
 import type { PlannedPath } from "@/lib/types/robot";
 
 describe("decodeTelemetryFrame", () => {
+  it("skips a dock's approach, which an older backend may still send", () => {
+    // dock_path went with the forward docking controller (2026-11-12); a
+    // frame of it must not reach the route's handler.
+    const onPath = vi.fn();
+    decodeTelemetryFrame(
+      JSON.stringify({ type: "dock_path", points: [[1, 2], [1.5, 2.25]], stamp: 20 }),
+      { onPath },
+    );
+
+    expect(onPath).not.toHaveBeenCalled();
+  });
+
   it("skips a malformed frame or an unknown type without throwing", () => {
     // The socket outlives any one frame; a backend newer than this console
     // may add a type, and that must not reach a handler or kill the stream.

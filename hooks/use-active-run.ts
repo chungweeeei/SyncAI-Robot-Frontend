@@ -3,13 +3,14 @@
 import * as React from "react";
 import { useMutationState, useQuery, type Mutation } from "@tanstack/react-query";
 
-import type { ActiveTasksStatus } from "@/hooks/use-active-tasks";
+import { activeTasksQuery, type ActiveTasksStatus } from "@/hooks/use-active-tasks";
 import { useConsoleActiveTasks } from "@/hooks/use-console-active-tasks";
 import { NO_STEPS, fetchHeldTaskState } from "@/hooks/use-task-tracker";
 import { mutationKeys, queryKeys } from "@/lib/api/query-keys";
 import {
   isTerminalTaskStatus,
   type ActiveTask,
+  type ActiveTasksResponse,
   type TaskStatus,
   type TaskStepState,
 } from "@/lib/api/task";
@@ -91,8 +92,8 @@ function dispatchedRun(mutation: Mutation<unknown, Error, unknown>): ActiveTask 
  * has to stay once: every observer of a polled key runs its own interval
  * (TanStack only folds requests that are in flight together), so a second
  * mount is a second `GET /tasks/{id}` every 2 s and a second copy of the
- * state below. Only the first listed run is followed (the backend refuses a
- * second dispatch).
+ * state below. Another surface that wants the run reads `useLiveRun`. Only
+ * the first listed run is followed (the backend refuses a second dispatch).
  *
  * The poll stops when the run leaves the list, and earlier on a terminal read
  * so a finished run is not re-read during the list's lag. Errors are silent
@@ -219,4 +220,33 @@ export function useActiveRun(): UseActiveRun {
     status,
     asOf,
   };
+}
+
+const firstListed = (data: ActiveTasksResponse) => data.tasks[0] ?? null;
+
+/**
+ * The listed run and its steps for a surface that only draws them — the
+ * dashboard's charge staging point. It reads the two entries `useActiveRun`
+ * keeps fresh from the status strip and asks for nothing itself (`enabled:
+ * false`: no fetch, no interval), so it costs no request and re-renders only
+ * when the run or a step changes, not on each read of the list.
+ *
+ * Null while the list is loading, failing or empty, as `useActiveRun`'s
+ * `run` is, and its steps are empty until the strip's first read lands.
+ */
+export function useLiveRun(): ActiveRun | null {
+  const list = useQuery({ ...activeTasksQuery, enabled: false, select: firstListed });
+  const task = list.isError ? null : (list.data ?? null);
+  const { data } = useQuery({
+    queryKey: queryKeys.task(task?.id ?? ""),
+    queryFn: fetchHeldTaskState,
+    enabled: false,
+  });
+  return React.useMemo(
+    () =>
+      task === null
+        ? null
+        : { task, status: data?.status ?? null, steps: data?.steps ?? NO_STEPS },
+    [task, data],
+  );
 }

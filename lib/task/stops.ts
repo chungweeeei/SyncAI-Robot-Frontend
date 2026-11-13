@@ -6,7 +6,7 @@
 // those terms, so nothing sent, stored or scheduled changes shape.
 //
 //   rows before the first stop   done before setting off
-//   a Move or Patrol row        a stop (a Patrol is one, however
+//   a Move, Charge or Patrol row a stop (a Patrol is one, however
 //                                many waypoints it drives through)
 //   rows in its group after it   done while walking there
 //   rows after that, up to the   done on arrival
@@ -19,6 +19,7 @@
 
 import {
   isStopStep,
+  leavesDocked,
   moveStepDraft,
   newStepDraft,
   stepLinkProblem,
@@ -384,8 +385,8 @@ export interface JobSummary {
   stops: number;
   /** Every Wait that reads as a duration, summed; a half-typed one counts nothing. */
   waitSeconds: number;
-  /** The last stop: where the robot is when the job ends. */
-  end: { name: string | null } | null;
+  /** The last stop: where the robot is when the job ends, and whether it docked there. */
+  end: { name: string | null; dock: boolean } | null;
 }
 
 export function jobSummary(
@@ -414,7 +415,9 @@ export function jobSummary(
   return {
     stops,
     waitSeconds,
-    end: last ? { name: endVertex === null ? null : nameOf(endVertex) } : null,
+    end: last
+      ? { name: endVertex === null ? null : nameOf(endVertex), dock: leavesDocked(last.type) }
+      : null,
   };
 }
 

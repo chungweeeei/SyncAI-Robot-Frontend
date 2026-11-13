@@ -6,7 +6,7 @@
 // way it looked when it was built — waypoints by name, not one letter a step.
 
 import type { TemplateStep, TaskTemplate } from "@/lib/api/task-template";
-import { isStopStep, wireLinked } from "@/lib/task/step";
+import { isStopStep, leavesDocked, wireLinked } from "@/lib/task/step";
 
 /**
  * Names as a person orders them: `Patrol 2` before `Patrol 10`. The backend's
@@ -67,10 +67,11 @@ export interface RouteStop {
   name: string | null;
   /** The waypoint was deleted: the robot goes where it was when saved. */
   missing: boolean;
+  dock: boolean;
 }
 
 /**
- * The waypoints a stored stop goes to, in order: a Move's one, a
+ * The waypoints a stored stop goes to, in order: a Move's or Charge's one, a
  * Patrol's each, read off the per-waypoint names and statuses it is stored
  * with (a free point has no name).
  */
@@ -80,6 +81,7 @@ export function stopWaypoints(step: TemplateStep): RouteStop[] {
     return Array.from({ length: count }, (_, at) => ({
       name: step.vertex_names[at] ?? null,
       missing: step.vertex_statuses[at] === "MISSING",
+      dock: false,
     }));
   }
   if (!isStopStep(step)) return [];
@@ -87,6 +89,7 @@ export function stopWaypoints(step: TemplateStep): RouteStop[] {
     {
       name: step.vertex_name,
       missing: step.vertex_status === "MISSING",
+      dock: leavesDocked(step.type),
     },
   ];
 }
@@ -98,7 +101,7 @@ export function routeStops(steps: readonly TemplateStep[]): RouteStop[] {
 
 /**
  * Where a stored stop leaves the robot, which its headings name: the last of
- * a Patrol's waypoints, a Move's own.
+ * a Patrol's waypoints, a Move's or Charge's own.
  */
 export function stopPlace(step: TemplateStep): RouteStop | null {
   const waypoints = stopWaypoints(step);
@@ -123,19 +126,23 @@ export interface TaskSummary {
   stops: number;
   /** Every Wait, summed. */
   waitSeconds: number;
+  /** The last stop is a Charge: the task leaves the robot on its charger. */
+  endsDocked: boolean;
 }
 
 export function taskSummary(steps: readonly TemplateStep[]): TaskSummary {
   let stops = 0;
   let waitSeconds = 0;
+  let endsDocked = false;
   for (const step of steps) {
     if (isStopStep(step)) {
       stops += 1;
+      endsDocked = leavesDocked(step.type);
     } else if (step.type === "WAIT") {
       waitSeconds += step.resolved_params?.seconds ?? 0;
     }
   }
-  return { stops, waitSeconds };
+  return { stops, waitSeconds, endsDocked };
 }
 
 /** One stop of a saved task, with the actions that belong to it. */

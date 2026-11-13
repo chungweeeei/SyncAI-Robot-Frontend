@@ -47,7 +47,8 @@ export function isEmptyTaskDraft(draft: TaskDraft): boolean {
 // are stripped, so a draft written by a newer build still restores.
 const StepDraftSchema: z.ZodType<StepDraft> = z.object({
   key: z.number(),
-  type: z.enum(["MOVE", "PATROL", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
+  // A draft with a DOCK step (removed 2026-11-12) fails here and is not restored.
+  type: z.enum(["MOVE", "CHARGE", "PATROL", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"]),
   x: z.string(),
   y: z.string(),
   theta: z.string(),
@@ -117,6 +118,8 @@ function stepFingerprint(step: StepDraft, index: number): string {
 function stepContent(step: StepDraft): string {
   switch (step.type) {
     case "MOVE":
+    case "CHARGE":
+      // The type leads, so a Move switched to a Charge on the same waypoint is an edit.
       return step.vertexId !== null
         ? `${step.type}@${step.vertexId}`
         : `${step.type} ${step.x} ${step.y} ${step.theta}`;

@@ -38,12 +38,16 @@ import {
   placePoseMarker,
   setMarkerColor,
 } from "@/lib/scene/markers";
+import { createDockLayer } from "@/lib/scene/dock-layer";
 import {
   createLocalNavLayer,
   type LocalNavLayer,
 } from "@/lib/scene/local-nav-layer";
 import { EDL_LAYER, createEdlPass, type EdlPass } from "@/lib/scene/edl";
-import { createPathRibbon, type PathRibbon } from "@/lib/scene/path-ribbon";
+import {
+  createPathRibbon,
+  type PathRibbon,
+} from "@/lib/scene/path-ribbon";
 import {
   aimRaycaster,
   createRectCache,
@@ -177,9 +181,16 @@ interface PointCloudCanvasProps {
    */
   path?: PlannedPath;
   /**
-   * Hide the path layer — the route, and what the robot sees and means to
-   * drive around it while it navigates (the telemetry feed's local costmap and
-   * trajectory) — without unmounting the canvas. Defaults to true.
+   * A running charge's charger (its marker). Drawn as its staging point and
+   * the leg onto it, so an operator can see where the route is taking the
+   * robot and why it stops short of the charger. Null when none runs.
+   */
+  dock?: PlanarPose | null;
+  /**
+   * Hide the path layer — the route, a charge's staging leg, and
+   * what the robot sees and means to drive around it while it navigates (the
+   * telemetry feed's local costmap and trajectory) — without unmounting the
+   * canvas. Defaults to true.
    */
   showPath?: boolean;
   /**
@@ -288,6 +299,7 @@ export function PointCloudCanvas({
   pickZ = 0,
   viewGround = 0,
   path,
+  dock = null,
   showPath = true,
   vertices,
   showVertices = true,
@@ -1279,6 +1291,26 @@ export function PointCloudCanvas({
     showPathRef.current = showPath;
     if (localNavRef.current) localNavRef.current.group.visible = showPath;
   }, [showPath]);
+
+  // ---- A charge's staging point ------------------------------------------
+  // Keyed on the pose's numbers, not its identity: the run is re-read every
+  // 2 s and each read is a fresh object for the same charger.
+  const dockX = dock?.x;
+  const dockY = dock?.y;
+  const dockTheta = dock?.theta;
+  React.useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx || !showPath || dockX === undefined || dockY === undefined) return;
+    if (dockTheta === undefined) return;
+
+    const layer = createDockLayer({ x: dockX, y: dockY, theta: dockTheta }, theme);
+    ctx.scene.add(layer.group);
+
+    return () => {
+      ctx.scene.remove(layer.group);
+      layer.dispose();
+    };
+  }, [dockX, dockY, dockTheta, showPath, theme]);
 
   // ---- Optional static map cloud (toggle) ------------------------------
   React.useEffect(() => {

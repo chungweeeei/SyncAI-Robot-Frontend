@@ -1330,6 +1330,9 @@ test.describe("tapping a stop on the dashboard", () => {
   const previews = <W extends { path: string; method: string }>(writes: W[]) =>
     writes.filter((w) => w.path === "/api/v1/route_preview" && w.method === "POST");
 
+  // A plain stop: a charger's route and Go are its own (the test after this one).
+  const shelf = vertex({ name: "shelf", type: "MOVE" });
+
   test("draws the route to a stop without sending the robot, then Go sends that goal", async ({
     page,
   }) => {
@@ -1337,6 +1340,7 @@ test.describe("tapping a stop on the dashboard", () => {
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, {
       octomap: framedTree(),
+      vertices: [shelf],
       // The job Go sends is followed by its id; a 404 there trips the guard.
       dispatchedTaskState: (id) => ({
         id,
@@ -1346,16 +1350,16 @@ test.describe("tapping a stop on the dashboard", () => {
     });
     await page.goto("/");
 
-    await tapStop(page);
+    await tapStop(page, shelf);
 
     // The tap alone asked for the route: from where the robot stands to the stop.
-    const card = page.getByRole("region", { name: stop.name });
+    const card = page.getByRole("region", { name: shelf.name });
     await expect(card.getByRole("button", { name: "Go" })).toBeEnabled();
     expect(previews(writes)).toHaveLength(1);
     expect(previews(writes)[0].body).toMatchObject({
-      x: stop.x,
-      y: stop.y,
-      theta: stop.theta,
+      x: shelf.x,
+      y: shelf.y,
+      theta: shelf.theta,
       map_name: MAP_NAME,
     });
     // Asked, not sent: nothing moved.
@@ -1365,13 +1369,63 @@ test.describe("tapping a stop on the dashboard", () => {
     await expect.poll(() => dispatches(writes)).toHaveLength(1);
     const job = dispatches(writes)[0].body as {
       map_name: string;
-      steps: { params: Record<string, number> }[];
+      steps: { type: string; params: Record<string, number> }[];
     };
     expect(job.map_name).toBe(MAP_NAME);
-    expect(job.steps[0].params).toMatchObject({ x: stop.x, y: stop.y, theta: stop.theta });
+    expect(job.steps[0].type).toBe("MOVE");
+    expect(job.steps[0].params).toMatchObject({ x: shelf.x, y: shelf.y, theta: shelf.theta });
     // The panel hands over to the goal's own read-back.
     await expect(card).toHaveCount(0);
     await expect(page.getByRole("region", { name: "Navigation goal" })).toBeVisible();
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("routes a charger to its staging point, and Go sends a charge, not a move", async ({
+    page,
+  }) => {
+    // The waypoint is the marker Detect saw, on the charger's face: a MOVE
+    // would plan onto it. The route shown is the one the charge drives, to
+    // the point 1.3 m out along the marker's face, facing it, and Go sends
+    // the waypoint as stored, the marker's pose charge.xml takes.
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, {
+      octomap: framedTree(),
+      dispatchedTaskState: (id) => ({
+        id,
+        status: "IN_PROGRESS",
+        steps: [
+          {
+            id: "goal",
+            status: "IN_PROGRESS",
+            error_msg: "",
+            charge: { x: stop.x, y: stop.y, theta: stop.theta },
+          },
+        ],
+      }),
+    });
+    await page.goto("/");
+
+    await tapStop(page);
+
+    const card = page.getByRole("region", { name: stop.name });
+    await expect(card.getByRole("button", { name: "Go" })).toBeEnabled();
+    const asked = previews(writes)[0].body as { x: number; y: number; theta: number };
+    // theta 90: 1.3 m out is straight up y, facing back down it.
+    expect(asked.x).toBeCloseTo(stop.x);
+    expect(asked.y).toBeCloseTo(stop.y + 1.3);
+    expect(asked.theta).toBeCloseTo(stop.theta - 180);
+
+    await card.getByRole("button", { name: "Go" }).click();
+    await expect.poll(() => dispatches(writes)).toHaveLength(1);
+    const job = dispatches(writes)[0].body as {
+      kind: string;
+      steps: { type: string; params: Record<string, number> }[];
+    };
+    expect(job.kind).toBe("goal");
+    expect(job.steps).toHaveLength(1);
+    expect(job.steps[0].type).toBe("CHARGE");
+    expect(job.steps[0].params).toMatchObject({ x: stop.x, y: stop.y, theta: stop.theta });
     expect(errors, "the page logged errors").toEqual([]);
   });
 

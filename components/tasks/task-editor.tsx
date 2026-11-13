@@ -57,6 +57,7 @@ import {
   stepIdFor,
   stepPatchFromVertex,
   stepRoute,
+  stepTypeForVertex,
   toTemplateSteps,
   type StepDraft,
 } from "@/lib/task/step";
@@ -226,7 +227,7 @@ export function TaskEditor() {
       );
       return;
     }
-    const row = { ...newStepDraft("MOVE"), ...stepPatchFromVertex(vertex) };
+    const row = { ...newStepDraft(stepTypeForVertex(vertex)), ...stepPatchFromVertex(vertex) };
     edit((current) => insertStop(current, insertAfter, row));
     setSelected(row.key);
   };
@@ -423,7 +424,7 @@ export function TaskEditor() {
     `${summary.stops} ${summary.stops === 1 ? "stop" : "stops"}`,
     summary.waitSeconds > 0 ? `${formatDuration(summary.waitSeconds)} of waiting` : null,
     summary.end
-      ? `ends at ${summary.end.name ?? "a waypoint not picked yet"}`
+      ? `ends ${summary.end.dock ? "docked at" : "at"} ${summary.end.name ?? "a waypoint not picked yet"}`
       : null,
   ].filter((part): part is string => part !== null);
 
@@ -582,8 +583,10 @@ export function TaskEditor() {
               />
               <p className="text-[11px] leading-snug text-muted-foreground">
                 {vertices.length === 0 && verticesStatus === "ok"
-                  ? "This map has no waypoints yet. Add some, then click them here."
-                  : pickHint}
+                    ? "This map has no waypoints yet. Add some, then click them here."
+                    : pickingPatrol
+                      ? pickHint
+                      : `${pickHint} A charger adds a Charge.`}
               </p>
             </>
           )}

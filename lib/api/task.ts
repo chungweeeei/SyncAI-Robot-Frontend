@@ -68,6 +68,13 @@ export interface TaskStepState {
   message?: string;
   /** Steps sharing a group ran side by side; null on its own (or absent). */
   group?: string | null;
+  /**
+   * A CHARGE step's charger waypoint as dispatched (the marker's centre, theta
+   * out of its face); null on every other step, absent from older backends.
+   * What the dashboard derives the staging point from while the charge runs
+   * (lib/map/dock.ts).
+   */
+  charge?: PlanarPose | null;
   /** ISO 8601 UTC; null until the step starts. Absent from older backends. */
   started_at?: string | null;
   /** ISO 8601 UTC; null until the step ends, however it ends. */
@@ -97,6 +104,7 @@ const TaskStateResponseSchema: z.ZodType<TaskStateResponse> = z.object({
       error_msg: z.string(),
       message: z.string().optional(),
       group: z.string().nullish(),
+      charge: z.object({ x: z.number(), y: z.number(), theta: z.number() }).nullish(),
       started_at: z.string().nullish(),
       ended_at: z.string().nullish(),
       paused_seconds: z.number().optional(),
@@ -136,14 +144,16 @@ const TaskContinuationAckSchema: z.ZodType<TaskContinuationAck> = z.object({
 export type Posture = "STANDUP" | "LIEDOWN";
 
 /**
- * The steps set by one pose in the map frame, which is what ties a job to its
- * map: a Move. Kept as a name so the next one-pose step is one more member
- * rather than a sweep.
+ * The steps set by a pose in the map frame, which is what ties a job to its
+ * map. CHARGE carries the charger waypoint as stored (the marker, the heading
+ * out of its face): the robot stages in front of it (lib/map/dock.ts), finds
+ * the marker and walks onto the charger by it. (DOCK, a blind walk onto a
+ * pose, went on 2026-11-12.)
  */
-export type NavStepType = "MOVE";
+export type NavStepType = "MOVE" | "CHARGE";
 
 /**
- * Every step set by poses in the map frame: a Move (one pose) and a
+ * Every step set by poses in the map frame: a Move or Charge (one pose) and a
  * Patrol (an ordered list of them). Each is a stop in the editor, ties a job
  * to its map and occupies the robot's body.
  */
@@ -269,7 +279,7 @@ const stepRequestBase = {
 export const TaskStepRequestSchema: z.ZodType<TaskStepRequest> = z.union([
   z.object({
     ...stepRequestBase,
-    type: z.literal("MOVE"),
+    type: z.enum(["MOVE", "CHARGE"]),
     params: MoveStepParamsSchema,
   }),
   z.object({
@@ -375,16 +385,33 @@ export function sendMoveTask(
   goal: GoalPose,
   mapName: string | null = null,
 ): Promise<string> {
+  return sendGoalStep(robotId, "MOVE", goal, mapName);
+}
+
+/**
+ * A one-step CHARGE for a charger waypoint's Go: the waypoint as stored (the
+ * marker's centre, the heading out of its face), which is the marker's pose
+ * the robot's charge behaviour takes. A MOVE there would plan to
+ * the marker itself, on the charger's face.
+ */
+export function sendChargeTask(
+  robotId: string,
+  goal: GoalPose,
+  mapName: string | null = null,
+): Promise<string> {
+  return sendGoalStep(robotId, "CHARGE", goal, mapName);
+}
+
+function sendGoalStep(
+  robotId: string,
+  type: "MOVE" | "CHARGE",
+  goal: GoalPose,
+  mapName: string | null,
+): Promise<string> {
   return postTask(
     robotId,
     "goal",
-    [
-      {
-        id: "goal",
-        type: "MOVE",
-        params: moveParams(goal.x, goal.y, goal.theta, goal.z),
-      },
-    ],
+    [{ id: "goal", type, params: moveParams(goal.x, goal.y, goal.theta, goal.z) }],
     null,
     mapName,
   );

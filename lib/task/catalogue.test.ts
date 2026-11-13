@@ -19,7 +19,15 @@ import {
   stepOccupiesBody,
 } from "@/lib/task/step";
 
-const ALL_TYPES: StepType[] = ["MOVE", "PATROL", "SPEAK", "WAIT", "STANDUP", "LIEDOWN"];
+const ALL_TYPES: StepType[] = [
+  "MOVE",
+  "CHARGE",
+  "PATROL",
+  "SPEAK",
+  "WAIT",
+  "STANDUP",
+  "LIEDOWN",
+];
 
 describe("the local step catalogue", () => {
   it("describes every step type the backend takes", () => {
@@ -52,6 +60,7 @@ describe("the local step catalogue", () => {
     expect(stopSpecs(LOCAL_STEP_CATALOGUE).map((spec) => spec.type)).toEqual([
       "MOVE",
       "PATROL",
+      "CHARGE",
     ]);
     expect(actionSpecs(LOCAL_STEP_CATALOGUE).map((spec) => spec.type)).toEqual([
       "SPEAK",
