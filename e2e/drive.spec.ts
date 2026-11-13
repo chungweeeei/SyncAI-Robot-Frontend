@@ -47,6 +47,51 @@ test.describe("the manual drive panel", () => {
     await expect.poll(postures).toEqual(["0"]);
   });
 
+  test("stands and lies down on R and F, but only while armed", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page);
+    // Held open: with no robot to connect to, the dropped channel disarms
+    // the panel, and the keys go deaf with it.
+    await page.routeWebSocket(/\/api\/v1\/robot\/teleop$/, () => {});
+    const postures = () =>
+      writes
+        .filter((w) => w.path === "/api/v1/robot/set_motion_key")
+        .map((w) => (w.body as { key: string }).key);
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Manual drive panel" }).click();
+    await expect(page.getByRole("heading", { name: "Manual drive" })).toBeVisible();
+
+    // Disarmed, the keys are deaf, like the drive keys: a stray R must not
+    // stand the robot up.
+    await page.keyboard.press("r");
+    await page.waitForTimeout(300);
+    expect(postures()).toEqual([]);
+
+    // Waits for the button to announce the key: the listener goes on with
+    // the arm's render. F follows R at once, as a hand would: a request in
+    // flight does not swallow the next key.
+    const stand = page.getByRole("button", { name: "Stand", exact: true });
+    const lieDown = page.getByRole("button", { name: "Lie down", exact: true });
+    await page.getByRole("switch", { name: "Arm manual drive input" }).click();
+    await expect(stand).toHaveAttribute("aria-keyshortcuts", "R");
+    await page.keyboard.press("r");
+    await expect(lieDown).toHaveAttribute("aria-keyshortcuts", "F");
+    await page.keyboard.press("f");
+    await expect.poll(postures).toEqual(["0", "2"]);
+
+    // Disarmed again, deaf again: the positive control above is what makes
+    // this silence mean something.
+    await expect(stand).toHaveAttribute("aria-keyshortcuts", "R");
+    await page.getByRole("switch", { name: "Arm manual drive input" }).click();
+    await expect(stand).not.toHaveAttribute("aria-keyshortcuts", /./);
+    await page.keyboard.press("r");
+    await page.waitForTimeout(300);
+    expect(postures()).toEqual(["0", "2"]);
+
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
   test("limits translation to the Max speed it shows, and never rotation", async ({
     page,
   }) => {

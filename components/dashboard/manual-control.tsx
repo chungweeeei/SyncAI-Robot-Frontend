@@ -23,10 +23,11 @@ import { cn } from "@/lib/utils";
 
 /**
  * Manual drive panel: translation stick (vx/vy — the G23 strafes) and
- * rotation stick (wz), plus keyboard W/S, Q/E, A/D merged in useJoystick. No
+ * rotation stick (wz), plus keyboard W/S, Q/E, A/D merged in useJoystick, and
+ * R / F for Stand / Lie down (PanelPostureControl). No
  * readout of the commanded vector, by request: the deflection is the read.
  *
- * **Armed = sending.** It comes up disarmed and hears nothing until armed,
+ * **Armed = sending.** It comes up disarmed and hears no key until armed,
  * since an always-live window-level key hook would turn stray keys into
  * motion. While armed, TeleopFooter streams `vectorRef` at 10 Hz; a dropped
  * channel disarms the panel so the button never claims the robot is listening.
@@ -173,7 +174,7 @@ export function ManualControl({ className }: { className?: string }) {
         </div>
       </header>
       {/* Above the sticks: the robot stands before it drives. */}
-      <PanelPostureControl className="mb-3" />
+      <PanelPostureControl keys={armed} className="mb-3" />
       <div className="flex items-start justify-center gap-4">
         <LabeledStick caption="Translate">
           <Thumbstick

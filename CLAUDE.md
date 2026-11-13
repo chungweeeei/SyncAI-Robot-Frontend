@@ -539,7 +539,8 @@ lib/
                 when the emergency stop reads as engaged (estop.ts: the
                 robot's safety lock, or this tab's press until the lock
                 confirms it, and the release hold)
-  teleop/       thumbstick maths: clamp, deadzone, key bindings, the linear
+  teleop/       thumbstick maths: clamp, deadzone, key bindings (and the
+                drive panel's posture keys, R / F: posture-keys.ts), the linear
                 speed limit, the drive view's one-axis lock (lockToAxis) and
                 the screen-to-body-frame turn the drive panel commands through
   video/        WHIP/WHEP signalling, and the camera window's clip capture
