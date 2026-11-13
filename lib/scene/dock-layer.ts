@@ -14,9 +14,12 @@ import type { PlanarPose } from "@/lib/types/robot";
  * through it on the way in, and a robot-sized ring and arrow read as a goal
  * the operator set. The leg already says which way it faces.
  */
-const STAGING_DOT_RADIUS_M = 0.06;
-/* Over the leg, under the goal markers (MARKER_Z_M). */
+const STAGING_DOT_RADIUS_M = 0.09;
+/* The rim around it, so the dot keeps its edge over the green trajectory. */
+const STAGING_CASING_RADIUS_M = 0.12;
+/* Over the leg, under the goal markers (MARKER_Z_M); the rim just under it. */
 const STAGING_DOT_Z_M = 0.02;
+const STAGING_CASING_Z_M = 0.018;
 
 /*
  * The leg is dashed because it is intent, not a prediction: the robot does
@@ -29,7 +32,7 @@ const LEG_WIDTH_M = 0.06;
 const LEG_Z_M = 0.016;
 
 /**
- * The staging point (a dot in the dock hue) and the dashed leg from it to the
+ * The staging point (a green dot on a rim) and the dashed leg from it to the
  * dock, as one group with its disposer. Built per dock pose: it only changes
  * when a dock starts, so a rebuild is cheaper than a mutable layer.
  * The leg runs on to the marker, past where the robot stops: where it stops
@@ -46,7 +49,7 @@ export function createDockLayer(
 
   const dotGeometry = new THREE.CircleGeometry(STAGING_DOT_RADIUS_M, 24);
   const dotMaterial = new THREE.MeshBasicMaterial({
-    color: theme.dock,
+    color: theme.staging,
     side: THREE.DoubleSide,
   });
   const dot = new THREE.Mesh(dotGeometry, dotMaterial);
@@ -59,11 +62,22 @@ export function createDockLayer(
   });
   if (leg) group.add(leg.mesh);
 
+  const casingGeometry = new THREE.CircleGeometry(STAGING_CASING_RADIUS_M, 24);
+  const casingMaterial = new THREE.MeshBasicMaterial({
+    color: theme.stagingCasing,
+    side: THREE.DoubleSide,
+  });
+  const casing = new THREE.Mesh(casingGeometry, casingMaterial);
+  casing.position.set(staging.x, staging.y, STAGING_CASING_Z_M);
+  group.add(casing);
+
   return {
     group,
     dispose: () => {
       dotGeometry.dispose();
       dotMaterial.dispose();
+      casingGeometry.dispose();
+      casingMaterial.dispose();
       leg?.dispose();
     },
   };

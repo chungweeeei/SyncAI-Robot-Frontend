@@ -79,6 +79,14 @@ export interface Theme {
    * to the staging point — the robot walks it by the marker, not by the plan.
    */
   dock: number;
+  /**
+   * The staging point itself: `signal-live`, where the robot is heading now
+   * on its own reckoning (it is derived, never set by the operator), on a
+   * rim in the trajectory's colours so it holds its edge over the leg, the
+   * route and the 3D map alike.
+   */
+  staging: number;
+  stagingCasing: number;
   /** Forbidden zones: `signal-warn`, the same mark as in the map editor. */
   zone: number;
   /**
@@ -130,6 +138,8 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     previewCasingOverMap: 0xffffff,
     voxelGhost: 0x7d8a94,
     dock: 0x6a4fc0,
+    staging: SIGNAL.light.live,
+    stagingCasing: 0xffffff,
     zone: SIGNAL.light.warn,
     localCostmap: SIGNAL.light.caution,
     localCostmapOverMap: 0xffffff,
@@ -155,6 +165,8 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     previewCasingOverMap: 0xf2f7fa,
     voxelGhost: 0x8796a2,
     dock: 0xa991f2,
+    staging: SIGNAL.dark.live,
+    stagingCasing: SIGNAL.dark.background,
     zone: SIGNAL.dark.warn,
     localCostmap: SIGNAL.dark.caution,
     localCostmapOverMap: 0xf2f7fa,

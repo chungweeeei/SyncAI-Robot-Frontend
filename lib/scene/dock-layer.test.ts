@@ -26,6 +26,18 @@ describe("createDockLayer", () => {
     layer.dispose();
   });
 
+  it("draws the staging point in the live hue, apart from the leg's violet", () => {
+    // It is where the robot is heading now, so it reads in the hue of what is
+    // happening; the leg keeps the charge's own.
+    const layer = createDockLayer({ x: 0, y: 0, theta: 0 }, THEMES.dark);
+    const dot = layer.group.children[0] as THREE.Mesh;
+    const leg = layer.group.children[1] as THREE.Mesh;
+
+    expect((dot.material as THREE.MeshBasicMaterial).color.getHex()).toBe(THEMES.dark.staging);
+    expect((leg.material as THREE.MeshBasicMaterial).color.getHex()).toBe(THEMES.dark.dock);
+    layer.dispose();
+  });
+
   it("keeps the leg between the staging point and the charger", () => {
     const layer = createDockLayer({ x: 0, y: 0, theta: 0 }, THEMES.dark);
     const leg = layer.group.children[1] as THREE.Mesh;
