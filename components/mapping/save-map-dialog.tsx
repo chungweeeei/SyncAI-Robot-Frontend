@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeftIcon, CheckIcon, SaveIcon } from "lucide-react";
+import { ArrowLeftIcon, MapIcon, NavigationIcon, SaveIcon } from "lucide-react";
 
 import { ErrorLine } from "@/components/console/error-line";
 import {
@@ -30,10 +30,17 @@ import type { MapSummary } from "@/lib/types/map";
  * strip over a moving picture is not where to think.
  *
  * After the save it stays open as the receipt — the backend's sentence and
- * the 3D map's progress — with one Close; it is the only place that is
+ * the 3D map's progress — and asks the question a finished run leaves: go
+ * back to Navigation, or stay to map again. It is the only place that is
  * shown. Presentational over the page's mutation so the receipt outlives the
  * dialog. Cancel is held while saving: there is no abort, and closing would
  * lose the receipt and the leave-guard's lift.
+ *
+ * Asked here rather than through the mode switch's own confirm: the run is
+ * saved, so nothing is lost, and this receipt already says the one thing
+ * that question would — that Navigation comes back on the map loaded before,
+ * not this one, which cannot be switched to until its 3D map is built. The
+ * build is a detached job on the robot and survives the switch.
  */
 export function SaveMapDialog({
   open,
@@ -41,7 +48,9 @@ export function SaveMapDialog({
   error,
   saved,
   conversion,
+  switchHeld,
   onSave,
+  onSwitchToNav,
   onClose,
 }: {
   open: boolean;
@@ -52,7 +61,10 @@ export function SaveMapDialog({
   saved: string | null;
   /** The saved map's catalogue entry while its 3D map is being built. */
   conversion: MapSummary | null;
+  /** A mode switch is already on its way. */
+  switchHeld: boolean;
   onSave: (name: string) => void;
+  onSwitchToNav: () => void;
   onClose: () => void;
 }) {
   const [name, setName] = React.useState("");
@@ -62,6 +74,11 @@ export function SaveMapDialog({
   const close = () => {
     setName("");
     onClose();
+  };
+
+  const switchToNav = () => {
+    setName("");
+    onSwitchToNav();
   };
 
   return (
@@ -148,10 +165,28 @@ export function SaveMapDialog({
               * disk, the other how the 3D map went. */}
             <OctomapLine map={conversion} />
 
+            <p className="text-sm text-muted-foreground">
+              Switch the robot back to Navigation? It restarts its software on
+              the map it was using before, not this one — switch to this map
+              from the map library once its 3D map is ready. This console
+              loses contact for about 30 seconds.
+            </p>
+
             <AlertDialogFooter>
-              <Button type="button" size="sm" autoFocus onClick={close}>
-                <CheckIcon data-icon="inline-start" />
-                Close
+              {/* Stay is the focused answer: a switch restarts the robot, so
+                * Enter must not be what sends it. */}
+              <Button type="button" variant="ghost" size="sm" autoFocus onClick={close}>
+                <MapIcon data-icon="inline-start" />
+                Stay in Mapping
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={switchHeld}
+                onClick={switchToNav}
+              >
+                <NavigationIcon data-icon="inline-start" />
+                Switch to Navigation
               </Button>
             </AlertDialogFooter>
           </>

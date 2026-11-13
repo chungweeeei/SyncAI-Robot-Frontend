@@ -1152,6 +1152,16 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
           "Map discarded. The new one starts building once the lidar has re-levelled — keep the robot still until then.",
       });
     }
+    if (path === "/api/v1/robot/mode" && method === "POST") {
+      // Dispatched. The robot would drop this connection while its stack
+      // rebuilds; the state stays where the test put it.
+      const { mode } = parseBody(request.postData()) as { mode: string };
+      return json(route, {
+        mode,
+        switching: true,
+        message: `Switching to ${mode}.`,
+      });
+    }
     if (path === "/api/v1/robot/restart" && method === "POST") {
       // Dispatched; the outcome lands on the GET below. A test that needs the
       // rebuild to end, or the press refused, routes it itself.

@@ -244,7 +244,9 @@ components/
   mapping/      the mode switch (the rail), the run strip over the viewport
                 (Start, then a recording-style indicator beside Save and New
                 map — its face is lib/map/run-face.ts), the save dialog (the
-                name alone: the robot builds the 3D map after every save),
+                name alone: the robot builds the 3D map after every save;
+                its receipt asks whether to switch back to Navigation, on
+                the map loaded before),
                 the refusal panel under the strip and the save receipt's
                 line on the 3D map build (useMapBuild)
   maps/         map library cards (each tile the map's 3D map — a still
