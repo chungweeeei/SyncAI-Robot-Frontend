@@ -47,6 +47,40 @@ test.describe("the manual drive panel", () => {
     await expect.poll(postures).toEqual(["0"]);
   });
 
+  test("stands and lies down on R and F, but only while armed", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page);
+    const postures = () =>
+      writes
+        .filter((w) => w.path === "/api/v1/robot/set_motion_key")
+        .map((w) => (w.body as { key: string }).key);
+    await page.goto("/settings");
+    await page.getByRole("button", { name: "Manual drive panel" }).click();
+    await expect(page.getByRole("heading", { name: "Manual drive" })).toBeVisible();
+
+    // Disarmed, the keys are deaf, like the drive keys: a stray R must not
+    // stand the robot up.
+    await page.keyboard.press("r");
+    await page.waitForTimeout(300);
+    expect(postures()).toEqual([]);
+
+    await page.getByRole("switch", { name: "Arm manual drive input" }).click();
+    await page.keyboard.press("r");
+    await expect.poll(postures).toEqual(["0"]);
+    await page.keyboard.press("f");
+    await expect.poll(postures).toEqual(["0", "2"]);
+
+    // Disarmed again, deaf again: the positive control above is what makes
+    // this silence mean something.
+    await page.getByRole("switch", { name: "Arm manual drive input" }).click();
+    await page.keyboard.press("r");
+    await page.waitForTimeout(300);
+    expect(postures()).toEqual(["0", "2"]);
+
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
   test("limits translation to the Max speed it shows, and never rotation", async ({
     page,
   }) => {
