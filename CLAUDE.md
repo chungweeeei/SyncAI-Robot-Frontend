@@ -199,7 +199,8 @@ components/
                 under a control) and notice.tsx (a list's empty, loading
                 and failed states)
   dashboard/    3D viewport (pointcloud-canvas) with the pose laid over its
-                corner — its layers are the saved scan, the robot's 3D map
+                corner — its layers are the saved scan (its toggle not offered
+                for now: OFFER_MAP_SCAN), the robot's 3D map
                 (the occupancy tree, on by default, one floor at a time
                 on a map that spans storeys — the floors under it faint
                 in one neutral (VoxelLayer.ghost), and a switch carrying

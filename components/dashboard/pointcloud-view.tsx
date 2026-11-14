@@ -57,6 +57,14 @@ import type { MapVertex, VertexType } from "@/lib/types/map";
 import type { PlanarPose } from "@/lib/types/robot";
 
 /**
+ * The map scan's toggle is not offered for now (2026-11-14, by request): the
+ * 3D map is what an operator checks the robot against, and the scan was one
+ * more button on the toolbar. Its layer and download stay wired, so bringing
+ * it back is this one flag. Off, the scan is never downloaded.
+ */
+const OFFER_MAP_SCAN = false;
+
+/**
  * Data wiring for the 3D viewport: the active map, its waypoints and zones,
  * telemetry, and the layer toggles. The live scan's health is not shown; a
  * scan that stops arriving is visible in the scene.
@@ -510,7 +518,7 @@ export function PointCloudView({
 
   // Only layers with something to hide: a toggle over an empty layer looks broken.
   const layers: LayerOption[] = [];
-  if (hasScan) {
+  if (OFFER_MAP_SCAN && hasScan) {
     layers.push({
       kind: "scan",
       label: "Map scan",
