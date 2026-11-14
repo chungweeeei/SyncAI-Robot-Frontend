@@ -292,9 +292,14 @@ test.describe("the dashboard's 3D map layer", () => {
     await expect(floors).toHaveCount(0);
     await toggle(page).click();
     await expect(floors).toBeVisible();
-    await expect(floors.getByRole("button", { name: "All" })).toHaveAttribute(
+    // The robot's floor is what opens, not every storey at once.
+    await expect(floors.getByRole("button", { name: "Follow robot" })).toHaveAttribute(
       "aria-pressed",
       "true",
+    );
+    await expect(floors.getByRole("button", { name: "All" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
     );
     await floors.getByRole("button", { name: "2F" }).click();
     await expect(floors.getByRole("button", { name: "2F" })).toHaveAttribute(
@@ -1654,7 +1659,7 @@ test.describe("waypoints on an upper floor", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("follows the robot's floor, holds it on the stair, and stops at a floor pressed", async ({
+  test("follows the robot's floor from the start, holds it on the stair, and stops at a floor pressed", async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -1672,12 +1677,9 @@ test.describe("waypoints on an upper floor", () => {
     await page.goto("/");
     const floors = page.getByRole("group", { name: "Floor" });
     const follow = floors.getByRole("button", { name: "Follow robot" });
-    // Off by default: the whole map, as before.
-    await expect(follow).toHaveAttribute("aria-pressed", "false");
-    await expect(floors.getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
-
-    await follow.click();
+    // On by default: the dashboard opens on the robot's floor.
     await expect(follow).toHaveAttribute("aria-pressed", "true");
+    await expect(floors.getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "false");
     // The robot's floor is on show, marked rather than pressed: Follow is the choice.
     const twoF = floors.getByRole("button", { name: "2F" });
     await expect(twoF).toHaveAttribute("aria-current", "true");
@@ -1700,6 +1702,12 @@ test.describe("waypoints on an upper floor", () => {
     await page.waitForTimeout(1500);
     await expect(floors.getByRole("button", { name: "1F" })).not.toHaveAttribute("aria-current", "true");
     await expect(twoF).toHaveAttribute("aria-pressed", "true");
+
+    // And Follow takes it back up.
+    await follow.click();
+    await expect(follow).toHaveAttribute("aria-pressed", "true");
+    position.z = 0;
+    await expect(floors.getByRole("button", { name: "1F" })).toHaveAttribute("aria-current", "true");
     expect(errors, "the page logged errors").toEqual([]);
   });
 });

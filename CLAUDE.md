@@ -178,7 +178,8 @@ components/
                 panel and camera window every screen can open, and the
                 floor picker both 3D map surfaces share (floor-picker.tsx: a
                 pill-shaped column in the view's top-right, All then the top
-                floor first; on the dashboard a Follow button heads it, which
+                floor first; on the dashboard a Follow button heads it, on
+                when the page opens (All until the robot has a fix), which
                 shows the robot's floor by its body height, holds it on a
                 stair, and rings that floor rather than pressing it — though
                 the 3D map it draws is a window cut around the robot's

@@ -167,9 +167,12 @@ export function PointCloudView({
   /**
    * Whether the floor on show is the robot's, which the picker's Follow
    * offers: an operator watching it climb a stair would otherwise switch
-   * floors by hand at the landing. Any floor pressed ends it.
+   * floors by hand at the landing. Any floor pressed ends it. On by
+   * default: the robot is what an operator opens the dashboard to watch, and
+   * All buries it under the storeys above. Until the robot has a fix there
+   * is no floor to follow, so the view stays whole (shownFloor is null).
    */
-  const [following, setFollowing] = React.useState(false);
+  const [following, setFollowing] = React.useState(true);
   const bands = React.useMemo(() => floorBands(floors), [floors]);
   const { pose: robotPose, reason: robotPoseReason } = useRobotMapPose(
     activeMap?.name ?? "",
