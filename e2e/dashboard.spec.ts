@@ -88,14 +88,9 @@ async function recenteredOnScreen(
  * screen-only test passes a build that posts to the wrong endpoint.
  */
 test.describe("the dashboard's map scan layer", () => {
-  const scanPath = `/api/v1/maps/${MAP_NAME}/pointcloud`;
-  // The name carries " · loading" while the download is in flight.
-  const toggle = (page: Page) =>
-    page.getByRole("button", { name: /^Map scan/ });
-
-  test("downloads the running map's scan once, and only when asked", async ({
-    page,
-  }) => {
+  // Not offered for now (OFFER_MAP_SCAN in pointcloud-view.tsx); git history
+  // holds the layer's own tests for when it comes back.
+  test("is not offered, and the scan is never downloaded", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page);
@@ -105,115 +100,14 @@ test.describe("the dashboard's map scan layer", () => {
       if (pathname.endsWith("/pointcloud")) scanReads.push(pathname);
     });
     await page.goto("/");
-    await expect(
-      page.getByRole("region", { name: "Map viewport" }),
-    ).toBeVisible();
+    await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
 
-    // Hundreds of thousands of points: a weak client pays for them only when
-    // someone asks to see them.
-    await expect(toggle(page)).toHaveAttribute("aria-pressed", "false");
+    // The toolbar is up (the positive control), without the scan's toggle.
+    await expect(page.getByRole("button", { name: /^3D map/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Map scan/ })).toHaveCount(0);
+    await page.waitForTimeout(500);
     expect(scanReads).toEqual([]);
-
-    await toggle(page).click();
-    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
-    await expect.poll(() => scanReads).toEqual([scanPath]);
-
-    // Off and on again is the same file, so it comes from the cache.
-    await toggle(page).click();
-    await toggle(page).click();
-    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
-    expect(scanReads).toEqual([scanPath]);
     expect(errors, "the page logged errors").toEqual([]);
-  });
-
-  test("is not offered for a map with no scan on disk", async ({ page }) => {
-    const errors: string[] = [];
-    failOnConsoleErrors(page, errors);
-    await mockBackend(page, { maps: [mapSummary({ has_pointcloud: false })] });
-    await page.goto("/");
-    await expect(
-      page.getByRole("region", { name: "Map viewport" }),
-    ).toBeVisible();
-
-    await expect(page.getByRole("button", { name: "Recenter" })).toBeVisible();
-    await expect(toggle(page)).toHaveCount(0);
-    expect(errors, "the page logged errors").toEqual([]);
-  });
-
-  test("keeps the scan it has through a change to the map's directory", async ({
-    page,
-  }) => {
-    // A save into the map moves the catalogue's modified_at but leaves the scan alone,
-    // so a new directory time must not cost a second (large) download.
-    const errors: string[] = [];
-    failOnConsoleErrors(page, errors);
-    const entry = mapSummary();
-    await mockBackend(page, { maps: [entry] });
-    const scanReads: string[] = [];
-    const catalogueReads: string[] = [];
-    page.on("request", (request) => {
-      const { pathname } = new URL(request.url());
-      if (pathname.endsWith("/pointcloud")) scanReads.push(pathname);
-      if (pathname === "/api/v1/maps") catalogueReads.push(pathname);
-    });
-    const visitMapsAndReturn = async () => {
-      await page.getByRole("link", { name: "Maps" }).click();
-      await expect(
-        page.getByRole("heading", { name: "Maps", level: 1 }),
-      ).toBeVisible();
-      await page.getByRole("link", { name: "Dashboard" }).click();
-      await expect(
-        page.getByRole("region", { name: "Map viewport" }),
-      ).toBeVisible();
-    };
-
-    await page.goto("/");
-    await expect(
-      page.getByRole("region", { name: "Map viewport" }),
-    ).toBeVisible();
-    await expect(page.getByText("robot01").first()).toBeVisible();
-    await toggle(page).click();
-    await expect.poll(() => scanReads).toEqual([scanPath]);
-
-    // Rebuilt elsewhere. The catalogue is read again and reports the new time,
-    // so a scan keyed by that time would be fetched again here.
-    entry.modified_at = "2026-09-28T08:00:00Z";
-    const readsBefore = catalogueReads.length;
-    await visitMapsAndReturn();
-    await expect.poll(() => catalogueReads.length).toBeGreaterThan(readsBefore);
-    await toggle(page).click();
-    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
-    // A cached scan draws with no download in flight; give a refetch time to
-    // show up before saying there was none.
-    await page.waitForTimeout(1500);
-    expect(scanReads).toEqual([scanPath]);
-    expect(errors, "the page logged errors").toEqual([]);
-  });
-
-  // No console-error guard here: the browser logs the 404 itself, which is
-  // exactly the response under test.
-  test("says why the scan did not arrive, in the backend's words", async ({
-    page,
-  }) => {
-    await mockBackend(page);
-    await page.route(/\/api\/v1\/maps\/[^/]+\/pointcloud$/, (route) =>
-      route.fulfill({
-        status: 404,
-        contentType: "application/json",
-        body: JSON.stringify({ detail: `Map '${MAP_NAME}' has no saved scan` }),
-      }),
-    );
-    await page.goto("/");
-
-    await toggle(page).click();
-    const alert = page
-      .getByRole("alert")
-      .filter({ hasText: "has no saved scan" });
-    await expect(alert).toHaveText(`Map '${MAP_NAME}' has no saved scan`);
-
-    // Turning the layer off is what dismisses it.
-    await toggle(page).click();
-    await expect(alert).toHaveCount(0);
   });
 });
 
