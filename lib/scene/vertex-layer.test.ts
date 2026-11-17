@@ -79,16 +79,20 @@ describe("createVertexLayer", () => {
     expect(flat.min.z).toBeGreaterThan(drawnGround(0));
   });
 
-  it("lays a charger's plate under the waypoint and stands its post behind it", () => {
-    // Heading +y. The plate is where the robot stands docked; the post is
-    // past its back edge, against the heading, not on it, the bolt on the
-    // face towards the plate, so the charger points the way the arrow does.
+  it("stands a charger's post behind its marker and lays the plate out in front", () => {
+    // Heading +y. The waypoint is the marker on the post's face: the post is
+    // behind it, against the heading, its face on the waypoint, and the plate
+    // runs out from that face along the heading, the bolt on the face, so the
+    // charger points the way the arrow does and nothing of it stands past the
+    // marker into the wall behind.
     const layer = layerOf([stop({ type: "CHARGE", theta: 90 })]);
     const ground = drawnGround(0);
     const plate = markerBox(layer, (own) => own.max.z < ground + 0.05);
     const post = markerBox(layer, (own) => own.max.z > ground + 0.1);
-    expect(plate.min.y).toBeLessThan(0);
-    expect(plate.max.y).toBeGreaterThan(0);
+    expect(post.max.y).toBeCloseTo(0, 2);
+    expect(post.min.y).toBeLessThan(0);
+    expect(plate.min.y).toBeCloseTo(0, 2);
+    expect(plate.max.y).toBeGreaterThan(0.4);
     expect(post.max.y).toBeLessThanOrEqual(plate.min.y + 0.01);
     expect(post.min.z).toBeCloseTo(ground);
     const marker = layer.group.children.find((child) => child instanceof THREE.Group)!;

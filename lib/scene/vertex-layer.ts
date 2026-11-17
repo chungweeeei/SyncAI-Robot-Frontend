@@ -38,17 +38,23 @@ const VERTEX_Z_M = 0.02;
  * A charger stands up instead of lying flat: a post with its charging plate
  * on the floor in front of it, the thing the robot walks onto, so it reads
  * as a charger from any angle rather than as one more mark on the floor.
- * The waypoint is where the robot stands docked, so the plate is centred
- * on it, and the post stands on the floor at the plate's back edge, behind
- * the waypoint's heading, its face, bolt and all, looking along it: the
- * charger points the way the waypoint's arrow does. Real geometry, so it writes depth and hides
- * the 3D map behind it the way a stop's translucent marking must not.
+ * The waypoint is the charger's marker, on the post's face, with the heading
+ * out of that face (what Detect stores and the robot's charge steers by), so
+ * the post stands behind the waypoint with its face, bolt and all, on it, and
+ * the plate runs out from the face along the heading: the charger points the
+ * way the waypoint's arrow does. Until 2026-11-17 the plate was centred on the
+ * waypoint as if it were where the robot stands docked, which stood a
+ * detected charger's post a quarter metre into the wall behind its marker.
+ * Real geometry, so it writes depth and hides the 3D map behind it the way a
+ * stop's translucent marking must not.
  */
-/** The charging plate, centred on the waypoint, metres (x along the heading). */
+/** The charging plate, metres (x along the heading). */
 const CHARGER_PLATE_M = { x: 0.44, y: 0.5, z: 0.03 } as const;
 const CHARGER_POST_M = { x: 0.14, y: 0.4, z: 0.55 } as const;
-/** The post's centre behind the waypoint: its face at the plate's back edge. */
-const CHARGER_POST_X_M = -(CHARGER_PLATE_M.x + CHARGER_POST_M.x) / 2;
+/** The plate's centre ahead of the waypoint: its back edge on the post's face. */
+const CHARGER_PLATE_X_M = CHARGER_PLATE_M.x / 2;
+/** The post's centre behind the waypoint: its face on the waypoint. */
+const CHARGER_POST_X_M = -CHARGER_POST_M.x / 2;
 /** Across the bolt's 24-unit icon grid, metres: well inside the post's face. */
 const CHARGER_BOLT_M = 0.26;
 /** Off the face, enough not to z-fight with it from across a site. */
@@ -360,7 +366,7 @@ export function createVertexLayer(
     };
     if (charger) {
       const plate = new THREE.Mesh(plateGeom, chargerBody);
-      plate.position.z = CHARGER_PLATE_M.z / 2;
+      plate.position.set(CHARGER_PLATE_X_M, 0, CHARGER_PLATE_M.z / 2);
       const post = new THREE.Mesh(postGeom, chargerBody);
       post.position.set(CHARGER_POST_X_M, 0, CHARGER_POST_M.z / 2);
       const plateEdge = new THREE.LineSegments(plateEdgeGeom, chargerEdge);
