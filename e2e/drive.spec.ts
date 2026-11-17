@@ -53,7 +53,7 @@ test.describe("the manual drive panel", () => {
     const writes = await mockBackend(page);
     // Held open: with no robot to connect to, the dropped channel disarms
     // the panel, and the keys go deaf with it.
-    await page.routeWebSocket(/\/api\/v1\/robot\/teleop$/, () => {});
+    await page.routeWebSocket(/\/api\/v1\/robot\/teleop(\?|$)/, () => {});
     const postures = () =>
       writes
         .filter((w) => w.path === "/api/v1/robot/set_motion_key")
@@ -103,7 +103,7 @@ test.describe("the manual drive panel", () => {
     await mockBackend(page);
     const frames: { vx: number; vy: number; wz: number }[] = [];
     let sockets = 0;
-    await page.routeWebSocket(/\/api\/v1\/robot\/teleop$/, (ws) => {
+    await page.routeWebSocket(/\/api\/v1\/robot\/teleop(\?|$)/, (ws) => {
       sockets += 1;
       ws.onMessage((message) => {
         if (typeof message === "string") frames.push(JSON.parse(message));
