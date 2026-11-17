@@ -105,9 +105,10 @@ describe("createVertexLayer", () => {
     expect(new THREE.Box3().setFromObject(bolt).min.y).toBeCloseTo(post.max.y, 2);
   });
 
-  it("stands a charger on the floor's top face under its plate, a stop on its own ground", () => {
+  it("stands a charger over the floor's top face under its plate, a stop on its own ground", () => {
     // dp's 2F (2026-11-17): the waypoint's z the centre of a cell under the
-    // marker, 5.15 m; the floor the plate lies on tops out at 5.30 m.
+    // marker, 5.15 m; the floor the plate lies on tops out at 5.30 m, and the
+    // map's cells, drawn as squares round their centres, reach half a cell over it.
     const asked: [number, number, number, number][] = [];
     const surfaceTop: SurfaceTop = (wx, wy, z, reach) => {
       asked.push([wx, wy, z, reach]);
@@ -116,7 +117,7 @@ describe("createVertexLayer", () => {
     const charger = markerBox(
       layerOf([stop({ type: "CHARGE", z: 5.15, theta: 90 })], surfaceTop),
     );
-    expect(charger.min.z).toBeCloseTo(5.3);
+    expect(charger.min.z).toBeCloseTo(5.35);
     // Asked where the plate lies, out in front of the marker along the heading.
     const [[wx, wy, z, reach]] = asked;
     expect(wx).toBeCloseTo(0);
