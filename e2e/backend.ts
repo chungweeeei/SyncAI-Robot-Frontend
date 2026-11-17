@@ -38,18 +38,26 @@ export function octomapBt(size = 4): Buffer {
   return Buffer.from(encodeOctomapBt({ res: 0.1, occupied }));
 }
 
-/** What `POST /api/v1/landmarks/detect` answers: the charger on the loaded map. */
+/**
+ * What `POST /api/v1/landmarks/detect` answers: the charger on the loaded map.
+ * Over a floor cell of octomapBt (not the hole), so the console has a ground
+ * to put it on; `z` is the robot's body height, as the real answer's is, and
+ * never the ground the waypoint is written at.
+ */
 export const CHARGER_SIGHTING = {
   map: MAP_NAME,
-  x: 2.4,
-  y: -1.1,
-  z: 0.03,
+  x: 0.35,
+  y: 0.05,
+  z: 0,
   theta: -45,
   marker_z: 0.31,
   consecutive: 5,
   age: 0.1,
   reprojection_error_px: 0.6,
 };
+
+/** The ground under CHARGER_SIGHTING: octomapBt's floor cell, at its centre. */
+export const CHARGER_GROUND_Z = -0.45;
 
 export function robotState(over: Record<string, unknown> = {}) {
   return {
