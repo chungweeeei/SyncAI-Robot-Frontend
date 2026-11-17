@@ -4,6 +4,7 @@ import type * as React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ChargerDetectResult } from "@/lib/api/landmark";
+import { FLOOR_GROUND_BELOW_LEVEL_M, type FloorBand } from "@/lib/map/floors";
 
 /**
  * A placement is a stop nobody has named yet. Its pose has three sources and
@@ -26,14 +27,23 @@ const { useWaypointPlacement } = await import("@/hooks/use-waypoint-placement");
 const PRESS = { x: 1, y: 2, theta: 0, z: 0 };
 const ROBOT = { x: 5, y: 6, theta: 90, z: 0.4 };
 const SIGHTING = { map: "lab", x: 2.4, y: -1.1, z: 0.03, theta: -45 } as ChargerDetectResult;
+// dp's 2F (2026-11-17): bodies walked 4.88-5.81 m, the robot's own 5.56 standing by the charger.
+const UPPER_FLOOR = {
+  name: "2F",
+  level: 5.43,
+  low: 4.88,
+  high: 5.81,
+  lo: 4.88,
+  hi: Infinity,
+} as FloorBand;
 
-function setup(robotPose: typeof ROBOT | null = ROBOT) {
+function setup(robotPose: typeof ROBOT | null = ROBOT, bands: readonly FloorBand[] = []) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
   return renderHook(
-    () => useWaypointPlacement({ mapName: "lab", robotPose, voxels: null, bands: [] }),
+    () => useWaypointPlacement({ mapName: "lab", robotPose, voxels: null, bands }),
     { wrapper },
   );
 }
@@ -79,9 +89,10 @@ describe("useWaypointPlacement", () => {
     expect(result.current.placement?.pose).toEqual(PRESS);
   });
 
-  it("takes the charger's measured pose, z as measured, and says it was detected", async () => {
-    detectCharger.mockResolvedValue(SIGHTING);
-    const { result } = setup();
+  it("puts the measured charger on its floor's ground and says it was detected", async () => {
+    // The z the robot answers is its body height: it names the floor, it is not the ground.
+    detectCharger.mockResolvedValue({ ...SIGHTING, z: 5.56 });
+    const { result } = setup(ROBOT, [UPPER_FLOOR]);
     act(() => result.current.begin(PRESS, true));
     const key = result.current.placement?.key;
 
@@ -91,8 +102,10 @@ describe("useWaypointPlacement", () => {
       key,
       charger: true,
       detected: true,
-      pose: { x: 2.4, y: -1.1, z: 0.03, theta: -45 },
+      pose: { x: 2.4, y: -1.1, theta: -45 },
     });
+    // No tree read here, so the floor's own ground: a body height under its level.
+    expect(result.current.placement?.pose.z).toBeCloseTo(5.43 - FLOOR_GROUND_BELOW_LEVEL_M);
   });
 
   it("does not put an answer on a placement other than the one that asked", async () => {

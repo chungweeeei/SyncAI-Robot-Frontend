@@ -78,10 +78,13 @@ export function useWaypointPlacement({
     clear();
   }, [robotPose, bands, voxels, clear]);
 
-  // The charger's pose as the robot measured it, z included: that is the
-  // ground the robot stands on, not one to look up under the point. Same key,
-  // so the name and the type survive; only for the placement that asked, so
-  // an answer that outlived its dialog names nothing.
+  // The charger's pose as the robot measured it, on the ground under the
+  // marker: the z the robot answers is its own body height (the base, as
+  // RobotState reports it, ~0.3 m over the floor standing), which only says
+  // which floor the charger is on — taken as it was, the charger stood that
+  // far over the floor (dp's 2F, 2026-11-17). Same key, so the name and the
+  // type survive; only for the placement that asked, so an answer that
+  // outlived its dialog names nothing.
   const key = placement?.key ?? null;
   const detectCharger = React.useCallback(() => {
     if (key === null) return;
@@ -94,10 +97,13 @@ export function useWaypointPlacement({
         return;
       }
       if (!pose) return;
+      const onGround = { ...pose, z: robotGround(voxels, bands, pose) };
       // Spread, so a placement from Add charger stays one.
-      setPlacement((cur) => (cur && cur.key === key ? { ...cur, pose, detected: true } : cur));
+      setPlacement((cur) =>
+        cur && cur.key === key ? { ...cur, pose: onGround, detected: true } : cur,
+      );
     });
-  }, [key, run, clear]);
+  }, [key, run, clear, voxels, bands]);
 
   return {
     placement,

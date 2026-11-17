@@ -10,8 +10,9 @@ export interface ChargerDetectResult {
   x: number;
   y: number;
   /**
-   * The ground height to store on the waypoint, as the robot measured it:
-   * written as is, never looked up again under the point.
+   * The robot's body height when it looked, metres: it names the floor the
+   * charger is on, and the waypoint is put on that floor's ground under it.
+   * Not the ground itself (about 0.3 m over it, standing).
    */
   z: number;
   /** Heading in degrees, map frame, like a waypoint's. */

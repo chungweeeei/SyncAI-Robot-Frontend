@@ -50,8 +50,9 @@ export function useChargerDetect(mapName: string): ChargerDetect {
           `The robot found the charger on "${found.map}", not on this map, so its position was not used.`,
         );
       }
-      // `z` as measured: it is the ground the robot stands on. The heading as
-      // measured too: a charger's waypoint faces the way the charger does.
+      // `z` as measured: the robot's body height, which names the floor; the
+      // placement puts the charger on that floor's ground. The heading as
+      // measured: a charger's waypoint faces the way the charger does.
       return { x: found.x, y: found.y, z: found.z, theta: found.theta };
     },
   });
