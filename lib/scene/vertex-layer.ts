@@ -55,6 +55,37 @@ const CHARGER_POST_M = { x: 0.14, y: 0.4, z: 0.55 } as const;
 const CHARGER_PLATE_X_M = CHARGER_PLATE_M.x / 2;
 /** The post's centre behind the waypoint: its face on the waypoint. */
 const CHARGER_POST_X_M = -CHARGER_POST_M.x / 2;
+/**
+ * How far from its waypoint's z a charger looks for the floor's top face to
+ * stand on, metres. That z is a cell's centre on the charger's floor, read
+ * where the waypoint was put: half a cell under the top face at best, and a
+ * cell lower again where the marker's own column (the charger's foot, against
+ * the wall) reaches below the floor the plate lies on — dp's 2F 2026-11-17,
+ * 5.15 m against a 5.30 m top, which buried the plate. Three cells of a 0.1 m
+ * tree, and short of the next floor or a table top.
+ */
+const CHARGER_SURFACE_REACH_M = 0.3;
+
+/**
+ * The top face of the 3D map's surface under a map-frame point nearest a
+ * height, metres, searched `reach` either side; null with no tree or no
+ * surface in reach. What the canvas holding the tree hands the layer, as it
+ * hands the costmap its ground.
+ */
+export type SurfaceTop = (wx: number, wy: number, z: number, reach: number) => number | null;
+
+/** Where a charger stands: the floor's top face under its plate, else its waypoint's ground. */
+function chargerStandsOn(
+  vertex: MapVertex,
+  ground: number,
+  surfaceTop: SurfaceTop | null,
+): number {
+  const heading = toRadians(vertex.theta);
+  // The plate's centre: the floor the robot walks onto, out in front of the marker.
+  const plateX = vertex.x + CHARGER_PLATE_X_M * Math.cos(heading);
+  const plateY = vertex.y + CHARGER_PLATE_X_M * Math.sin(heading);
+  return surfaceTop?.(plateX, plateY, ground, CHARGER_SURFACE_REACH_M) ?? ground;
+}
 /** Across the bolt's 24-unit icon grid, metres: well inside the post's face. */
 const CHARGER_BOLT_M = 0.26;
 /** Off the face, enough not to z-fight with it from across a site. */
@@ -262,10 +293,13 @@ export interface VertexLayer {
  * Rebuilt on any change rather than diffed: a change is a map swap or theme
  * toggle, not a stream. Geometry, materials and badge textures are shared; a
  * vertex owns only its meshes, its sprite material and its transforms.
+ * `surfaceTop` is the 3D map's floor, for a charger to stand on; without it
+ * (no tree read yet) a charger stands at its waypoint's ground.
  */
 export function createVertexLayer(
   vertices: MapVertex[],
   theme: Theme,
+  surfaceTop: SurfaceTop | null = null,
 ): VertexLayer {
   const group = new THREE.Group();
   const base = createVertexMaterials(theme.vertex);
@@ -347,10 +381,13 @@ export function createVertexLayer(
     const ground = drawnGround(vertex.z);
 
     const charger = hasChargerMark(vertex.type);
+    // A charger is solid and writes depth, so it stands on the floor's top
+    // face; a stop's marking is translucent and lies a hair over its ground.
+    const standsOn = charger ? chargerStandsOn(vertex, ground, surfaceTop) : ground;
     const marker = new THREE.Group();
     // On the ground of its own floor, so an upstairs stop stands on that
     // floor; a charger's plate on it, a stop's marking a hair over it.
-    marker.position.set(vertex.x, vertex.y, ground + (charger ? 0 : VERTEX_Z_M));
+    marker.position.set(vertex.x, vertex.y, standsOn + (charger ? 0 : VERTEX_Z_M));
     marker.rotation.z = toRadians(vertex.theta);
 
     const hit = new THREE.Mesh(hitGeom, hitMaterial);
@@ -424,7 +461,7 @@ export function createVertexLayer(
     badge.position.set(
       vertex.x,
       vertex.y,
-      ground + VERTEX_Z_M + VERTEX_STEM_HEIGHT_M + VERTEX_BADGE_SIZE_M / 3,
+      standsOn + VERTEX_Z_M + VERTEX_STEM_HEIGHT_M + VERTEX_BADGE_SIZE_M / 3,
     );
     badge.userData.vertexId = vertex.id;
     group.add(badge);

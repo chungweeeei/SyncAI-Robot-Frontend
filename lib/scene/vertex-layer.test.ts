@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { drawnGround } from "@/lib/map/floors";
 import { pickVertex } from "@/lib/scene/picking";
 import { THEMES } from "@/lib/scene/theme";
-import { createVertexLayer } from "@/lib/scene/vertex-layer";
+import { createVertexLayer, type SurfaceTop } from "@/lib/scene/vertex-layer";
 import type { MapVertex } from "@/lib/types/map";
 
 // jsdom has no 2D context; the badge only needs one to draw into.
@@ -30,8 +30,8 @@ const stop = (over: Partial<MapVertex>): MapVertex =>
   }) as MapVertex;
 
 /** A layer with its transforms resolved, as the first frame's render leaves it. */
-const layerOf = (vertices: MapVertex[]) => {
-  const layer = createVertexLayer(vertices, THEMES.light);
+const layerOf = (vertices: MapVertex[], surfaceTop: SurfaceTop | null = null) => {
+  const layer = createVertexLayer(vertices, THEMES.light, surfaceTop);
   layer.group.updateMatrixWorld(true);
   return layer;
 };
@@ -103,6 +103,36 @@ describe("createVertexLayer", () => {
         part.geometry.type === "ShapeGeometry",
     )!;
     expect(new THREE.Box3().setFromObject(bolt).min.y).toBeCloseTo(post.max.y, 2);
+  });
+
+  it("stands a charger on the floor's top face under its plate, a stop on its own ground", () => {
+    // dp's 2F (2026-11-17): the waypoint's z the centre of a cell under the
+    // marker, 5.15 m; the floor the plate lies on tops out at 5.30 m.
+    const asked: [number, number, number, number][] = [];
+    const surfaceTop: SurfaceTop = (wx, wy, z, reach) => {
+      asked.push([wx, wy, z, reach]);
+      return 5.3;
+    };
+    const charger = markerBox(
+      layerOf([stop({ type: "CHARGE", z: 5.15, theta: 90 })], surfaceTop),
+    );
+    expect(charger.min.z).toBeCloseTo(5.3);
+    // Asked where the plate lies, out in front of the marker along the heading.
+    const [[wx, wy, z, reach]] = asked;
+    expect(wx).toBeCloseTo(0);
+    expect(wy).toBeGreaterThan(0.1);
+    expect(z).toBeCloseTo(5.15);
+    expect(reach).toBeGreaterThan(0);
+
+    const flat = markerBox(layerOf([stop({ z: 5.15 })], surfaceTop));
+    expect(flat.min.z).toBeCloseTo(5.15 + VERTEX_DISC_Z_M, 2);
+  });
+
+  it("stands a charger at its waypoint's ground with no floor to read", () => {
+    const charger = stop({ type: "CHARGE", z: 5.15 });
+    const noFloor: SurfaceTop = () => null;
+    expect(markerBox(layerOf([charger], noFloor)).min.z).toBeCloseTo(5.15);
+    expect(markerBox(layerOf([charger])).min.z).toBeCloseTo(5.15);
   });
 
   it("never lets a charger's post take the tap on a stop behind it", () => {

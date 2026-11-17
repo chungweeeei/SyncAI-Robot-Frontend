@@ -13,7 +13,7 @@ import {
   type PlaceAnchor,
   type PlaceEvent,
 } from "@/lib/map/gesture";
-import { columnAt, kzToMetres, medianFloor } from "@/lib/map/ground";
+import { columnAt, kzToMetres, medianFloor, surfaceTopNear } from "@/lib/map/ground";
 import {
   GroundStroke,
   aimSurface,
@@ -434,7 +434,10 @@ export function Map3dCanvas(props: Map3dCanvasProps) {
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx || vertices.length === 0) return;
-    const layer = createVertexLayer(vertices, THEMES[theme]);
+    // A charger stands on the tree's floor, as the dashboard's does.
+    const layer = createVertexLayer(vertices, THEMES[theme], (wx, wy, z, reach) =>
+      surfaceTopNear(session.voxels, session.stacks, wx, wy, z, reach),
+    );
     ctx.scene.add(layer.group);
     vertexLayerRef.current = layer;
     const { vertexBand: band, movingVertex: moving, selectedVertexIds } = propsRef.current;
