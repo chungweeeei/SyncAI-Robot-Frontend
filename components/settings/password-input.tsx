@@ -12,8 +12,9 @@ import { cn } from "@/lib/utils";
  *
  * - `type="button"` on the toggle: it sits inside the Connect form, and
  *   without it a click on the eye would submit a half-typed password.
- * - `autoComplete="off"`: the robot's Wi-Fi password shouldn't be saved
- *   against the console's origin.
+ * - `autoComplete="off"` by default: the robot's Wi-Fi password shouldn't be
+ *   saved against the console's origin. The sign-in form passes
+ *   `current-password`, since that one is the operator's own.
  *
  * The toggle stays in the tab order on purpose: `tabIndex={-1}` would make it
  * unreachable from a keyboard.
@@ -21,6 +22,7 @@ import { cn } from "@/lib/utils";
 export function PasswordInput({
   className,
   disabled,
+  autoComplete = "off",
   ...props
 }: Omit<React.ComponentProps<typeof Input>, "type">) {
   const [visible, setVisible] = React.useState(false);
@@ -30,7 +32,7 @@ export function PasswordInput({
       <Input
         {...props}
         type={visible ? "text" : "password"}
-        autoComplete="off"
+        autoComplete={autoComplete}
         disabled={disabled}
         className={cn("pr-9", className)}
       />

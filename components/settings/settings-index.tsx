@@ -4,6 +4,7 @@ import Link from "next/link";
 import { GaugeIcon, PaletteIcon, RouteIcon, WifiIcon } from "lucide-react";
 
 import { RobotName } from "@/components/console/robot-name";
+import { SignOutButton } from "@/components/console/sign-out-button";
 import { RestartControl } from "@/components/settings/restart-control";
 import { SettingsPage } from "@/components/settings/settings-page";
 import {
@@ -60,7 +61,12 @@ export function SettingsIndex() {
         </>
       }
       parents={[]}
-      action={<RestartControl />}
+      action={
+        <div className="flex flex-wrap items-center gap-2">
+          <SignOutButton />
+          <RestartControl />
+        </div>
+      }
     >
     <nav aria-label="Settings sections">
       {/* Square tiles, more per row as the window widens, so a new

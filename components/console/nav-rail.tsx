@@ -16,6 +16,7 @@ import {
   StethoscopeIcon,
 } from "lucide-react";
 
+import { SignOutButton } from "@/components/console/sign-out-button";
 import { ModeToggle } from "@/components/mode-toggle";
 import { cn } from "@/lib/utils";
 
@@ -163,6 +164,16 @@ export function NavRail() {
         )}
       >
         <ModeToggle />
+      </div>
+      {/* From lg only: the phone's bar is seven tabs and the toggle already,
+        * so a phone signs out from Settings. */}
+      <div
+        className={cn(
+          "hidden shrink-0 lg:flex",
+          byFold(expanded, "", "lg:self-center", "lg:self-center xl:self-auto"),
+        )}
+      >
+        <SignOutButton variant="rail" />
       </div>
     </nav>
   );
