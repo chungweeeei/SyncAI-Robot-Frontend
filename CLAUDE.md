@@ -292,8 +292,10 @@ components/
                 Charger has one more source in both places' create dialog
                 (dashboard/vertex-create-dialog.tsx): Detect charger, which
                 has the robot look for the charger with its camera and
-                replaces the placed pose with the one it measured, z
-                included, as is — offered only where the robot is localized
+                replaces the placed pose with the one it measured, but on
+                the ground under the marker (the z it answers is its own
+                body height, which only names the floor: robotGround, as
+                Use robot position) — offered only where the robot is localized
                 on the map being edited, and written by Create as any
                 other: at once on the dashboard, staged here; Add charger
                 — the dashboard's Map strip, the editor's tools with
