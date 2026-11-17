@@ -1191,7 +1191,15 @@ export function PointCloudCanvas({
     const ctx = sceneRef.current;
     if (!ctx || !showVertices || !vertices?.length) return;
 
-    const layer = createVertexLayer(vertices, theme);
+    // A charger stands on the 3D map's floor once the tree is read, so the
+    // layer is rebuilt when it arrives.
+    const layer = createVertexLayer(
+      vertices,
+      theme,
+      voxels && voxelStacks
+        ? (wx, wy, z, reach) => surfaceTopNear(voxels, voxelStacks, wx, wy, z, reach)
+        : null,
+    );
     ctx.scene.add(layer.group);
     vertexLayerRef.current = layer;
     // The hover and moving ids survive a rebuild (a theme toggle, a re-place
@@ -1207,7 +1215,7 @@ export function PointCloudCanvas({
       layer.dispose();
       vertexLayerRef.current = null;
     };
-  }, [vertices, showVertices, theme]);
+  }, [vertices, showVertices, theme, voxels, voxelStacks]);
 
   // Its own effect so arming a re-place does not rebuild the layer.
   React.useEffect(() => {

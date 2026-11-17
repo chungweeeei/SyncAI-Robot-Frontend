@@ -5,6 +5,7 @@ import { encodeOctomapBt } from "@/lib/map/octree";
 import { OCTREE_KEY_ORIGIN } from "@/lib/types/octree";
 
 import {
+  CHARGER_GROUND_Z,
   CHARGER_SIGHTING,
   MAP_NAME,
   activeTask,
@@ -541,9 +542,9 @@ test.describe("adding a waypoint from the dashboard", () => {
 
       // The readouts are the sighting's, not the drag's or the robot's.
       await expect(dialog.getByText("Charger found.")).toBeVisible();
-      await expect(dialog.getByText("2.40")).toBeVisible();
-      await expect(dialog.getByText("-1.10")).toBeVisible();
-      await expect(dialog.getByText("0.03")).toBeVisible();
+      await expect(dialog.getByText("0.35")).toBeVisible();
+      await expect(dialog.getByText("0.05")).toBeVisible();
+      await expect(dialog.getByText("-0.45")).toBeVisible();
       await expect(dialog.getByText("-45.0")).toBeVisible();
       await expect(dialog.getByLabel("Name")).toHaveValue("dock-a");
       await expect(dialog.getByRole("combobox", { name: "Type" })).toContainText("Charger");
@@ -562,13 +563,14 @@ test.describe("adding a waypoint from the dashboard", () => {
         .toHaveLength(1);
       const body = writes.find((w) => w.path === verticesPath)!.body as unknown[];
       expect(body).toHaveLength(1);
-      // z as measured: not looked up again under the point.
+      // On the ground under the marker: the measured z is the robot's body
+      // height, which only names the floor.
       expect(body[0]).toMatchObject({
         name: "dock-a",
         type: "CHARGE",
         x: CHARGER_SIGHTING.x,
         y: CHARGER_SIGHTING.y,
-        z: CHARGER_SIGHTING.z,
+        z: CHARGER_GROUND_Z,
         theta: CHARGER_SIGHTING.theta,
       });
       await expect(dialog).toHaveCount(0);
@@ -741,7 +743,7 @@ test.describe("adding a waypoint from the dashboard", () => {
           type: "CHARGE",
           x: CHARGER_SIGHTING.x,
           y: CHARGER_SIGHTING.y,
-          z: CHARGER_SIGHTING.z,
+          z: CHARGER_GROUND_Z,
           theta: CHARGER_SIGHTING.theta,
         });
         expect(detects(writes)).toHaveLength(1);

@@ -38,17 +38,65 @@ const VERTEX_Z_M = 0.02;
  * A charger stands up instead of lying flat: a post with its charging plate
  * on the floor in front of it, the thing the robot walks onto, so it reads
  * as a charger from any angle rather than as one more mark on the floor.
- * The waypoint is where the robot stands docked, so the plate is centred
- * on it, and the post stands on the floor at the plate's back edge, behind
- * the waypoint's heading, its face, bolt and all, looking along it: the
- * charger points the way the waypoint's arrow does. Real geometry, so it writes depth and hides
- * the 3D map behind it the way a stop's translucent marking must not.
+ * The waypoint is the charger's marker, on the post's face, with the heading
+ * out of that face (what Detect stores and the robot's charge steers by), so
+ * the post stands behind the waypoint with its face, bolt and all, on it, and
+ * the plate runs out from the face along the heading: the charger points the
+ * way the waypoint's arrow does. Until 2026-11-17 the plate was centred on the
+ * waypoint as if it were where the robot stands docked, which stood a
+ * detected charger's post a quarter metre into the wall behind its marker.
+ * Real geometry, so it writes depth and hides the 3D map behind it the way a
+ * stop's translucent marking must not.
  */
-/** The charging plate, centred on the waypoint, metres (x along the heading). */
+/** The charging plate, metres (x along the heading). */
 const CHARGER_PLATE_M = { x: 0.44, y: 0.5, z: 0.03 } as const;
 const CHARGER_POST_M = { x: 0.14, y: 0.4, z: 0.55 } as const;
-/** The post's centre behind the waypoint: its face at the plate's back edge. */
-const CHARGER_POST_X_M = -(CHARGER_PLATE_M.x + CHARGER_POST_M.x) / 2;
+/** The plate's centre ahead of the waypoint: its back edge on the post's face. */
+const CHARGER_PLATE_X_M = CHARGER_PLATE_M.x / 2;
+/** The post's centre behind the waypoint: its face on the waypoint. */
+const CHARGER_POST_X_M = -CHARGER_POST_M.x / 2;
+/**
+ * How far from its waypoint's z a charger looks for the floor's top face to
+ * stand on, metres. That z is a cell's centre on the charger's floor, read
+ * where the waypoint was put: half a cell under the top face at best, and a
+ * cell lower again where the marker's own column (the charger's foot, against
+ * the wall) reaches below the floor the plate lies on — dp's 2F 2026-11-17,
+ * 5.15 m against a 5.30 m top, which buried the plate. Three cells of a 0.1 m
+ * tree, and short of the next floor or a table top.
+ */
+const CHARGER_SURFACE_REACH_M = 0.3;
+/**
+ * How far over the floor's top face a charger stands on the 3D map, metres:
+ * half a 0.1 m cell. The map draws a cell as a camera-facing square of one
+ * cell around its centre (Points), not as a cube, so seen from above at an
+ * angle the cells in front reach about half a cell over the top face, and
+ * nearer the eye; on the face itself the 0.03 m plate was hidden whole (dp's
+ * 2F, 2026-11-17). Seen nearly level, it leaves a gap of that much under it.
+ */
+const CHARGER_OVER_MAP_LIFT_M = 0.05;
+
+/**
+ * The top face of the 3D map's surface under a map-frame point nearest a
+ * height, metres, searched `reach` either side; null with no tree or no
+ * surface in reach. What the canvas holding the tree hands the layer, as it
+ * hands the costmap its ground.
+ */
+export type SurfaceTop = (wx: number, wy: number, z: number, reach: number) => number | null;
+
+/** Where a charger stands: over the map's floor under its plate, else its waypoint's ground. */
+function chargerStandsOn(
+  vertex: MapVertex,
+  ground: number,
+  surfaceTop: SurfaceTop | null,
+): number {
+  const heading = toRadians(vertex.theta);
+  // The plate's centre: the floor the robot walks onto, out in front of the marker.
+  const plateX = vertex.x + CHARGER_PLATE_X_M * Math.cos(heading);
+  const plateY = vertex.y + CHARGER_PLATE_X_M * Math.sin(heading);
+  const top = surfaceTop?.(plateX, plateY, ground, CHARGER_SURFACE_REACH_M);
+  // No tree drawn, no cells to clear: its waypoint's ground as it was.
+  return top === null || top === undefined ? ground : top + CHARGER_OVER_MAP_LIFT_M;
+}
 /** Across the bolt's 24-unit icon grid, metres: well inside the post's face. */
 const CHARGER_BOLT_M = 0.26;
 /** Off the face, enough not to z-fight with it from across a site. */
@@ -256,10 +304,13 @@ export interface VertexLayer {
  * Rebuilt on any change rather than diffed: a change is a map swap or theme
  * toggle, not a stream. Geometry, materials and badge textures are shared; a
  * vertex owns only its meshes, its sprite material and its transforms.
+ * `surfaceTop` is the 3D map's floor, for a charger to stand on; without it
+ * (no tree read yet) a charger stands at its waypoint's ground.
  */
 export function createVertexLayer(
   vertices: MapVertex[],
   theme: Theme,
+  surfaceTop: SurfaceTop | null = null,
 ): VertexLayer {
   const group = new THREE.Group();
   const base = createVertexMaterials(theme.vertex);
@@ -341,10 +392,13 @@ export function createVertexLayer(
     const ground = drawnGround(vertex.z);
 
     const charger = hasChargerMark(vertex.type);
+    // A charger is solid and writes depth, so it stands on the floor's top
+    // face; a stop's marking is translucent and lies a hair over its ground.
+    const standsOn = charger ? chargerStandsOn(vertex, ground, surfaceTop) : ground;
     const marker = new THREE.Group();
     // On the ground of its own floor, so an upstairs stop stands on that
     // floor; a charger's plate on it, a stop's marking a hair over it.
-    marker.position.set(vertex.x, vertex.y, ground + (charger ? 0 : VERTEX_Z_M));
+    marker.position.set(vertex.x, vertex.y, standsOn + (charger ? 0 : VERTEX_Z_M));
     marker.rotation.z = toRadians(vertex.theta);
 
     const hit = new THREE.Mesh(hitGeom, hitMaterial);
@@ -360,7 +414,7 @@ export function createVertexLayer(
     };
     if (charger) {
       const plate = new THREE.Mesh(plateGeom, chargerBody);
-      plate.position.z = CHARGER_PLATE_M.z / 2;
+      plate.position.set(CHARGER_PLATE_X_M, 0, CHARGER_PLATE_M.z / 2);
       const post = new THREE.Mesh(postGeom, chargerBody);
       post.position.set(CHARGER_POST_X_M, 0, CHARGER_POST_M.z / 2);
       const plateEdge = new THREE.LineSegments(plateEdgeGeom, chargerEdge);
@@ -418,7 +472,7 @@ export function createVertexLayer(
     badge.position.set(
       vertex.x,
       vertex.y,
-      ground + VERTEX_Z_M + VERTEX_STEM_HEIGHT_M + VERTEX_BADGE_SIZE_M / 3,
+      standsOn + VERTEX_Z_M + VERTEX_STEM_HEIGHT_M + VERTEX_BADGE_SIZE_M / 3,
     );
     badge.userData.vertexId = vertex.id;
     group.add(badge);

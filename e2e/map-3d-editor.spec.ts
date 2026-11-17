@@ -4,6 +4,7 @@ import { encodeOctomapBt } from "@/lib/map/octree";
 import { OCTREE_KEY_ORIGIN } from "@/lib/types/octree";
 
 import {
+  CHARGER_GROUND_Z,
   CHARGER_SIGHTING,
   MAP_NAME,
   activeTask,
@@ -937,7 +938,7 @@ test.describe("the editor's 3D view", () => {
       await dialog.getByRole("button", { name: "Detect charger" }).click();
 
       await expect(dialog.getByText("Charger found.")).toBeVisible();
-      await expect(dialog.getByText("2.40")).toBeVisible();
+      await expect(dialog.getByText("-0.45")).toBeVisible();
       await expect(dialog.getByLabel("Name")).toHaveValue("dock-a");
       expect(writes.filter((w) => w.path === "/api/v1/landmarks/detect")).toEqual([
         { method: "POST", path: "/api/v1/landmarks/detect", body: {} },
@@ -953,13 +954,13 @@ test.describe("the editor's 3D view", () => {
       await expect.poll(() => writes.filter((w) => w.path === verticesPath)).toHaveLength(1);
       const body = writes.find((w) => w.path === verticesPath)!.body as unknown[];
       expect(body).toHaveLength(1);
-      // z as measured, though the press landed where this map has no ground.
+      // On the ground under the marker, not the robot's body height it measured.
       expect(body[0]).toMatchObject({
         name: "dock-a",
         type: "CHARGE",
         x: CHARGER_SIGHTING.x,
         y: CHARGER_SIGHTING.y,
-        z: CHARGER_SIGHTING.z,
+        z: CHARGER_GROUND_Z,
         theta: CHARGER_SIGHTING.theta,
       });
       expect(errors, "the page logged errors").toEqual([]);
