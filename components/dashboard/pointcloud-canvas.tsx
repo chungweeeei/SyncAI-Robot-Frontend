@@ -186,7 +186,7 @@ interface PointCloudCanvasProps {
    * the leg onto it, so an operator can see where the route is taking the
    * robot and why it stops short of the charger. Null when none runs.
    */
-  dock?: PlanarPose | null;
+  dock?: (PlanarPose & { z?: number }) | null;
   /**
    * Hide the path layer — the route, a charge's staging leg, and
    * what the robot sees and means to drive around it while it navigates (the
@@ -1317,6 +1317,7 @@ export function PointCloudCanvas({
   const dockX = dock?.x;
   const dockY = dock?.y;
   const dockTheta = dock?.theta;
+  const dockZ = dock?.z;
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx || !showPath || dockX === undefined || dockY === undefined) return;
@@ -1324,7 +1325,7 @@ export function PointCloudCanvas({
 
     const layer = createTracedDockLayer(
       "live",
-      { x: dockX, y: dockY, theta: dockTheta },
+      { x: dockX, y: dockY, theta: dockTheta, z: dockZ },
       theme,
       surfaceTop,
     );
@@ -1334,7 +1335,7 @@ export function PointCloudCanvas({
       ctx.scene.remove(layer.group);
       layer.dispose();
     };
-  }, [dockX, dockY, dockTheta, showPath, theme, surfaceTop]);
+  }, [dockX, dockY, dockTheta, dockZ, showPath, theme, surfaceTop]);
 
   // ---- A tapped charger's staging point ------------------------------------
   const previewDockX = previewDock?.x;

@@ -164,6 +164,24 @@ describe("fetchTaskState", () => {
     });
   });
 
+  it("keeps a charge's floor, and reads a backend that sends the charger without one", async () => {
+    // The z is the charger's ground as dispatched: without it an upstairs
+    // charge's staging point is drawn on the ground floor.
+    fetchMock.mockResolvedValue(
+      ack({
+        id: "t",
+        status: "IN_PROGRESS",
+        steps: [
+          { id: "1-charge", status: "IN_PROGRESS", error_msg: "", charge: { x: 3, y: -1.5, theta: 180, z: 5.15 } },
+          { id: "2-charge", status: "PENDING", error_msg: "", charge: { x: 3, y: -1.5, theta: 180 } },
+        ],
+      }),
+    );
+    const state = await fetchTaskState("t");
+    expect(state.steps[0]?.charge).toEqual({ x: 3, y: -1.5, theta: 180, z: 5.15 });
+    expect(state.steps[1]?.charge).toEqual({ x: 3, y: -1.5, theta: 180 });
+  });
+
   it("accepts a held run and a held step", async () => {
     fetchMock.mockResolvedValue(
       ack({
