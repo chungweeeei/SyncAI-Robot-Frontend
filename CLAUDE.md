@@ -536,7 +536,9 @@ lib/
                 the robot's limits, and which drafts a Save sends
   robot/        G23 joint table (URDF link names ↔ GLB node names), how the
                 dashboard names a motor (the leg grid and its joint codes), and
-                the readout thresholds (levels.ts: Wi-Fi bars, battery, joint heat)
+                the readout thresholds (levels.ts: Wi-Fi bars, battery, joint heat,
+                and isCharging — the state rollup's CHARGING, which the
+                masthead's battery shows as a bolt and a climbing meter)
                 and the overheating notice's rule (heat-alert.ts: raised above
                 85 °C, re-armed only once the motor has cooled), and the
                 commanded controller's override (controller.ts: an arrival
