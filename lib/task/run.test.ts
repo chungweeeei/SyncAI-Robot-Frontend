@@ -87,6 +87,11 @@ describe("liveDock", () => {
   it("is null for a backend that does not send the charger", () => {
     expect(liveDock([step("1-charge", "IN_PROGRESS")])).toBeNull();
   });
+
+  it("keeps the charger's floor, so an upstairs charge is drawn upstairs", () => {
+    const upstairs = { ...charger, z: 5.15 };
+    expect(liveDock([{ ...step("1-charge", "IN_PROGRESS"), charge: upstairs }])).toEqual(upstairs);
+  });
 });
 
 describe("stepLabel", () => {

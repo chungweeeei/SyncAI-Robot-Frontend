@@ -462,7 +462,12 @@ lib/
                 events and the teardown, for every 3D view), theme, markers,
                 vertex layer, zone layer (a banded zone on its floor's ground,
                 one of every floor at the floor shown), path ribbon, the running
-                charge's staging point and leg (dock-layer.ts), what the robot sees
+                charge's staging point and leg (dock-layer.ts), where a solid
+                mark stands over the 3D map (map-surface.ts: the floor's top
+                face near the mark's ground, lifted half a cell clear of the
+                cells drawn round it — a charger by its plate, a staging point
+                by itself, since on its waypoint's z, a cell's centre, the
+                map hid it), what the robot sees
                 and means to drive around it while it navigates
                 (local-nav-layer.ts: its costmap as one texture, each cost's
                 opacity, draped over the 3D map's ground when the map is up,
@@ -877,7 +882,8 @@ As built:
   so the dashboard derives it with `stagingPose` from the charger the
   running job's `GET /tasks/{id}` step carries (`steps[].charge`, `liveDock`
   in `lib/task/run.ts`): 1.3 m out along the marker's face, as charge.xml
-  stages.
+  stages, on the charger's floor when the step carries its `z` (a backend
+  without it puts it on the ground floor).
 - **A still view is not redrawn.** Every 3D view draws a frame only when
   something changed: the camera moved, a layer or a mark changed, a stream
   delivered. The dashboard marks its frame dirty after any React render, on

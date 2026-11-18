@@ -11,6 +11,7 @@ import {
   hasChargerMark,
   vertexGlyph,
 } from "@/lib/map/vertex";
+import { standsOnMap, type SurfaceTop } from "@/lib/scene/map-surface";
 import type { Theme } from "@/lib/scene/theme";
 import { cssHex } from "@/lib/theme/signal";
 import type { MapVertex } from "@/lib/types/map";
@@ -55,33 +56,6 @@ const CHARGER_POST_M = { x: 0.14, y: 0.4, z: 0.55 } as const;
 const CHARGER_PLATE_X_M = CHARGER_PLATE_M.x / 2;
 /** The post's centre behind the waypoint: its face on the waypoint. */
 const CHARGER_POST_X_M = -CHARGER_POST_M.x / 2;
-/**
- * How far from its waypoint's z a charger looks for the floor's top face to
- * stand on, metres. That z is a cell's centre on the charger's floor, read
- * where the waypoint was put: half a cell under the top face at best, and a
- * cell lower again where the marker's own column (the charger's foot, against
- * the wall) reaches below the floor the plate lies on — dp's 2F 2026-11-17,
- * 5.15 m against a 5.30 m top, which buried the plate. Three cells of a 0.1 m
- * tree, and short of the next floor or a table top.
- */
-const CHARGER_SURFACE_REACH_M = 0.3;
-/**
- * How far over the floor's top face a charger stands on the 3D map, metres:
- * half a 0.1 m cell. The map draws a cell as a camera-facing square of one
- * cell around its centre (Points), not as a cube, so seen from above at an
- * angle the cells in front reach about half a cell over the top face, and
- * nearer the eye; on the face itself the 0.03 m plate was hidden whole (dp's
- * 2F, 2026-11-17). Seen nearly level, it leaves a gap of that much under it.
- */
-const CHARGER_OVER_MAP_LIFT_M = 0.05;
-
-/**
- * The top face of the 3D map's surface under a map-frame point nearest a
- * height, metres, searched `reach` either side; null with no tree or no
- * surface in reach. What the canvas holding the tree hands the layer, as it
- * hands the costmap its ground.
- */
-export type SurfaceTop = (wx: number, wy: number, z: number, reach: number) => number | null;
 
 /** Where a charger stands: over the map's floor under its plate, else its waypoint's ground. */
 function chargerStandsOn(
@@ -93,9 +67,7 @@ function chargerStandsOn(
   // The plate's centre: the floor the robot walks onto, out in front of the marker.
   const plateX = vertex.x + CHARGER_PLATE_X_M * Math.cos(heading);
   const plateY = vertex.y + CHARGER_PLATE_X_M * Math.sin(heading);
-  const top = surfaceTop?.(plateX, plateY, ground, CHARGER_SURFACE_REACH_M);
-  // No tree drawn, no cells to clear: its waypoint's ground as it was.
-  return top === null || top === undefined ? ground : top + CHARGER_OVER_MAP_LIFT_M;
+  return standsOnMap(plateX, plateY, ground, surfaceTop);
 }
 /** Across the bolt's 24-unit icon grid, metres: well inside the post's face. */
 const CHARGER_BOLT_M = 0.26;

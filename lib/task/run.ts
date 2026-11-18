@@ -8,11 +8,11 @@
 
 import {
   isTerminalTaskStatus,
+  type GoalPose,
   type TaskStatus,
   type TaskStepState,
 } from "@/lib/api/task";
 import { formatDuration } from "@/lib/recording/format";
-import type { PlanarPose } from "@/lib/types/robot";
 import { stepFailureText } from "@/lib/task/failure";
 import { isHistoryKind, kindLabel, runSeconds } from "@/lib/task/history";
 import { STEP_TYPES } from "@/lib/task/step";
@@ -66,14 +66,15 @@ function live(step: TaskStepState): boolean {
 }
 
 /**
- * The charger a live CHARGE step is walking onto (its marker), or null.
+ * The charger a live CHARGE step is walking onto (its marker, with its
+ * floor's ground when the backend sends it), or null.
  *
  * Any live step, not only `currentStep`: a group runs at once and holds at
  * most one Charge (it occupies the body), which need not be its first
  * member. A held Charge still answers — the charger has not moved, and the
  * staging point is where the robot will head when it resumes.
  */
-export function liveDock(steps: readonly TaskStepState[]): PlanarPose | null {
+export function liveDock(steps: readonly TaskStepState[]): GoalPose | null {
   return steps.find((step) => live(step) && step.charge)?.charge ?? null;
 }
 

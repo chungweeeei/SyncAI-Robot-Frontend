@@ -5,6 +5,7 @@ import * as THREE from "three";
 
 import { stagingPose } from "@/lib/map/dock";
 import { drawnGround } from "@/lib/map/floors";
+import { standsOnMap, type SurfaceTop } from "@/lib/scene/map-surface";
 import { createDashedRibbon } from "@/lib/scene/path-ribbon";
 import type { Theme } from "@/lib/scene/theme";
 import type { PlanarPose } from "@/lib/types/robot";
@@ -41,17 +42,23 @@ const LEG_Z_M = 0.016;
  * `preview` is a charger tapped on the map rather than one being charged at:
  * the same marks, the dot in `stagingPreview`, since the robot is not heading
  * there and the live hue would say it is.
+ *
+ * `surfaceTop` is the 3D map's floor: the marks stand on its top face under
+ * the staging point, because the charger's z is a cell's centre and the dot
+ * a hair over it lay under the drawn cells, where the depth test hid it.
+ * Without it (no tree read yet) they lie on the charger's ground.
  */
 export function createDockLayer(
   dock: PlanarPose & { z?: number },
   theme: Theme,
-  { preview = false }: { preview?: boolean } = {},
+  { preview = false, surfaceTop = null }: { preview?: boolean; surfaceTop?: SurfaceTop | null } = {},
 ): { group: THREE.Group; dispose: () => void } {
   const group = new THREE.Group();
-  // On the charger's own ground; a running charge's carries none, which is
-  // the ground floor's.
-  group.position.z = drawnGround(dock.z ?? 0);
   const staging = stagingPose(dock);
+  // The charger's own ground, which a running charge read without a z puts on
+  // the ground floor; then the floor the map draws under the staging point.
+  const chargerGround = drawnGround(dock.z ?? 0);
+  group.position.z = standsOnMap(staging.x, staging.y, chargerGround, surfaceTop);
 
   const dotGeometry = new THREE.CircleGeometry(STAGING_DOT_RADIUS_M, 24);
   const dotMaterial = new THREE.MeshBasicMaterial({

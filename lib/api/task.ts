@@ -70,11 +70,13 @@ export interface TaskStepState {
   group?: string | null;
   /**
    * A CHARGE step's charger waypoint as dispatched (the marker's centre, theta
-   * out of its face); null on every other step, absent from older backends.
-   * What the dashboard derives the staging point from while the charge runs
-   * (lib/map/dock.ts).
+   * out of its face, z the ground of its floor); null on every other step,
+   * absent from older backends. What the dashboard derives the staging point
+   * from while the charge runs (lib/map/dock.ts). A backend that leaves out
+   * the z puts it on the ground floor, which is where an upstairs charge's
+   * staging point was drawn before it was sent.
    */
-  charge?: PlanarPose | null;
+  charge?: GoalPose | null;
   /** ISO 8601 UTC; null until the step starts. Absent from older backends. */
   started_at?: string | null;
   /** ISO 8601 UTC; null until the step ends, however it ends. */
@@ -104,7 +106,9 @@ const TaskStateResponseSchema: z.ZodType<TaskStateResponse> = z.object({
       error_msg: z.string(),
       message: z.string().optional(),
       group: z.string().nullish(),
-      charge: z.object({ x: z.number(), y: z.number(), theta: z.number() }).nullish(),
+      charge: z
+        .object({ x: z.number(), y: z.number(), theta: z.number(), z: z.number().optional() })
+        .nullish(),
       started_at: z.string().nullish(),
       ended_at: z.string().nullish(),
       paused_seconds: z.number().optional(),

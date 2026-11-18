@@ -39,6 +39,7 @@ import {
   setMarkerColor,
 } from "@/lib/scene/markers";
 import { createDockLayer } from "@/lib/scene/dock-layer";
+import type { SurfaceTop } from "@/lib/scene/map-surface";
 import {
   createLocalNavLayer,
   type LocalNavLayer,
@@ -63,7 +64,7 @@ import {
   loadRobotModel,
   warnedUnknownJoints,
 } from "@/lib/scene/robot-model";
-import { THEMES } from "@/lib/scene/theme";
+import { THEMES, type Theme } from "@/lib/scene/theme";
 import { createViewport } from "@/lib/scene/viewport";
 import {
   createVoxelLayer,
@@ -185,7 +186,7 @@ interface PointCloudCanvasProps {
    * the leg onto it, so an operator can see where the route is taking the
    * robot and why it stops short of the charger. Null when none runs.
    */
-  dock?: PlanarPose | null;
+  dock?: (PlanarPose & { z?: number }) | null;
   /**
    * Hide the path layer — the route, a charge's staging leg, and
    * what the robot sees and means to drive around it while it navigates (the
@@ -443,6 +444,15 @@ export function PointCloudCanvas({
   // The 3D map's columns, which the costmap is draped over: one pass over the
   // keys per map, not per frame, and kept across a theme change.
   const voxelStacks = React.useMemo(() => (voxels ? columnStacks(voxels) : null), [voxels]);
+  // The 3D map's floor, for a charger and a staging point to stand on: one
+  // per tree, so the layers that list it are rebuilt when the tree is read.
+  const surfaceTop = React.useMemo<SurfaceTop | null>(
+    () =>
+      voxels && voxelStacks
+        ? (wx, wy, z, reach) => surfaceTopNear(voxels, voxelStacks, wx, wy, z, reach)
+        : null,
+    [voxels, voxelStacks],
+  );
   /**
    * The feed's costmap and trajectory last handed to the layer, compared by
    * identity like the pose. Reset by a scene rebuild, so the new layer is
@@ -1200,13 +1210,7 @@ export function PointCloudCanvas({
 
     // A charger stands on the 3D map's floor once the tree is read, so the
     // layer is rebuilt when it arrives.
-    const layer = createVertexLayer(
-      vertices,
-      theme,
-      voxels && voxelStacks
-        ? (wx, wy, z, reach) => surfaceTopNear(voxels, voxelStacks, wx, wy, z, reach)
-        : null,
-    );
+    const layer = createVertexLayer(vertices, theme, surfaceTop);
     ctx.scene.add(layer.group);
     vertexLayerRef.current = layer;
     // The hover and moving ids survive a rebuild (a theme toggle, a re-place
@@ -1222,7 +1226,7 @@ export function PointCloudCanvas({
       layer.dispose();
       vertexLayerRef.current = null;
     };
-  }, [vertices, showVertices, theme, voxels, voxelStacks]);
+  }, [vertices, showVertices, theme, surfaceTop]);
 
   // Its own effect so arming a re-place does not rebuild the layer.
   React.useEffect(() => {
@@ -1313,19 +1317,25 @@ export function PointCloudCanvas({
   const dockX = dock?.x;
   const dockY = dock?.y;
   const dockTheta = dock?.theta;
+  const dockZ = dock?.z;
   React.useEffect(() => {
     const ctx = sceneRef.current;
     if (!ctx || !showPath || dockX === undefined || dockY === undefined) return;
     if (dockTheta === undefined) return;
 
-    const layer = createDockLayer({ x: dockX, y: dockY, theta: dockTheta }, theme);
+    const layer = createTracedDockLayer(
+      "live",
+      { x: dockX, y: dockY, theta: dockTheta, z: dockZ },
+      theme,
+      surfaceTop,
+    );
     ctx.scene.add(layer.group);
 
     return () => {
       ctx.scene.remove(layer.group);
       layer.dispose();
     };
-  }, [dockX, dockY, dockTheta, showPath, theme]);
+  }, [dockX, dockY, dockTheta, dockZ, showPath, theme, surfaceTop]);
 
   // ---- A tapped charger's staging point ------------------------------------
   const previewDockX = previewDock?.x;
@@ -1337,10 +1347,11 @@ export function PointCloudCanvas({
     if (!ctx || previewDockX === undefined || previewDockY === undefined) return;
     if (previewDockTheta === undefined) return;
 
-    const layer = createDockLayer(
+    const layer = createTracedDockLayer(
+      "preview",
       { x: previewDockX, y: previewDockY, theta: previewDockTheta, z: previewDockZ },
       theme,
-      { preview: true },
+      surfaceTop,
     );
     ctx.scene.add(layer.group);
 
@@ -1348,7 +1359,7 @@ export function PointCloudCanvas({
       ctx.scene.remove(layer.group);
       layer.dispose();
     };
-  }, [previewDockX, previewDockY, previewDockTheta, previewDockZ, theme]);
+  }, [previewDockX, previewDockY, previewDockTheta, previewDockZ, theme, surfaceTop]);
 
   // ---- Optional static map cloud (toggle) ------------------------------
   React.useEffect(() => {
@@ -1686,4 +1697,33 @@ function applyVoxelBand(
     const [lo, hi] = bandRange(band);
     layer.setBand(lo, Math.min(hi, ceiling));
   }
+}
+
+/**
+ * A charger's staging layer, traced on the console's debug channel: which
+ * kind, where it stands and whether the 3D map's floor was there to stand
+ * on, since a dot under the map's cells is invisible and says nothing itself.
+ */
+function createTracedDockLayer(
+  kind: "live" | "preview",
+  charger: PlanarPose & { z?: number },
+  theme: Theme,
+  surfaceTop: SurfaceTop | null,
+): ReturnType<typeof createDockLayer> {
+  const startedAt = performance.now();
+  const layer = createDockLayer(charger, theme, { preview: kind === "preview", surfaceTop });
+  console.debug("[dashboard:staging] drawn", {
+    kind,
+    charger,
+    standsAtZ: layer.group.position.z,
+    overMap: surfaceTop !== null,
+    durationMs: performance.now() - startedAt,
+  });
+  return {
+    group: layer.group,
+    dispose: () => {
+      layer.dispose();
+      console.debug("[dashboard:staging] removed", { kind, charger });
+    },
+  };
 }
