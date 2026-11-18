@@ -13,6 +13,15 @@ export type RobotMode = "MAINTENANCE" | "MANUAL" | "AUTO";
  * arrive, so two unmapped codes look the same here; the robot's own
  * `robot_state` topic has the integers.
  */
+/**
+ * syncai_robot_state's one-word rollup, most-severe-first: UNINITIALIZED
+ * (not localized) > CHARGING > WARNING (battery low) > IDLE. One value at a
+ * time, so a robot on its charger before it is localized reads UNINITIALIZED.
+ * An open string, like the low-level mode: the backend answers UNKNOWN for a
+ * code it cannot name.
+ */
+export type RobotStatus = string;
+
 export interface RobotLowLevelMode {
   policy: string;
   motion: string;
@@ -124,6 +133,11 @@ export interface RobotState {
   robot_id: string;
   map: string;
   mode: RobotMode;
+  /**
+   * Absent from a backend older than the field, which must still answer a
+   * whole frame: the two repos are deployed independently.
+   */
+  state?: RobotStatus;
   low_level_mode: RobotLowLevelMode;
   /**
    * Whether localization_status is real. False before convergence and for the
@@ -154,6 +168,7 @@ export const RobotStateSchema: z.ZodType<RobotState> = z.object({
   robot_id: z.string(),
   map: z.string(),
   mode: z.enum(["MAINTENANCE", "MANUAL", "AUTO"]),
+  state: z.string().optional(),
   // Open strings, matching the interface.
   low_level_mode: z.object({
     policy: z.string(),

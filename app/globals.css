@@ -233,6 +233,33 @@
   }
 }
 
+/* The battery meter's cells while the robot charges (SegmentMeter): each
+ * climbing cell lights in turn and lets go together, staggered by its
+ * delay. The hue is the meter's tone, handed in as --charge-fill. */
+@keyframes meter-charge {
+  0%,
+  15% {
+    background-color: var(--hairline);
+  }
+  45%,
+  85% {
+    background-color: var(--charge-fill);
+  }
+  100% {
+    background-color: var(--hairline);
+  }
+}
+
+@utility meter-charge {
+  animation: meter-charge 1.8s ease-in-out infinite backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meter-charge {
+    animation: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

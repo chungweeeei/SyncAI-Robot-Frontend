@@ -27,6 +27,16 @@ export const TONE_TEXT: Record<Tone, string> = {
   warn: "text-signal-warn",
 };
 
+/** TONE_FILL as the custom property, for a hue a keyframe has to name. */
+const TONE_VAR: Record<Tone, string> = {
+  neutral: "--muted-foreground",
+  live: "--signal-live",
+  cmd: "--signal-cmd",
+  active: "--signal-active",
+  caution: "--signal-caution",
+  warn: "--signal-warn",
+};
+
 const TONE_FILL: Record<Tone, string> = {
   neutral: "bg-muted-foreground",
   live: "bg-signal-live",
@@ -231,35 +241,57 @@ export function SignalBars({
 /**
  * Segmented level meter (battery). Cells rather than a smooth fill, which
  * would suggest a precision the integer percentage does not have.
+ *
+ * `charging` climbs the cells above the level, one after another, the way a
+ * phone shows it; a full battery pulses its top cell instead, so the meter
+ * never looks still while it charges. Reduced motion leaves the level alone
+ * and the bolt beside the figure says it.
  */
 export function SegmentMeter({
   value,
   segments = 5,
   tone = "live",
+  charging = false,
   className,
 }: {
   /** 0–100. */
   value: number;
   segments?: number;
   tone?: Tone;
+  charging?: boolean;
   className?: string;
 }) {
   const filled = Math.round((Math.min(Math.max(value, 0), 100) / 100) * segments);
+  // The first cell the charge climbs from: the one above the level, or the
+  // top one when there is none above it.
+  const climbFrom = Math.min(filled, segments - 1);
 
   return (
     <span
       className={cn("flex items-center gap-[2px]", className)}
       aria-label={`${Math.round(value)} percent`}
     >
-      {Array.from({ length: segments }, (_, i) => (
-        <span
-          key={i}
-          className={cn(
-            "h-3 w-[5px] rounded-[1px]",
-            i < filled ? TONE_FILL[tone] : "bg-hairline",
-          )}
-        />
-      ))}
+      {Array.from({ length: segments }, (_, i) => {
+        const climbing = charging && i >= climbFrom;
+        return (
+          <span
+            key={i}
+            className={cn(
+              "h-3 w-[5px] rounded-[1px]",
+              i < filled ? TONE_FILL[tone] : "bg-hairline",
+              climbing && "meter-charge",
+            )}
+            style={
+              climbing
+                ? ({
+                    "--charge-fill": `var(${TONE_VAR[tone]})`,
+                    animationDelay: `${(i - climbFrom) * 0.25}s`,
+                  } as React.CSSProperties)
+                : undefined
+            }
+          />
+        );
+      })}
     </span>
   );
 }

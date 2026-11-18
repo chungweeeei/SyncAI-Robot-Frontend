@@ -1,5 +1,6 @@
 "use client";
 
+import { ZapIcon } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
 
@@ -12,7 +13,7 @@ import { SensorDisclosure } from "@/components/console/sensor-disclosure";
 import { useConsoleEstop } from "@/hooks/use-console-estop";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { useActiveMap, useMaps } from "@/hooks/use-maps";
-import { batteryTone } from "@/lib/robot/levels";
+import { batteryTone, isCharging } from "@/lib/robot/levels";
 import {
   Chip,
   SegmentMeter,
@@ -78,6 +79,7 @@ export function StatusStrip() {
           : { label: "No signal", tone: "warn" };
 
   const battery = state?.battery_status.battery_percentage;
+  const charging = isCharging(state?.state);
 
   return (
     <header className="relative shrink-0 bg-panel">
@@ -173,9 +175,19 @@ export function StatusStrip() {
               <span className="readout text-[13px] text-muted-foreground">—</span>
             ) : (
               <>
+                {/* The bolt at every width, since the meter goes below `md`
+                  * and under reduced motion stops climbing. */}
+                {charging && (
+                  <ZapIcon
+                    role="img"
+                    aria-label="Charging"
+                    className="size-3.5 fill-current text-signal-live"
+                  />
+                )}
                 <SegmentMeter
                   value={battery}
                   tone={batteryTone(battery)}
+                  charging={charging}
                   className="hidden md:flex"
                 />
                 <span

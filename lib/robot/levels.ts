@@ -1,6 +1,7 @@
 // Readout thresholds for Wi-Fi signal, battery and joint temperature, in one
 // place so every surface agrees.
 
+import type { RobotStatus } from "@/lib/types/robot";
 import type { Tone } from "@/lib/types/tone";
 
 /** The meter's bar count; `rssiToBars`' cut-offs only hold against it. */
@@ -21,6 +22,16 @@ export function batteryTone(pct: number): Tone {
   if (pct < BATTERY_WARN_PCT) return "warn";
   if (pct < BATTERY_CAUTION_PCT) return "caution";
   return "live";
+}
+
+/**
+ * Whether the battery readout shows charging. Only the rollup says so, and
+ * it says UNINITIALIZED over CHARGING, so a robot docked before it is
+ * localized shows no charge until it is: a reading, never a guess from a
+ * rising percentage.
+ */
+export function isCharging(state: RobotStatus | undefined): boolean {
+  return state === "CHARGING";
 }
 
 // Display thresholds, °C. Nothing on the robot defines or acts on a joint

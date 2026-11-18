@@ -7,6 +7,7 @@ import {
   TEMP_CAUTION_C,
   TEMP_WARN_C,
   batteryTone,
+  isCharging,
   motorTempTone,
   rssiToBars,
 } from "@/lib/robot/levels";
@@ -59,6 +60,21 @@ describe("batteryTone", () => {
 
   it("warns before it cautions, never the other way round", () => {
     expect(BATTERY_WARN_PCT).toBeLessThan(BATTERY_CAUTION_PCT);
+  });
+});
+
+describe("isCharging", () => {
+  it("is the CHARGING rollup alone", () => {
+    expect(isCharging("CHARGING")).toBe(true);
+    // The rollup is one value, most-severe-first: a docked robot that is not
+    // localized reads UNINITIALIZED, and is not shown charging.
+    for (const state of ["IDLE", "WARNING", "UNINITIALIZED", "UNKNOWN"]) {
+      expect(isCharging(state)).toBe(false);
+    }
+  });
+
+  it("is not charging on a backend that does not send the state", () => {
+    expect(isCharging(undefined)).toBe(false);
   });
 });
 

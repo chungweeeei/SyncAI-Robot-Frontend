@@ -350,6 +350,28 @@ test.describe("the masthead's mode chip", () => {
     await expect(strip.getByText("Navigation", { exact: true })).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
+
+  test("shows the battery charging while the robot reports it", async ({ page }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const state = robotState();
+    await mockBackend(page, { state });
+    await page.goto("/settings");
+
+    const strip = page.getByRole("banner");
+    const bolt = strip.getByRole("img", { name: "Charging" });
+    // The positive control first: the figure is there and no bolt beside it.
+    await expect(strip.getByText("88")).toBeVisible();
+    await expect(bolt).toHaveCount(0);
+
+    state.state = "CHARGING";
+    await expect(bolt).toBeVisible();
+
+    // The rollup is one value: docked but not localized reads UNINITIALIZED.
+    state.state = "UNINITIALIZED";
+    await expect(bolt).toHaveCount(0);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
 });
 
 /**
