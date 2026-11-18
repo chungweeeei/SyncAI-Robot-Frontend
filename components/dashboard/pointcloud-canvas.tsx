@@ -262,6 +262,12 @@ interface PointCloudCanvasProps {
   previewGoal?: (PlanarPose & { z?: number }) | null;
   previewPath?: Float32Array | null;
   /**
+   * A tapped charger, drawn as its staging point and leg in the preview's
+   * staging hue: its route preview ends at that point, which no goal marker
+   * names. Like the preview's band, not under the path toggle.
+   */
+  previewDock?: (PlanarPose & { z?: number }) | null;
+  /**
    * The initial pose last placed, kept as the reference the reported pose is
    * read against while localization converges, on its floor's ground when it
    * was placed on one. useInitialPose expires it.
@@ -317,6 +323,7 @@ export function PointCloudCanvas({
   goal = null,
   previewGoal = null,
   previewPath = null,
+  previewDock = null,
   initialPose = null,
   initialPoseGround = null,
   pickMode = null,
@@ -1319,6 +1326,29 @@ export function PointCloudCanvas({
       layer.dispose();
     };
   }, [dockX, dockY, dockTheta, showPath, theme]);
+
+  // ---- A tapped charger's staging point ------------------------------------
+  const previewDockX = previewDock?.x;
+  const previewDockY = previewDock?.y;
+  const previewDockTheta = previewDock?.theta;
+  const previewDockZ = previewDock?.z;
+  React.useEffect(() => {
+    const ctx = sceneRef.current;
+    if (!ctx || previewDockX === undefined || previewDockY === undefined) return;
+    if (previewDockTheta === undefined) return;
+
+    const layer = createDockLayer(
+      { x: previewDockX, y: previewDockY, theta: previewDockTheta, z: previewDockZ },
+      theme,
+      { preview: true },
+    );
+    ctx.scene.add(layer.group);
+
+    return () => {
+      ctx.scene.remove(layer.group);
+      layer.dispose();
+    };
+  }, [previewDockX, previewDockY, previewDockTheta, previewDockZ, theme]);
 
   // ---- Optional static map cloud (toggle) ------------------------------
   React.useEffect(() => {

@@ -424,6 +424,13 @@ export function PointCloudView({
   // A charger's preview is asked for at its staging point, but a goal marker
   // there reads as a stop of its own: the charger's mark is where it ends.
   const previewMarker = askedVertex?.type === "CHARGE" ? null : routePreview.goal;
+  // Its staging point is drawn instead, in a hue of its own; not over a
+  // charge already running to the same charger, which draws it live.
+  const previewDock =
+    askedVertex?.type === "CHARGE" &&
+    !(dock && dock.x === askedVertex.x && dock.y === askedVertex.y)
+      ? askedVertex
+      : null;
   const askVertex = React.useCallback(
     (vertex: MapVertex) => {
       setAskedVertex(vertex);
@@ -600,6 +607,7 @@ export function PointCloudView({
           goal={task.goal}
           previewGoal={previewMarker}
           previewPath={previewPath}
+          previewDock={previewDock}
           initialPose={estimate.pose}
           initialPoseGround={initialPoseGround}
           recenterNonce={recenterNonce}
