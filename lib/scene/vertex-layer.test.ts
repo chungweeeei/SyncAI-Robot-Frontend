@@ -4,7 +4,8 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { drawnGround } from "@/lib/map/floors";
 import { pickVertex } from "@/lib/scene/picking";
 import { THEMES } from "@/lib/scene/theme";
-import { createVertexLayer, type SurfaceTop } from "@/lib/scene/vertex-layer";
+import type { SurfaceTop } from "@/lib/scene/map-surface";
+import { createVertexLayer } from "@/lib/scene/vertex-layer";
 import type { MapVertex } from "@/lib/types/map";
 
 // jsdom has no 2D context; the badge only needs one to draw into.
