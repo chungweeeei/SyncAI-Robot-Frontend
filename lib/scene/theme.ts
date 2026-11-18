@@ -87,6 +87,13 @@ export interface Theme {
    */
   staging: number;
   stagingCasing: number;
+  /**
+   * A tapped charger's staging point, while its stop panel is open: the
+   * charge's own violet, a step brighter than its leg, so it reads as the
+   * charger's point and never as `staging`'s "heading there now" — nor as
+   * the end of the preview's pale cyan route, which stops on it.
+   */
+  stagingPreview: number;
   /** Forbidden zones: `signal-warn`, the same mark as in the map editor. */
   zone: number;
   /**
@@ -140,6 +147,7 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     dock: 0x6a4fc0,
     staging: SIGNAL.light.live,
     stagingCasing: 0xffffff,
+    stagingPreview: 0x8b5cf6,
     zone: SIGNAL.light.warn,
     localCostmap: SIGNAL.light.caution,
     localCostmapOverMap: 0xffffff,
@@ -167,6 +175,7 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     dock: 0xa991f2,
     staging: SIGNAL.dark.live,
     stagingCasing: SIGNAL.dark.background,
+    stagingPreview: 0xc4b5fd,
     zone: SIGNAL.dark.warn,
     localCostmap: SIGNAL.dark.caution,
     localCostmapOverMap: 0xf2f7fa,

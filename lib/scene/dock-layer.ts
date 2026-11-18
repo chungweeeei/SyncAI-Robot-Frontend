@@ -4,7 +4,7 @@
 import * as THREE from "three";
 
 import { stagingPose } from "@/lib/map/dock";
-import { GROUND_FLOOR_Z_M } from "@/lib/map/floors";
+import { drawnGround } from "@/lib/map/floors";
 import { createDashedRibbon } from "@/lib/scene/path-ribbon";
 import type { Theme } from "@/lib/scene/theme";
 import type { PlanarPose } from "@/lib/types/robot";
@@ -37,19 +37,25 @@ const LEG_Z_M = 0.016;
  * when a dock starts, so a rebuild is cheaper than a mutable layer.
  * The leg runs on to the marker, past where the robot stops: where it stops
  * is the charger's geometry, the robot's to know.
+ *
+ * `preview` is a charger tapped on the map rather than one being charged at:
+ * the same marks, the dot in `stagingPreview`, since the robot is not heading
+ * there and the live hue would say it is.
  */
 export function createDockLayer(
-  dock: PlanarPose,
+  dock: PlanarPose & { z?: number },
   theme: Theme,
+  { preview = false }: { preview?: boolean } = {},
 ): { group: THREE.Group; dispose: () => void } {
   const group = new THREE.Group();
-  // A dock is on the ground floor.
-  group.position.z = GROUND_FLOOR_Z_M;
+  // On the charger's own ground; a running charge's carries none, which is
+  // the ground floor's.
+  group.position.z = drawnGround(dock.z ?? 0);
   const staging = stagingPose(dock);
 
   const dotGeometry = new THREE.CircleGeometry(STAGING_DOT_RADIUS_M, 24);
   const dotMaterial = new THREE.MeshBasicMaterial({
-    color: theme.staging,
+    color: preview ? theme.stagingPreview : theme.staging,
     side: THREE.DoubleSide,
   });
   const dot = new THREE.Mesh(dotGeometry, dotMaterial);

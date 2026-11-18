@@ -38,6 +38,28 @@ describe("createDockLayer", () => {
     layer.dispose();
   });
 
+  it("draws a tapped charger's staging point in a hue apart from a running charge's", () => {
+    // A preview is not where the robot is heading, so it must not wear the
+    // live hue — nor the route preview's cyan, which ends on it.
+    const layer = createDockLayer({ x: 0, y: 0, theta: 0 }, THEMES.dark, { preview: true });
+    const dot = layer.group.children[0] as THREE.Mesh;
+    const hex = (dot.material as THREE.MeshBasicMaterial).color.getHex();
+
+    expect(hex).toBe(THEMES.dark.stagingPreview);
+    expect(hex).not.toBe(THEMES.dark.staging);
+    expect(hex).not.toBe(THEMES.dark.preview);
+    layer.dispose();
+  });
+
+  it("stands a tapped charger's staging point on the charger's own floor", () => {
+    const layer = createDockLayer({ x: 0, y: 0, theta: 0, z: 3.2 }, THEMES.light, {
+      preview: true,
+    });
+
+    expect(layer.group.position.z).toBeCloseTo(3.2);
+    layer.dispose();
+  });
+
   it("keeps the leg between the staging point and the charger", () => {
     const layer = createDockLayer({ x: 0, y: 0, theta: 0 }, THEMES.dark);
     const leg = layer.group.children[1] as THREE.Mesh;
