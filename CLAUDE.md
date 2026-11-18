@@ -228,8 +228,9 @@ components/
                 the canvas keeps both framings); a tapped stop opens a panel beside the map, not
                 a dialog over it (stop-panel: the route the planner would take
                 there, asked for on the tap and drawn in the draft's hue, its
-                X, Y, Z and the floors it walks, and Go — which sends that stop —
-                or why there is none; Reposition and Delete in its ⋯ menu;
+                X, Y, Z and the floors it walks, and Go — which sends that stop,
+                and reads Charge on a charger, whose route ends at its staging
+                point with no goal marker there — or why there is none; Reposition and Delete in its ⋯ menu;
                 nothing is sent until Go, so the stop holds only Go), while Set
                 goal still sends on release — the instrument rail (the registered schedules
                 first — a glance with pause and delete, the list itself stays

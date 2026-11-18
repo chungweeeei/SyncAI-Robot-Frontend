@@ -421,6 +421,9 @@ export function PointCloudView({
     },
     [requestPreview],
   );
+  // A charger's preview is asked for at its staging point, but a goal marker
+  // there reads as a stop of its own: the charger's mark is where it ends.
+  const previewMarker = askedVertex?.type === "CHARGE" ? null : routePreview.goal;
   const askVertex = React.useCallback(
     (vertex: MapVertex) => {
       setAskedVertex(vertex);
@@ -595,7 +598,7 @@ export function PointCloudView({
           }
           cameraMode={cameraMode}
           goal={task.goal}
-          previewGoal={routePreview.goal}
+          previewGoal={previewMarker}
           previewPath={previewPath}
           initialPose={estimate.pose}
           initialPoseGround={initialPoseGround}

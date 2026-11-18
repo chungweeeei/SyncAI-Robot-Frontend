@@ -8,6 +8,7 @@ import {
   SendIcon,
   Trash2Icon,
   XIcon,
+  ZapIcon,
 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/console/confirm-dialog";
@@ -47,6 +48,10 @@ import type { MapVertex } from "@/lib/types/map";
  * the panel's action; on any other, a tap is as often the next stop picked
  * ahead as a change of mind, so Go stays, held until the robot gets there,
  * and Cancel waits in the ⋯ menu. Presentation only.
+ *
+ * On a charger the action reads Charge, because that is what it sends: the
+ * waypoint is the marker on the charger's face, and its step is a charge,
+ * not a walk onto it.
  */
 export function StopPanel({
   vertex,
@@ -115,6 +120,8 @@ export function StopPanel({
   const { preview, pending, error } = state;
   const reachable = preview?.reachable === true;
   const canGo = reachable && !stale && !pending && !goLocked;
+  const goLabel = vertex.type === "CHARGE" ? "Charge" : "Go";
+  const GoIcon = vertex.type === "CHARGE" ? ZapIcon : SendIcon;
 
   return (
     <section
@@ -179,7 +186,7 @@ export function StopPanel({
         {running && goalHere && <p className="text-signal-cmd">The robot is on its way here.</p>}
         {running && !goalHere && (
           <p className="text-signal-caution">
-            The robot is on its way to {goalName ?? "another goal"}. Go opens once it gets there.
+            The robot is on its way to {goalName ?? "another goal"}. {goLabel} opens once it gets there.
           </p>
         )}
         {cancelError && <p className="text-signal-warn">{cancelError}</p>}
@@ -231,8 +238,8 @@ export function StopPanel({
             onClick={() => onGo(vertex)}
             className={cardAction("cmd")}
           >
-            <SendIcon className="size-3.5" aria-hidden />
-            Go
+            <GoIcon className="size-3.5" aria-hidden />
+            {goLabel}
           </button>
         )}
         <button type="button" aria-label="Close" onClick={onClose} className={cardAction("quiet")}>
