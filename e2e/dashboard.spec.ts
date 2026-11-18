@@ -948,7 +948,8 @@ test.describe("adding a waypoint from the dashboard", () => {
 });
 
 test.describe("tapping a stop on the dashboard", () => {
-  const stop = vertex();
+  // A plain waypoint: a charger's action reads Charge, tested on its own below.
+  const stop = vertex({ name: "desk", type: "MOVE" });
   const stopPath = `/api/v1/maps/${MAP_NAME}/vertices/${stop.id}`;
 
   /**
@@ -975,7 +976,7 @@ test.describe("tapping a stop on the dashboard", () => {
   }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    const writes = await mockBackend(page, { octomap: framedTree() });
+    const writes = await mockBackend(page, { octomap: framedTree(), vertices: [stop] });
     await page.goto("/");
 
     await tapStop(page);
@@ -1003,7 +1004,7 @@ test.describe("tapping a stop on the dashboard", () => {
   }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    const writes = await mockBackend(page, { octomap: framedTree(), activeTasks: [activeTask()] });
+    const writes = await mockBackend(page, { octomap: framedTree(), vertices: [stop], activeTasks: [activeTask()] });
     await page.goto("/");
 
     await tapStop(page);
@@ -1033,6 +1034,7 @@ test.describe("tapping a stop on the dashboard", () => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, {
+      vertices: [stop],
       octomap: framedTree(),
       dispatchedTaskState: (id) => ({
         id,
@@ -1058,6 +1060,7 @@ test.describe("tapping a stop on the dashboard", () => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, {
+      vertices: [stop],
       octomap: framedTree(),
       // No sentence on the step: a FAILED run still owes the operator a Retry.
       dispatchedTaskState: (id) => ({
@@ -1089,6 +1092,7 @@ test.describe("tapping a stop on the dashboard", () => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, {
+      vertices: [stop],
       octomap: framedTree(),
       dispatchedTaskState: (id) => ({
         id,
@@ -1122,6 +1126,7 @@ test.describe("tapping a stop on the dashboard", () => {
     const canceled = (id: string) =>
       sent.some((w) => w.method === "DELETE" && w.path === `/api/v1/tasks/${id}`);
     const writes = await mockBackend(page, {
+      vertices: [stop],
       octomap: framedTree(),
       dispatchedTaskState: (id) => ({
         id,
@@ -1213,7 +1218,7 @@ test.describe("tapping a stop on the dashboard", () => {
   test("writes nothing when the confirm is dismissed", async ({ page }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
-    const writes = await mockBackend(page, { octomap: framedTree() });
+    const writes = await mockBackend(page, { octomap: framedTree(), vertices: [stop] });
     await page.goto("/");
 
     await tapStop(page);
@@ -1281,13 +1286,14 @@ test.describe("tapping a stop on the dashboard", () => {
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("routes a charger to its staging point, and Go sends a charge, not a move", async ({
+  test("routes a charger to its staging point, and its Charge sends a charge, not a move", async ({
     page,
   }) => {
     // The waypoint is the marker Detect saw, on the charger's face: a MOVE
     // would plan onto it. The route shown is the one the charge drives, to
-    // the point 1.3 m out along the marker's face, facing it, and Go sends
-    // the waypoint as stored, the marker's pose charge.xml takes.
+    // the point 1.3 m out along the marker's face, facing it, and Charge
+    // sends the waypoint as stored, the marker's pose charge.xml takes.
+    const dock = vertex();
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, {
@@ -1300,24 +1306,26 @@ test.describe("tapping a stop on the dashboard", () => {
             id: "goal",
             status: "IN_PROGRESS",
             error_msg: "",
-            charge: { x: stop.x, y: stop.y, theta: stop.theta },
+            charge: { x: dock.x, y: dock.y, theta: dock.theta },
           },
         ],
       }),
     });
     await page.goto("/");
 
-    await tapStop(page);
+    await tapStop(page, dock);
 
-    const card = page.getByRole("region", { name: stop.name });
-    await expect(card.getByRole("button", { name: "Go" })).toBeEnabled();
+    const card = page.getByRole("region", { name: dock.name });
+    // A charger's action says what it sends.
+    await expect(card.getByRole("button", { name: "Go", exact: true })).toHaveCount(0);
+    await expect(card.getByRole("button", { name: "Charge", exact: true })).toBeEnabled();
     const asked = previews(writes)[0].body as { x: number; y: number; theta: number };
     // theta 90: 1.3 m out is straight up y, facing back down it.
-    expect(asked.x).toBeCloseTo(stop.x);
-    expect(asked.y).toBeCloseTo(stop.y + 1.3);
-    expect(asked.theta).toBeCloseTo(stop.theta - 180);
+    expect(asked.x).toBeCloseTo(dock.x);
+    expect(asked.y).toBeCloseTo(dock.y + 1.3);
+    expect(asked.theta).toBeCloseTo(dock.theta - 180);
 
-    await card.getByRole("button", { name: "Go" }).click();
+    await card.getByRole("button", { name: "Charge", exact: true }).click();
     await expect.poll(() => dispatches(writes)).toHaveLength(1);
     const job = dispatches(writes)[0].body as {
       kind: string;
@@ -1326,7 +1334,7 @@ test.describe("tapping a stop on the dashboard", () => {
     expect(job.kind).toBe("goal");
     expect(job.steps).toHaveLength(1);
     expect(job.steps[0].type).toBe("CHARGE");
-    expect(job.steps[0].params).toMatchObject({ x: stop.x, y: stop.y, theta: stop.theta });
+    expect(job.steps[0].params).toMatchObject({ x: dock.x, y: dock.y, theta: dock.theta });
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -1336,6 +1344,7 @@ test.describe("tapping a stop on the dashboard", () => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, {
+      vertices: [stop],
       octomap: framedTree(),
       routePreview: () => ({
         body: {
@@ -1365,6 +1374,7 @@ test.describe("tapping a stop on the dashboard", () => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     const writes = await mockBackend(page, {
+      vertices: [stop],
       octomap: framedTree(),
       state: robotState({
         low_level_mode: { policy: "PPO", motion: "LOCOMOTION", safety_locked: true },
