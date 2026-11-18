@@ -41,6 +41,14 @@ describe("RobotStateSchema", () => {
     expect("gait_phase" in parsed).toBe(false);
   });
 
+  it("accepts a frame from a backend without the state rollup", () => {
+    // `frame` carries none; the newer backend's field parses too.
+    expect(RobotStateSchema.parse(frame).state).toBeUndefined();
+    expect(RobotStateSchema.parse({ ...frame, state: "CHARGING" }).state).toBe(
+      "CHARGING",
+    );
+  });
+
   it("rejects a renamed field and names it", () => {
     const result = RobotStateSchema.safeParse({
       ...frame,

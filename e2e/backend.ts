@@ -65,6 +65,7 @@ export function robotState(over: Record<string, unknown> = {}) {
     robot_id: "robot01",
     map: `map/${MAP_NAME}/octomap.bt`,
     mode: "AUTO",
+    state: "IDLE",
     low_level_mode: { policy: "PPO", motion: "LOCOMOTION", safety_locked: false },
     localization_valid: true,
     localization_status: {
