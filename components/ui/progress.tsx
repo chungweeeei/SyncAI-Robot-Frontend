@@ -8,8 +8,12 @@ function Progress({
   className,
   children,
   value,
+  indicatorClassName,
   ...props
-}: ProgressPrimitive.Root.Props) {
+}: ProgressPrimitive.Root.Props & {
+  /** The fill's own classes: its hue, and how slowly it moves to a new value. */
+  indicatorClassName?: string
+}) {
   return (
     <ProgressPrimitive.Root
       value={value}
@@ -19,7 +23,7 @@ function Progress({
     >
       {children}
       <ProgressTrack>
-        <ProgressIndicator />
+        <ProgressIndicator className={indicatorClassName} />
       </ProgressTrack>
     </ProgressPrimitive.Root>
   )
@@ -45,7 +49,13 @@ function ProgressIndicator({
   return (
     <ProgressPrimitive.Indicator
       data-slot="progress-indicator"
-      className={cn("h-full bg-primary transition-all", className)}
+      // Without a value the primitive gives the fill no width at all, so the
+      // bar would be an empty track: `progress-sweep` (app/globals.css) is
+      // what "working, no reading" looks like.
+      className={cn(
+        "h-full bg-primary transition-all motion-reduce:transition-none data-indeterminate:progress-sweep",
+        className
+      )}
       {...props}
     />
   )
