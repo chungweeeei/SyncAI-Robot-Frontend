@@ -171,7 +171,8 @@ components/
                 hooks obey),
                 the strip's running-job controls (a fixed pause / resume and
                 cancel pair, then one always-present bar: job id, step and
-                state; a failed job stays on it, the pair reading Retry —
+                state, the step's line crawling when it is wider than the
+                bar (marquee.tsx; still, and cut, under reduced motion); a failed job stays on it, the pair reading Retry —
                 from the step it failed at, the history's rule — and
                 Dismiss) and its disclosures: the sensor alerts (where an
                 overheating motor interrupts, on every screen), the drive
@@ -236,7 +237,9 @@ components/
                 there is none; Reposition and Delete in its ⋯ menu;
                 nothing is sent until Go, so the stop holds only Go), while Set
                 goal still sends on release — the instrument rail (the registered schedules
-                first — a glance with pause and delete, the list itself stays
+                first — a glance with pause and delete, the soonest drawn as
+                an Up next card, a schedule with a run going marked Running
+                now off the active-tasks poll; the list itself stays
                 on /tasks — then locomotion and motors) and the
                 driving controls
   drive/        the full-screen drive view (/drive, unlisted in the nav rail):
