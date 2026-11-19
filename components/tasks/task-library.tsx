@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { ChevronDownIcon, ChevronRightIcon, SearchIcon } from "lucide-react";
 
 import { Chip } from "@/components/console/instrument";
@@ -34,7 +33,6 @@ export interface TaskLibraryProps {
   onRun: (template: TaskTemplate) => void;
   onEdit: (template: TaskTemplate) => void;
   onSchedule: (template: TaskTemplate) => void;
-  onDuplicate: (template: TaskTemplate) => void;
   onDelete: (template: TaskTemplate) => void;
 }
 
@@ -58,7 +56,6 @@ export function TaskLibrary({
   onRun,
   onEdit,
   onSchedule,
-  onDuplicate,
   onDelete,
 }: TaskLibraryProps) {
   const [query, setQuery] = React.useState("");
@@ -145,16 +142,6 @@ export function TaskLibrary({
               {group.loaded && <Chip tone="live">Loaded</Chip>}
             </div>
 
-            {/* Said once for the group, not on every card it holds. */}
-            {other && (
-              <p className="pl-5 text-[11px] leading-tight text-muted-foreground">
-                These run once {group.mapName} is loaded; the robot has{" "}
-                {activeMapName ?? "no map"} loaded.{" "}
-                <Link href="/maps" className="text-foreground underline underline-offset-2">
-                  Switch maps
-                </Link>
-              </p>
-            )}
             {group.mapName === null && open && (
               <p className="pl-5 text-[11px] leading-tight text-muted-foreground">
                 These move nowhere, so they run on any map.
@@ -175,7 +162,6 @@ export function TaskLibrary({
                     onRun={() => onRun(template)}
                     onEdit={() => onEdit(template)}
                     onSchedule={() => onSchedule(template)}
-                    onDuplicate={() => onDuplicate(template)}
                     onDelete={() => onDelete(template)}
                   />
                 ))}

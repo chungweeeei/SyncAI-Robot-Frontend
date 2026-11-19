@@ -19,8 +19,7 @@ import { useTaskDraft } from "@/hooks/use-task-draft";
 import type { TaskTemplate } from "@/lib/api/task-template";
 import { draftFromTemplate, draftWouldBeLost } from "@/lib/task/draft-store";
 import { deletedSchedulesNote } from "@/lib/task/library";
-import { fromTemplateSteps, toDispatchSteps, toTemplateSteps } from "@/lib/task/step";
-import { TASK_TEMPLATE_NAME_MAX } from "@/lib/task/template";
+import { toDispatchSteps } from "@/lib/task/step";
 
 /**
  * /tasks: the saved tasks by map, each with its schedules, and the Run and
@@ -79,15 +78,6 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
     // labels the job in history; the map lets the backend refuse a map
     // switched since this list was read.
     void dispatch.send(toDispatchSteps(template.steps), template.name, template.map_name);
-  };
-
-  /** The editor's Save as copy, from the card: the same steps under a new name. */
-  const duplicate = (template: TaskTemplate) => {
-    void library.create({
-      name: `${template.name} (copy)`.slice(0, TASK_TEMPLATE_NAME_MAX),
-      map_name: template.map_name,
-      steps: toTemplateSteps(fromTemplateSteps(template.steps)),
-    });
   };
 
   /**
@@ -160,7 +150,6 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
             onRun={run}
             onEdit={openInEditor}
             onSchedule={(template) => setSchedulingId(template.id)}
-            onDuplicate={duplicate}
             onDelete={setDeleting}
           />
         </InstrumentGroup>

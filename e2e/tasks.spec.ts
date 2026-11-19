@@ -333,24 +333,13 @@ test.describe("the task console", () => {
     await expect(page.getByText("No task is named like “nothing”.")).toBeVisible();
   });
 
-  test("duplicates a task from its menu, under a new name", async ({ page }) => {
-    const writes = await mockBackend(page);
+  // No Duplicate on the card, by request: Save as copy in the editor is the one way.
+  test("holds only Delete in a task's menu", async ({ page }) => {
+    await mockBackend(page);
     await page.goto("/tasks");
 
     await page.getByRole("button", { name: 'More for "Morning round"' }).click();
-    await page.getByRole("menuitem", { name: "Duplicate" }).click();
-
-    await expect
-      .poll(() => writes.filter((w) => w.path === "/api/v1/task_templates"))
-      .toHaveLength(1);
-    const body = writes.find((w) => w.path === "/api/v1/task_templates")!.body as {
-      name: string;
-      map_name: string;
-      steps: { vertex_id: string }[];
-    };
-    expect(body.name).toBe("Morning round (copy)");
-    expect(body.map_name).toBe(MAP_NAME);
-    expect(body.steps[0].vertex_id).toBe(vertex().id);
+    await expect(page.getByRole("menuitem")).toHaveText(["Delete"]);
   });
 
   test("deletes a task from its menu only once confirmed", async ({ page }) => {
@@ -414,8 +403,7 @@ test.describe("the task console", () => {
   }) => {
     // A task for a map the robot is not on is still the operator's work: it is
     // listed and can be opened, but its coordinates are in another frame, so
-    // the two buttons that would move the robot are held, and the group says
-    // once where the map is switched.
+    // the two buttons that would move the robot are held.
     await mockBackend(page, {
       templates: [
         taskTemplate(),
@@ -429,14 +417,9 @@ test.describe("the task console", () => {
     });
     await page.goto("/tasks");
 
+    // No note under the group, by request: its heading names the map.
     const group = page.getByRole("region", { name: "Tasks on wh1" });
-    await expect(
-      group.getByText("These run once wh1 is loaded; the robot has dp2f loaded."),
-    ).toBeVisible();
-    await expect(group.getByRole("link", { name: "Switch maps" })).toHaveAttribute(
-      "href",
-      "/maps",
-    );
+    await expect(group.getByRole("link", { name: "Switch maps" })).toHaveCount(0);
     await group.getByRole("button", { name: /^wh1/ }).click();
 
     await expect(page.getByRole("button", { name: 'Run "Second floor" now' })).toBeDisabled();
