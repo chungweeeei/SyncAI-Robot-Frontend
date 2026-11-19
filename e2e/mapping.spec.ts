@@ -6,6 +6,7 @@ import {
   mockBackend,
   robotState,
   withOctomap,
+  withoutOctomap,
 } from "./backend";
 
 /**
@@ -82,9 +83,11 @@ test.describe("the mapping run", () => {
   test("saving asks for the name, shows the receipt, and offers Start again", async ({
     page,
   }) => {
+    const maps = [mapSummary()];
     const writes = await mockBackend(page, {
       state: mapping(),
       mappingStatus: { state: "mapping", key_poses: 12, loop_closures: 1 },
+      maps,
     });
     await page.goto("/mapping");
     await expect(strip(page).getByRole("status")).toHaveText("Mapping");
@@ -99,13 +102,14 @@ test.describe("the mapping run", () => {
       // The name alone: the robot builds the 3D map from every save.
       { method: "POST", path: "/api/v1/maps", body: { name: "site_a" } },
     ]);
-    // The dialog stays and turns into the receipt: the form is gone, the
-    // robot's sentence is there, and it asks whether to go back to
-    // Navigation. Staying sends nothing.
+    // The dialog stays and turns into the receipt: the form is gone and the
+    // robot's sentence is there. Once the 3D map is built it asks whether
+    // to go back to Navigation. Staying sends nothing.
     await expect(dialog(page)).toContainText(/Mapping has stopped/);
     await expect(dialog(page).getByLabel("Map name")).toHaveCount(0);
     await expect(dialog(page).getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
-    await dialog(page).getByRole("button", { name: "Stay in Mapping" }).click();
+    Object.assign(maps[1], withOctomap());
+    await dialog(page).getByRole("button", { name: "Stay in Mapping" }).click({ timeout: 10_000 });
     await expect(dialog(page)).toHaveCount(0);
     expect(writes.filter((w) => w.path === "/api/v1/robot/mode")).toEqual([]);
 
@@ -119,17 +123,23 @@ test.describe("the mapping run", () => {
   test("after a save, Switch to Navigation sends the switch with no second question", async ({
     page,
   }) => {
+    const maps = [mapSummary()];
     const writes = await mockBackend(page, {
       state: mapping(),
       mappingStatus: { state: "mapping", key_poses: 12, loop_closures: 1 },
+      maps,
     });
     await page.goto("/mapping");
 
     await saveButton(page).click();
     await dialog(page).getByLabel("Map name").fill("site_a");
     await dialog(page).getByRole("button", { name: "Save", exact: true }).click();
+    await expect(dialog(page)).toContainText("Building the 3D map…");
+    Object.assign(maps[1], withOctomap());
     // The receipt says which map Navigation comes back on.
-    await expect(dialog(page)).toContainText(/on\s+the map it was using before, not this one/);
+    await expect(dialog(page)).toContainText(/on\s+the map it was using before, not this one/, {
+      timeout: 10_000,
+    });
     await dialog(page).getByRole("button", { name: "Switch to Navigation" }).click();
 
     // The run is saved, so the leave-guard's question is not asked.
@@ -160,12 +170,63 @@ test.describe("the mapping run", () => {
     ]);
     await expect(dialog(page)).toContainText("Building the 3D map…");
     await expect(dialog(page)).not.toContainText(/floor plan/i);
+    // Nothing is asked while it builds: a switch would restart the robot
+    // under the build, and whether the map is usable is not known yet.
+    await expect(dialog(page)).not.toContainText("Switch the robot back to Navigation?");
+    await expect(dialog(page).getByRole("button", { name: "Switch to Navigation" })).toHaveCount(0);
+    await expect(dialog(page).getByRole("button", { name: "Close" })).toBeVisible();
 
     // The robot's cleaning finishes; the catalogue poll carries it here.
     Object.assign(maps[1], withOctomap());
     await expect(dialog(page)).toContainText("3D map ready — this map is ready to use.", {
       timeout: 10_000,
     });
+    await expect(dialog(page).getByRole("button", { name: "Switch to Navigation" })).toBeVisible();
+    await expect(dialog(page).getByRole("button", { name: "Close" })).toHaveCount(0);
+    // Ready, so the receipt no longer tells the operator to wait for it.
+    await expect(dialog(page)).not.toContainText("once its 3D map is ready");
+  });
+
+  test("a failed 3D map build still asks, so the receipt never hangs", async ({ page }) => {
+    const maps = [mapSummary()];
+    await mockBackend(page, {
+      state: mapping(),
+      mappingStatus: { state: "mapping", key_poses: 12, loop_closures: 1 },
+      maps,
+    });
+    await page.goto("/mapping");
+
+    await saveButton(page).click();
+    await dialog(page).getByLabel("Map name").fill("site_b");
+    await dialog(page).getByRole("button", { name: "Save", exact: true }).click();
+    await expect(dialog(page)).toContainText("Building the 3D map…");
+
+    Object.assign(maps[1], {
+      ...withoutOctomap("failed"),
+      octomap_error: "the scan was empty",
+    });
+    await expect(dialog(page)).toContainText("The 3D map could not be built: the scan was empty", {
+      timeout: 10_000,
+    });
+    await expect(dialog(page)).toContainText("Switch the robot back to Navigation?");
+    await expect(dialog(page).getByRole("button", { name: "Stay in Mapping" })).toBeVisible();
+  });
+
+  test("closing mid-build sends nothing and leaves the build running", async ({ page }) => {
+    const writes = await mockBackend(page, {
+      state: mapping(),
+      mappingStatus: { state: "mapping", key_poses: 12, loop_closures: 1 },
+    });
+    await page.goto("/mapping");
+
+    await saveButton(page).click();
+    await dialog(page).getByLabel("Map name").fill("site_b");
+    await dialog(page).getByRole("button", { name: "Save", exact: true }).click();
+    await expect(dialog(page)).toContainText("Building the 3D map…");
+
+    await dialog(page).getByRole("button", { name: "Close" }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    expect(writes.filter((w) => w.path === "/api/v1/robot/mode")).toEqual([]);
   });
 
   test("Save is held until the name is one the robot accepts", async ({ page }) => {
