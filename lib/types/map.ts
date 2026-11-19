@@ -53,6 +53,15 @@ export interface MapSummary {
   /** Null unless `octomap_status` is `"failed"`. Operator-facing; render verbatim. */
   octomap_error: string | null;
   /**
+   * How much of the build is done, 0 to 1, as the robot's map cleaning
+   * reports it; null unless `"converting"`. Null while converting too, until
+   * the cleaning has something to report — it is queued behind another
+   * map's, or the robot or its backend is from before either reported one —
+   * so a reader draws a bar that has no reading rather than one at zero.
+   * Drawn through `buildPercent` (lib/map/build-progress.ts).
+   */
+  octomap_progress: number | null;
+  /**
    * An opaque tag for the 3D map's current bytes, null unless `"ok"`. The
    * backend changes it whenever the file is replaced (a re-clean, the robot's
    * edit tool), which is how the console's cache of the decoded tree is

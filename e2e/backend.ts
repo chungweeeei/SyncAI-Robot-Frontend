@@ -102,6 +102,7 @@ export function mapSummary(over: Record<string, unknown> = {}) {
     ...(withOctomap() as {
       octomap_status: string;
       octomap_error: string | null;
+      octomap_progress: number | null;
       octomap_version: string | null;
       octomap_resolution: number | null;
     }),
@@ -117,6 +118,9 @@ export function withoutOctomap(status: "none" | "converting" | "failed" | "inter
   return {
     octomap_status: status,
     octomap_error: null as string | null,
+    // A build the robot has reported nothing of yet; a test of one under way
+    // sets a fraction on the entry.
+    octomap_progress: null as number | null,
     octomap_version: null,
     octomap_resolution: null,
   };
@@ -127,6 +131,7 @@ export function withOctomap(version = "2971216-1760414598000000000") {
   return {
     octomap_status: "ok",
     octomap_error: null,
+    octomap_progress: null,
     octomap_version: version,
     octomap_resolution: 0.1,
   };
