@@ -262,6 +262,31 @@
 
 @layer base {
   * {
+/* The masthead's job line when it is wider than its bar (Marquee): the track
+ * holds the text twice, so half its width is one lap and the loop has no
+ * seam. It rests on the start for the first part of each lap, so the line is
+ * read from its beginning; the lap's length is handed in as
+ * --marquee-duration, measured, so every line moves at the same speed. */
+@keyframes marquee {
+  0%,
+  18% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@utility marquee {
+  animation: marquee var(--marquee-duration, 12s) linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee {
+    animation: none;
+  }
+}
+
     @apply border-border outline-ring/50;
   }
   html {

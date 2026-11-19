@@ -83,6 +83,45 @@ test.describe("the running-job controls", () => {
     await expect(cancelButton(page)).toBeEnabled();
   });
 
+  test("crawls a step's line that is wider than the bar, and only that one", async ({
+    page,
+  }) => {
+    const long =
+      "Heading for the loading bay by the east corridor, round the pallets left at the second door, then along the wall to the dock";
+    const onMove = (message: string) =>
+      taskState({
+        steps: [
+          { id: "1-speak", status: "COMPLETED", error_msg: "" },
+          { id: "2-move", status: "IN_PROGRESS", error_msg: "", message },
+        ],
+      });
+    const states: Record<string, Record<string, unknown>> = {
+      [ID]: onMove("Leaving the dock"),
+    };
+    await mockBackend(page, { activeTasks: [activeTask()], taskStates: states });
+    await page.setViewportSize({ width: 900, height: 700 });
+    await page.goto("/settings");
+
+    // Fits: one copy, standing still.
+    await expect(readout(page)).toContainText("Leaving the dock");
+    const copy = readout(page).locator('[aria-hidden="true"]', { hasText: "Move" });
+    await expect(copy).toHaveCount(0);
+
+    // Too wide: a second copy for the loop, hidden from a screen reader, and
+    // the track moving. The state word stays out of it.
+    states[ID] = onMove(long);
+    await expect(copy).toHaveCount(1);
+    const track = readout(page).locator(".marquee");
+    await expect(track).toHaveCSS("animation-name", "marquee");
+    await expect(track).not.toContainText("Running");
+    await expect(readout(page)).toContainText("Running");
+
+    // Reduced motion: still, and cut instead.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect(track).toHaveCSS("animation-name", "none");
+    await expect(copy).toBeHidden();
+  });
+
   test("pauses against the run's id and reads the hold back, not the ack", async ({
     page,
   }) => {
