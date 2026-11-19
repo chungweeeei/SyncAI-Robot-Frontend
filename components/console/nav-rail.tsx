@@ -130,10 +130,12 @@ export function NavRail() {
           >
             <item.icon className="size-[18px] shrink-0" />
             {/* The bottom bar is labelled from md, where a seventh of the
-              * width holds one. */}
+              * width holds one. Set as words, not as an instrument label (by
+              * request): this is navigation, read once, not a readout's
+              * caption, and condensed caps hid the typeface. */}
             <span
               className={cn(
-                "instrument-label hidden truncate md:inline",
+                "hidden truncate text-[13px] font-medium md:inline",
                 byFold(expanded, "", "lg:hidden", "lg:hidden xl:inline"),
               )}
             >
