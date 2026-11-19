@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Red_Hat_Mono, Saira } from "next/font/google";
+import { JetBrains_Mono, Mona_Sans } from "next/font/google";
 import "./globals.css";
 
 import { ActiveTaskProvider } from "@/components/console/active-task-provider";
@@ -14,14 +14,14 @@ import { pageTitle } from "@/lib/page-title";
 
 // `axes: ["wdth"]`, or next/font ships the wght-only subset and
 // `instrument-label` silently renders at normal width.
-const saira = Saira({
-  variable: "--font-saira",
+const monaSans = Mona_Sans({
+  variable: "--font-mona-sans",
   subsets: ["latin"],
   axes: ["wdth"],
 });
 
-const redHatMono = Red_Hat_Mono({
-  variable: "--font-red-hat-mono",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
   weight: ["400", "500", "600"],
 });
@@ -51,7 +51,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${saira.variable} ${redHatMono.variable} antialiased`}
+      className={`${monaSans.variable} ${jetbrainsMono.variable} antialiased`}
       suppressHydrationWarning
     >
       <body className="overflow-hidden">
