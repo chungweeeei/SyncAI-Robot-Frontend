@@ -5,7 +5,6 @@ import {
   CalendarPlusIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  CopyIcon,
   EllipsisIcon,
   PencilIcon,
   PlayIcon,
@@ -18,7 +17,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { IconButton, iconButtonClass } from "@/components/tasks/icon-button";
@@ -44,7 +42,7 @@ export interface TaskTemplateRowProps {
   template: TaskTemplate;
   /** A write to the library is in flight. */
   busy: boolean;
-  /** The task's map is not the loaded one, or is held; the group says why. */
+  /** The task's map is not the loaded one, or is held; its group is under that map's name. */
   runBlocked: boolean;
   /** As `runBlocked`, for Schedule: only another map holds it. */
   scheduleBlocked: boolean;
@@ -55,7 +53,6 @@ export interface TaskTemplateRowProps {
   onRun: () => void;
   onSchedule: () => void;
   onEdit: () => void;
-  onDuplicate: () => void;
   onDelete: () => void;
 }
 
@@ -78,7 +75,6 @@ export function TaskTemplateRow({
   onRun,
   onSchedule,
   onEdit,
-  onDuplicate,
   onDelete,
   scheduleActions,
 }: TaskTemplateRowProps) {
@@ -148,11 +144,6 @@ export function TaskTemplateRow({
               <EllipsisIcon className="size-3.5" aria-hidden />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem onClick={onDuplicate}>
-                <CopyIcon aria-hidden />
-                Duplicate
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onClick={onDelete}>
                 <Trash2Icon aria-hidden />
                 Delete

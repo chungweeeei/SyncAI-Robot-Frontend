@@ -312,12 +312,12 @@ components/
   recordings/   bag recorder and list
   tasks/        the /tasks overview: the saved tasks grouped by map (the
                 loaded one first, then the tasks bound to no map, then the
-                others folded, each saying where maps are switched) under
+                others folded) under
                 one search; a card per task, folded to its name and route
                 (waypoints by name, then lib/task/library.ts's summary)
                 and a line per schedule with its pause, edit and delete,
                 opened by its name to the stops read-only; Run and Schedule labelled, Edit beside them,
-                Duplicate and Delete in its ⋯ menu; Schedule opens a
+                Delete in its ⋯ menu; Schedule opens a
                 dialog; schedules no saved task owns listed apart. A run is
                 not followed here — the masthead's bar is where it is —
                 only a refused Run is said. And the /tasks/editor page, built for commissioning on a
