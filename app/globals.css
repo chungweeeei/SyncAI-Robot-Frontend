@@ -45,8 +45,8 @@
   --color-signal-caution: var(--signal-caution);
   --color-signal-warn: var(--signal-warn);
 
-  --font-sans: var(--font-saira), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-red-hat-mono), ui-monospace, monospace;
+  --font-sans: var(--font-mona-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -185,22 +185,22 @@
 /*
  * Typography: one industrial grotesque at two widths.
  *
- * Saira ships a `wdth` axis (50–125), so the condensed instrument label and
- * the normal-width UI text are the same typeface — the width change alone is
- * what separates "what this is" from "what it says". A second display family
- * would have been one accessory too many. Its squared-off curves are a vehicle
- * display's, not a web template's: Archivo before it was the face every
- * generated "industrial" console reached for (by request, 2026-11-19).
+ * Mona Sans ships a `wdth` axis (75–125), so the condensed instrument label
+ * and the normal-width UI text are the same typeface — the width change alone
+ * is what separates "what this is" from "what it says". A second display
+ * family would have been one accessory too many. Chosen by the operator from
+ * a side-by-side of six pairings (2026-11-19): plain and quiet, where Archivo
+ * read as the stock generated console and Saira, after it, as too rounded.
  *
- * Every measured quantity is set in Red Hat Mono with tabular figures: a
+ * Every measured quantity is set in JetBrains Mono with tabular figures: a
  * readout that reflows as digits change is unreadable at a glance, which is the
- * only way an operator reads this screen. It is narrower than IBM Plex Mono
- * was, which the rail's columns of numbers need.
+ * only way an operator reads this screen. Its tall, open digits keep a 0 apart
+ * from an 8 at the rail's 11 px.
  */
 @utility instrument-label {
   font-family: var(--font-sans);
   font-variation-settings:
-    "wdth" 70,
+    "wdth" 75,
     "wght" 600;
   font-size: 0.6875rem;
   line-height: 1;
