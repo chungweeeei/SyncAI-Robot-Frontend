@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Archivo, IBM_Plex_Mono } from "next/font/google";
+import { Red_Hat_Mono, Saira } from "next/font/google";
 import "./globals.css";
 
 import { ActiveTaskProvider } from "@/components/console/active-task-provider";
@@ -14,14 +14,14 @@ import { pageTitle } from "@/lib/page-title";
 
 // `axes: ["wdth"]`, or next/font ships the wght-only subset and
 // `instrument-label` silently renders at normal width.
-const archivo = Archivo({
-  variable: "--font-archivo",
+const saira = Saira({
+  variable: "--font-saira",
   subsets: ["latin"],
   axes: ["wdth"],
 });
 
-const plexMono = IBM_Plex_Mono({
-  variable: "--font-plex-mono",
+const redHatMono = Red_Hat_Mono({
+  variable: "--font-red-hat-mono",
   subsets: ["latin"],
   weight: ["400", "500", "600"],
 });
@@ -51,7 +51,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${archivo.variable} ${plexMono.variable} antialiased`}
+      className={`${saira.variable} ${redHatMono.variable} antialiased`}
       suppressHydrationWarning
     >
       <body className="overflow-hidden">

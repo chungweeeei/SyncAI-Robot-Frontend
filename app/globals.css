@@ -45,8 +45,8 @@
   --color-signal-caution: var(--signal-caution);
   --color-signal-warn: var(--signal-warn);
 
-  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+  --font-sans: var(--font-saira), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-red-hat-mono), ui-monospace, monospace;
 
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -185,14 +185,17 @@
 /*
  * Typography: one industrial grotesque at two widths.
  *
- * Archivo ships a `wdth` axis (62–125), so the condensed instrument label and
+ * Saira ships a `wdth` axis (50–125), so the condensed instrument label and
  * the normal-width UI text are the same typeface — the width change alone is
  * what separates "what this is" from "what it says". A second display family
- * would have been one accessory too many.
+ * would have been one accessory too many. Its squared-off curves are a vehicle
+ * display's, not a web template's: Archivo before it was the face every
+ * generated "industrial" console reached for (by request, 2026-11-19).
  *
- * Every measured quantity is set in IBM Plex Mono with tabular figures: a
+ * Every measured quantity is set in Red Hat Mono with tabular figures: a
  * readout that reflows as digits change is unreadable at a glance, which is the
- * only way an operator reads this screen.
+ * only way an operator reads this screen. It is narrower than IBM Plex Mono
+ * was, which the rail's columns of numbers need.
  */
 @utility instrument-label {
   font-family: var(--font-sans);
@@ -208,7 +211,6 @@
 @utility readout {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-feature-settings: "ss02";
   letter-spacing: -0.01em;
 }
 
@@ -260,8 +262,6 @@
   }
 }
 
-@layer base {
-  * {
 /* The masthead's job line when it is wider than its bar (Marquee): the track
  * holds the text twice, so half its width is one lap and the loop has no
  * seam. It rests on the start for the first part of each lap, so the line is
@@ -287,6 +287,8 @@
   }
 }
 
+@layer base {
+  * {
     @apply border-border outline-ring/50;
   }
   html {
