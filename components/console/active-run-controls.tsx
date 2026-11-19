@@ -4,6 +4,7 @@ import Link from "next/link";
 import { PauseIcon, PlayIcon, RotateCcwIcon, XIcon } from "lucide-react";
 
 import { TONE_TEXT, type Tone } from "@/components/console/instrument";
+import { Marquee } from "@/components/console/marquee";
 import { STATUS_TONE } from "@/components/console/task-chip";
 import { useActiveRun, type ActiveRun } from "@/hooks/use-active-run";
 import { useCancelTask } from "@/hooks/use-cancel-task";
@@ -42,7 +43,8 @@ import { cn } from "@/lib/utils";
  *
  * **Error is never drawn as idle**: a confident "no job" over a driving robot
  * is the one way this readout can do harm. As the strip narrows the job id
- * gives way first, then the step name, never the state word.
+ * gives way first, then the step's line crawls rather than being cut, and the
+ * state word never moves.
  */
 export function ActiveRunControls() {
   const { run, ended, dismiss, status, asOf } = useActiveRun();
@@ -199,6 +201,7 @@ function RunBar({
   title,
   state,
   muted,
+  scroll,
   children,
 }: {
   tone: Tone;
@@ -206,6 +209,8 @@ function RunBar({
   /** The word at the right end; omitted for a bar with nothing running. */
   state?: RunState;
   muted?: boolean;
+  /** Crawl the text when it does not fit, rather than cut it (a run's line). */
+  scroll?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -219,11 +224,17 @@ function RunBar({
         muted && (tone === "neutral" ? "text-muted-foreground" : TONE_TEXT[tone]),
       )}
     >
-      {/* Nothing animates in here, by request. Not uppercased: the job id is
-        * copied and grepped for, and an uppercased id is a different string. */}
-      <span className="min-w-0 flex-1 truncate text-[12px] font-semibold">
-        {children}
-      </span>
+      {/* A run's line crawls when it is wider than the bar (by request: the
+        * step's detail was the part cut off), and only then; the state word
+        * stays put. Not uppercased: the job id is copied and grepped for, and
+        * an uppercased id is a different string. */}
+      {scroll ? (
+        <Marquee className="flex-1 text-[12px] font-semibold">{children}</Marquee>
+      ) : (
+        <span className="min-w-0 flex-1 truncate text-[12px] font-semibold">
+          {children}
+        </span>
+      )}
       {state !== undefined && (
         <span
           className={cn(
@@ -382,7 +393,7 @@ function RunReadout({
         }`}
         className="flex min-w-0 flex-1 rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       >
-        <RunBar tone={STATE_TONE[state]} state={state}>
+        <RunBar tone={STATE_TONE[state]} state={state} scroll>
           {/* The id is an engineer's handle: muted, and first to give way. */}
           <span className="readout hidden text-muted-foreground xl:inline">
             {run.task.id} ·{" "}

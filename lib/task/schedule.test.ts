@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ScheduleState } from "@/lib/api/schedule";
+import type { ActiveTask } from "@/lib/api/task";
 import {
   DEFAULT_FORM_SEED,
   MAX_REFETCH_MS,
@@ -18,6 +19,7 @@ import {
   scheduleFormSeed,
   toCron,
   glanceSchedules,
+  runningScheduleIds,
   upcomingRun,
 } from "@/lib/task/schedule";
 
@@ -401,5 +403,47 @@ describe("sameTrigger", () => {
       ),
     ).toBe(true);
     expect(sameTrigger({ interval_seconds: 1800 }, { cron: "0 9 * * *" })).toBe(false);
+  });
+});
+
+describe("runningScheduleIds", () => {
+  const task = (over: Partial<ActiveTask>): ActiveTask => ({
+    id: "robot01-task-1",
+    run_id: "run-1",
+    status: "IN_PROGRESS",
+    started_at: "2026-11-19T09:00:00Z",
+    ended_at: null,
+    source: "SCHEDULE",
+    schedule_id: null,
+    kind: "schedule",
+    name: null,
+    map_name: null,
+    ...over,
+  });
+
+  it("names each schedule with a run going, once, in a stable order", () => {
+    expect(
+      runningScheduleIds({
+        tasks: [
+          task({ schedule_id: "nightly" }),
+          task({ schedule_id: "dawn" }),
+          task({ schedule_id: "nightly" }),
+          task({ source: "DIRECT" }),
+        ],
+        recently_ended: [],
+        as_of: "2026-11-19T09:00:02Z",
+      }),
+    ).toEqual(["dawn", "nightly"]);
+  });
+
+  // A run that has closed is not "running now", however recent.
+  it("ignores runs that have already ended", () => {
+    expect(
+      runningScheduleIds({
+        tasks: [],
+        recently_ended: [task({ schedule_id: "nightly", status: "COMPLETED" })],
+        as_of: "2026-11-19T09:00:02Z",
+      }),
+    ).toEqual([]);
   });
 });

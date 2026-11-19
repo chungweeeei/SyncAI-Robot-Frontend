@@ -9,6 +9,7 @@
 // opaque one.
 
 import type { ScheduleState, ScheduleTrigger } from "@/lib/api/schedule";
+import type { ActiveTasksResponse } from "@/lib/api/task";
 import { DAY_MS, pad2 } from "@/lib/time";
 
 /**
@@ -385,4 +386,18 @@ function compareRuns(a: number, b: number): number {
 function runOrder(next: string | undefined): number {
   const at = next === undefined ? NaN : Date.parse(next);
   return Number.isNaN(at) ? Number.POSITIVE_INFINITY : at;
+}
+
+/**
+ * The schedules with a run going now, sorted so an unchanged answer is equal
+ * from one read of the list to the next. Only `tasks`: a run in
+ * `recently_ended` has stopped, and saying "running now" over it would be
+ * the readout outliving the reading.
+ */
+export function runningScheduleIds(list: ActiveTasksResponse): string[] {
+  const ids = new Set<string>();
+  for (const task of list.tasks) {
+    if (task.schedule_id) ids.add(task.schedule_id);
+  }
+  return [...ids].sort();
 }

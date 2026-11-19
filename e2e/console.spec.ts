@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  activeTask,
   failOnConsoleErrors,
   MAP_NAME,
   mapSummary,
@@ -579,6 +580,57 @@ test.describe("the dashboard's schedules", () => {
     await expect
       .poll(() => writes.map((w) => `${w.method} ${w.path}`))
       .toContain("POST /api/v1/schedules/morning/resume");
+
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("says which schedule has a run going, and where to make one when none", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const inMinutes = (minutes: number) =>
+      new Date(Date.now() + minutes * 60_000).toISOString();
+    const schedules = [
+      {
+        id: "morning",
+        trigger: { interval_seconds: 3600 },
+        paused: false,
+        next_run_times: [inMinutes(30)],
+        task_template_id: "tpl-morning",
+        task_template_name: "Morning round",
+      },
+      {
+        id: "night",
+        trigger: { interval_seconds: 3600 },
+        paused: true,
+        next_run_times: [],
+        task_template_id: "tpl-night",
+        task_template_name: "Night patrol",
+      },
+    ];
+    await mockBackend(page, {
+      schedules,
+      activeTasks: [activeTask({ source: "SCHEDULE", schedule_id: "night" })],
+    });
+    await page.goto("/");
+    const rail = page.getByRole("complementary", { name: "Telemetry" });
+
+    // The soonest is the card; the header counts what will fire apart from
+    // what is held.
+    await expect(rail.getByText("1 active · 1 paused")).toBeVisible();
+    await expect(rail.getByRole("listitem").first()).toContainText("Up next: Morning round");
+    // Running now is the active list's answer, not the schedule's.
+    await expect(rail.getByRole("listitem").nth(1)).toContainText("Running now");
+    await expect(rail.getByRole("listitem").first()).not.toContainText("Running now");
+
+    schedules.length = 0;
+    await page.reload();
+    await expect(rail.getByText("No schedules are registered on this robot.")).toBeVisible();
+    await expect(rail.getByRole("link", { name: "Schedule a task" })).toHaveAttribute(
+      "href",
+      "/tasks",
+    );
 
     expect(errors, "the page logged errors").toEqual([]);
   });

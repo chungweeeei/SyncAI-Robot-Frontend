@@ -57,12 +57,15 @@ const TONE_CHIP: Record<Tone, string> = {
 
 export function InstrumentGroup({
   label,
+  icon,
   caption,
   action,
   className,
   children,
 }: {
   label: string;
+  /** A mark before the label, for the one group that has to stand out. */
+  icon?: React.ReactNode;
   /** One muted line under the rows — use it to say where a number came from. */
   caption?: string;
   /** Controls that belong to the group, right-aligned on the label row. */
@@ -75,7 +78,10 @@ export function InstrumentGroup({
       className={cn("border-b border-hairline px-4 py-3.5 last:border-b-0", className)}
     >
       <header className="mb-2.5 flex h-4 items-center justify-between gap-2">
-        <h2 className="instrument-label text-muted-foreground">{label}</h2>
+        <h2 className="instrument-label flex items-center gap-1.5 text-muted-foreground">
+          {icon}
+          {label}
+        </h2>
         {action}
       </header>
       <div className="space-y-1.5">{children}</div>
