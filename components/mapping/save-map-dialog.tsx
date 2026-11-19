@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeftIcon, MapIcon, NavigationIcon, SaveIcon } from "lucide-react";
+import { ArrowLeftIcon, MapIcon, NavigationIcon, SaveIcon, XIcon } from "lucide-react";
 
 import { ErrorLine } from "@/components/console/error-line";
 import {
@@ -30,9 +30,12 @@ import type { MapSummary } from "@/lib/types/map";
  * strip over a moving picture is not where to think.
  *
  * After the save it stays open as the receipt — the backend's sentence and
- * the 3D map's progress — and asks the question a finished run leaves: go
- * back to Navigation, or stay to map again. It is the only place that is
- * shown. Presentational over the page's mutation so the receipt outlives the
+ * the 3D map's progress — and, once the build has an outcome, asks the
+ * question a finished run leaves: go back to Navigation, or stay to map
+ * again. Not before: a switch restarts the robot's software minutes into a
+ * build the operator is watching, and whether this map is usable yet is half
+ * of what the answer depends on. It is the only place that is shown.
+ * Presentational over the page's mutation so the receipt outlives the
  * dialog. Cancel is held while saving: there is no abort, and closing would
  * lose the receipt and the leave-guard's lift.
  *
@@ -70,6 +73,12 @@ export function SaveMapDialog({
   const [name, setName] = React.useState("");
   const nameId = React.useId();
   const valid = MAP_NAME_RE.test(name);
+  // No entry yet counts as building: the robot lists a saved map as
+  // `converting` at once, so it is only the moment before the catalogue's
+  // first read. `none` is an outcome — the build never started, which the
+  // save's own sentence says.
+  const building = conversion === null || conversion.octomap_status === "converting";
+  const built = conversion?.octomap_status === "ok";
 
   const close = () => {
     setName("");
@@ -165,30 +174,44 @@ export function SaveMapDialog({
               * disk, the other how the 3D map went. */}
             <OctomapLine map={conversion} />
 
-            <p className="text-sm text-muted-foreground">
-              Switch the robot back to Navigation? It restarts its software on
-              the map it was using before, not this one — switch to this map
-              from the map library once its 3D map is ready. This console
-              loses contact for about 30 seconds.
-            </p>
+            {building ? (
+              <AlertDialogFooter>
+                {/* Closing leaves the build running: it is a job on the robot,
+                  * not on this dialog. */}
+                <Button type="button" variant="ghost" size="sm" autoFocus onClick={close}>
+                  <XIcon data-icon="inline-start" />
+                  Close
+                </Button>
+              </AlertDialogFooter>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Switch the robot back to Navigation? It restarts its software
+                  on the map it was using before, not this one — switch to this
+                  map from the map library
+                  {built ? "" : " once its 3D map is ready"}. This console
+                  loses contact for about 30 seconds.
+                </p>
 
-            <AlertDialogFooter>
-              {/* Stay is the focused answer: a switch restarts the robot, so
-                * Enter must not be what sends it. */}
-              <Button type="button" variant="ghost" size="sm" autoFocus onClick={close}>
-                <MapIcon data-icon="inline-start" />
-                Stay in Mapping
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                disabled={switchHeld}
-                onClick={switchToNav}
-              >
-                <NavigationIcon data-icon="inline-start" />
-                Switch to Navigation
-              </Button>
-            </AlertDialogFooter>
+                <AlertDialogFooter>
+                  {/* Stay is the focused answer: a switch restarts the robot, so
+                    * Enter must not be what sends it. */}
+                  <Button type="button" variant="ghost" size="sm" autoFocus onClick={close}>
+                    <MapIcon data-icon="inline-start" />
+                    Stay in Mapping
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={switchHeld}
+                    onClick={switchToNav}
+                  >
+                    <NavigationIcon data-icon="inline-start" />
+                    Switch to Navigation
+                  </Button>
+                </AlertDialogFooter>
+              </>
+            )}
           </>
         )}
       </AlertDialogContent>
