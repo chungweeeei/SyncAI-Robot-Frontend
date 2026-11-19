@@ -235,6 +235,23 @@
   }
 }
 
+/* A progress bar with no reading to draw (Progress with a null value: a 3D
+ * map build queued, or a robot that reports none): a band crossing the
+ * track, the strip's sweep on a loop. Under reduced motion it is the whole
+ * track at part strength — a still third of a bar would read as 33%. The
+ * rule is nested because the utility is applied through a variant, whose
+ * class name a `.progress-sweep` selector outside would not match. */
+@utility progress-sweep {
+  width: 33.333%;
+  animation: strip-sweep 1.6s ease-in-out infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    width: 100%;
+    opacity: 0.4;
+    animation: none;
+  }
+}
+
 /* The battery meter's cells while the robot charges (SegmentMeter): each
  * climbing cell lights in turn and lets go together, staggered by its
  * delay. The hue is the meter's tone, handed in as --charge-fill. */

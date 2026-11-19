@@ -27,6 +27,7 @@ interface WireSummary {
   vertex_count: number;
   octomap_status?: OctomapStatus;
   octomap_error?: string | null;
+  octomap_progress?: number | null;
   octomap_version?: string | null;
   octomap_resolution?: number | null;
 }
@@ -41,6 +42,7 @@ const WireSummarySchema: z.ZodType<WireSummary> = z.object({
   vertex_count: z.number(),
   octomap_status: OctomapStatusSchema.optional(),
   octomap_error: z.string().nullable().optional(),
+  octomap_progress: z.number().nullable().optional(),
   octomap_version: z.string().nullable().optional(),
   octomap_resolution: z.number().nullable().optional(),
 });
@@ -55,6 +57,7 @@ function toSummary(wire: WireSummary): MapSummary {
     vertex_count: wire.vertex_count,
     octomap_status: wire.octomap_status ?? "none",
     octomap_error: wire.octomap_error ?? null,
+    octomap_progress: wire.octomap_progress ?? null,
     octomap_version: wire.octomap_version ?? null,
     octomap_resolution: wire.octomap_resolution ?? null,
   };

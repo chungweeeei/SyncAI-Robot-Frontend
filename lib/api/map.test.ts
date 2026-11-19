@@ -69,6 +69,21 @@ describe("fetchMaps", () => {
     expect(map.octomap_resolution).toBe(0.1);
   });
 
+  // The backends on the robots are whichever branch is checked out: one from
+  // before a build reported its progress must read as a build with none to
+  // show, not fail the catalogue the whole map library is drawn from.
+  it("reads a build's progress, and none from a backend that sends none", async () => {
+    fetchMock.mockResolvedValue(
+      answer([
+        olderRow({ name: "older", octomap_status: "converting" }),
+        olderRow({ name: "queued", octomap_status: "converting", octomap_progress: null }),
+        olderRow({ name: "building", octomap_status: "converting", octomap_progress: 0.424 }),
+      ]),
+    );
+    const maps = await fetchMaps();
+    expect(maps.map((map) => map.octomap_progress)).toEqual([null, null, 0.424]);
+  });
+
   // A backend from before the floor plan was removed still sends its fields;
   // nothing reads them, so they must neither break the read nor leak through.
   it("drops the floor plan fields an older backend still sends", async () => {

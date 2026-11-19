@@ -176,11 +176,24 @@ test.describe("the mapping run", () => {
     await expect(dialog(page).getByRole("button", { name: "Switch to Navigation" })).toHaveCount(0);
     await expect(dialog(page).getByRole("button", { name: "Close" })).toBeVisible();
 
-    // The robot's cleaning finishes; the catalogue poll carries it here.
+    // A bar from the first moment, but with no reading: the robot has
+    // reported nothing of the build yet, and 0% would say it had.
+    const bar = dialog(page).getByRole("progressbar", { name: "Building the 3D map…" });
+    await expect(bar).toBeVisible();
+    await expect(bar).not.toHaveAttribute("aria-valuenow");
+    await expect(dialog(page)).not.toContainText("%");
+
+    // The robot reports how far it is; the catalogue poll carries it here.
+    maps[1].octomap_progress = 0.424;
+    await expect(bar).toHaveAttribute("aria-valuenow", "42", { timeout: 10_000 });
+    await expect(dialog(page)).toContainText("42%");
+
+    // The robot's cleaning finishes; the same poll says so.
     Object.assign(maps[1], withOctomap());
     await expect(dialog(page)).toContainText("3D map ready — this map is ready to use.", {
       timeout: 10_000,
     });
+    await expect(dialog(page).getByRole("progressbar")).toHaveCount(0);
     await expect(dialog(page).getByRole("button", { name: "Switch to Navigation" })).toBeVisible();
     await expect(dialog(page).getByRole("button", { name: "Close" })).toHaveCount(0);
     // Ready, so the receipt no longer tells the operator to wait for it.
