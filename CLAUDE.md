@@ -255,7 +255,8 @@ components/
                 map — its face is lib/map/run-face.ts), the save dialog (the
                 name alone: the robot builds the 3D map after every save;
                 its receipt asks whether to switch back to Navigation, on
-                the map loaded before),
+                the map loaded before, only once that build has an outcome —
+                while it builds, Close is the one way out),
                 the refusal panel under the strip and the save receipt's
                 line on the 3D map build (useMapBuild)
   maps/         map library cards (each tile the map's 3D map — a still
