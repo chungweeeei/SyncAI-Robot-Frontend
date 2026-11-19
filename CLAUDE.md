@@ -258,7 +258,13 @@ components/
                 the map loaded before, only once that build has an outcome —
                 while it builds, Close is the one way out),
                 the refusal panel under the strip and the save receipt's
-                line on the 3D map build (useMapBuild)
+                line on the 3D map build (useMapBuild; octomap-line.tsx —
+                while it builds, a bar at the robot's own percent, the
+                catalogue's `octomap_progress` through
+                lib/map/build-progress.ts's buildPercent: never 100%, since
+                `ok` is what says ready, and a bar with no value, not 0%,
+                while the robot has reported none — a build queued behind
+                another map's, or a robot or backend from before it did)
   maps/         map library cards (each tile the map's 3D map — a still
                 drawn in the browser once the card nears the screen,
                 lib/scene/voxel-snapshot.ts, each storey cut under its
