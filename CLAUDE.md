@@ -159,10 +159,17 @@ app/            route shells; the real content belongs to a component (see devia
                 is the sign-in gate, the polls and the shell; /login is the
                 one route outside it, drawn with none of them
 components/
-  auth/         the sign-in screen (/login): one card, the form alone;
-                Sign in never greyed, an empty field said and focused
-                instead, a refusal emptying the password and returning to
-                it; and leaving for `?next=`
+  auth/         the sign-in screen (/login): on one half the robot
+                walking round a shelf in a made-up warehouse corner
+                (walking-robot: the real model, its legs a looped animation,
+                the route ahead in the dashboard's band, the camera
+                following from outside the route, so the shelf is never
+                between it and the robot; still under reduced motion, paused in a hidden
+                tab, nothing without WebGL, and fetched after the form, which
+                never waits for it; a band over the form on a phone), the
+                form on the other, a card of its own surface and edge; Sign in never greyed, an empty field
+                said and focused instead, a refusal emptying the password
+                and returning to it; and leaving for `?next=`
                 (lib/auth/next-path.ts: only a path on this console) once a
                 session appears
   console/      session-gate.tsx (the console mounts only with a session,
@@ -521,7 +528,11 @@ lib/
                 primary, the middle button taking over the pan, so the
                 right button never changes meaning), the ground patches'
                 3D marks, picking,
-                robot mesh
+                robot mesh, and the sign-in screen's set (walk-loop.ts: the
+                oval the robot walks, the stretch of it ahead and the
+                camera's place outside it;
+                demo-site.ts: the shelves, crates and columns round it, clear
+                of the oval)
   theme/        the signal hues both canvases draw with, and the height ramp
                 the 3D map is coloured by (height-ramp.ts: data colouring,
                 deliberately not a signal hue)
