@@ -79,7 +79,6 @@ export function RestartControl() {
   return (
     <div className="flex shrink-0 flex-col items-end gap-1">
       <Button
-        size="sm"
         className="bg-destructive text-white hover:bg-destructive/90"
         disabled={!canRestart || pending || busy}
         aria-describedby={hint ? hintId : undefined}
