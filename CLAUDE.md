@@ -427,7 +427,9 @@ lib/
   auth/         the sign-in (session.ts: the token, its expiry on this
                 machine's clock — the answer's `expires_in`, never the robot's
                 `expires_at` — the one other home for browser storage, and
-                withToken for the requests outside http.ts) and next-path.ts
+                withToken for the requests outside http.ts, and when an
+                open console renews it: msUntilRenewal, retryRenewalIn) and
+                next-path.ts
   api/          typed fetchers per backend router, config.ts, http.ts, query-keys.ts
                 (requests only — mirrored validation rules live with their domain)
   ros/          WebSocket clients + frame decoders (telemetry, point cloud, teleop)
@@ -756,11 +758,17 @@ touch one, prefer moving it toward the rule.
   `wsUrl()` puts the token in `?token=`, read at each connect; WHEP / WHIP
   signalling and the WebRTC bench add it through `withToken`. There is one
   account on the robot (`admin`, its password in the backend's environment)
-  and no route to add another. A session ends at its expiry by a timer in
-  the gate as well as by the next 401, so an idle console does not sit on a
-  screen whose next press would be refused. Consequence to keep in mind: the
-  emergency stop is behind the sign-in like everything else, so a console
-  whose session ended has no stop until someone signs in again.
+  and no route to add another. The emergency stop is behind the sign-in
+  like everything else, so an open console does not sign out at the token's
+  expiry: the gate trades it for a fresh one (`POST /auth/refresh`) a
+  quarter of its life short, retrying one that did not land
+  (`msUntilRenewal`, `retryRenewalIn` in `lib/auth/session.ts`), since an
+  operator watching a patrol presses nothing for an hour and would lose the
+  stop. A session still ends by the next 401 — the robot's cap on how long
+  one sign-in may be renewed arrives as one — and by a timer at the expiry
+  when no renewal landed, so the console does not sit on a screen whose next
+  press would be refused. A console whose session ended has no stop until
+  someone signs in again.
 - **Mutations use `networkMode: "always"`** (set in `components/query-provider.tsx`).
   The library default withholds a mutation while `navigator.onLine` is false
   and a withheld one never settles, which would leave `isPending` true with no
