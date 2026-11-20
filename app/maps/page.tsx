@@ -13,17 +13,19 @@ export default function MapsPage() {
     // header does not move between them.
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:py-8">
-        <header className="mb-6">
-          <h1 className="text-xl font-semibold tracking-tight">Maps</h1>
-          {/* One line, by request: the details live where they apply. */}
-          <p className="mt-1 text-sm text-muted-foreground">
-            Switch, edit and manage the maps{" "}
-            <RobotName id={robotId} />{" "}
-            works in.
-          </p>
-        </header>
-
-        <MapLibrary />
+        <MapLibrary
+          heading={
+            <>
+              <h1 className="text-xl font-semibold tracking-tight">Maps</h1>
+              {/* One line, by request: the details live where they apply. */}
+              <p className="mt-1 text-sm text-muted-foreground">
+                Switch, edit and manage the maps{" "}
+                <RobotName id={robotId} />{" "}
+                works in.
+              </p>
+            </>
+          }
+        />
       </div>
     </div>
   );

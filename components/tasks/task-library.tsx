@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDownIcon, ChevronRightIcon, SearchIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 
-import { Input } from "@/components/ui/input";
 import type { ScheduleActions } from "@/components/tasks/schedule-list";
 import { TaskTemplateRow } from "@/components/tasks/task-template-row";
 import type { ScheduleState } from "@/lib/api/schedule";
@@ -40,7 +39,8 @@ export interface TaskLibraryProps {
  * The saved tasks, grouped by the map they run on. The loaded map's group
  * and the map-free one are open, since only those can run now; another map's
  * is folded with its count, so it is there to find without crowding what the
- * robot can do. A search opens every group it matches.
+ * robot can do. No search box (by request): grouping and folding is how a
+ * task is found.
  *
  * No height cap: the page scrolls, and a list scrolling inside it was the
  * thing that made a task hard to find.
@@ -58,14 +58,13 @@ export function TaskLibrary({
   onSchedule,
   onDelete,
 }: TaskLibraryProps) {
-  const [query, setQuery] = React.useState("");
   /** Groups the operator opened or closed; the rest follow `defaultOpen`. */
   const [toggled, setToggled] = React.useState<ReadonlyMap<string, boolean>>(new Map());
 
   const scheduledBy = React.useMemo(() => schedulesByTemplate(schedules), [schedules]);
   const groups = React.useMemo(
-    () => groupTasks(templates, activeMapName, query),
-    [templates, activeMapName, query],
+    () => groupTasks(templates, activeMapName),
+    [templates, activeMapName],
   );
 
   if (status === "loading") {
@@ -78,9 +77,7 @@ export function TaskLibrary({
     return <Line>No saved tasks yet. Press Create task to build one.</Line>;
   }
 
-  const searching = query.trim().length > 0;
   const isOpen = (group: TaskGroup) => {
-    if (searching) return true;
     const key = group.mapName ?? NO_MAP;
     return toggled.get(key) ?? (group.loaded || group.mapName === null);
   };
@@ -93,46 +90,29 @@ export function TaskLibrary({
 
   return (
     <div className="space-y-3">
-      <label className="relative block sm:max-w-xs">
-        <SearchIcon
-          className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <Input
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search tasks"
-          aria-label="Search tasks"
-          className="h-8 pl-7 text-[13px]"
-        />
-      </label>
-
-      {groups.length === 0 && <Line>No task is named like “{query.trim()}”.</Line>}
-
       {groups.map((group) => {
         const open = isOpen(group);
         const other = group.mapName !== null && !group.loaded;
         return (
-          // The loaded map is marked by a rail down its whole group and a
+          // The loaded map is framed, heading and cards together, with a
           // dot by its name rather than a "Loaded" chip (by request): the
-          // rail says which cards it covers, where a chip named only the
-          // heading. Every group keeps the rail's width so they line up.
+          // frame says which cards it covers, where a chip named only the
+          // heading. Every group keeps the frame's border and padding so
+          // they line up.
           <section
             key={group.mapName ?? NO_MAP}
             aria-label={group.mapName ? `Tasks on ${group.mapName}` : "Tasks with no map"}
             className={cn(
-              "space-y-1.5 border-l-2 pl-3",
-              group.loaded ? "border-signal-live" : "border-transparent",
+              "space-y-1.5 rounded-md border p-2",
+              group.loaded ? "border-signal-live/60 bg-signal-live/5" : "border-transparent",
             )}
           >
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
               <button
                 type="button"
                 aria-expanded={open}
-                disabled={searching}
                 onClick={() => toggle(group)}
-                className="flex items-center gap-1.5 rounded-sm text-left disabled:cursor-default pointer-coarse:min-h-10"
+                className="flex items-center gap-1.5 rounded-sm text-left pointer-coarse:min-h-10"
               >
                 {open ? (
                   <ChevronDownIcon className="size-3.5 text-muted-foreground" aria-hidden />

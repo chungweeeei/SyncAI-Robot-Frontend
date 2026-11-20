@@ -90,9 +90,10 @@ export function ExportReport() {
 
   return (
     <>
+      {/* Solid, as every screen's header action is (Create task, Import,
+        * Restart): the outline one read as a secondary control beside them. */}
       <Button
         type="button"
-        variant="outline"
         onClick={() => {
           const now = Date.now();
           setNowMs(now);

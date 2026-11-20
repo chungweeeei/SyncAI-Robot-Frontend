@@ -40,29 +40,29 @@ function LoadingGrid() {
  * and a switch's sentence is about the robot (where it is, whether it needs a
  * pose), not one card.
  *
- * The toolbar (that line and Import) renders in every state: a robot with no
- * maps is the one someone is bringing an archive to.
+ * The header (the page's title, handed in as `heading`, with Import on its
+ * row as every screen's action is) and that line render in every state: a
+ * robot with no maps is the one someone is bringing an archive to. Import is
+ * drawn here rather than by the page because its sentence lands on that line.
  */
-export function MapLibrary() {
+export function MapLibrary({ heading }: { heading: React.ReactNode }) {
   const { maps, status } = useMaps();
   const [lastResult, setLastResult] = React.useState<string | null>(null);
 
   // One line for every map control's sentence; the latest is the one worth
   // reading.
   const toolbar = (
-    <div className="mb-3 flex items-start gap-3">
+    <>
+      <header className="mb-6 flex items-start justify-between gap-3">
+        <div className="min-w-0">{heading}</div>
+        <MapImportControl maps={maps} onResult={setLastResult} />
+      </header>
       {lastResult && (
-        <p
-          role="status"
-          className="min-w-0 flex-1 pt-1 text-[11px] leading-tight text-muted-foreground"
-        >
+        <p role="status" className="mb-3 text-[11px] leading-tight text-muted-foreground">
           {lastResult}
         </p>
       )}
-      <div className="ml-auto shrink-0">
-        <MapImportControl maps={maps} onResult={setLastResult} />
-      </div>
-    </div>
+    </>
   );
 
   if (!maps) {
