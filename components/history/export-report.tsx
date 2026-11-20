@@ -93,7 +93,6 @@ export function ExportReport() {
       <Button
         type="button"
         variant="outline"
-        className="w-full sm:w-auto"
         onClick={() => {
           const now = Date.now();
           setNowMs(now);

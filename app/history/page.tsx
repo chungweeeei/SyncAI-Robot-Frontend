@@ -20,20 +20,24 @@ export default function HistoryPage() {
     <div className="h-full overflow-y-auto">
       {/* /tasks' width: a row carries its outcome, source and times on one line. */}
       <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:py-8">
-        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-          <div>
+        {/* The action rides the title's row at every width, rather than a
+          * full-width bar between the copy and the filters on a phone; the
+          * copy runs under both, since beside the button it was a column a
+          * phone squeezed to three words a line. */}
+        <header className="mb-6">
+          <div className="flex items-start justify-between gap-4">
             <h1 className="text-xl font-semibold tracking-tight">History</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Jobs <RobotName id={robotId} />{" "}
-              has finished, newest first, over the window you pick. The robot
-              keeps them for a limited time, so older ones no longer appear here.
-            </p>
+            {/* Reads the filter off the address bar, which suspends during a
+              * static prerender like the list below. */}
+            <React.Suspense fallback={null}>
+              <ExportReport />
+            </React.Suspense>
           </div>
-          {/* Reads the filter off the address bar, which suspends during a
-            * static prerender like the list below. */}
-          <React.Suspense fallback={null}>
-            <ExportReport />
-          </React.Suspense>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Jobs <RobotName id={robotId} />{" "}
+            has finished, newest first, over the window you pick. The robot
+            keeps them for a limited time, so older ones no longer appear here.
+          </p>
         </header>
 
         {/* The filter's useSearchParams suspends during a static prerender,
