@@ -15,6 +15,8 @@ import * as z from "zod";
 export interface Session {
   token: string;
   username: string;
+  /** Epoch milliseconds, this machine's clock: when the token was handed over. */
+  issuedAt: number;
   /** Epoch milliseconds: when the backend stops accepting the token. */
   expiresAt: number;
 }
@@ -22,6 +24,7 @@ export interface Session {
 const SessionSchema: z.ZodType<Session> = z.object({
   token: z.string().min(1),
   username: z.string(),
+  issuedAt: z.number(),
   expiresAt: z.number(),
 });
 
@@ -57,6 +60,41 @@ export function isExpired(session: Session, now: number): boolean {
 /** How long until the session ends, never below 0. */
 export function msUntilExpiry(session: Session, now: number): number {
   return Math.max(0, session.expiresAt - now);
+}
+
+/**
+ * How far into a token's life the console trades it for a fresh one. A
+ * quarter of it left over is the margin a renewal has to land in, retries
+ * included, before the expiry signs the operator out.
+ */
+export const RENEW_AT_FRACTION = 0.75;
+
+/** How long after a renewal that did not land the console tries again. */
+export const RENEW_RETRY_MS = 30_000;
+
+/**
+ * How long until the console should renew `session`, never below 0.
+ *
+ * An open console renews rather than signing out at the expiry: the
+ * emergency stop is behind the sign-in, and an operator watching a patrol
+ * for an hour presses nothing and would lose it, along with the map
+ * editor's unsaved edits. The robot caps how long one sign-in can be
+ * renewed for, and answers 401 past it, which signs out as any 401 does.
+ */
+export function msUntilRenewal(session: Session, now: number): number {
+  const lifetime = Math.max(0, session.expiresAt - session.issuedAt);
+  return Math.max(0, session.issuedAt + lifetime * RENEW_AT_FRACTION - now);
+}
+
+/**
+ * When to try again after a renewal that did not land — a dropped link, a
+ * robot restarting — or null when the expiry comes first and the session
+ * should simply end there. A 401 never gets here: http.ts ends the session
+ * on it.
+ */
+export function retryRenewalIn(session: Session, now: number): number | null {
+  const left = msUntilExpiry(session, now);
+  return left > RENEW_RETRY_MS ? RENEW_RETRY_MS : null;
 }
 
 export function decodeSession(raw: string | null, now: number): Session | null {

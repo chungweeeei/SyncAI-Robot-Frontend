@@ -271,7 +271,7 @@ describe("requestRaw", () => {
 
 describe("the sign-in", () => {
   const signIn = (token: string) =>
-    sessionStore().set({ token, username: "admin", expiresAt: Date.now() + 60_000 });
+    sessionStore().set({ token, username: "admin", issuedAt: Date.now(), expiresAt: Date.now() + 60_000 });
 
   afterEach(() => sessionStore().clear());
 

@@ -39,13 +39,35 @@ export async function login(
     body: JSON.stringify(credentials),
     schema: LoginAnswerSchema,
   });
+  return toSession(answer, credentials.username, now());
+}
+
+/**
+ * Trade the session's token, still good, for a fresh one. The token goes on
+ * the request like any other (http.ts); a 401 — the robot's cap on how long
+ * one sign-in may be renewed, or a token it no longer takes — ends the
+ * session there, as every 401 does.
+ */
+export async function refreshSession(
+  username: string,
+  now: () => number = Date.now,
+): Promise<Session> {
+  const answer = await requestJson<LoginAnswer>(apiUrl("/api/v1/auth/refresh"), {
+    method: "POST",
+    schema: LoginAnswerSchema,
+  });
+  return toSession(answer, username, now());
+}
+
+function toSession(answer: LoginAnswer, username: string, at: number): Session {
   return {
     token: answer.access_token,
-    username: credentials.username,
+    username,
+    issuedAt: at,
     // Timed by `expires_in` on this machine's clock, not by `expires_at`: a
     // robot's clock may be hours off a laptop's, which would sign out at once
     // or never. The request's own flight is the error, a second at worst, and
     // a 401 after it signs out anyway.
-    expiresAt: now() + answer.expires_in * 1000,
+    expiresAt: at + answer.expires_in * 1000,
   };
 }
