@@ -159,7 +159,10 @@ app/            route shells; the real content belongs to a component (see devia
                 is the sign-in gate, the polls and the shell; /login is the
                 one route outside it, drawn with none of them
 components/
-  auth/         the sign-in screen (/login): the form, and leaving for `?next=`
+  auth/         the sign-in screen (/login): one card, the form alone;
+                Sign in never greyed, an empty field said and focused
+                instead, a refusal emptying the password and returning to
+                it; and leaving for `?next=`
                 (lib/auth/next-path.ts: only a path on this console) once a
                 session appears
   console/      session-gate.tsx (the console mounts only with a session,
