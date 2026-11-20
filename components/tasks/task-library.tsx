@@ -3,7 +3,6 @@
 import * as React from "react";
 import { ChevronDownIcon, ChevronRightIcon, SearchIcon } from "lucide-react";
 
-import { Chip } from "@/components/console/instrument";
 import { Input } from "@/components/ui/input";
 import type { ScheduleActions } from "@/components/tasks/schedule-list";
 import { TaskTemplateRow } from "@/components/tasks/task-template-row";
@@ -12,6 +11,7 @@ import type { TaskTemplate } from "@/lib/api/task-template";
 import type { TaskTemplatesStatus } from "@/hooks/use-task-templates";
 import { groupTasks, type TaskGroup } from "@/lib/task/library";
 import { schedulesByTemplate } from "@/lib/task/schedule";
+import { cn } from "@/lib/utils";
 
 /** Shared empty list, so an unscheduled card is not a fresh prop every render. */
 const EMPTY_SCHEDULES: readonly ScheduleState[] = [];
@@ -114,10 +114,17 @@ export function TaskLibrary({
         const open = isOpen(group);
         const other = group.mapName !== null && !group.loaded;
         return (
+          // The loaded map is marked by a rail down its whole group and a
+          // dot by its name rather than a "Loaded" chip (by request): the
+          // rail says which cards it covers, where a chip named only the
+          // heading. Every group keeps the rail's width so they line up.
           <section
             key={group.mapName ?? NO_MAP}
             aria-label={group.mapName ? `Tasks on ${group.mapName}` : "Tasks with no map"}
-            className="space-y-1.5"
+            className={cn(
+              "space-y-1.5 border-l-2 pl-3",
+              group.loaded ? "border-signal-live" : "border-transparent",
+            )}
           >
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
               <button
@@ -132,14 +139,22 @@ export function TaskLibrary({
                 ) : (
                   <ChevronRightIcon className="size-3.5 text-muted-foreground" aria-hidden />
                 )}
-                <span className="readout text-[13px] font-medium">
+                {group.loaded && (
+                  <span className="size-1.5 shrink-0 rounded-full bg-signal-live" aria-hidden />
+                )}
+                <span
+                  className={cn(
+                    "readout text-[13px] font-medium",
+                    group.loaded && "text-signal-live",
+                  )}
+                >
                   {group.mapName ?? "No map"}
                 </span>
+                {group.loaded && <span className="sr-only">, the map the robot is on</span>}
                 <span className="text-[11px] text-muted-foreground">
                   {group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"}
                 </span>
               </button>
-              {group.loaded && <Chip tone="live">Loaded</Chip>}
             </div>
 
             {group.mapName === null && open && (
