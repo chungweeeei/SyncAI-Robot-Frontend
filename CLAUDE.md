@@ -180,12 +180,17 @@ components/
   console/      session-gate.tsx (the console mounts only with a session,
                 and sends the operator to /login when it ends — a 401, the
                 token's expiry, Sign out, another tab's sign-out — dropping
-                every cached read), sign-out-button.tsx (in the rail from lg,
-                on the Settings landing at every width),
+                every cached read), sign-out-button.tsx (on the Settings
+                landing at every width; the rail draws the same press itself),
                 shell: nav rail (until its button is pressed the width
                 decides, in CSS: icons only from lg, labelled from xl; the
                 button in its top-left corner then folds or opens it — no
-                tooltip, instant, held until a reload), status strip (its
+                tooltip, instant, held until a reload; its foot, under a
+                rule, is two rows: the theme as a Light / Dark pair of keys
+                with the one in force raised, then Sign out — folded, and in
+                the phone's bar, the theme is the one key left to press,
+                chosen in CSS off the `.dark` class so it is right before
+                mount, and the bar has no Sign out), status strip (its
                 robot id is the link home, the mode chip beside it — a dot
                 in the mode's hue below sm), the three layout-level
                 providers (their contexts live in hooks/use-console-*.ts — see
