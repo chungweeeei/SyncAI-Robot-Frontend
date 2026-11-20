@@ -276,8 +276,24 @@ components/
                 The link is offered to a coarse pointer at any width, and to
                 any pointer below sm
   mapping/      the mode switch (the rail), the run strip over the viewport
-                (Start, then a recording-style indicator beside Save and New
-                map — its face is lib/map/run-face.ts), the save dialog (the
+                (Start and Resume map, then a recording-style indicator
+                beside Save and New map — its face is lib/map/run-face.ts),
+                the resume dialog (resume-map-dialog.tsx: a saved map picked
+                by name, the loaded one first, every map offered since the
+                catalogue cannot say which a resume can read; the robot
+                finds itself on it, over a minute with only "busy" to
+                report, so a bar with no value and Cancel held; a refusal
+                stays beside the picker, the receipt says where the robot
+                found itself; no position is sent yet — the request's `hint`
+                has no control). The robot's status never says a run was
+                resumed, so which map it continues is the view's memory of
+                its own press (`resumedFrom`, like `savedRun`): the strip
+                names it, the save dialog says the run is saved as another
+                map and that the old one keeps its waypoints, forbidden
+                zones, ground patches and floors, New map says a reset
+                starts an empty map rather than going back to it — and a
+                reload or another console's resume falls back to a plain
+                run's words. The save dialog (the
                 name alone: the robot builds the 3D map after every save;
                 its receipt asks whether to switch back to Navigation, on
                 the map loaded before, only once that build has an outcome —
@@ -438,7 +454,8 @@ lib/
   api/          typed fetchers per backend router, config.ts, http.ts, query-keys.ts
                 (requests only — mirrored validation rules live with their domain)
   ros/          WebSocket clients + frame decoders (telemetry, point cloud, teleop)
-  map/          map rules: vertex helpers, name rule, the route map's flat
+  map/          map rules: vertex helpers, name rule (and the one a resumed
+                run's save adds: not the map it continues), the route map's flat
                 marks (draw.ts: palette and marker; preview.ts: stops,
                 route legs — each kept right of its walk with a chevron,
                 so a walk back runs beside the walk out, none drawn across
@@ -879,11 +896,12 @@ touch one, prefer moving it toward the rule.
   list and draws it into the tree, so a save shows there at once); a map
   rename, delete or
   activate also changes the forbidden zones' read (`mapKeepout`, whose
-  `active` moves with a switch); a mapping start, save or reset changes the
-  run state (`mappingStatus` — invalidated, never written, because the
+  `active` moves with a switch); a mapping start, resume, save or reset
+  changes the run state (`mappingStatus` — invalidated, never written, because the
   answer travels a latched ROS topic every console reads). Those are wired in the write
   hooks now — when adding a write, list every key its response affects in
-  its `onSuccess`, not only the key it was fetched under. A rename, delete,
+  its `onSuccess`, not only the key it was fetched under. A resume changes
+  nothing else: the saved map is only read, and the run is saved as another. A rename, delete,
   import or mapping save
   drops every key that belongs to the map through `mapScopedKeys`, and a
   rule test fails when a `map-…` key taken by name is missing from it.
