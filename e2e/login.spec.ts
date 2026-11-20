@@ -61,6 +61,30 @@ test.describe("the sign-in", () => {
     await signIn(page, "wrong");
     await expect(page.getByText("Wrong username or password.")).toBeVisible();
     await expect(page).toHaveURL(/\/login$/);
+    // Ready for the retry: the name kept, the password emptied and focused.
+    await expect(page.getByLabel("Username")).toHaveValue(E2E_USERNAME);
+    await expect(page.getByLabel("Password", { exact: true })).toHaveValue("");
+    await expect(page.getByLabel("Password", { exact: true })).toBeFocused();
+  });
+
+  test("says which field is empty instead of greying Sign in, and sends nothing", async ({
+    page,
+  }) => {
+    const writes = await mockBackend(page, { signedIn: false });
+    await page.goto("/login");
+
+    const signInButton = page.getByRole("button", { name: "Sign in" });
+    await expect(signInButton).toBeEnabled();
+    await signInButton.click();
+    await expect(page.getByText("Enter your username.")).toBeVisible();
+    await expect(page.getByLabel("Username")).toBeFocused();
+
+    await page.getByLabel("Username").fill(E2E_USERNAME);
+    await expect(page.getByText("Enter your username.")).toHaveCount(0);
+    await signInButton.click();
+    await expect(page.getByText("Enter your password.")).toBeVisible();
+    await expect(page.getByLabel("Password", { exact: true })).toBeFocused();
+    expect(writes.filter((w) => w.path === "/api/v1/auth/login")).toEqual([]);
   });
 
   test("carries the token on the streams, where a header cannot go", async ({ page }) => {

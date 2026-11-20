@@ -2,9 +2,8 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { LogInIcon } from "lucide-react";
+import { CircleAlertIcon, Loader2Icon, LogInIcon } from "lucide-react";
 
-import { ErrorLine } from "@/components/console/error-line";
 import { PasswordInput } from "@/components/settings/password-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,9 +12,20 @@ import { useMounted } from "@/hooks/use-mounted";
 import { useLogin, useSession } from "@/hooks/use-session";
 import { safeNextPath } from "@/lib/auth/next-path";
 
+type Field = "username" | "password";
+
+const MISSING: Record<Field, string> = {
+  username: "Enter your username.",
+  password: "Enter your password.",
+};
+
 /**
  * The sign-in screen, drawn outside the console's shell: no rail, no strip,
  * no polls, since there is no token yet to ask the robot anything with.
+ *
+ * Sign in is never greyed: a greyed button does not say what it is waiting
+ * for. Pressed with a field empty, it says which, and puts the cursor there.
+ * A refusal empties the password and returns to it, the username kept.
  *
  * A session appearing — this form's, or another tab's — is what leaves the
  * screen, for the page in `?next=`. Read from the location in the effect
@@ -29,6 +39,10 @@ export function LoginScreen() {
   const loginMutation = useLogin();
   const [username, setUsername] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [missing, setMissing] = React.useState<Field | null>(null);
+  const [capsLock, setCapsLock] = React.useState(false);
+  const usernameRef = React.useRef<HTMLInputElement>(null);
+  const passwordRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     if (!mounted || !session) return;
@@ -36,63 +50,126 @@ export function LoginScreen() {
     router.replace(safeNextPath(next));
   }, [mounted, session, router]);
 
+  // Back to the password after a refusal, once the render that re-enables
+  // the field has landed: the catch above runs while it is still disabled.
+  const refused = loginMutation.error;
+  React.useEffect(() => {
+    if (refused) passwordRef.current?.focus();
+  }, [refused]);
+
   const pending = loginMutation.isPending;
-  const canSubmit = username.trim() !== "" && password !== "" && !pending;
+  const refusal = loginMutation.error?.message;
+
+  const readCapsLock = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    setCapsLock(event.getModifierState("CapsLock"));
+  };
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (pending) return;
+    const empty: Field | null = username.trim() === "" ? "username" : password === "" ? "password" : null;
+    if (empty) {
+      setMissing(empty);
+      (empty === "username" ? usernameRef : passwordRef).current?.focus();
+      return;
+    }
+    loginMutation.reset();
+    loginMutation.mutateAsync({ username: username.trim(), password }).catch(() => {
+      // The refusal is on the mutation, which is where the form reads it.
+      setPassword("");
+    });
+  };
 
   return (
     <main className="flex h-dvh items-center justify-center overflow-y-auto bg-background px-4 py-8">
-      <div className="w-full max-w-sm">
-        <p className="instrument-label mb-2 text-muted-foreground">SyncAI Robot Console</p>
-        <div className="rounded-md border border-hairline bg-panel p-6 shadow-sm">
-          <h1 className="text-xl font-semibold">Sign in</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Sign in to watch and drive the robot.
-          </p>
-          <form
-            className="mt-6 space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!canSubmit) return;
-              loginMutation.reset();
-              loginMutation.mutateAsync({ username: username.trim(), password }).catch(() => {
-                // The refusal is on the mutation, which is where the form reads it.
-              });
-            }}
-          >
-            <div className="grid gap-2">
-              <Label htmlFor="login-username">Username</Label>
-              <Input
-                id="login-username"
-                name="username"
-                autoComplete="username"
-                autoCapitalize="none"
-                spellCheck={false}
-                // The one field on the screen: a keyboard user should be able
-                // to type at once.
-                autoFocus
-                value={username}
-                disabled={pending}
-                onChange={(event) => setUsername(event.target.value)}
-              />
+      <div className="w-full max-w-sm rounded-lg border border-hairline bg-panel p-6 shadow-sm sm:p-8">
+        <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+
+        <form className="mt-8 space-y-5" noValidate onSubmit={submit}>
+          {refusal ? (
+            <div
+              role="alert"
+              className="flex gap-2.5 rounded-md border border-signal-warn/40 bg-signal-warn/10 px-3 py-2.5 text-sm text-signal-warn"
+            >
+              <CircleAlertIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+              <p className="min-w-0 break-words">{refusal}</p>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="login-password">Password</Label>
-              <PasswordInput
-                id="login-password"
-                name="password"
-                autoComplete="current-password"
-                value={password}
-                disabled={pending}
-                onChange={(event) => setPassword(event.target.value)}
-              />
-            </div>
-            <ErrorLine className="text-sm">{loginMutation.error?.message}</ErrorLine>
-            <Button type="submit" className="w-full" disabled={!canSubmit}>
-              <LogInIcon data-icon="inline-start" />
-              {pending ? "Signing in…" : "Sign in"}
-            </Button>
-          </form>
-        </div>
+          ) : null}
+
+          <div className="grid gap-2">
+            <Label htmlFor="login-username">Username</Label>
+            <Input
+              ref={usernameRef}
+              id="login-username"
+              name="username"
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              // The first field on the screen: a keyboard user types at once.
+              autoFocus
+              value={username}
+              disabled={pending}
+              aria-invalid={missing === "username" || undefined}
+              aria-describedby={missing === "username" ? "login-username-missing" : undefined}
+              onChange={(event) => {
+                setUsername(event.target.value);
+                if (missing === "username") setMissing(null);
+              }}
+            />
+            {missing === "username" ? (
+              <p id="login-username-missing" className="text-xs text-signal-warn">
+                {MISSING.username}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="login-password">Password</Label>
+            <PasswordInput
+              ref={passwordRef}
+              id="login-password"
+              name="password"
+              autoComplete="current-password"
+              value={password}
+              disabled={pending}
+              aria-invalid={missing === "password" || undefined}
+              aria-describedby={
+                [
+                  missing === "password" ? "login-password-missing" : null,
+                  capsLock ? "login-caps-lock" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ") || undefined
+              }
+              onKeyDown={readCapsLock}
+              onKeyUp={readCapsLock}
+              onBlur={() => setCapsLock(false)}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                if (missing === "password") setMissing(null);
+              }}
+            />
+            {missing === "password" ? (
+              <p id="login-password-missing" className="text-xs text-signal-warn">
+                {MISSING.password}
+              </p>
+            ) : null}
+            {capsLock ? (
+              <p id="login-caps-lock" className="text-xs text-signal-caution">
+                Caps Lock is on.
+              </p>
+            ) : null}
+          </div>
+
+          <Button type="submit" size="lg" className="mt-2 w-full" aria-busy={pending || undefined}>
+            {pending ? (
+              <Loader2Icon data-icon="inline-start" aria-hidden className="animate-spin" />
+            ) : (
+              <LogInIcon data-icon="inline-start" aria-hidden />
+            )}
+            {pending ? "Signing in…" : "Sign in"}
+          </Button>
+        </form>
       </div>
     </main>
   );
