@@ -5,7 +5,6 @@ import {
   CalendarPlusIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  EllipsisIcon,
   PencilIcon,
   PlayIcon,
   Trash2Icon,
@@ -13,13 +12,7 @@ import {
 
 import { Chip } from "@/components/console/instrument";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { IconButton, iconButtonClass } from "@/components/tasks/icon-button";
+import { IconButton } from "@/components/tasks/icon-button";
 import { ScheduleList, type ScheduleActions } from "@/components/tasks/schedule-list";
 import { useStepCatalogue } from "@/hooks/use-step-catalogue";
 import type { ScheduleState } from "@/lib/api/schedule";
@@ -36,7 +29,6 @@ import {
 } from "@/lib/task/library";
 import { patrolRoute, repeatSuffix } from "@/lib/task/step";
 import { formatDuration } from "@/lib/task/stops";
-import { cn } from "@/lib/utils";
 
 export interface TaskTemplateRowProps {
   template: TaskTemplate;
@@ -135,21 +127,16 @@ export function TaskTemplateRow({
           >
             <PencilIcon className="size-3.5" aria-hidden />
           </IconButton>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              aria-label={`More for "${template.name}"`}
-              disabled={busy}
-              className={cn(iconButtonClass, "disabled:opacity-30")}
-            >
-              <EllipsisIcon className="size-3.5" aria-hidden />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem variant="destructive" onClick={onDelete}>
-                <Trash2Icon aria-hidden />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* A menu of one item is a press too many (by request): Delete is
+            * the button, and the dialog it opens is what asks. */}
+          <IconButton
+            label={`Delete "${template.name}"`}
+            disabled={busy}
+            onClick={onDelete}
+            className="text-signal-warn hover:bg-signal-warn/12"
+          >
+            <Trash2Icon className="size-3.5" aria-hidden />
+          </IconButton>
         </div>
 
         <TaskRoute steps={template.steps} />

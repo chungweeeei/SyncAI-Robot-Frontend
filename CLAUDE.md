@@ -323,8 +323,8 @@ components/
                 one search; a card per task, folded to its name and route
                 (waypoints by name, then lib/task/library.ts's summary)
                 and a line per schedule with its pause, edit and delete,
-                opened by its name to the stops read-only; Run and Schedule labelled, Edit beside them,
-                Delete in its ⋯ menu; Schedule opens a
+                opened by its name to the stops read-only; Run and Schedule labelled, Edit and
+                Delete (a trash button, confirmed) beside them; Schedule opens a
                 dialog; schedules no saved task owns listed apart. A run is
                 not followed here — the masthead's bar is where it is —
                 only a refused Run is said. And the /tasks/editor page, built for commissioning on a
