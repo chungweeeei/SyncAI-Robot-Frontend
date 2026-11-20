@@ -12,12 +12,9 @@ import { QueryProvider } from "@/components/query-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { pageTitle } from "@/lib/page-title";
 
-// `axes: ["wdth"]`, or next/font ships the wght-only subset and
-// `instrument-label` silently renders at normal width.
 const monaSans = Mona_Sans({
   variable: "--font-mona-sans",
   subsets: ["latin"],
-  axes: ["wdth"],
 });
 
 const jetbrainsMono = JetBrains_Mono({

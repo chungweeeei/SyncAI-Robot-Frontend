@@ -183,14 +183,15 @@
 }
 
 /*
- * Typography: one industrial grotesque at two widths.
+ * Typography: one industrial grotesque, and a mono for the numbers.
  *
- * Mona Sans ships a `wdth` axis (75–125), so the condensed instrument label
- * and the normal-width UI text are the same typeface — the width change alone
- * is what separates "what this is" from "what it says". A second display
- * family would have been one accessory too many. Chosen by the operator from
- * a side-by-side of six pairings (2026-11-19): plain and quiet, where Archivo
- * read as the stock generated console and Saira, after it, as too rounded.
+ * Mona Sans, chosen by the operator from a side-by-side of six pairings
+ * (2026-11-19): plain and quiet, where Archivo read as the stock generated
+ * console and Saira, after it, as too rounded. The instrument label is set
+ * as words in it, the nav rail's face at a caption's size (by request,
+ * 2026-11-20): condensed caps were a second look for the same typeface, and
+ * hid it. Size and colour are what separate "what this is" from "what it
+ * says" now.
  *
  * Every measured quantity is set in JetBrains Mono with tabular figures: a
  * readout that reflows as digits change is unreadable at a glance, which is the
@@ -199,13 +200,9 @@
  */
 @utility instrument-label {
   font-family: var(--font-sans);
-  font-variation-settings:
-    "wdth" 75,
-    "wght" 600;
-  font-size: 0.6875rem;
+  font-weight: 500;
+  font-size: 0.75rem;
   line-height: 1;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
 }
 
 @utility readout {
