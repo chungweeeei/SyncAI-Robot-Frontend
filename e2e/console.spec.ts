@@ -206,6 +206,7 @@ test.describe("the console shell", () => {
       ["Recordings", "Recordings"],
       ["Tasks", "Tasks"],
       ["History", "History"],
+      ["Diagnostics", "Diagnostics"],
       ["Settings", "Settings"],
     ] as const) {
       await page.getByRole("link", { name }).click();

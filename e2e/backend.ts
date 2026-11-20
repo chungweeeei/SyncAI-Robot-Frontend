@@ -1267,6 +1267,14 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       body: Buffer.from("PK\x05\x06", "latin1"),
     }),
   );
+  await page.route(/\/api\/v1\/logs\/export$/, (route) =>
+    // A tar's end-of-archive marker: two zero blocks, a valid empty tar.
+    route.fulfill({
+      status: 200,
+      contentType: "application/x-tar",
+      body: Buffer.alloc(1024),
+    }),
+  );
   await page.route(/\/api\/v1\/maps\/[^/]+\/pointcloud$/, (route) =>
     // The wire format is [u32 count][f32 xyz…]; zero points is four zero bytes.
     route.fulfill({

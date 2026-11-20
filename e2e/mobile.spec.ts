@@ -82,6 +82,9 @@ test.describe("the console on a phone", () => {
       expect(box?.height, `${name} is shorter than a finger`).toBeGreaterThanOrEqual(TARGET);
     }
 
+    // An eighth tab would not fit a finger: Diagnostics is the side rail's alone.
+    await expect(page.getByRole("link", { name: "Diagnostics" })).toBeHidden();
+
     const toggle = page.getByRole("button", { name: /^Switch (to|day)/ });
     const box = await toggle.boundingBox();
     await expectOnScreen(page, "the theme switch", box);
