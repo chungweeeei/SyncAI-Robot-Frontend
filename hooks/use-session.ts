@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 
-import { login, type Credentials } from "@/lib/api/auth";
+import { login, refreshSession, type Credentials } from "@/lib/api/auth";
 import { sessionStore, type Session } from "@/lib/auth/session";
 
 const serverSnapshot = () => null;
@@ -30,6 +30,18 @@ export function signOut(): void {
 export function useLogin() {
   return useMutation({
     mutationFn: (credentials: Credentials) => login(credentials),
+    onSuccess: (session) => sessionStore().set(session),
+  });
+}
+
+/**
+ * Renew the session before it expires. A command like the sign-in: the
+ * answer goes to the session store, which every tab and the next socket
+ * connect read the new token from.
+ */
+export function useRenewSession() {
+  return useMutation({
+    mutationFn: (username: string) => refreshSession(username),
     onSuccess: (session) => sessionStore().set(session),
   });
 }

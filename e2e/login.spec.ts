@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import {
   E2E_PASSWORD,
+  E2E_RENEWED_TOKEN,
   E2E_TOKEN,
   E2E_USERNAME,
   failOnConsoleErrors,
@@ -22,9 +23,10 @@ test.describe("the sign-in", () => {
   });
 
   test.afterEach(() => {
-    // A refused request is logged by the browser itself; it is what these
-    // tests make happen, not a fault in the page.
-    const faults = errors.filter((text) => !/status of 401/.test(text));
+    // A refused request, or one the network dropped, is logged by the
+    // browser itself; it is what these tests make happen, not a fault in the
+    // page.
+    const faults = errors.filter((text) => !/status of 401|net::ERR_FAILED/.test(text));
     expect(faults, "the page logged errors").toEqual([]);
   });
 
@@ -120,15 +122,58 @@ test.describe("the sign-in", () => {
     expect(await page.evaluate(() => localStorage.getItem("auth.session"))).toBeNull();
   });
 
-  test("ends the session at its expiry, without waiting for a refusal", async ({ page }) => {
+  test("renews an open console's session before it expires, and keeps going", async ({
+    page,
+  }) => {
     await page.clock.install();
-    await mockBackend(page, { signedIn: false });
+    const writes = await mockBackend(page, { signedIn: false });
     await page.goto("/login");
     await signIn(page);
     await expect(page).toHaveURL(/\/$/);
 
-    // The fake answers expires_in: 3600.
-    await page.clock.fastForward("01:00:01");
+    // The fake answers expires_in: 3600; the renewal is due a quarter short.
+    await page.clock.fastForward("45:01");
+    await expect
+      .poll(() => writes.filter((w) => w.path === "/api/v1/auth/refresh").length)
+      .toBe(1);
+    // Past the first token's expiry, still signed in, asking with the new one.
+    await page.clock.fastForward("20:00");
+    const stateRead = page.waitForRequest("**/api/v1/robot/state");
+    await page.clock.fastForward("00:02");
+    expect((await stateRead).headers()["authorization"]).toBe(`Bearer ${E2E_RENEWED_TOKEN}`);
+    await expect(page).toHaveURL(/\/$/);
+  });
+
+  test("signs out when the robot will not renew the session any more", async ({ page }) => {
+    await page.clock.install();
+    await mockBackend(page, { signedIn: false });
+    await page.route("**/api/v1/auth/refresh", (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Your session has ended. Sign in again." }),
+      }),
+    );
+    await page.goto("/login");
+    await signIn(page);
+    await expect(page).toHaveURL(/\/$/);
+
+    await page.clock.fastForward("45:01");
+    await expect(page).toHaveURL(/\/login$/);
+  });
+
+  test("ends the session at its expiry when no renewal lands", async ({ page }) => {
+    await page.clock.install();
+    await mockBackend(page, { signedIn: false });
+    // The robot unreachable for the renewal and every retry.
+    await page.route("**/api/v1/auth/refresh", (route) => route.abort());
+    await page.goto("/login");
+    await signIn(page);
+    await expect(page).toHaveURL(/\/$/);
+
+    await page.clock.fastForward("45:01");
+    await expect(page).toHaveURL(/\/$/);
+    await page.clock.fastForward("15:00");
     await expect(page).toHaveURL(/\/login$/);
   });
 

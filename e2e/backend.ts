@@ -375,6 +375,8 @@ function historyStats(
 export const E2E_USERNAME = "admin";
 export const E2E_PASSWORD = "admin-pass";
 export const E2E_TOKEN = "e2e-token";
+/** What POST /auth/refresh hands back, so a test can tell the renewed token apart. */
+export const E2E_RENEWED_TOKEN = "e2e-token-renewed";
 
 export interface BackendOverrides {
   /**
@@ -713,7 +715,12 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
         "auth.session",
         // Far ahead, rather than an hour from now: a test that fixes the
         // page's clock would otherwise land it on either side of the expiry.
-        JSON.stringify({ token: E2E_TOKEN, username: "admin", expiresAt: 4_102_444_800_000 }),
+        JSON.stringify({
+          token: E2E_TOKEN,
+          username: "admin",
+          issuedAt: 0,
+          expiresAt: 4_102_444_800_000,
+        }),
       ],
     );
   }
@@ -736,6 +743,15 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
       }
       return json(route, {
         access_token: E2E_TOKEN,
+        token_type: "bearer",
+        expires_at: 4_102_444_800,
+        expires_in: 3600,
+      });
+    }
+
+    if (path === "/api/v1/auth/refresh" && method === "POST") {
+      return json(route, {
+        access_token: E2E_RENEWED_TOKEN,
         token_type: "bearer",
         expires_at: 4_102_444_800,
         expires_in: 3600,
