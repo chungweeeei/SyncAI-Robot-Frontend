@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OctomapLine } from "@/components/mapping/octomap-line";
-import { MAP_NAME_HINT, MAP_NAME_RE } from "@/lib/map/name";
+import { MAP_NAME_HINT, MAP_NAME_RE, resumedSaveProblem } from "@/lib/map/name";
 import type { MapSummary } from "@/lib/types/map";
 
 /**
@@ -44,6 +44,12 @@ import type { MapSummary } from "@/lib/types/map";
  * that question would — that Navigation comes back on the map loaded before,
  * not this one, which cannot be switched to until its 3D map is built. The
  * build is a detached job on the robot and survives the switch.
+ *
+ * A run resumed from a saved map is saved as another map: the robot refuses
+ * its own name, and what was placed on the old map — waypoints, forbidden
+ * zones, ground patches, floors — stays with the old name. Both are said
+ * here, before the name is typed, because afterwards the new map simply
+ * turns up without them.
  */
 export function SaveMapDialog({
   open,
@@ -52,6 +58,7 @@ export function SaveMapDialog({
   saved,
   conversion,
   switchHeld,
+  resumedFrom,
   onSave,
   onSwitchToNav,
   onClose,
@@ -66,13 +73,19 @@ export function SaveMapDialog({
   conversion: MapSummary | null;
   /** A mode switch is already on its way. */
   switchHeld: boolean;
+  /** The saved map this run continues, or null for a run started from nothing. */
+  resumedFrom: string | null;
   onSave: (name: string) => void;
   onSwitchToNav: () => void;
   onClose: () => void;
 }) {
   const [name, setName] = React.useState("");
   const nameId = React.useId();
-  const valid = MAP_NAME_RE.test(name);
+  const problemId = React.useId();
+  // Its own line, not the name rule's: the name is well-formed, just taken
+  // by the map the run stands on.
+  const resumedProblem = resumedSaveProblem(name, resumedFrom);
+  const valid = MAP_NAME_RE.test(name) && resumedProblem === null;
   // No entry yet counts as building: the robot lists a saved map as
   // `converting` at once, so it is only the moment before the catalogue's
   // first read. `none` is an outcome — the build never started, which the
@@ -117,6 +130,15 @@ export function SaveMapDialog({
               </AlertDialogDescription>
             </AlertDialogHeader>
 
+            {resumedFrom !== null && (
+              <p className="text-sm break-words text-muted-foreground">
+                This run continues <span className="readout text-foreground">{resumedFrom}</span>,
+                so it is saved as a new map under a new name. {resumedFrom} stays
+                as it is and keeps its waypoints, forbidden zones, ground
+                patches and floors — the new map starts without them.
+              </p>
+            )}
+
             <div className="space-y-1.5">
               <Label htmlFor={nameId} className="text-xs">
                 Map name
@@ -128,13 +150,19 @@ export function SaveMapDialog({
                 onChange={(event) => setName(event.target.value)}
                 placeholder="site_a"
                 aria-invalid={name.length > 0 && !valid ? true : undefined}
+                aria-describedby={resumedProblem !== null ? problemId : undefined}
                 disabled={busy}
                 className="readout h-8 rounded-sm"
               />
               {/* Shown only while the name breaks the rule, as on import and rename. */}
-              {name.length > 0 && !valid && (
+              {name.length > 0 && !MAP_NAME_RE.test(name) && (
                 <p className="text-[11px] leading-snug text-signal-caution">
                   {MAP_NAME_HINT}
+                </p>
+              )}
+              {resumedProblem !== null && (
+                <p id={problemId} className="text-[11px] leading-snug break-words text-signal-caution">
+                  {resumedProblem}
                 </p>
               )}
             </div>

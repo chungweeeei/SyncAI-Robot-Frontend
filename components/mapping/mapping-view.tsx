@@ -14,6 +14,7 @@ import {
 import { ViewportBoundary } from "@/components/console/fault-boundary";
 import { overlayPanel } from "@/components/console/instrument";
 import { ModeControl } from "@/components/mapping/mode-control";
+import { ResumeMapDialog } from "@/components/mapping/resume-map-dialog";
 import { RunError } from "@/components/mapping/run-error";
 import { RunStrip, type RunPending } from "@/components/mapping/run-strip";
 import { SaveMapDialog } from "@/components/mapping/save-map-dialog";
@@ -29,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import {
   useMappingStatus,
   useResetMappingRun,
+  useResumeMapping,
   useSaveMap,
   useStartMapping,
 } from "@/hooks/use-mapping-run";
@@ -48,11 +50,12 @@ import { cn } from "@/lib/utils";
 /**
  * What the operator is about to do, once they have said yes. `unsaved` is
  * frozen when the dialog opens so a save landing underneath can't rewrite the
- * question.
+ * question, and `resumedFrom` (the saved map the run continues, or null) for
+ * the same reason: the reset it confirms clears it.
  */
 type Confirming =
-  | { kind: "reset" }
-  | { kind: "switch"; to: SwitchableMode; unsaved: boolean };
+  | { kind: "reset"; resumedFrom: string | null }
+  | { kind: "switch"; to: SwitchableMode; unsaved: boolean; resumedFrom: string | null };
 
 /**
  * The four questions, keyed by `confirmKey`. `leave` and `reset` lose the run;
@@ -71,7 +74,6 @@ const PointCloudCanvas = dynamic(
 const CONFIRM_COPY = {
   leave: {
     title: "Leave mapping without saving?",
-    // `body: null`: the dialog writes its own line (the reset copy depends on `savedRun`).
     body: "This run's map is only in the robot's memory. Switching discards it for good.",
     icon: Trash2Icon,
     confirm: "Discard and switch",
@@ -80,6 +82,7 @@ const CONFIRM_COPY = {
   },
   reset: {
     title: "Start a new map?",
+    // `confirmBody` writes it: the line depends on `savedRun` and on a resume.
     body: null,
     icon: RotateCcwIcon,
     confirm: "Discard and start over",
@@ -110,6 +113,32 @@ function confirmKey(confirming: Confirming): keyof typeof CONFIRM_COPY {
 }
 
 /**
+ * The question's second line. A run resumed from a saved map loses less and
+ * differently: the saved map is still on the robot, only what the run added
+ * goes — and a reset does not go back to it, it starts an empty map, which is
+ * the one thing an operator would not guess.
+ */
+function confirmBody(confirming: Confirming, savedRun: boolean): string {
+  const key = confirmKey(confirming);
+  const from = confirming.resumedFrom;
+  if (key === "leave" && from !== null) {
+    return `What this run added to ${from} is only in the robot's memory. Switching discards it for good; ${from} itself stays as it was saved.`;
+  }
+  if (key === "reset") {
+    const still = "Keep the robot still while the lidar re-levels.";
+    if (from !== null) {
+      return `What this run added to ${from} is discarded for good, and the robot starts a new, empty map: ${from} stays as it was saved, but is no longer what the run builds on — resume it again for that. ${still}`;
+    }
+    return `${
+      savedRun
+        ? "Anything driven since the last save is discarded."
+        : "This run's map is discarded for good."
+    } ${still}`;
+  }
+  return CONFIRM_COPY[key].body ?? "";
+}
+
+/**
  * The mapping screen: drive the robot around and watch the map being built.
  *
  * Not gated on robot state like the dashboard: the mode switch, when the
@@ -126,10 +155,11 @@ function confirmKey(confirming: Confirming): keyof typeof CONFIRM_COPY {
  * a flag set on a press, so a run started or saved from another console, or
  * a reload, reads the same.
  *
- * This page owns start, save and reset: a refused start or reset lands in one
- * panel under the strip, and the save's receipt outlives its dialog. Each press
- * `reset()`s the other two, so the last press owns the panel and a new run
- * never reopens on the previous save's receipt.
+ * This page owns start, resume, save and reset: a refused start or reset
+ * lands in one panel under the strip, a refused resume or save in its own
+ * dialog, and the save's receipt outlives its dialog. Each press `reset()`s
+ * the others, so the last press owns the panel and a new run never reopens
+ * on the previous save's receipt.
  *
  * **Every act that rebuilds or discards goes through one confirm dialog**,
  * since nothing downstream stops it: the mode manager takes a switch at its
@@ -141,7 +171,15 @@ function confirmKey(confirming: Confirming): keyof typeof CONFIRM_COPY {
  * of `idle` lifts the guard (nothing in RAM); `unknown` keeps it.
  *
  * A start has no confirm: it discards nothing, and the robot refuses one while
- * a run is on.
+ * a run is on. Nor has a resume, beyond its own dialog, for the same reason.
+ *
+ * `resumedFrom` is the saved map a resumed run continues. The robot's status
+ * never says a run was resumed — only the resume's own answer does — so it is
+ * this console's memory of its own press, like `savedRun`: a reload, or a
+ * resume from another console, has none, and the strip, the save dialog and
+ * the confirms fall back to a plain run's words (the robot still refuses a
+ * save into the old name). It is dropped by whatever ends or replaces the
+ * run: a start, a reset, a save, a new session, and the robot reading idle.
  */
 export function MappingView() {
   const control = useModeSwitch();
@@ -153,8 +191,11 @@ export function MappingView() {
   const [confirming, setConfirming] = React.useState<Confirming | null>(null);
   // Never open with the confirm: it is reached from the strip, which is inert under it.
   const [saving, setSaving] = React.useState(false);
+  const [resuming, setResuming] = React.useState(false);
+  const [resumedFrom, setResumedFrom] = React.useState<string | null>(null);
 
   const start = useStartMapping();
+  const resume = useResumeMapping();
   const save = useSaveMap();
   const discard = useResetMappingRun();
 
@@ -165,6 +206,8 @@ export function MappingView() {
   if (reported !== prevReported) {
     setPrevReported(reported);
     if (reported === "MANUAL") setSavedRun(false);
+    // Either way the run that was resumed is gone with its session.
+    setResumedFrom(null);
   }
 
   const mapping = reported === "MANUAL" && !pending;
@@ -179,6 +222,15 @@ export function MappingView() {
     run: runStatus.run,
     status: runStatus.status,
   });
+
+  // A run that ended somewhere else (another console's save) is no longer the
+  // one resumed. On the turn to idle only: a resume the robot answers at once
+  // lands while the last read still says idle, and must not be dropped by it.
+  const [prevRunState, setPrevRunState] = React.useState(runState);
+  if (runState !== prevRunState) {
+    setPrevRunState(runState);
+    if (runState === "idle") setResumedFrom(null);
+  }
 
   // The map this screen follows the 3D map build of, read off the last save —
   // the catalogue can't say which map is "the one I just saved". Null until a
@@ -198,18 +250,53 @@ export function MappingView() {
         // `idle` has nothing in RAM; `unknown` fails closed and warns.
         unsaved:
           mode === "AUTO" && reported === "MANUAL" && runState !== "idle" && !savedRun,
+        resumedFrom,
       });
     },
-    [reported, pending, savedRun, runState],
+    [reported, pending, savedRun, runState, resumedFrom],
   );
 
   const onStart = () => {
     save.reset();
     discard.reset();
+    resume.reset();
     start.mutate(undefined, {
       // A start after a save is a new unsaved run `reported` never sees.
-      onSuccess: () => setSavedRun(false),
+      onSuccess: () => {
+        setSavedRun(false);
+        setResumedFrom(null);
+      },
     });
+  };
+
+  // Cleared on open, as the save's: the last resume's receipt or refusal is
+  // not this one's.
+  const openResume = () => {
+    start.reset();
+    discard.reset();
+    save.reset();
+    resume.reset();
+    setResuming(true);
+  };
+
+  const submitResume = (name: string) => {
+    resume.mutate(
+      { name },
+      {
+        // The answer's name, not the one sent: it is the robot's word for
+        // which map the run stands on. A new unsaved run, as a start is.
+        onSuccess: (result) => {
+          setSavedRun(false);
+          setResumedFrom(result.name);
+        },
+      },
+    );
+  };
+
+  // A refusal backed out of is dropped, so the strip is not left holding it.
+  const closeResume = () => {
+    if (resume.error) resume.reset();
+    setResuming(false);
   };
 
   // Cleared on open, not submit: a receipt from another console's save would
@@ -217,12 +304,22 @@ export function MappingView() {
   const openSave = () => {
     start.reset();
     discard.reset();
+    resume.reset();
     save.reset();
     setSaving(true);
   };
 
   const submitSave = (name: string) => {
-    save.mutate({ name }, { onSuccess: () => setSavedRun(true) });
+    save.mutate(
+      { name },
+      {
+        onSuccess: () => {
+          setSavedRun(true);
+          // The save ended the run; the next one starts from nothing.
+          setResumedFrom(null);
+        },
+      },
+    );
   };
 
   // The receipt's own question, so no second confirm: the run is saved and
@@ -244,24 +341,27 @@ export function MappingView() {
     setConfirming(null);
     start.reset();
     save.reset();
+    resume.reset();
     discard.mutate(undefined, {
       onSuccess: () => {
         // `reported` stays MANUAL through a reset, so without this a save of A,
         // reset, drive B, switch to Nav would lose B with no warning.
         setSavedRun(false);
+        // A reset starts an empty map; the saved one is no longer under it.
+        setResumedFrom(null);
       },
     });
   };
 
   // Confirmed even when saved: the minutes driven since the save are still lost.
   const requestReset = React.useCallback(
-    () => setConfirming({ kind: "reset" }),
-    [],
+    () => setConfirming({ kind: "reset", resumedFrom }),
+    [resumedFrom],
   );
 
   // The last question, held past close so the copy doesn't change under the
   // close animation (adjust-during-render, as above).
-  const [shown, setShown] = React.useState<Confirming>({ kind: "reset" });
+  const [shown, setShown] = React.useState<Confirming>({ kind: "reset", resumedFrom: null });
   if (confirming && confirming !== shown) setShown(confirming);
   const confirmCopy = CONFIRM_COPY[confirmKey(shown)];
   const ConfirmIcon = confirmCopy.icon;
@@ -278,19 +378,22 @@ export function MappingView() {
     start.reset();
     save.reset();
     discard.reset();
+    resume.reset();
     void switchTo(target);
   };
 
   const runPending: RunPending = start.isPending
     ? "start"
-    : save.isPending
-      ? "save"
-      : discard.isPending
-        ? "reset"
-        : null;
+    : resume.isPending
+      ? "resume"
+      : save.isPending
+        ? "save"
+        : discard.isPending
+          ? "reset"
+          : null;
 
   // At most one holds an error, since each press resets the others. The
-  // save's refusal stays in its dialog.
+  // save's refusal stays in its dialog, and the resume's in its own.
   const runError = start.error?.message ?? discard.error?.message ?? null;
 
   return (
@@ -318,7 +421,10 @@ export function MappingView() {
             className="pointer-events-auto self-end"
             face={face}
             pending={runPending}
+            // Only beside a run: the turn to idle clears it a render later.
+            resumedFrom={face.kind === "run" ? resumedFrom : null}
             onStart={onStart}
+            onResume={openResume}
             onSave={openSave}
             onReset={requestReset}
           />
@@ -357,6 +463,15 @@ export function MappingView() {
         </div>
       </aside>
 
+      <ResumeMapDialog
+        open={resuming}
+        busy={resume.isPending}
+        error={resume.error?.message ?? null}
+        resumed={resume.data?.message ?? null}
+        onResume={submitResume}
+        onClose={closeResume}
+      />
+
       <SaveMapDialog
         open={saving}
         busy={save.isPending}
@@ -364,6 +479,7 @@ export function MappingView() {
         saved={save.data?.message ?? null}
         conversion={converting}
         switchHeld={control.busy || pending !== null}
+        resumedFrom={resumedFrom}
         onSave={submitSave}
         onSwitchToNav={saveThenSwitch}
         onClose={closeSave}
@@ -378,15 +494,8 @@ export function MappingView() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{confirmCopy.title}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmCopy.body ?? (
-                <>
-                  {savedRun
-                    ? "Anything driven since the last save is discarded."
-                    : "This run's map is discarded for good."}{" "}
-                  Keep the robot still while the lidar re-levels.
-                </>
-              )}
+            <AlertDialogDescription className="break-words">
+              {confirmBody(shown, savedRun)}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
