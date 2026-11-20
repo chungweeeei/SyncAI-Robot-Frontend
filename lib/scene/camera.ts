@@ -103,6 +103,31 @@ export function liftView(camera: THREE.PerspectiveCamera, controls: OrbitControl
   controls.target.z += dz;
 }
 
+/** How far behind the robot Focus puts the camera, metres along the ground. */
+export const FOCUS_BACK_M = 3;
+/** And how high over the robot. */
+export const FOCUS_UP_M = 2.4;
+
+/**
+ * Where Focus opens: behind the robot along its heading and a little above,
+ * looking down at it, so the robot fills the view, the way it faces is the
+ * way the screen goes, and the cells at its feet do not fill the near half. It opened 10 m south of the robot, whichever way it
+ * faced, where the robot was still a small mark (2026-11-20).
+ */
+export function focusFraming(pose: { x: number; y: number; z: number; yaw: number }): {
+  position: THREE.Vector3;
+  target: THREE.Vector3;
+} {
+  return {
+    position: new THREE.Vector3(
+      pose.x - Math.cos(pose.yaw) * FOCUS_BACK_M,
+      pose.y - Math.sin(pose.yaw) * FOCUS_BACK_M,
+      pose.z + FOCUS_UP_M,
+    ),
+    target: new THREE.Vector3(pose.x, pose.y, pose.z),
+  };
+}
+
 /** Ease in and out over `[0, 1]`, cubic: a lift that starts and stops gently. */
 export function easeInOut(t: number): number {
   const c = Math.min(1, Math.max(0, t));
