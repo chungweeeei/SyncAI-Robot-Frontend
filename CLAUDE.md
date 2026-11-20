@@ -488,7 +488,8 @@ lib/
                 depth, so a scan point is not ringed), the task editor's
                 waypoints as screen marks over the 3D map (route-marks.ts:
                 projectStops, stopNear), camera policy (the
-                opening, overhead and front framings, and one button
+                opening, overhead and front framings, Focus's from
+                behind the robot (focusFraming), and one button
                 table for every 3D view, applyLookControls: the primary
                 button pans and the right one orbits, on the dashboard
                 and in both editors, and an armed tool takes only the
