@@ -116,13 +116,16 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
           label="Saved tasks"
           action={
             <div className="flex items-center gap-1.5">
-              {/* A count, not a flag: an empty library is said in the list
-                * below, and a list that failed to read has no count at all —
-                * an amber 0 beside the error read as "no tasks". */}
+              {/* The number alone, on a filled pill so it is found at a
+                * glance (by request). A count, not a flag: an empty library
+                * is said in the list below, and a list that failed to read
+                * has no count at all — an amber 0 beside the error read as
+                * "no tasks". */}
               {library.status === "ok" && (
-                <span className="readout text-[12px] text-muted-foreground">
-                  {library.templates.length}{" "}
-                  {library.templates.length === 1 ? "task" : "tasks"}
+                <span
+                  className="readout inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-signal-cmd/15 px-1.5 text-[12px] font-medium text-signal-cmd"
+                >
+                  {library.templates.length}
                 </span>
               )}
               <button
