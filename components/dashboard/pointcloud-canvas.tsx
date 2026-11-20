@@ -719,12 +719,16 @@ export function PointCloudCanvas({
     scene.add(livePoints);
 
     // Only the robot is lit. The hemisphere fill keeps its underside off black;
-    // the key light rakes across it from the default camera side so the legs
-    // read.
+    // the key light rides the camera, up and to the left of the eye, so the
+    // side of the robot the operator is looking at is the lit one from any
+    // angle. Fixed in the world, it left the robot dark from half the orbit.
     scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2.0));
     const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
-    keyLight.position.set(-1, -1.5, 3);
-    scene.add(keyLight);
+    keyLight.position.set(-1, 1, 0);
+    // A directional light shines at its target, which has to move with it.
+    keyLight.target.position.set(0, 0, -1);
+    camera.add(keyLight, keyLight.target);
+    scene.add(camera);
 
     // Goal, initial pose, and the drag's draft. Placed by the marker effect,
     // which re-runs after a rebuild.

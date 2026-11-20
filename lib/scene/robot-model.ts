@@ -21,6 +21,15 @@ export const ROBOT_BASE_HEIGHT_M = 0.43212;
  *
  * The GLB has no materials or normals; glTF's default material would render
  * pure black here, so every mesh gets our own flat-shaded one.
+ *
+ * Graphite, not the pale grey it was: the 3D map's cells are the height
+ * ramp's bright greens and yellows and the light theme's background is
+ * near white, and a pale body sank into both (robot01, 2026-11-20). The
+ * camera's own light (pointcloud-canvas) keeps its facets from going black.
+ * An outline of its creases and an x-ray through the map were tried and
+ * dropped: the mesh is 200k faceted triangles, so the outline was 165k line
+ * segments and the x-ray a second full draw, which starved the page on a
+ * software GPU — CI's, and a weak laptop's.
  */
 let robotModelPromise: Promise<THREE.Object3D> | null = null;
 
@@ -32,7 +41,7 @@ export function loadRobotModel(): Promise<THREE.Object3D> {
     loader.setMeshoptDecoder(MeshoptDecoder);
     robotModelPromise = loader.loadAsync(ROBOT_MODEL_URL).then((gltf) => {
       const material = new THREE.MeshStandardMaterial({
-        color: 0xb0b4ba,
+        color: 0x5a636d,
         metalness: 0.1,
         roughness: 0.75,
         // No NORMAL attribute in the asset, so shade off face derivatives.
