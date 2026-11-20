@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-
 import { useRobotId } from "@/hooks/use-console-robot-state";
 import { RecorderControl } from "@/components/recordings/recorder-control";
 import { RecordingList } from "@/components/recordings/recording-list";
@@ -25,16 +23,8 @@ export default function RecordingsPage() {
           <h1 className="text-xl font-semibold tracking-tight">
             Recordings
           </h1>
-          {/* A mapping run lives only in memory until saved; a recording is
-            * how a lost one is rebuilt, hence the link. */}
           <p className="mt-1 text-sm text-muted-foreground">
-            Sensor recordings from{" "}
-            <RobotName id={robotId} />.
-            Record a{" "}
-            <Link href="/mapping" className="underline underline-offset-2">
-              mapping run
-            </Link>{" "}
-            so a lost map can be rebuilt.
+            Sensor recordings from <RobotName id={robotId} />.
           </p>
         </header>
 
