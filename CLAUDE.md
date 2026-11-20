@@ -319,8 +319,7 @@ components/
   recordings/   bag recorder and list
   tasks/        the /tasks overview: the saved tasks grouped by map (the
                 loaded one first, then the tasks bound to no map, then the
-                others folded) under
-                one search; a card per task, folded to its name and route
+                others folded; no search box); a card per task, folded to its name and route
                 (waypoints by name, then lib/task/library.ts's summary)
                 and a line per schedule with its pause, edit and delete,
                 opened by its name to the stops read-only; Run and Schedule labelled, Edit and
