@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as z from "zod";
 
 import { errorBody, errorDetail, readBlob, requestJson, requestRaw } from "@/lib/api/http";
+import { sessionStore } from "@/lib/auth/session";
 
 /**
  * Three contracts the type checker cannot see: a refusal is the backend's own
@@ -265,6 +266,56 @@ describe("requestRaw", () => {
     await requestRaw(URL_);
     const init = fetchMock.mock.calls[0][1] as RequestInit | undefined;
     expect(new Headers(init?.headers).get("Content-Type")).toBeNull();
+  });
+});
+
+describe("the sign-in", () => {
+  const signIn = (token: string) =>
+    sessionStore().set({ token, username: "admin", issuedAt: Date.now(), expiresAt: Date.now() + 60_000 });
+
+  afterEach(() => sessionStore().clear());
+
+  it("sends the token on both doors", async () => {
+    signIn("abc");
+    fetchMock.mockResolvedValueOnce(jsonResponse({}));
+    await requestJson(URL_);
+    expect(sentInit().headers.get("Authorization")).toBe("Bearer abc");
+
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValueOnce(new Response("x"));
+    await requestRaw(URL_);
+    expect(sentInit().headers.get("Authorization")).toBe("Bearer abc");
+  });
+
+  it("sends none when signed out, rather than `Bearer null`", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}));
+    await requestJson(URL_);
+    expect(sentInit().headers.has("Authorization")).toBe(false);
+  });
+
+  it("ends the sign-in on a 401, which is what sends the console to /login", async () => {
+    signIn("abc");
+    fetchMock.mockResolvedValueOnce(jsonResponse({ detail: "Your session has ended." }, { status: 401 }));
+    await expect(requestJson(URL_)).rejects.toThrow("Your session has ended.");
+    expect(sessionStore().getSnapshot()).toBeNull();
+  });
+
+  it("does not end a newer sign-in for a 401 to a request sent before it", async () => {
+    signIn("old");
+    let answer!: (res: Response) => void;
+    fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => (answer = resolve)));
+    const pending = requestJson(URL_);
+    signIn("new");
+    answer(jsonResponse({ detail: "Your session has ended." }, { status: 401 }));
+    await expect(pending).rejects.toThrow();
+    expect(sessionStore().getSnapshot()?.token).toBe("new");
+  });
+
+  it("keeps the sign-in for any other refusal", async () => {
+    signIn("abc");
+    fetchMock.mockResolvedValueOnce(jsonResponse({ detail: "busy" }, { status: 409 }));
+    await expect(requestJson(URL_)).rejects.toThrow("busy");
+    expect(sessionStore().getSnapshot()?.token).toBe("abc");
   });
 });
 

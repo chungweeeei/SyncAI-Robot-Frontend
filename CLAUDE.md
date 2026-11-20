@@ -154,9 +154,30 @@ The stack as built. Correct this section if a choice changes.
 ## Directory map
 
 ```
-app/            route shells; the real content belongs to a component (see deviations)
+app/            route shells; the real content belongs to a component (see deviations).
+                Every screen sits in the `(console)` route group, whose layout
+                is the sign-in gate, the polls and the shell; /login is the
+                one route outside it, drawn with none of them
 components/
-  console/      shell: nav rail (until its button is pressed the width
+  auth/         the sign-in screen (/login): on one half the robot
+                walking round a shelf in a made-up warehouse corner
+                (walking-robot: the real model, its legs a looped animation,
+                the route ahead in the dashboard's band, the camera
+                following from outside the route, so the shelf is never
+                between it and the robot; still under reduced motion, paused in a hidden
+                tab, nothing without WebGL, and fetched after the form, which
+                never waits for it; a band over the form on a phone), the
+                form on the other, a card of its own surface and edge; Sign in never greyed, an empty field
+                said and focused instead, a refusal emptying the password
+                and returning to it; and leaving for `?next=`
+                (lib/auth/next-path.ts: only a path on this console) once a
+                session appears
+  console/      session-gate.tsx (the console mounts only with a session,
+                and sends the operator to /login when it ends — a 401, the
+                token's expiry, Sign out, another tab's sign-out — dropping
+                every cached read), sign-out-button.tsx (in the rail from lg,
+                on the Settings landing at every width),
+                shell: nav rail (until its button is pressed the width
                 decides, in CSS: icons only from lg, labelled from xl; the
                 button in its top-left corner then folds or opens it — no
                 tooltip, instant, held until a reload), status strip (its
@@ -403,6 +424,12 @@ hooks/          one hook per backend interaction; the only place components get 
                 itself. use-zone-editing is the map editor's forbidden zones:
                 lib/map/zone-session.ts's reducer and the keepout write
 lib/
+  auth/         the sign-in (session.ts: the token, its expiry on this
+                machine's clock — the answer's `expires_in`, never the robot's
+                `expires_at` — the one other home for browser storage, and
+                withToken for the requests outside http.ts, and when an
+                open console renews it: msUntilRenewal, retryRenewalIn) and
+                next-path.ts
   api/          typed fetchers per backend router, config.ts, http.ts, query-keys.ts
                 (requests only — mirrored validation rules live with their domain)
   ros/          WebSocket clients + frame decoders (telemetry, point cloud, teleop)
@@ -503,7 +530,11 @@ lib/
                 primary, the middle button taking over the pan, so the
                 right button never changes meaning), the ground patches'
                 3D marks, picking,
-                robot mesh
+                robot mesh, and the sign-in screen's set (walk-loop.ts: the
+                oval the robot walks, the stretch of it ahead and the
+                camera's place outside it;
+                demo-site.ts: the shelves, crates and columns round it, clear
+                of the oval)
   theme/        the signal hues both canvases draw with, and the height ramp
                 the 3D map is coloured by (height-ramp.ts: data colouring,
                 deliberately not a signal hue)
@@ -523,7 +554,8 @@ lib/
                 wrapper and the planner's detail dropped; an unknown one is
                 shown, not guessed at — the history export keeps the raw), the
                 editor's unsaved draft (draft-store.ts
-                — the one place that touches browser storage) and its undo
+                — with lib/auth/session.ts, one of the two places that touch
+                browser storage) and its undo
                 history (draft-history.ts: snapshots, a burst of typing as one
                 entry), the step list read as stops (stops.ts: before setting
                 off, each stop's walk and arrival, and every edit in those
@@ -717,6 +749,26 @@ touch one, prefer moving it toward the rule.
   `mutateAsync(…).catch(ignore)` is the house idiom for a handler wired
   straight to a button — the rejection is on the mutation, which is where the
   UI reads it.
+- **Every request carries the operator's token.** The backend refuses every
+  route but its sign-in and `/health` without one. `lib/api/http.ts`'s two
+  doors are the interceptor (there is no axios): they add
+  `Authorization: Bearer`, and a 401 empties the session store, but only of
+  the token that request carried, so a refusal of a request sent before a
+  fresh sign-in does not end it. A WebSocket cannot carry a header, so
+  `wsUrl()` puts the token in `?token=`, read at each connect; WHEP / WHIP
+  signalling and the WebRTC bench add it through `withToken`. There is one
+  account on the robot (`admin`, its password in the backend's environment)
+  and no route to add another. The emergency stop is behind the sign-in
+  like everything else, so an open console does not sign out at the token's
+  expiry: the gate trades it for a fresh one (`POST /auth/refresh`) a
+  quarter of its life short, retrying one that did not land
+  (`msUntilRenewal`, `retryRenewalIn` in `lib/auth/session.ts`), since an
+  operator watching a patrol presses nothing for an hour and would lose the
+  stop. A session still ends by the next 401 — the robot's cap on how long
+  one sign-in may be renewed arrives as one — and by a timer at the expiry
+  when no renewal landed, so the console does not sit on a screen whose next
+  press would be refused. A console whose session ended has no stop until
+  someone signs in again.
 - **Mutations use `networkMode: "always"`** (set in `components/query-provider.tsx`).
   The library default withholds a mutation while `navigator.onLine` is false
   and a withheld one never settles, which would leave `isPending` true with no
@@ -755,7 +807,7 @@ touch one, prefer moving it toward the rule.
   cleaning takes minutes, and a listing walks every map directory — and
   `useRecordings` while a bag is live, `useRobotRestart` while its record
   says `restarting`).
-  Two console-wide polls are mounted once in `app/layout.tsx`:
+  Two console-wide polls are mounted once in `app/(console)/layout.tsx`:
   `RobotStateProvider` (1 Hz) and `ActiveTaskProvider` (2 s). Pages read those
   providers; they do not start their own `robotState` poll. A reader that
   wants one field takes it through a selector (`useRobotId`,
@@ -1039,9 +1091,12 @@ it is run in, so it does not belong to any one of them.
 - Comments in this codebase explain *why* a choice was made (backpressure,
   poll economics, a backend quirk), not what the code does. Keep that standard;
   a decision without its reason will be undone by the next reader.
-- **Browser storage is one module.** The task editor's unsaved draft lives in
-  `sessionStorage` through `lib/task/draft-store.ts`, and nothing else reads
-  or writes storage. It is also how the two task pages hand work over: a row's
+- **Browser storage is two modules.** The sign-in lives in `localStorage`
+  through `lib/auth/session.ts` (in lib/ rather than beside its hook, because
+  `lib/api/http.ts` reads the token on every request and drops it on a 401),
+  and the task editor's unsaved draft in `sessionStorage` through
+  `lib/task/draft-store.ts`; nothing else reads or writes storage, and both
+  follow the rules below. It is also how the two task pages hand work over: a row's
   Load writes the template into the draft and navigates to `/tasks/editor`,
   which carries no id in its URL. The store takes its `Storage` by injection
   (the server has none, tests pass a Map), wraps every access in try/catch
@@ -1094,7 +1149,7 @@ it is run in, so it does not belong to any one of them.
   container's class decides: `touch-pan-y` below `lg` (a vertical swipe
   scrolls the page the viewport sits in), `touch-none` from `lg` and while a
   pick is armed.
-- **A throw never takes the emergency stop with it.** `app/error.tsx`
+- **A throw never takes the emergency stop with it.** `app/(console)/error.tsx`
   catches a failed screen inside the layout, so the rail and the strip stay
   up; each map view sits in a `ViewportBoundary` and each of the strip's
   panels in its own compact `FaultBoundary`, so a failure stays the size of

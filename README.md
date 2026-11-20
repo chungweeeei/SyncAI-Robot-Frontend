@@ -49,6 +49,7 @@ SYNCAI_DEV_ORIGINS=robot-01.lan,10.8.140.138 npm run dev
 
 | Route | What it is |
 |---|---|
+| `/login` | Sign in. Every other route needs it; a token lasts an hour (the backend's `JWT_EXPIRE_SECONDS`) and an open console renews it before then (`POST /api/v1/auth/refresh`), so it returns here only on Sign out or when the robot refuses a renewal. One account, `admin`, set in the backend's environment. |
 | `/` | Dashboard: the 3D view (live scan, the map's scan and 3D map, robot, route, waypoints, forbidden zones) and the instrument rail (schedules, locomotion, motors). |
 | `/mapping` | Build a map: switch to Mapping, **Start mapping**, drive, then **Save** (or **New map**). |
 | `/maps` | Map library: switch, rename, delete, export / import, and open a map's editor. |

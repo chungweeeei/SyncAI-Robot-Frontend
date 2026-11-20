@@ -2,6 +2,8 @@
 
 import type * as z from "zod";
 
+import { currentToken, endSessionFor } from "@/lib/auth/session";
+
 /** A refusal as the backend describes it. */
 export interface ErrorBody {
   /** Operator-facing sentence, rendered verbatim; else the status line. */
@@ -40,6 +42,25 @@ export async function errorDetail(res: Response): Promise<string> {
 
 function statusLine(res: Response): string {
   return `${res.status} ${res.statusText}`;
+}
+
+/**
+ * The one place a request gets the operator's token and a 401 ends the
+ * sign-in, for both doors below: the session store dropping its token is what
+ * sends the console back to /login (components/console/session-gate.tsx).
+ *
+ * Only the token the request carried is dropped. A request sent before a
+ * fresh sign-in answers 401 after it, and must not end the new one.
+ */
+async function authorizedFetch(url: string, init: RequestInit): Promise<Response> {
+  const token = currentToken();
+  const headers = new Headers(init.headers);
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  const res = await fetch(url, { ...init, headers });
+  if (res.status === 401) endSessionFor(token);
+  return res;
 }
 
 export interface JsonRequestInit<T = unknown> extends RequestInit {
@@ -120,7 +141,7 @@ export async function requestJson<T>(
     headers.set("Content-Type", "application/json");
   }
 
-  const res = await fetch(url, { ...rest, headers });
+  const res = await authorizedFetch(url, { ...rest, headers });
 
   if (!res.ok) {
     const body = await errorBody(res);
@@ -142,7 +163,7 @@ export async function requestRaw(
   url: string,
   init?: RequestInit,
 ): Promise<Response> {
-  const res = await fetch(url, init);
+  const res = await authorizedFetch(url, init ?? {});
   if (!res.ok) throw new Error(await errorDetail(res));
   return res;
 }

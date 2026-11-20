@@ -1,5 +1,6 @@
 import { apiUrl } from "@/lib/api/config";
 import { errorDetail } from "@/lib/api/http";
+import { withToken } from "@/lib/auth/session";
 
 /**
  * The WHEP handshake. The robot's worker is single-shot (one offer, one
@@ -95,7 +96,11 @@ export async function openSession(
     // speaker stays claimed.
     if (sessionUrl) {
       try {
-        await fetch(sessionUrl, { method: "DELETE", keepalive: true });
+        await fetch(sessionUrl, {
+          method: "DELETE",
+          headers: withToken(),
+          keepalive: true,
+        });
       } catch {
         /* the robot went away, or the tab is unloading — nothing to do */
       }
@@ -126,7 +131,7 @@ export async function openSession(
     const url = apiUrl(path);
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/sdp" },
+      headers: withToken({ "Content-Type": "application/sdp" }),
       // localDescription, not `offer`: it carries the gathered candidates.
       body: pc.localDescription?.sdp ?? offer.sdp ?? "",
     });

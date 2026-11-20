@@ -333,7 +333,7 @@ test.describe("the console on a phone", () => {
     await mockBackend(page);
     const frames: { vx: number; vy: number; wz: number }[] = [];
     let sockets = 0;
-    await page.routeWebSocket(/\/api\/v1\/robot\/teleop$/, (ws) => {
+    await page.routeWebSocket(/\/api\/v1\/robot\/teleop(\?|$)/, (ws) => {
       sockets += 1;
       ws.onMessage((message) => {
         if (typeof message === "string") frames.push(JSON.parse(message));

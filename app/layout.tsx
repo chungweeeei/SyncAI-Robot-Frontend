@@ -2,15 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Mona_Sans } from "next/font/google";
 import "./globals.css";
 
-import { ActiveTaskProvider } from "@/components/console/active-task-provider";
-import { EstopProvider } from "@/components/console/estop-provider";
-import { FaultBoundary } from "@/components/console/fault-boundary";
-import { NavRail } from "@/components/console/nav-rail";
-import { RobotStateProvider } from "@/components/console/robot-state-provider";
-import { StatusStrip } from "@/components/console/status-strip";
 import { QueryProvider } from "@/components/query-provider";
 import { ThemeProvider } from "@/components/theme-provider";
-import { pageTitle } from "@/lib/page-title";
 
 const monaSans = Mona_Sans({
   variable: "--font-mona-sans",
@@ -24,9 +17,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  // The dashboard's, since it is this segment's own page; every other screen
-  // writes its own beside it (lib/page-title.ts).
-  title: pageTitle("Dashboard"),
+  // Every screen writes its own (lib/page-title.ts); this is only the
+  // fallback for one that forgot.
+  title: "SyncAI Robot Console",
   description: "Live telemetry, map and navigation control for one robot",
 };
 
@@ -58,35 +51,9 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {/*
-           * The console's two polls, mounted once so every screen reads the
-           * same snapshot and the job state survives navigation. Separate
-           * providers because they fail differently (see ActiveTaskProvider).
-           */}
-          <QueryProvider>
-            <RobotStateProvider>
-              <ActiveTaskProvider>
-                {/* Inside both polls: the stop reads the robot's lock from the
-                  * first and the jobs to cancel from the second. */}
-                <EstopProvider>
-                  <div className="flex h-dvh flex-col lg:flex-row">
-                    {/* The rail is chrome around the stop, not the stop:
-                      * a throw in it must not reach global-error. */}
-                    <FaultBoundary title="Menu unavailable" compact>
-                      <NavRail />
-                    </FaultBoundary>
-                    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                      <StatusStrip />
-                      {/* Pages own their scrolling. */}
-                      <main className="min-h-0 flex-1 overflow-hidden">
-                        {children}
-                      </main>
-                    </div>
-                  </div>
-                </EstopProvider>
-              </ActiveTaskProvider>
-            </RobotStateProvider>
-          </QueryProvider>
+          {/* The console's shell and its polls are app/(console)/layout.tsx,
+            * behind the sign-in; /login is drawn without them. */}
+          <QueryProvider>{children}</QueryProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -371,7 +371,20 @@ function historyStats(
 }
 
 /** What every screen needs before it will render anything but a guard state. */
+/** The one account the fake signs in, and the token it answers. */
+export const E2E_USERNAME = "admin";
+export const E2E_PASSWORD = "admin-pass";
+export const E2E_TOKEN = "e2e-token";
+/** What POST /auth/refresh hands back, so a test can tell the renewed token apart. */
+export const E2E_RENEWED_TOKEN = "e2e-token-renewed";
+
 export interface BackendOverrides {
+  /**
+   * Start signed in, which every screen behind the sign-in needs; false for
+   * a test of the sign-in itself. Seeded once per test, so a sign-out the
+   * test makes is not undone by a reload.
+   */
+  signedIn?: boolean;
   /** Null makes GET /robot/state 404, which is the pre-localization state. */
   state?: Record<string, unknown> | null;
   maps?: Record<string, unknown>[];
@@ -691,6 +704,27 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     finished_at: null,
   };
 
+  if (over.signedIn ?? true) {
+    await page.addInitScript(
+      ([key, value]) => {
+        if (window.sessionStorage.getItem("e2e.signed-in")) return;
+        window.sessionStorage.setItem("e2e.signed-in", "1");
+        window.localStorage.setItem(key, value);
+      },
+      [
+        "auth.session",
+        // Far ahead, rather than an hour from now: a test that fixes the
+        // page's clock would otherwise land it on either side of the expiry.
+        JSON.stringify({
+          token: E2E_TOKEN,
+          username: "admin",
+          issuedAt: 0,
+          expiresAt: 4_102_444_800_000,
+        }),
+      ],
+    );
+  }
+
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -699,6 +733,29 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
 
     if (method !== "GET") {
       writes.push({ method, path, body: parseBody(request.postData()) });
+    }
+
+    // Sign-in -----------------------------------------------------------
+    if (path === "/api/v1/auth/login" && method === "POST") {
+      const body = parseBody(request.postData()) as { username?: string; password?: string };
+      if (body?.username !== E2E_USERNAME || body?.password !== E2E_PASSWORD) {
+        return json(route, { detail: "Wrong username or password." }, 401);
+      }
+      return json(route, {
+        access_token: E2E_TOKEN,
+        token_type: "bearer",
+        expires_at: 4_102_444_800,
+        expires_in: 3600,
+      });
+    }
+
+    if (path === "/api/v1/auth/refresh" && method === "POST") {
+      return json(route, {
+        access_token: E2E_RENEWED_TOKEN,
+        token_type: "bearer",
+        expires_at: 4_102_444_800,
+        expires_in: 3600,
+      });
     }
 
     // Reads -------------------------------------------------------------
