@@ -44,6 +44,10 @@ const nextConfig: NextConfig = {
   // dev flow (`npm run dev` against the mounted workspace) is unaffected.
   output: "standalone",
   allowedDevOrigins: localDevOrigins(),
+  // The "N" badge `next dev` draws in the bottom-left. The robots still run
+  // the dev server, so operators saw it, over the rail's Sign out and the
+  // sign-in picture. Build and runtime errors still show without it.
+  devIndicators: false,
 };
 
 export default nextConfig;
