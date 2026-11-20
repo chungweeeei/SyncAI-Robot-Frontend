@@ -108,12 +108,6 @@ describe("groupTasks", () => {
     expect(groups[0]!.mapName).toBeNull();
     expect(groups.some((group) => group.loaded)).toBe(false);
   });
-
-  it("keeps only what a search matches, on every map, and drops an emptied group", () => {
-    const groups = groupTasks(tasks, "office", "  ROUND ");
-    expect(groups.map((group) => group.mapName)).toEqual(["office", "lab"]);
-    expect(groupTasks(tasks, "office", "nothing")).toEqual([]);
-  });
 });
 
 describe("routeLine", () => {

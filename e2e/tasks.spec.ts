@@ -298,7 +298,7 @@ test.describe("the task console", () => {
     await expect(stops.getByText("2.500")).toHaveCount(0);
   });
 
-  test("groups the tasks by map, and a search finds one on any map", async ({ page }) => {
+  test("groups the tasks by map, and opens another map's group on a press", async ({ page }) => {
     await mockBackend(page, {
       templates: [
         taskTemplate({ id: "a1", name: "Round 10" }),
@@ -325,12 +325,10 @@ test.describe("the task console", () => {
     // Another map's group is folded until asked for.
     await expect(page.getByRole("button", { name: "Lab round", exact: true })).toHaveCount(0);
 
-    await page.getByRole("searchbox", { name: "Search tasks" }).fill("lab");
-    await expect(sections).toHaveCount(1);
+    // No search box: the folded group is where it is found.
+    await expect(page.getByRole("searchbox")).toHaveCount(0);
+    await sections.nth(2).getByRole("button", { name: /^wh1/ }).click();
     await expect(page.getByRole("button", { name: "Lab round", exact: true })).toBeVisible();
-
-    await page.getByRole("searchbox", { name: "Search tasks" }).fill("nothing");
-    await expect(page.getByText("No task is named like “nothing”.")).toBeVisible();
   });
 
   // No Duplicate on the card, by request: Save as copy in the editor is the

@@ -28,19 +28,15 @@ export interface TaskGroup {
 /**
  * Every task, grouped by map: the loaded map first, then the tasks bound to
  * no map (they run anywhere, so they are as runnable as the first group),
- * then every other map by name. Nothing is hidden by map — another floor's
- * task is still someone's work — only by `query`, which keeps a task whose
- * name contains it, ignoring case, and drops a group left empty.
+ * then every other map by name. Nothing is hidden by map: another floor's
+ * task is still someone's work.
  */
 export function groupTasks(
   templates: readonly TaskTemplate[],
   activeMapName: string | null,
-  query = "",
 ): TaskGroup[] {
-  const needle = query.trim().toLocaleLowerCase();
   const byMap = new Map<string | null, TaskTemplate[]>();
   for (const template of templates) {
-    if (needle && !template.name.toLocaleLowerCase().includes(needle)) continue;
     const list = byMap.get(template.map_name);
     if (list) list.push(template);
     else byMap.set(template.map_name, [template]);
