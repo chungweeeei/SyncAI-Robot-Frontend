@@ -129,9 +129,9 @@ export function MapImportControl({
       <Button
         type="button"
         onClick={() => inputRef.current?.click()}
-        className="h-9 bg-signal-live px-4 text-sm text-background hover:bg-signal-live/85"
+        className="bg-signal-live text-background hover:bg-signal-live/85"
       >
-        <UploadIcon data-icon="inline-start" className="size-4" />
+        <UploadIcon data-icon="inline-start" />
         Import
       </Button>
 
