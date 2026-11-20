@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchMappingStatus,
   resetMappingRun,
+  resumeMapping,
   saveMap,
   startMapping,
   type MappingStatus,
@@ -50,6 +51,22 @@ export function useStartMapping() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => startMapping(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.mappingStatus });
+    },
+  });
+}
+
+/**
+ * POST /api/v1/mapping/resume — keep building a saved map. The saved map is
+ * only read, so nothing of it is stale: the run status alone is invalidated,
+ * as for a start. Slow (the robot finds itself on the map first), and pending
+ * for all of it.
+ */
+export function useResumeMapping() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name }: { name: string }) => resumeMapping({ name }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.mappingStatus });
     },

@@ -17,7 +17,11 @@ export interface RunFaceInput {
 }
 
 export type RunFace =
-  /** Nothing is running: offer Start. `enabled` is false in the wrong mode, and `reason` says so. */
+  /**
+   * Nothing is running: offer Start, and Resume map beside it — the robot
+   * takes either only from here. `enabled` is false in the wrong mode, and
+   * `reason` says so.
+   */
   | { kind: "start"; enabled: boolean; reason: string | null }
   /** A run is on: the recording indicator (the dot alone, by request), then Save and New map. */
   | { kind: "run" }
@@ -25,6 +29,8 @@ export type RunFace =
   | { kind: "held"; readout: string };
 
 export const START_NEEDS_MAPPING_MODE = "Starting a map needs mapping mode.";
+/** The same hold on the button beside Start: a resume begins a run too. */
+export const RESUME_NEEDS_MAPPING_MODE = "Resuming a map needs mapping mode.";
 
 export function mappingRunFace({ inMapping, run, status }: RunFaceInput): RunFace {
   if (!inMapping) {
