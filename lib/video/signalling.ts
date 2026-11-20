@@ -2,7 +2,7 @@ import { apiUrl } from "@/lib/api/config";
 import { errorDetail } from "@/lib/api/http";
 
 /**
- * What WHEP and WHIP share. The robot's worker is single-shot (one offer, one
+ * The WHEP handshake. The robot's worker is single-shot (one offer, one
  * complete answer), so both need a complete offer and the session URL.
  */
 
@@ -68,10 +68,9 @@ export interface SignalledSession {
 
 /**
  * Open one session against the robot's single-shot worker: offer, gather
- * every candidate, POST the SDP, take the answer. The same handshake for
- * WHEP, WHIP and the duplex endpoint; what differs is `setup` (the
- * transceivers, whose order is each endpoint's contract) and `release`
- * (a microphone to stop).
+ * every candidate, POST the SDP, take the answer. `setup` adds the
+ * transceivers, whose order is the endpoint's contract, and `release` frees
+ * whatever `setup` claimed.
  *
  * A failure anywhere — `setup` included — closes the session before it
  * rethrows, so a refused offer never leaves the microphone live or the
