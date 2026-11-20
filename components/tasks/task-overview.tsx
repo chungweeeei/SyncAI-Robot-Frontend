@@ -6,7 +6,7 @@ import { FileInputIcon, RefreshCwIcon } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/console/confirm-dialog";
 import { ErrorLine } from "@/components/console/error-line";
-import { Chip, InstrumentGroup } from "@/components/console/instrument";
+import { InstrumentGroup } from "@/components/console/instrument";
 import { ScheduleList } from "@/components/tasks/schedule-list";
 import { TaskLibrary } from "@/components/tasks/task-library";
 import { TemplateScheduleDialog } from "@/components/tasks/template-schedule-form";
@@ -116,9 +116,15 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
           label="Saved tasks"
           action={
             <div className="flex items-center gap-1.5">
-              <Chip tone={library.templates.length ? "neutral" : "caution"}>
-                {library.templates.length}
-              </Chip>
+              {/* A count, not a flag: an empty library is said in the list
+                * below, and a list that failed to read has no count at all —
+                * an amber 0 beside the error read as "no tasks". */}
+              {library.status === "ok" && (
+                <span className="readout text-[12px] text-muted-foreground">
+                  {library.templates.length}{" "}
+                  {library.templates.length === 1 ? "task" : "tasks"}
+                </span>
+              )}
               <button
                 type="button"
                 aria-label="Refresh saved tasks"
