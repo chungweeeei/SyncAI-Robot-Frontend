@@ -20,6 +20,9 @@ type SettingsParent = { href: string; label: string };
  * behind it, and its label does not name the target — the line over the title
  * does, and its accessible name says it too.
  *
+ * Its controls are the default button size, /history's Export report's:
+ * the one action a screen leads with is not set smaller than its body's.
+ *
  * The content takes the frame's whole width too, a form included: a column
  * narrower than its header leaves the top-right controls hanging past the
  * edge of what they act on.
@@ -64,7 +67,7 @@ export function SettingsPage({
                   <Link
                     href={back.href}
                     aria-label={`Go back to ${back.label}`}
-                    className={buttonVariants({ variant: "outline", size: "sm" })}
+                    className={buttonVariants({ variant: "outline" })}
                   >
                     <ArrowLeftIcon data-icon="inline-start" aria-hidden />
                     Go back
