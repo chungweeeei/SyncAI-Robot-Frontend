@@ -6,7 +6,10 @@ import { useTheme } from "next-themes";
 
 import { drawnGround } from "@/lib/map/floors";
 import { G23_JOINTS } from "@/lib/robot/g23-joints";
-import { createDemoSite } from "@/lib/scene/demo-site";
+import { easeInOut } from "@/lib/scene/camera";
+import { DEMO_PROPS, createDemoSite } from "@/lib/scene/demo-site";
+import { createFrameBudget } from "@/lib/scene/frame-budget";
+import { SWEEP_TURN_S, createLidarLayer, sweepFan } from "@/lib/scene/lidar-sweep";
 import { createPathRibbon, type PathRibbon } from "@/lib/scene/path-ribbon";
 import { loadRobotModel } from "@/lib/scene/robot-model";
 import { THEMES } from "@/lib/scene/theme";
@@ -15,6 +18,17 @@ import { chaseCamera, loopPose, routeAhead } from "@/lib/scene/walk-loop";
 
 /** A frame every ~33 ms: the walk reads as smooth, and a software GPU keeps up. */
 const FRAME_S = 1 / 30;
+/** The opening: the camera's way down from over the set onto the robot, seconds. */
+const INTRO_S = 2.6;
+/** Where the opening starts: high over the set, looking down at all of it. */
+const OVERVIEW = { position: [0.5, -8.5, 9.5], target: [0, 0, 0] } as const;
+/**
+ * Fans of rays laid per drawn frame. One fan a frame at 30 fps is a ray
+ * every 14° of the head's turn; four close the gaps to a sweep.
+ */
+const FANS_PER_FRAME = 4;
+/** The lidar's height over the base, metres: on the head, over the body. */
+const LIDAR_UP_M = 0.12;
 /** How often the route ahead is redrawn, seconds: it moves with the robot. */
 const ROUTE_EVERY_S = 0.25;
 /**
@@ -77,13 +91,17 @@ function webglAvailable(): boolean {
 
 /**
  * The sign-in screen's picture: the robot walking its route round a shelf
- * in a made-up corner of a warehouse, the camera following from outside
- * its route. The same model and the same route band as the dashboard, so
+ * in a made-up corner of a warehouse, its lidar sweeping the set into
+ * fading points coloured as the 3D map is, the camera coming down from over
+ * the set and then following from outside its route. The same model and the same route band as the dashboard, so
  * the first thing an operator sees is the machine doing what the console is
  * for. Decoration: hidden from assistive tech, and nothing at all where
  * WebGL is not to be had, rather than an error.
  *
- * Still under reduced motion: one frame of the robot standing on its route.
+ * Still under reduced motion: one frame of the robot standing on its route,
+ * one full turn of its scan laid down at once. Still too on a machine that
+ * cannot draw it at MIN_FPS (lib/scene/frame-budget.ts), which settles on
+ * that frame rather than hold the main thread the form types on.
  * Paused while the tab is hidden, since a sign-in page left open in a
  * background tab would otherwise draw a robot no one sees all day.
  */
@@ -116,6 +134,22 @@ export function WalkingRobot({ className }: { className?: string }) {
 
     scene.add(createDemoSite(theme, GROUND_Z));
 
+    const lidar = createLidarLayer(GROUND_Z, 9000);
+    scene.add(lidar.points);
+    /** Where the head is, over the set's ground, `at` seconds in. */
+    const lidarOrigin = (at: number): [number, number, number] => {
+      const p = loopPose(at);
+      return [p.x + Math.cos(p.yaw) * 0.25, p.y + Math.sin(p.yaw) * 0.25, standHeight + LIDAR_UP_M];
+    };
+    /** Lay the fans the head sent between `from` and `to` seconds. */
+    const sweep = (from: number, to: number, fans: number) => {
+      for (let k = 1; k <= fans; k += 1) {
+        const at = from + ((to - from) * k) / fans;
+        lidar.add(lidarOrigin(at), sweepFan(at, loopPose(at).yaw), DEMO_PROPS, at);
+      }
+      lidar.setTime(to);
+    };
+
     let route: PathRibbon | null = null;
     let routeAge = Infinity;
     const drawRoute = () => {
@@ -124,6 +158,10 @@ export function WalkingRobot({ className }: { className?: string }) {
         route.dispose();
       }
       route = createPathRibbon(routeAhead(t), theme);
+      // The scan's points are the 3D map's ramp, blue through cyan, which the
+      // route's own cyan sank into: the dashboard's colours for a route over
+      // the 3D map, a pale core on a dark rim, for the same reason.
+      route?.setOverMap(true);
       if (route) scene.add(route.mesh);
       routeAge = 0;
     };
@@ -145,16 +183,31 @@ export function WalkingRobot({ className }: { className?: string }) {
 
     let t = 0;
     let since = 0;
+    /** Reduced motion asked for, or this machine could not keep up. */
+    let still = reduced;
+    const budget = createFrameBudget();
     const place = () => {
       const at = loopPose(t);
-      pose(legAngles(reduced ? null : t));
+      pose(legAngles(still ? null : t));
       robotGroup.position.set(at.x, at.y, GROUND_Z + standHeight);
       if (routeAge >= ROUTE_EVERY_S) drawRoute();
       robotGroup.rotation.z = at.yaw;
       // Outside the oval, looking in: the shelf it circles is always behind it.
-      const { position, target } = chaseCamera(t);
-      camera.position.set(position[0], position[1], GROUND_Z + position[2]);
-      camera.lookAt(target[0], target[1], GROUND_Z + target[2]);
+      // Until the opening is over, eased in from high over the whole set.
+      const chase = chaseCamera(t);
+      const k = still ? 1 : easeInOut(t / INTRO_S);
+      const mix = (a: readonly number[], b: readonly number[], i: number) =>
+        a[i] + (b[i] - a[i]) * k;
+      camera.position.set(
+        mix(OVERVIEW.position, chase.position, 0),
+        mix(OVERVIEW.position, chase.position, 1),
+        GROUND_Z + mix(OVERVIEW.position, chase.position, 2),
+      );
+      camera.lookAt(
+        mix(OVERVIEW.target, chase.target, 0),
+        mix(OVERVIEW.target, chase.target, 1),
+        GROUND_Z + mix(OVERVIEW.target, chase.target, 2),
+      );
     };
 
     const draw = () => renderer.render(scene, camera);
@@ -173,6 +226,8 @@ export function WalkingRobot({ className }: { className?: string }) {
         model.updateMatrixWorld(true);
         standHeight = -new THREE.Box3().setFromObject(model).min.z;
         robotGroup.add(model);
+        // Still, the scan is one whole turn at once, all of it fresh.
+        if (reduced) sweep(-SWEEP_TURN_S, 0, 48);
         place();
         draw();
       })
@@ -189,11 +244,21 @@ export function WalkingRobot({ className }: { className?: string }) {
         camera.updateProjectionMatrix();
       },
       frame: (dt) => {
-        if (reduced || !model || document.hidden) return;
+        if (still || !model || document.hidden) return;
         since += dt;
-        if (since < FRAME_S) return;
+        const due = since >= FRAME_S;
+        if (budget.tick(dt, due) === "stop") {
+          // Settle where it stands: on the robot, one fresh turn of its scan.
+          still = true;
+          sweep(t - SWEEP_TURN_S, t, 48);
+          place();
+          draw();
+          return;
+        }
+        if (!due) return;
         // A long gap (a hidden tab come back) resumes the walk, not a jump.
         const step = Math.min(since, 0.1);
+        sweep(t, t + step, FANS_PER_FRAME);
         t += step;
         routeAge += step;
         since = 0;
@@ -208,6 +273,7 @@ export function WalkingRobot({ className }: { className?: string }) {
       // out before the sweep disposes everything left in the scene.
       if (model) robotGroup.remove(model);
       route?.dispose();
+      lidar.dispose();
       view.dispose();
     };
   }, [resolvedTheme]);
