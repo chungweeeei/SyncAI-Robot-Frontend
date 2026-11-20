@@ -14,6 +14,8 @@ import {
   dollyStep,
   easeInOut,
   fallbackFrame,
+  FOCUS_BACK_M,
+  focusFraming,
   frameMap,
   frontView,
   frontViewAround,
@@ -310,5 +312,27 @@ describe("the 3D view's controls", () => {
     frameGround(camera, controls, { cx: 3, cy: 4, widthM: 10, heightM: 6 }, -0.45);
     expect(controls.target.distanceTo(new THREE.Vector3(3, 4, -0.45))).toBeCloseTo(0);
     expect(camera.position.x).toBeCloseTo(3);
+  });
+});
+
+describe("focusFraming", () => {
+  it("puts the camera behind the robot along its heading, looking at it", () => {
+    // Facing +y: behind is -y, whatever the old fixed south offset was.
+    const { position, target } = focusFraming({ x: 5, y: 2, z: 0.4, yaw: Math.PI / 2 });
+    expect(target.toArray()).toEqual([5, 2, 0.4]);
+    expect(position.x).toBeCloseTo(5);
+    expect(position.y).toBeCloseTo(2 - FOCUS_BACK_M);
+    expect(position.z).toBeGreaterThan(0.4);
+  });
+
+  it("turns with the robot: facing -x, the camera is on its +x side", () => {
+    const { position } = focusFraming({ x: 0, y: 0, z: 0, yaw: Math.PI });
+    expect(position.x).toBeCloseTo(FOCUS_BACK_M);
+    expect(position.y).toBeCloseTo(0);
+  });
+
+  it("stays close enough for a 0.6 m robot to fill the view", () => {
+    const { position, target } = focusFraming({ x: 0, y: 0, z: 0, yaw: 0 });
+    expect(position.distanceTo(target)).toBeLessThan(4);
   });
 });

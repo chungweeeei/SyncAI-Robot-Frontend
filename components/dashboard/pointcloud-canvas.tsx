@@ -20,6 +20,7 @@ import {
   easeInOut,
   fallbackFrame,
   fitDollyRange,
+  focusFraming,
   frameMap,
   frontView,
   frontViewAround,
@@ -1019,12 +1020,12 @@ export function PointCloudCanvas({
     const ctx = sceneRef.current;
     if (!ctx) return;
     applyCameraMode(ctx.controls, cameraMode, pickModeRef.current !== null);
-    // Entering focus: frame the robot from a fixed offset behind and above it.
+    // Entering focus: frame the robot from behind and above it (focusFraming).
     if (cameraMode === "focus" && renderedPoseRef.current) {
       settleLift();
-      const p = renderedPoseRef.current;
-      ctx.controls.target.set(p.x, p.y, p.z);
-      ctx.camera.position.set(p.x, p.y - 8, p.z + 6);
+      const { position, target } = focusFraming(renderedPoseRef.current);
+      ctx.controls.target.copy(target);
+      ctx.camera.position.copy(position);
     }
     ctx.controls.update();
   }, [cameraMode, theme]);
