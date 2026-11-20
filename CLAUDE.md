@@ -1011,8 +1011,8 @@ it is run in, so it does not belong to any one of them.
   row's expanded detail. The masthead's bar is the one deliberate exception,
   by request — it carries the running job's id from `xl` up, muted and in the
   readout face, as the first thing to give way when the strip narrows — and
-  it is *not* uppercased by `instrument-label`, because an uppercased id is a
-  different string from the one an engineer greps for. The masthead names
+  it is never uppercased, because an uppercased id is a different string
+  from the one an engineer greps for. The masthead names
   that job's step the same way as a history row, off its id alone
   (`stepLabel` in `lib/task/run.ts`: `2-speak` reads **Speak**, `goal` reads
   **Navigation goal**, a foreign id reads as itself). The bar ends in the
