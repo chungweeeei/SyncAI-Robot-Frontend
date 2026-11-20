@@ -88,8 +88,7 @@ function receiptFor(outcome: ClipOutcome): { text: string; tone: string } {
  * resizes; the picture itself is neither.
  *
  * Audio starts muted: the window is opened while doing something else, and a
- * console that started talking would be a surprise. Stream diagnostics belong
- * to /webrtc-test, not here.
+ * console that started talking would be a surprise.
  *
  * A clip capture deliberately survives the window closing (see
  * hooks/use-camera-clip.ts), and route changes do not interrupt it because the

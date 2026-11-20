@@ -58,7 +58,6 @@ SYNCAI_DEV_ORIGINS=robot-01.lan,10.8.140.138 npm run dev
 | `/history` | Finished runs, with counts and success rate. A failed run, opened, offers Retry from the step it failed at: a new job (`POST /api/v1/tasks` with `continue_from`), whose steps before that one read SKIPPED. |
 | `/settings` | Planner, Controller, Wi-Fi, Preferences, and **Restart**. |
 | `/drive` | Full-screen drive sticks for a phone (unlisted). |
-| `/webrtc-test` | The WHIP/WHEP bench (unlisted, but in every build). |
 
 A map a job is driving on is read-only until the job ends; the backend
 refuses the write and the console greys the control first.

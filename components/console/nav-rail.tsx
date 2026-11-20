@@ -18,7 +18,6 @@ import {
 import { ModeToggle } from "@/components/mode-toggle";
 import { cn } from "@/lib/utils";
 
-// /webrtc-test is intentionally absent: a developer tool, opened by hand.
 const navItems = [
   { title: "Dashboard", href: "/", icon: RadarIcon },
   { title: "Mapping", href: "/mapping", icon: CompassIcon },

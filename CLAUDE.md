@@ -133,10 +133,9 @@ The stack as built. Correct this section if a choice changes.
   scene.
 - **WebRTC (WHEP) in `lib/video/`** reaches the operator as the masthead's
   camera window (`useCameraStream` → `components/console/camera-window.tsx`), a
-  movable, resizable panel any screen can open. The `/webrtc-test` bench is the
-  other consumer and the only one that exercises WHIP: it renders in every
-  build — the robot runs a production one — and is kept off an operator's path
-  by being unlisted in the nav rail rather than by a 404.
+  movable, resizable panel any screen can open, and is its only consumer:
+  the `/webrtc-test` bench, and with it WHIP and the duplex endpoint, went
+  on 2026-11-20.
 - **@dnd-kit** (`core` + `sortable`) for the task editor's drag-to-reorder
   step list. Everything else that drags (the map views, the camera window,
   the thumbstick) is hand-rolled pointer capture; a sortable list is the one
@@ -378,7 +377,6 @@ components/
                 every one of them, the landing included, sits in one frame
                 (settings-page: one width, the way up over the title, and
                 Go back then the page's own action in the top-right)
-  webrtc/       WHIP/WHEP bench (unlisted developer route — see deviations)
   ui/           shadcn primitives (lint-ignored)
 hooks/          one hook per backend interaction; the only place components get data.
                 The dashboard's waypoint writes are use-map-vertex-writes,
@@ -567,7 +565,7 @@ lib/
                 drive panel's posture keys, R / F: posture-keys.ts), the linear
                 speed limit, the drive view's one-axis lock (lockToAxis) and
                 the screen-to-body-frame turn the drive panel commands through
-  video/        WHIP/WHEP signalling, and the camera window's clip capture
+  video/        WHEP signalling, and the camera window's clip capture
                 (container pick, filename rule, the recorder wrapper)
   types/        shared wire types (map, robot, pointcloud, stream), the
                 decoded 3D map (octree.ts: the occupied cells and the key
@@ -631,14 +629,6 @@ Rules for new code:
 These are known debt, not precedent. Do not copy them into new code; when you
 touch one, prefer moving it toward the rule.
 
-- **The WebRTC bench has no hook layer.** `hooks/use-camera-stream.ts` now owns
-  the WHEP session for the operator-facing camera window, which is the debt
-  this entry used to describe. What is left is `components/webrtc/webrtc-bench.tsx`,
-  which still drives its own sessions and polls their stats with three
-  `setInterval`s — deliberately, because what that page exists to show *is* the
-  negotiation, and a hook that hides it would leave the bench with nothing to
-  report. The route is unlisted but reachable in every build, since testing the
-  video path means testing it on the robot.
 - **The canvases are still the biggest components** (`pointcloud-canvas`
   ~1700 lines, `map-3d-canvas` ~1200), but what is left is React: refs,
   effects and the pointer state machines (the placing gesture's rule is
@@ -653,8 +643,8 @@ touch one, prefer moving it toward the rule.
   There are exactly two doors: `requestJson` for a JSON answer, `requestRaw`
   for one that is not (the map scan, the 3D map, an export archive). Nothing under
   `lib/api/` or `lib/ros/` calls `fetch` itself, so the way a refusal becomes
-  an `Error` is written once. `lib/video/` is the exception and stays one: WHIP
-  and WHEP exchange SDP and read a `Location` header, which is not this
+  an `Error` is written once. `lib/video/` is the exception and stays one: WHEP
+  exchanges SDP and reads a `Location` header, which is not this
   vocabulary. The clip that window saves is the one artifact this console
   produces that the backend never sees at all, which is why it has no fetcher,
   no query key and nothing to invalidate.

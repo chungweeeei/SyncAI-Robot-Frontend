@@ -497,20 +497,6 @@ test.describe("routes that must not exist on the robot", () => {
   });
 });
 
-/**
- * Also outside the console-error guard: the bench logs the WebRTC backend this
- * suite does not fake. Asserts only that the route exists in a production
- * build, since the robot (which runs one) is the only place to test video.
- */
-test.describe("the WebRTC bench", () => {
-  test("renders in a production build", async ({ page }) => {
-    await mockBackend(page);
-    const response = await page.goto("/webrtc-test");
-    expect(response?.status()).toBe(200);
-    await expect(page.getByRole("heading", { name: "Camera idle" })).toBeVisible();
-  });
-});
-
 test.describe("the dashboard's schedules", () => {
   test("lists what will run next first and pauses one from the rail", async ({
     page,

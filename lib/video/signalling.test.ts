@@ -62,12 +62,12 @@ describe("openSession", () => {
     );
   });
 
-  it("releases the microphone and closes the peer when the robot refuses the offer", async () => {
+  it("releases what setup claimed and closes the peer when the robot refuses the offer", async () => {
     const { pc, calls } = fakePeer();
     answerWith(new Response(JSON.stringify({ detail: "The camera is in use." }), { status: 409 }), calls);
     const release = vi.fn();
 
-    await expect(openSession(pc, "/api/v1/webrtc/whip", { release })).rejects.toThrow(
+    await expect(openSession(pc, "/api/v1/webrtc/whep", { release })).rejects.toThrow(
       "The camera is in use.",
     );
     expect(release).toHaveBeenCalledOnce();
@@ -76,19 +76,19 @@ describe("openSession", () => {
     expect(calls.some((call) => call.startsWith("DELETE"))).toBe(false);
   });
 
-  it("releases the microphone when setting up the transceivers throws", async () => {
+  it("releases what setup claimed when setting up the transceivers throws", async () => {
     const { pc, calls } = fakePeer();
     const fetch = answerWith(new Response("v=0 answer", { status: 201 }), calls);
     const release = vi.fn();
 
     await expect(
-      openSession(pc, "/api/v1/webrtc/duplex", {
+      openSession(pc, "/api/v1/webrtc/whep", {
         setup: () => {
-          throw new Error("getUserMedia returned no audio track");
+          throw new Error("no video transceiver");
         },
         release,
       }),
-    ).rejects.toThrow("no audio track");
+    ).rejects.toThrow("no video transceiver");
     expect(release).toHaveBeenCalledOnce();
     expect(fetch).not.toHaveBeenCalled();
   });
