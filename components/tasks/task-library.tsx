@@ -94,16 +94,17 @@ export function TaskLibrary({
         const open = isOpen(group);
         const other = group.mapName !== null && !group.loaded;
         return (
-          // The loaded map is marked by a rail down its whole group and a
+          // The loaded map is framed, heading and cards together, with a
           // dot by its name rather than a "Loaded" chip (by request): the
-          // rail says which cards it covers, where a chip named only the
-          // heading. Every group keeps the rail's width so they line up.
+          // frame says which cards it covers, where a chip named only the
+          // heading. Every group keeps the frame's border and padding so
+          // they line up.
           <section
             key={group.mapName ?? NO_MAP}
             aria-label={group.mapName ? `Tasks on ${group.mapName}` : "Tasks with no map"}
             className={cn(
-              "space-y-1.5 border-l-2 pl-3",
-              group.loaded ? "border-signal-live" : "border-transparent",
+              "space-y-1.5 rounded-md border p-2",
+              group.loaded ? "border-signal-live/60 bg-signal-live/5" : "border-transparent",
             )}
           >
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
