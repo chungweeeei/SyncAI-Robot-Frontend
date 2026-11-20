@@ -122,6 +122,13 @@ export interface Theme {
    * band. Dark in dark, where both are bright; white in light.
    */
   localPlanCasing: number;
+  /**
+   * The sign-in screen's ground grid: a step off the background, enough to
+   * read as a floor under the robot and never as a mark on it.
+   */
+  groundGrid: number;
+  /** The sign-in screen's made-up shelves, crates and columns: one quiet neutral. */
+  sceneProp: number;
 }
 
 // Tracks the console surfaces so the viewport reads as a recessed well.
@@ -153,6 +160,8 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     localCostmapOverMap: 0xffffff,
     localPlan: SIGNAL.light.live,
     localPlanCasing: 0xffffff,
+    groundGrid: 0xbfcbd4,
+    sceneProp: 0xdce3e9,
   },
   dark: {
     background: SIGNAL.dark.background,
@@ -181,5 +190,7 @@ export const THEMES: Record<"light" | "dark", Theme> = {
     localCostmapOverMap: 0xf2f7fa,
     localPlan: SIGNAL.dark.live,
     localPlanCasing: SIGNAL.dark.background,
+    groundGrid: 0x2b3944,
+    sceneProp: 0x2a3640,
   },
 };
