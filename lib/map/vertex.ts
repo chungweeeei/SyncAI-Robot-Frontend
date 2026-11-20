@@ -5,7 +5,7 @@ import type { VertexType } from "@/lib/types/map";
 
 export interface VertexTypeSpec {
   value: VertexType;
-  /** Panel label. Condensed caps in the UI, so short. */
+  /** Panel label. A caption in the UI, so short. */
   label: string;
   /**
    * One character beside the marker. Not a colour per type: signal hues mean

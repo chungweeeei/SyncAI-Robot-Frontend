@@ -21,7 +21,7 @@ import type { MapVertex } from "@/lib/types/map";
 
 export interface StepTypeSpec {
   value: StepType;
-  /** Condensed caps in the UI, so short. */
+  /** A caption in the UI, so short. */
   label: string;
   /** One line under the add row, so the vocabulary is not guessed. */
   hint: string;
