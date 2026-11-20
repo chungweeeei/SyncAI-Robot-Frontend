@@ -162,9 +162,14 @@ components/
   auth/         the sign-in screen (/login): on one half the robot
                 walking round a shelf in a made-up warehouse corner
                 (walking-robot: the real model, its legs a looped animation,
+                its lidar sweeping the set into points that fade, coloured
+                as the 3D map is, the camera opening high over the set,
                 the route ahead in the dashboard's band, the camera
                 following from outside the route, so the shelf is never
-                between it and the robot; still under reduced motion, paused in a hidden
+                between it and the robot; still under reduced motion, and
+                on a machine that cannot draw it at 20 fps
+                (lib/scene/frame-budget.ts: measured once after the
+                opening, a software-drawing machine settles on the still), paused in a hidden
                 tab, nothing without WebGL, and fetched after the form, which
                 never waits for it; a band over the form on a phone), the
                 form on the other, a card of its own surface and edge; Sign in never greyed, an empty field
@@ -534,7 +539,10 @@ lib/
                 oval the robot walks, the stretch of it ahead and the
                 camera's place outside it;
                 demo-site.ts: the shelves, crates and columns round it, clear
-                of the oval)
+                of the oval; lidar-sweep.ts: the head's turning fan of rays,
+                where each lands on the set, and the points as one ring
+                buffer the shader fades; frame-budget.ts: whether this
+                machine can afford the animation at all)
   theme/        the signal hues both canvases draw with, and the height ramp
                 the 3D map is coloured by (height-ramp.ts: data colouring,
                 deliberately not a signal hue)
