@@ -333,22 +333,20 @@ test.describe("the task console", () => {
     await expect(page.getByText("No task is named like “nothing”.")).toBeVisible();
   });
 
-  // No Duplicate on the card, by request: Save as copy in the editor is the one way.
-  test("holds only Delete in a task's menu", async ({ page }) => {
+  // No Duplicate on the card, by request: Save as copy in the editor is the
+  // one way. With Delete the only other act, it is a button, not a menu.
+  test("offers Delete as a button, with no menu", async ({ page }) => {
     await mockBackend(page);
     await page.goto("/tasks");
 
-    await page.getByRole("button", { name: 'More for "Morning round"' }).click();
-    await expect(page.getByRole("menuitem")).toHaveText(["Delete"]);
+    await expect(page.getByRole("button", { name: 'Delete "Morning round"' })).toBeVisible();
+    await expect(page.getByRole("button", { name: 'More for "Morning round"' })).toHaveCount(0);
   });
 
-  test("deletes a task from its menu only once confirmed", async ({ page }) => {
+  test("deletes a task only once confirmed", async ({ page }) => {
     const writes = await mockBackend(page);
     await page.goto("/tasks");
-    const remove = async () => {
-      await page.getByRole("button", { name: 'More for "Morning round"' }).click();
-      await page.getByRole("menuitem", { name: "Delete" }).click();
-    };
+    const remove = () => page.getByRole("button", { name: 'Delete "Morning round"' }).click();
 
     // The editor's dialog for the same act, not the browser's.
     const dialog = page.getByRole("alertdialog");
@@ -356,7 +354,6 @@ test.describe("the task console", () => {
     await expect(dialog).toContainText("Delete Morning round?");
     await dialog.getByRole("button", { name: "Keep" }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(page.getByRole("menu")).toHaveCount(0);
     expect(writes.filter((w) => w.method === "DELETE")).toEqual([]);
 
     await remove();
@@ -385,8 +382,7 @@ test.describe("the task console", () => {
     await page.goto("/tasks");
     await expect(page.getByText("half-hourly", { exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: 'More for "Morning round"' }).click();
-    await page.getByRole("menuitem", { name: "Delete" }).click();
+    await page.getByRole("button", { name: 'Delete "Morning round"' }).click();
     const dialog = page.getByRole("alertdialog");
     await expect(dialog).toContainText("Its schedule is deleted with it.");
     await dialog.getByRole("button", { name: "Delete" }).click();
