@@ -14,7 +14,6 @@ import { formatDuration, formatSize } from "@/lib/recording/format";
 const CONTENTS = [
   "The last 24 hours",
   "The robot software's logs and the system log",
-  "One .tar file, saved to this computer",
 ];
 
 /**
