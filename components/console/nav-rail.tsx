@@ -13,6 +13,7 @@ import {
   PanelLeftOpenIcon,
   RadarIcon,
   SlidersHorizontalIcon,
+  StethoscopeIcon,
 } from "lucide-react";
 
 import { ModeToggle } from "@/components/mode-toggle";
@@ -27,6 +28,10 @@ const navItems = [
   { title: "Tasks", href: "/tasks", icon: ListChecksIcon },
   // After Tasks: start a job there, see how it went here.
   { title: "History", href: "/history", icon: HistoryIcon },
+  // In the side rail alone: the bottom bar holds seven tabs, 40 px each on a
+  // phone and labelled whole at md, and an eighth broke both. A support tool
+  // that saves a file for an engineer is the one screen a laptop's is for.
+  { title: "Diagnostics", href: "/diagnostics", icon: StethoscopeIcon, railOnly: true },
   { title: "Settings", href: "/settings", icon: SlidersHorizontalIcon },
 ];
 
@@ -116,6 +121,7 @@ export function NavRail() {
             className={cn(
               // flex-1, no padding below lg: seven 40 px tabs fit 375 px.
               "relative flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-sm transition-colors lg:h-9 lg:flex-none",
+              item.railOnly && "max-lg:hidden",
               byFold(
                 expanded,
                 "lg:w-full lg:justify-start lg:gap-3 lg:px-[9px]",

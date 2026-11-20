@@ -377,6 +377,13 @@ components/
                 every one of them, the landing included, sits in one frame
                 (settings-page: one width, the way up over the title, and
                 Go back then the page's own action in the top-right)
+  diagnostics/  the /diagnostics screen (in the side rail alone, from lg: the
+                bottom bar has no room for an eighth tab), what support asks
+                for when something has gone wrong, a section per tool: Logs
+                (log-export: the robot's last 24 h of logs, GET /logs/export,
+                saved as one .tar under the robot's own name — the button
+                counts the robot's build, which can be minutes, then the
+                transfer in percent)
   ui/           shadcn primitives (lint-ignored)
 hooks/          one hook per backend interaction; the only place components get data.
                 The dashboard's waypoint writes are use-map-vertex-writes,
@@ -548,6 +555,9 @@ lib/
                 state poll's, on the card of the network it reports, and a
                 blank in the value's own shape on every other card)
   recording/    bag size/duration formatting and the bag name rule
+  logs/         the log bundle's file name (filename.ts: the robot's own
+                `<id>-logs-<UTC stamp>.tar`, built here since CORS hides
+                the one it sends)
   settings/     the settings form's rules: a typed draft against
                 the robot's limits, and which drafts a Save sends
   robot/        G23 joint table (URDF link names ↔ GLB node names), how the

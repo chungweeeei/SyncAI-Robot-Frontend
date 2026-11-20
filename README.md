@@ -56,6 +56,7 @@ SYNCAI_DEV_ORIGINS=robot-01.lan,10.8.140.138 npm run dev
 | `/recordings` | Start, watch and manage recordings on the robot. |
 | `/tasks`, `/tasks/editor` | Saved tasks by map, each with its schedules; the step editor. |
 | `/history` | Finished runs, with counts and success rate. A failed run, opened, offers Retry from the step it failed at: a new job (`POST /api/v1/tasks` with `continue_from`), whose steps before that one read SKIPPED. |
+| `/diagnostics` | What support needs when something has gone wrong: the robot's last 24 h of logs, saved as one `.tar` (`GET /api/v1/logs/export`). In the side rail only (from `lg`), not the bottom bar. |
 | `/settings` | Planner, Controller, Wi-Fi, Preferences, and **Restart**. |
 | `/drive` | Full-screen drive sticks for a phone (unlisted). |
 
