@@ -74,3 +74,29 @@ export function autoLocalizeLock({
   if (tasks.length > 0) return { locked: true, reason: AUTO_LOCALIZE_JOB_RUNNING };
   return UNLOCKED;
 }
+
+export const GOAL_JOB_RUNNING =
+  "The robot is running another job, and it takes one at a time. Cancel it or wait for it to finish before sending it here.";
+
+/**
+ * Whether a goal from the dashboard (Set goal, a stop's Go or Charge) may be
+ * sent, given every job the robot is running — another console's or a
+ * schedule's included. The backend runs one job at a time and refuses a
+ * second (409, "Robot is busy"), so a Go offered beside someone else's patrol
+ * was a press that could only fail, and read as though it might replace it.
+ *
+ * Fails open, unlike the map lock: while the list is unread the backend's own
+ * refusal still answers the press, and holding Go on a poll's hiccup would
+ * take the one way to send the robot somewhere. This console's own goal is
+ * the caller's to leave out — it has its own wording and its own Cancel.
+ */
+export function goalLock({
+  tasks,
+  status,
+}: {
+  tasks: readonly unknown[];
+  status: "loading" | "ok" | "error";
+}): RunLock {
+  if (status === "ok" && tasks.length > 0) return { locked: true, reason: GOAL_JOB_RUNNING };
+  return UNLOCKED;
+}

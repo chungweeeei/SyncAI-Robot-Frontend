@@ -1394,6 +1394,42 @@ test.describe("tapping a stop on the dashboard", () => {
     expect(dispatches(writes)).toEqual([]);
     expect(errors, "the page logged errors").toEqual([]);
   });
+
+  test("holds Go and Set goal while another console's job runs, since the robot takes one at a time", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, {
+      vertices: [stop],
+      octomap: framedTree(),
+      // Started elsewhere (a schedule): this console sent no goal.
+      activeTasks: [activeTask({ source: "SCHEDULE" })],
+    });
+    await page.goto("/");
+
+    await tapStop(page);
+
+    const card = page.getByRole("region", { name: stop.name });
+    await expect(card.getByText(/^The robot is running another job/)).toBeVisible();
+    await expect(card.getByRole("button", { name: "Go" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Set goal" })).toBeDisabled();
+    // The route is still drawn: a preview moves nothing.
+    expect(previews(writes)).toHaveLength(1);
+    expect(dispatches(writes)).toEqual([]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("offers Go with nothing running — the control for the hold above", async ({ page }) => {
+    await mockBackend(page, { vertices: [stop], octomap: framedTree() });
+    await page.goto("/");
+
+    await tapStop(page);
+
+    const card = page.getByRole("region", { name: stop.name });
+    await expect(card.getByRole("button", { name: "Go" })).toBeEnabled();
+    await expect(card.getByText(/^The robot is running another job/)).toHaveCount(0);
+  });
 });
 
 test.describe("waypoints on an upper floor", () => {

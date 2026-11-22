@@ -29,6 +29,7 @@ import { useMapKeepout } from "@/hooks/use-map-keepout";
 import { useMapOctomap } from "@/hooks/use-map-octomap";
 import { useMapOctomapEdits } from "@/hooks/use-map-octomap-edits";
 import { useMapPointCloud } from "@/hooks/use-map-point-cloud";
+import { useGoalLock } from "@/hooks/use-goal-lock";
 import { useMapRunLock } from "@/hooks/use-map-run-lock";
 import { useActiveMap } from "@/hooks/use-maps";
 import { useFloorBand } from "@/hooks/use-floor-band";
@@ -259,17 +260,22 @@ export function PointCloudView({
    */
   const [savingVertex, setSavingVertex] = React.useState<MapVertex | null>(null);
 
+  const task = useGoalTask(robotId, activeMap?.name ?? null);
+  // Another console's or a schedule's job: this console's own goal is in the
+  // list too, and keeps its own wording, so it is left out here.
+  const jobLock = useGoalLock();
+  const busyElsewhere = jobLock.locked && !task.running && !task.busy;
+
   // A lock arriving with a pick armed disarms it, during render rather than in
   // an effect, so the next release cannot write onto a read-only map. An open
   // name dialog stays up instead: its Create greys and the typed name survives.
   if (
     (runLock.locked && (pick?.mode === "place" || pick?.mode === "vertex")) ||
-    (stopped && pick?.mode === "goal")
+    ((stopped || busyElsewhere) && pick?.mode === "goal")
   ) {
     setPick(null);
   }
 
-  const task = useGoalTask(robotId, activeMap?.name ?? null);
   const routePreview = useRoutePreview(activeMap?.name ?? null);
   const estimate = useInitialPose();
   const localize = useAutoLocalize();
@@ -658,8 +664,10 @@ export function PointCloudView({
                 ? pick.mode
                 : null
             }
-            goalLocked={task.running || task.busy || stopped}
-            goalLockReason={stopped ? ESTOP_REFUSAL : undefined}
+            goalLocked={task.running || task.busy || stopped || busyElsewhere}
+            goalLockReason={
+              stopped ? ESTOP_REFUSAL : busyElsewhere ? (jobLock.reason ?? undefined) : undefined
+            }
             onArmGoal={() => armPick("goal")}
             onArmInitialPose={() => armPick("initial-pose")}
             autoLocalizeBusy={localize.busy}
@@ -700,8 +708,8 @@ export function PointCloudView({
               cancelable={task.cancelable && !task.busy}
               onCancel={task.cancel}
               cancelError={goalBusy ? task.error : null}
-              goLocked={goalBusy || stopped}
-              goLockReason={stopped ? ESTOP_REFUSAL : null}
+              goLocked={goalBusy || stopped || busyElsewhere}
+              goLockReason={stopped ? ESTOP_REFUSAL : busyElsewhere ? jobLock.reason : null}
               editLock={runLock.reason}
               deleting={stops.busy}
               deleteError={stops.writeError}
