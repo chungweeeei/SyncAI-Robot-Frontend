@@ -2,6 +2,8 @@
 
 import * as React from "react";
 
+import type { EstopLine } from "@/lib/robot/estop";
+
 /**
  * The console's emergency stop, as a context: the drive panel disarms on it
  * and the command hooks refuse while it is engaged. The provider is
@@ -19,6 +21,10 @@ export interface ConsoleEstop {
   busy: boolean;
   /** The backend's sentence for the last refused request; never a success. */
   notice: string | null;
+  /** What the strip's stop line says (`estopLine`), null while free to move. */
+  line: EstopLine | null;
+  /** Clear a refusal the operator has read. */
+  dismissNotice: () => void;
 }
 
 export const EstopContext = React.createContext<ConsoleEstop | null>(null);

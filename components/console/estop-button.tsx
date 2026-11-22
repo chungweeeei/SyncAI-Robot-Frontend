@@ -15,8 +15,12 @@ import { cn } from "@/lib/utils";
  * robot. Releasing costs a deliberate second, since a stop a panicked second
  * tap could undo is one an operator cannot trust.
  *
- * Icon-only and framed like the disclosures beside it, by request. The hold
- * follows the pressing pointer; lifting, cancel or sliding off restarts it.
+ * Icon-only, by request, but never mistaken for the disclosures beside it:
+ * framed in the fault hue at rest, so it reads as the stop before it is
+ * needed, and set apart from the job bar's Cancel by that frame. What it is
+ * doing is said in words by the strip's stop line (estop-line.tsx), which is
+ * also where a refused press is reported. The hold follows the pressing
+ * pointer; lifting, cancel or sliding off restarts it.
  * Enter or Space held the same second releases from the keyboard; key repeats
  * are not a new press.
  */
@@ -105,8 +109,8 @@ export function EstopButton() {
       type="button"
       aria-pressed={engaged}
       aria-label={label}
-      // A failed press is reported on hover and in the description, not in a
-      // line under the strip, by request.
+      // A refused press is also the strip's stop line (an alert); here it is
+      // the description, so the button's own name carries it to a reader.
       aria-describedby={notice ? noticeId : undefined}
       title={notice ? `${title}\n\n${notice}` : title}
       onPointerDown={onPointerDown}
@@ -120,11 +124,12 @@ export function EstopButton() {
       // A held release must not open a callout or a text selection.
       onContextMenu={(event) => event.preventDefault()}
       className={cn(
-        // The disclosures' frame (strip-disclosure.tsx); engaged keeps it, in warn.
+        // The disclosures' size and corners (strip-disclosure.tsx), in the
+        // fault hue at rest; engaged fills it.
         "relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-sm border select-none [-webkit-touch-callout:none] touch-manipulation transition-colors focus-visible:outline-none",
         engaged
-          ? "border-signal-warn/50 bg-signal-warn/12 text-signal-warn"
-          : "border-transparent text-muted-foreground hover:border-signal-warn hover:bg-signal-warn/12 hover:text-signal-warn focus-visible:border-hairline",
+          ? "border-signal-warn/60 bg-signal-warn/15 text-signal-warn"
+          : "border-signal-warn/35 text-signal-warn hover:border-signal-warn hover:bg-signal-warn/12 focus-visible:border-signal-warn",
       )}
     >
       {/* The hold's progress: a width transition timed to the hold. */}

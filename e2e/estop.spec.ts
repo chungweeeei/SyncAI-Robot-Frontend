@@ -92,13 +92,21 @@ test.describe("the emergency stop", () => {
 
     await stopButton(page).click();
 
-    // Nothing was locked, so the controls are not held — but the sentence is
-    // on the button for whoever asks, never as a line under the strip.
+    // Nothing was locked, so the controls are not held — and the refusal is
+    // said where a finger can read it, not only in a tooltip: a silent
+    // failed stop reads as a stopped robot.
     await expect(stopButton(page)).toHaveAttribute("aria-pressed", "false");
     await expect(stopButton(page)).toHaveAccessibleDescription(
       "The robot's driver did not answer.",
     );
-    await expect(strip(page).getByRole("alert")).toHaveCount(0);
+    const alert = strip(page).getByRole("alert");
+    await expect(alert).toContainText("Stop not confirmed.");
+    await expect(alert).toContainText("The robot's driver did not answer.");
+    await expect(alert).toContainText("Press the stop again.");
+
+    // Read and dismissed, it goes; the button keeps nothing either.
+    await alert.getByRole("button", { name: "Dismiss" }).click();
+    await expect(alert).toHaveCount(0);
   });
 
   test("a tap does not release it; a held press does", async ({ page }) => {
