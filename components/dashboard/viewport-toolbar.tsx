@@ -80,6 +80,7 @@ export function ViewportToolbar({
         <ToolGroup label="Pose tools">
           <ToolButton
             label="Set goal"
+            shortLabel="Goal"
             hint={goalLockReason ?? "drag on the map to aim, release to send"}
             icon={CrosshairIcon}
             pressed={pick === "goal"}
@@ -90,6 +91,7 @@ export function ViewportToolbar({
           />
           <ToolButton
             label="Set initial pose"
+            shortLabel="Pose"
             hint="tell the robot where it stands"
             icon={LocateFixedIcon}
             tone="caution"
@@ -101,6 +103,7 @@ export function ViewportToolbar({
             * it pulses while searching. */}
           <ToolButton
             label="Auto localize"
+            shortLabel="Locate"
             hint={
               autoLocalizeLock ??
               (autoLocalizeBusy
@@ -161,11 +164,13 @@ export function ViewportToolbar({
           </>
         )}
 
-        <Divider />
+        <Divider className="pointer-coarse:hidden" />
 
         {/* Last: the wheel and the pinch zoom too. A step dollies toward the
-          * target, the one zoom focus mode does not undo. */}
-        <ToolGroup label="Zoom">
+          * target, the one zoom focus mode does not undo. Not at a finger,
+          * which pinches: the room went to the pose tools' printed names,
+          * so the strip still fits one phone row. */}
+        <ToolGroup label="Zoom" className="pointer-coarse:hidden">
           <ToolButton
             label="Zoom in"
             hint="one step closer"

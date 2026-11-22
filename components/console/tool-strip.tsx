@@ -17,7 +17,8 @@ import { cn } from "@/lib/utils";
  *
  * Each button has its name as accessible name and tooltip. A finger never
  * hovers, so under a coarse pointer the name is printed under the icon —
- * unless the strip is `compact` (see ToolStrip).
+ * unless the strip is `compact` (see ToolStrip), where only a button given a
+ * `shortLabel` prints one.
  */
 
 export type ToolTone = "cmd" | "caution";
@@ -73,24 +74,27 @@ export function ToolStrip({
  */
 export function ToolGroup({
   label,
+  className,
   children,
 }: {
   label: string;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div role="group" aria-label={label} className="flex items-center gap-0.5">
+    <div role="group" aria-label={label} className={cn("flex items-center gap-0.5", className)}>
       {children}
     </div>
   );
 }
 
-export function ToolDivider() {
-  return <span aria-hidden className="mx-0.5 h-5 w-px self-center bg-hairline" />;
+export function ToolDivider({ className }: { className?: string }) {
+  return <span aria-hidden className={cn("mx-0.5 h-5 w-px self-center bg-hairline", className)} />;
 }
 
 export function ToolButton({
   label,
+  shortLabel,
   hint,
   icon: Icon,
   tone = "cmd",
@@ -100,6 +104,12 @@ export function ToolButton({
   onClick,
 }: {
   label: string;
+  /**
+   * A word printed under the icon at a finger even in a `compact` strip: for
+   * the few tools a tap on which sends the robot somewhere, where guessing at
+   * an icon is not an acceptable way to learn it.
+   */
+  shortLabel?: string;
   /** The tooltip's second half: what a press will do. */
   hint: string;
   icon: ToolIcon;
@@ -111,6 +121,7 @@ export function ToolButton({
   onClick: () => void;
 }) {
   const compact = React.useContext(CompactContext);
+  const printed = compact ? shortLabel : label;
   return (
     <Tooltip>
       <TooltipTrigger
@@ -124,7 +135,7 @@ export function ToolButton({
             onClick={onClick}
             className={cn(
               "flex size-7 items-center justify-center rounded-sm border transition-colors disabled:opacity-40",
-              compact
+              compact && !shortLabel
                 ? "pointer-coarse:size-8"
                 : "pointer-coarse:h-10 pointer-coarse:w-auto pointer-coarse:min-w-10 pointer-coarse:flex-col pointer-coarse:gap-0.5 pointer-coarse:px-1",
               pressed
@@ -136,9 +147,14 @@ export function ToolButton({
       >
         <Icon aria-hidden className={cn("size-4", busy && "animate-pulse")} />
         {/* A finger never sees the tooltip, so the name is printed. */}
-        {!compact && (
-          <span className="instrument-label hidden text-[9px] leading-none pointer-coarse:block">
-            {label}
+        {printed && (
+          <span
+            className={cn(
+              "instrument-label hidden leading-none pointer-coarse:block",
+              compact ? "text-[11px]" : "text-[9px]",
+            )}
+          >
+            {printed}
           </span>
         )}
       </TooltipTrigger>
