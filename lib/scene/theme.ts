@@ -9,6 +9,15 @@ export interface Theme {
   background: number;
   /** Solid colour for the map scan, distinct from the height-coloured live scan. */
   mapCloud: number;
+  /**
+   * The saved map a resumed mapping run continues, beside what the run adds
+   * in `mapCloud`. A hue, not a second grey: two greys a step apart read as
+   * one map, sparser in places. A muted rose, because the live scan drawn
+   * over both is the height ramp, violet through red, and rose is the one
+   * family it never reaches; muted, so it is not the waypoints' saturated
+   * magenta (the mapping screen draws none, but the eye learns the hue).
+   */
+  savedMapCloud: number;
   /** Committed / being-dragged goal marker: `signal-cmd`, a commanded value. */
   goal: number;
   goalDraft: number;
@@ -136,6 +145,7 @@ export const THEMES: Record<"light" | "dark", Theme> = {
   light: {
     background: SIGNAL.light.background,
     mapCloud: 0x54646f,
+    savedMapCloud: 0xb05c8e,
     goal: SIGNAL.light.cmd,
     goalDraft: 0x4aa6c6,
     initialPose: SIGNAL.light.caution,
@@ -166,6 +176,7 @@ export const THEMES: Record<"light" | "dark", Theme> = {
   dark: {
     background: SIGNAL.dark.background,
     mapCloud: 0xa7b6c1,
+    savedMapCloud: 0xd08fb8,
     goal: SIGNAL.dark.cmd,
     goalDraft: 0x8adcf7,
     initialPose: SIGNAL.dark.caution,

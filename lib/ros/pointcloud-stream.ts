@@ -30,14 +30,17 @@ export interface PointCloudStreamHandlers {
 }
 
 /**
- * The two scan streams: what the robot sees now, and on a mapping run the map
- * built so far.
+ * The scan streams: what the robot sees now, on a mapping run the map built
+ * so far, and on a resumed run the saved map it continues — which the robot
+ * sends apart, once, so `map` then carries only what the run added. An empty
+ * frame on `saved` says there is none.
  */
-export type PointCloudChannel = "live" | "map";
+export type PointCloudChannel = "live" | "map" | "saved";
 
 const CHANNEL_PATHS: Record<PointCloudChannel, string> = {
   live: "/api/v1/robot/pointcloud/stream",
   map: "/api/v1/robot/pointcloud/map/stream",
+  saved: "/api/v1/robot/pointcloud/map/saved/stream",
 };
 
 /**
