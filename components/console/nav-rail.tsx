@@ -8,16 +8,20 @@ import {
   CompassIcon,
   HistoryIcon,
   ListChecksIcon,
+  LogOutIcon,
   MapIcon,
+  MoonIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   RadarIcon,
   SlidersHorizontalIcon,
   StethoscopeIcon,
+  SunIcon,
 } from "lucide-react";
+import { useTheme } from "next-themes";
 
-import { SignOutButton } from "@/components/console/sign-out-button";
-import { ModeToggle } from "@/components/mode-toggle";
+import { useMounted } from "@/hooks/use-mounted";
+import { signOut } from "@/hooks/use-session";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -42,6 +46,106 @@ const LABELLED_BY_DEFAULT = "(min-width: 80rem)";
 /** A class set for the rail's two faces, and for the one the width picks. */
 function byFold(expanded: boolean | null, open: string, folded: string, auto: string) {
   return expanded === null ? auto : expanded ? open : folded;
+}
+
+/** A rail row's two faces: the labelled row, or its 36 px icon alone. */
+function rowFold(expanded: boolean | null) {
+  return byFold(
+    expanded,
+    "lg:w-full lg:justify-start lg:gap-3 lg:px-[9px]",
+    "lg:w-9",
+    "lg:w-9 xl:w-full xl:justify-start xl:gap-3 xl:px-[9px]",
+  );
+}
+
+const themeKeys = [
+  {
+    theme: "light",
+    label: "Light",
+    icon: SunIcon,
+    // Raised unless `.dark` says otherwise.
+    face: "bg-panel text-foreground ring-1 ring-hairline dark:bg-transparent dark:text-muted-foreground dark:ring-0 dark:hover:bg-elevated/60 dark:hover:text-foreground",
+    alone: (expanded: boolean | null) =>
+      byFold(expanded, "max-lg:hidden dark:flex", "hidden dark:flex", "max-xl:hidden dark:flex"),
+  },
+  {
+    theme: "dark",
+    label: "Dark",
+    icon: MoonIcon,
+    face: "text-muted-foreground hover:bg-elevated/60 hover:text-foreground dark:bg-elevated dark:text-foreground dark:ring-1 dark:ring-hairline dark:hover:bg-elevated dark:hover:text-foreground",
+    alone: (expanded: boolean | null) =>
+      byFold(expanded, "dark:max-lg:hidden", "dark:hidden", "dark:max-xl:hidden"),
+  },
+];
+
+/**
+ * Light or dark, as a two-position switch: a well holding both keys, the one
+ * in force raised, so the row says which theme is on rather than only which
+ * one a press would bring. Folded, and in the phone's bar, there is room for
+ * one key, so the raised one goes and the press left to make is what is drawn.
+ *
+ * Which key is raised, and which is the one alone, is CSS on the `.dark`
+ * class next-themes writes before the first paint, so the row is right from
+ * the server's markup on; read from `useTheme` it waited for mount behind a
+ * blank button. Only `aria-pressed` still waits. Light / dark / system is
+ * Settings → Preferences: a press here always picks one of the two.
+ */
+function ThemeSwitch({ expanded }: { expanded: boolean | null }) {
+  const { resolvedTheme, setTheme } = useTheme();
+  const mounted = useMounted();
+
+  return (
+    <div
+      role="group"
+      aria-label="Theme"
+      className={cn(
+        "flex shrink-0",
+        // The well: a step down from the rail, 36 px tall like the rows.
+        byFold(
+          expanded,
+          "lg:w-full lg:gap-0.5 lg:rounded-md lg:bg-background lg:p-[3px]",
+          "",
+          "xl:w-full xl:gap-0.5 xl:rounded-md xl:bg-background xl:p-[3px]",
+        ),
+      )}
+    >
+      {themeKeys.map((key) => (
+        <button
+          key={key.theme}
+          type="button"
+          onClick={() => setTheme(key.theme)}
+          // Named explicitly: the visible label is not always drawn.
+          aria-label={`${key.label} theme`}
+          aria-pressed={mounted ? resolvedTheme === key.theme : undefined}
+          className={cn(
+            // 40 px in the phone bar, 36 px in the folded rail, like the tabs.
+            "flex size-10 items-center justify-center rounded-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+            key.face,
+            key.alone(expanded),
+            byFold(
+              expanded,
+              "lg:h-[30px] lg:w-auto lg:flex-1 lg:gap-1.5",
+              "lg:size-9",
+              "lg:size-9 xl:h-[30px] xl:w-auto xl:flex-1 xl:gap-1.5",
+            ),
+          )}
+        >
+          <key.icon
+            aria-hidden
+            className={cn("size-[18px] shrink-0", byFold(expanded, "lg:size-4", "", "xl:size-4"))}
+          />
+          <span
+            className={cn(
+              "hidden text-[13px] font-medium",
+              byFold(expanded, "lg:inline", "", "xl:inline"),
+            )}
+          >
+            {key.label}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 /**
@@ -123,12 +227,7 @@ export function NavRail() {
               // flex-1, no padding below lg: seven 40 px tabs fit 375 px.
               "relative flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-sm transition-colors lg:h-9 lg:flex-none",
               item.railOnly && "max-lg:hidden",
-              byFold(
-                expanded,
-                "lg:w-full lg:justify-start lg:gap-3 lg:px-[9px]",
-                "lg:w-9",
-                "lg:w-9 xl:w-full xl:justify-start xl:gap-3 xl:px-[9px]",
-              ),
+              rowFold(expanded),
               active
                 ? "bg-elevated text-foreground"
                 : "text-muted-foreground hover:bg-elevated/60 hover:text-foreground",
@@ -157,23 +256,32 @@ export function NavRail() {
         );
       })}
 
-      <div
-        className={cn(
-          "shrink-0 lg:mt-auto",
-          byFold(expanded, "", "lg:self-center", "lg:self-center xl:self-auto"),
-        )}
-      >
-        <ModeToggle />
-      </div>
-      {/* From lg only: the phone's bar is seven tabs and the toggle already,
-        * so a phone signs out from Settings. */}
-      <div
-        className={cn(
-          "hidden shrink-0 lg:flex",
-          byFold(expanded, "", "lg:self-center", "lg:self-center xl:self-auto"),
-        )}
-      >
-        <SignOutButton variant="rail" />
+      {/* The rail's foot, under a rule of its own: what these two change is
+        * the console, not the screen on show. The theme over the way out. */}
+      <div className="flex shrink-0 lg:-mx-2.5 lg:mt-auto lg:flex-col lg:items-center lg:gap-1 lg:border-t lg:border-hairline lg:px-2.5 lg:pt-3">
+        <ThemeSwitch expanded={expanded} />
+        {/* From lg only: the phone's bar is seven tabs and the theme already,
+          * so a phone signs out from Settings. Nothing to send — see
+          * SignOutButton, the same press on a page. */}
+        <button
+          type="button"
+          onClick={signOut}
+          aria-label="Sign out"
+          className={cn(
+            "hidden h-9 shrink-0 items-center justify-center gap-2 rounded-sm text-muted-foreground transition-colors hover:bg-elevated/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none lg:flex",
+            rowFold(expanded),
+          )}
+        >
+          <LogOutIcon aria-hidden className="size-[18px] shrink-0" />
+          <span
+            className={cn(
+              "truncate text-[13px] font-medium",
+              byFold(expanded, "", "hidden", "hidden xl:inline"),
+            )}
+          >
+            Sign out
+          </span>
+        </button>
       </div>
     </nav>
   );

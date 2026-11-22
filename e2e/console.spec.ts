@@ -291,6 +291,47 @@ test.describe("the console shell", () => {
     await expect(rail.getByText("Dashboard", { exact: true })).toBeHidden();
   });
 
+  test("ends the rail in the theme over Sign out, and says which theme is on", async ({
+    page,
+  }) => {
+    // Both keys are drawn in the labelled rail, the one in force pressed: one
+    // icon alone showed where a press would go, not where the console was.
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.goto("/maps");
+    const rail = page.getByRole("navigation", { name: "Console sections" });
+    const theme = rail.getByRole("group", { name: "Theme" });
+    const light = theme.getByRole("button", { name: "Light theme" });
+    const dark = theme.getByRole("button", { name: "Dark theme" });
+    const signOut = rail.getByRole("button", { name: "Sign out" });
+    await expect(light).toHaveAttribute("aria-pressed", "true");
+    await expect(dark).toHaveAttribute("aria-pressed", "false");
+    await expect(signOut.getByText("Sign out")).toBeVisible();
+
+    await dark.click();
+    await expect(page.locator("html")).toHaveClass(/dark/);
+    await expect(dark).toHaveAttribute("aria-pressed", "true");
+    await expect(light).toHaveAttribute("aria-pressed", "false");
+
+    // Two rows, one over the other, at either width of the rail.
+    const stacked = async () => {
+      const upper = (await theme.boundingBox())!;
+      const lower = (await signOut.boundingBox())!;
+      expect(lower.y).toBeGreaterThanOrEqual(upper.y + upper.height);
+    };
+    await stacked();
+
+    // Folded there is room for one key: the press left to make.
+    await rail.getByRole("button", { name: "Collapse the sidebar" }).click();
+    await expect(dark).toBeHidden();
+    await expect(light).toBeVisible();
+    await expect(signOut.getByText("Sign out")).toBeHidden();
+    await stacked();
+    await light.click();
+    await expect(page.locator("html")).not.toHaveClass(/dark/);
+    await expect(light).toBeHidden();
+    await expect(dark).toBeVisible();
+  });
+
   for (const width of [768, 1024]) {
     test(`keeps the robot id whole on a ${width} px strip`, async ({ page }) => {
       // From sm the row no longer wraps, and the id's cluster used to be the
