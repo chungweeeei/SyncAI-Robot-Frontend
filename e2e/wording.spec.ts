@@ -87,8 +87,10 @@ test.describe("words and names on the operator's screens", () => {
     await page.goto("/");
 
     const telemetry = page.getByRole("complementary", { name: "Telemetry" });
+    // Folded while every motor is within limits.
+    await telemetry.getByRole("button", { name: "Show motor temperatures" }).click();
     await expect(
-      telemetry.getByText("FL Ankle", { exact: true }),
+      telemetry.getByText("Front left ankle", { exact: true }),
     ).toBeVisible();
     await expect(
       telemetry.getByText("Other motor 1", { exact: true }),

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { ChevronDownIcon } from "lucide-react";
 
 import { formatDegrees, formatMetres } from "@/lib/readout";
 import { SIGNAL_BARS } from "@/lib/robot/levels";
@@ -183,6 +184,42 @@ export function PrimaryReadout({
         )}
       </p>
     </div>
+  );
+}
+
+/**
+ * Show / Hide for a group whose rows are detail rather than the reading an
+ * operator watches for: a word, not a bare chevron, since the rail is read by
+ * people who were never told what the arrow opens. Sits in the group's
+ * `action` slot; `controls` is the id of the rows it opens.
+ */
+export function GroupToggle({
+  open,
+  onToggle,
+  controls,
+  what,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  controls: string;
+  /** Names the rows for a screen reader: "Show motor temperatures". */
+  what: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      aria-controls={controls}
+      aria-label={`${open ? "Hide" : "Show"} ${what}`}
+      className="-my-1 -mr-1.5 inline-flex h-6 shrink-0 items-center gap-0.5 rounded-sm px-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:-my-3 pointer-coarse:h-10"
+    >
+      {open ? "Hide" : "Show"}
+      <ChevronDownIcon
+        aria-hidden
+        className={cn("size-3.5 transition-transform motion-reduce:transition-none", open && "rotate-180")}
+      />
+    </button>
   );
 }
 

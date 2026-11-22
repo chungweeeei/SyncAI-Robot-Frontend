@@ -1,11 +1,20 @@
 "use client";
 
+import * as React from "react";
+
 import {
   Chip,
+  GroupToggle,
   InstrumentGroup,
   TONE_TEXT,
 } from "@/components/console/instrument";
-import { JOINTS, LEG_ROWS, jointName, strayMotorLabels } from "@/lib/robot/motor-label";
+import {
+  JOINTS,
+  LEG_LABEL,
+  LEG_ROWS,
+  jointName,
+  strayMotorLabels,
+} from "@/lib/robot/motor-label";
 import { cn } from "@/lib/utils";
 import type { RobotMotorStatus } from "@/lib/types/robot";
 import { motorTempTone } from "@/lib/robot/levels";
@@ -17,16 +26,21 @@ import { motorTempTone } from "@/lib/robot/levels";
 function summaryChip(motors: RobotMotorStatus[]) {
   const faults = motors.filter((m) => m.error !== 0).length;
   if (faults > 0) {
-    return <Chip tone="warn">{faults} FAULT</Chip>;
+    return <Chip tone="warn">{faults === 1 ? "1 fault" : `${faults} faults`}</Chip>;
   }
 
   const peak = Math.max(...motors.map((m) => m.temperature));
   return (
     <Chip tone={motorTempTone(peak)}>
-      MAX {peak}
+      Max {peak}
       <span className="ml-0.5">°</span>
     </Chip>
   );
+}
+
+/** Whether anything in the set is worth opening the grid for. */
+function needsAttention(motors: RobotMotorStatus[]): boolean {
+  return motors.some((m) => m.error !== 0 || motorTempTone(m.temperature) !== "neutral");
 }
 
 function JointRow({
@@ -71,9 +85,19 @@ function JointRow({
 /**
  * Per-joint temperature and error code, the only motor fields the robot state
  * exposes. Polled at 1 Hz: fine for a leg warming over minutes, not faster.
+ *
+ * Folded to its chip and one sentence while every motor is normal: twelve
+ * numbers that all say "fine" are what an operator watching a patrol for an
+ * hour learns to skip, and a customer reads them as unfinished. It opens on
+ * its own the moment a motor warms or faults — unless the operator closed it
+ * since, which is theirs to decide — and Show opens it any time.
  */
 export function MotorStatus({ motors }: { motors: RobotMotorStatus[] }) {
   const byName = new Map(motors.map((m) => [m.name, m]));
+  const gridId = React.useId();
+  const attention = needsAttention(motors);
+  const [chosen, setChosen] = React.useState<boolean | null>(null);
+  const open = chosen ?? attention;
 
   // Joints the layout does not know (the driver's naming is still unsettled):
   // listed rather than silently dropped from the grid.
@@ -88,19 +112,37 @@ export function MotorStatus({ motors }: { motors: RobotMotorStatus[] }) {
   return (
     <InstrumentGroup
       label="Motors"
-      action={motors.length > 0 ? summaryChip(motors) : undefined}
+      action={
+        motors.length > 0 ? (
+          <span className="flex items-center gap-1.5">
+            {summaryChip(motors)}
+            <GroupToggle
+              open={open}
+              onToggle={() => setChosen(!open)}
+              controls={gridId}
+              what="motor temperatures"
+            />
+          </span>
+        ) : undefined
+      }
     >
       {motors.length === 0 ? (
-        <p className="text-[11px] leading-snug text-muted-foreground">
+        <p className="text-[12px] leading-snug text-muted-foreground">
           No motor readings from the robot.
         </p>
+      ) : !open ? (
+        <p id={gridId} className="text-[12px] leading-snug text-muted-foreground">
+          {attention
+            ? "A motor needs attention. Show the joints to see which."
+            : `All ${motors.length} motors are within limits.`}
+        </p>
       ) : (
-        <>
+        <div id={gridId}>
           <div className="grid grid-cols-2 gap-x-5 gap-y-3">
             {LEG_ROWS.flat().map((leg) => (
               <div key={leg}>
-                <div className="instrument-label mb-1 text-muted-foreground">
-                  {leg}
+                <div className="mb-1 text-[12px] font-medium text-foreground">
+                  {LEG_LABEL[leg]}
                 </div>
                 <div className="space-y-1">
                   {JOINTS.map((joint) => (
@@ -126,7 +168,7 @@ export function MotorStatus({ motors }: { motors: RobotMotorStatus[] }) {
               ))}
             </div>
           )}
-        </>
+        </div>
       )}
     </InstrumentGroup>
   );
