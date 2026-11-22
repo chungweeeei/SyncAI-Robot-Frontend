@@ -49,6 +49,10 @@ const eslintConfig = defineConfig([
     // shadcn-generated files
     "components/ui/**",
     "hooks/use-mobile.ts",
+    // vendored agent skills (impeccable's bundled browser scripts are
+    // minified third-party code, not this console's)
+    ".claude/**",
+    ".github/**",
   ]),
   {
     files: ["{app,components,hooks,lib}/**/*.{ts,tsx}"],
