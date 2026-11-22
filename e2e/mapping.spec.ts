@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type WebSocketRoute } from "@playwright/test";
 
 import {
   failOnConsoleErrors,
@@ -8,6 +8,14 @@ import {
   withOctomap,
   withoutOctomap,
 } from "./backend";
+
+/** A scan stream's frame: a little-endian uint32 count, then float32 xyz. */
+function cloudFrame(points: ReadonlyArray<readonly [number, number, number]>): Buffer {
+  const buf = Buffer.alloc(4 + points.length * 12);
+  buf.writeUInt32LE(points.length, 0);
+  points.forEach((p, i) => p.forEach((v, j) => buf.writeFloatLE(v, 4 + i * 12 + j * 4)));
+  return buf;
+}
 
 /**
  * The mapping run strip against the robot's run state. The strip offers only
@@ -433,6 +441,37 @@ test.describe("the mapping run", () => {
     await expect(resetButton(page)).toHaveCount(0);
     // The receipt went with the dialog.
     await expect(page.getByText(/Resumed the saved map/)).toHaveCount(0);
+  });
+
+  test("a saved map streamed under the run gets a key, gone when the run ends", async ({
+    page,
+  }) => {
+    // The robot's stream, not this tab's press, is what says a saved map is
+    // drawn: so a reload or another console's resume gets the key too.
+    let saved: WebSocketRoute | null = null;
+    await page.routeWebSocket(/\/api\/v1\/robot\/pointcloud\/map\/saved\/stream/, (ws) => {
+      saved = ws;
+    });
+    await mockBackend(page, {
+      state: mapping(),
+      mappingStatus: { state: "mapping", key_poses: 80, loop_closures: 2 },
+    });
+    await page.goto("/mapping");
+
+    const legend = page.getByRole("list", { name: "Map colours" });
+    await expect.poll(() => saved).not.toBeNull();
+    // Opened with the operator's token, as every stream is.
+    expect(new URL(saved!.url()).searchParams.get("token")).toBeTruthy();
+    // Positive control for the absence below: nothing has said there is one.
+    await expect(legend).toHaveCount(0);
+
+    saved!.send(cloudFrame([[1, 2, 0], [3, 4, 0]]));
+    await expect(legend).toBeVisible();
+    await expect(legend.getByRole("listitem")).toHaveText(["Saved map", "Added this run"]);
+
+    // A save, reset or new start: the robot sends an empty frame.
+    saved!.send(cloudFrame([]));
+    await expect(legend).toHaveCount(0);
   });
 
   test("a refused resume stays in the dialog in the robot's words, and another map can be tried", async ({

@@ -278,6 +278,14 @@ components/
   mapping/      the mode switch (the rail), the run strip over the viewport
                 (Start and Resume, then a recording-style indicator
                 beside Save and New map — its face is lib/map/run-face.ts),
+                on a resumed run the saved map it continues drawn apart
+                from what the run adds, in a muted rose under the run's
+                grey, the run showing only what the saved map lacks (a
+                re-walk would bury it otherwise; the robot streams the
+                saved map on its own, once: lib/scene/map-cloud-layer.ts),
+                and a key beside Top down while one is drawn
+                (map-cloud-legend.tsx — off that stream, not `resumedFrom`,
+                so a reload or another console's resume keeps it),
                 the resume dialog (resume-map-dialog.tsx: a saved map picked
                 by name, the loaded one first, every map offered since the
                 catalogue cannot say which a resume can read; the robot
@@ -525,6 +533,9 @@ lib/
                 itself (viewport.ts: renderer, z-up camera, controls, the
                 resize-then-draw, the frame loop, a lost GPU context's
                 events and the teardown, for every 3D view), theme, markers,
+                the mapping run's streamed map clouds (map-cloud-layer.ts:
+                the run's and a resumed run's saved map, and the cut that
+                keeps only the run's points off the saved map's 0.4 m cells),
                 vertex layer, zone layer (a banded zone on its floor's ground,
                 one of every floor at the floor shown), path ribbon, the running
                 charge's staging point and leg (dock-layer.ts), where a solid
@@ -946,7 +957,11 @@ As built:
 - **Point cloud** (~10 Hz, binary) is opened by `usePointCloudStream`, which
   hands each frame to a callback and never to state, and written straight
   into preallocated three.js buffers via refs in `pointcloud-canvas.tsx`.
-  This is the pattern to copy for anything at frame rate.
+  This is the pattern to copy for anything at frame rate. A mapping run adds
+  two more, seconds or a run apart, each frame replacing its layer: the map
+  so far (`map`), and on a resumed run the saved map it continues (`saved`,
+  an empty frame when there is none), which the robot sends apart so the
+  run's own points are what `map` carries.
 - **Teleop** (10 Hz outbound) reads a ref on an interval; React is not involved.
 - **Telemetry** is split by rate in `hooks/use-telemetry.ts`, and the split is
   the rule to follow for anything added to that stream. Pose and joints are

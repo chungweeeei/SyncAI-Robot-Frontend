@@ -13,6 +13,7 @@ import {
 
 import { ViewportBoundary } from "@/components/console/fault-boundary";
 import { overlayPanel } from "@/components/console/instrument";
+import { MapCloudLegend } from "@/components/mapping/map-cloud-legend";
 import { ModeControl } from "@/components/mapping/mode-control";
 import { ResumeMapDialog } from "@/components/mapping/resume-map-dialog";
 import { RunError } from "@/components/mapping/run-error";
@@ -191,6 +192,10 @@ export function MappingView() {
   const [saving, setSaving] = React.useState(false);
   const [resuming, setResuming] = React.useState(false);
   const [resumedFrom, setResumedFrom] = React.useState<string | null>(null);
+  // Whether the viewport draws a saved map under the run: off the robot's own
+  // stream, so unlike `resumedFrom` it survives a reload and shows another
+  // console's resume.
+  const [savedMapShown, setSavedMapShown] = React.useState(false);
 
   const start = useStartMapping();
   const resume = useResumeMapping();
@@ -409,6 +414,7 @@ export function MappingView() {
             poseFrame={reported}
             topDownNonce={topDownNonce}
             mapCloudStream
+            onSavedMapCloud={setSavedMapShown}
           />
         </ViewportBoundary>
 
@@ -448,6 +454,7 @@ export function MappingView() {
             <Grid2x2Icon aria-hidden className="size-3.5" />
             Top down
           </button>
+          {savedMapShown && <MapCloudLegend />}
         </div>
       </section>
 
