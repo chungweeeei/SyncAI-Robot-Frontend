@@ -709,7 +709,8 @@ export function PointCloudView({
               onCancel={task.cancel}
               cancelError={goalBusy ? task.error : null}
               goLocked={goalBusy || stopped || busyElsewhere}
-              goLockReason={stopped ? ESTOP_REFUSAL : busyElsewhere ? jobLock.reason : null}
+              goLockReason={stopped ? ESTOP_REFUSAL : null}
+              jobRunning={busyElsewhere && !stopped}
               editLock={runLock.reason}
               deleting={stops.busy}
               deleteError={stops.writeError}

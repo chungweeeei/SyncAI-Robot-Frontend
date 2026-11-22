@@ -277,7 +277,7 @@ Quiet and exact: small, square-shouldered, and coloured only when they command.
 - **Use:** a status, mode or tone attached to an item (the strip's mode chip, a map's 3D map state). Below `sm` the mode chip collapses to a dot in its hue.
 
 ### Cards / Containers
-- **Instrument group (preferred):** not a card. A label row, then readout rows, separated from the next group by a hairline; 14 px × 16 px padding on the panel. A group of detail rather than of watching (locomotion, the motor grid) folds behind a worded **Show / Hide** in its label row, and opens on its own when something in it needs the operator.
+- **Instrument group (preferred):** not a card. A label row, then readout rows, separated from the next group by a hairline; 14 px × 16 px padding on the panel. A group of detail rather than of watching (the motor grid) folds behind a worded **Show / Hide** in its label row, and opens on its own when something in it needs the operator.
 - **Card:** for library items (maps, tasks, saved networks) only — panel background, a 10 % ink ring instead of a border, 16 px internal spacing.
 - **Notice:** the empty / loading / failed state of a list: a hairline-bordered panel box with an instrument label and a sentence. A list is never left blank.
 

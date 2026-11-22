@@ -1,14 +1,6 @@
 "use client";
 
-import * as React from "react";
-
-import {
-  Chip,
-  GroupToggle,
-  InstrumentGroup,
-  Readout,
-  Segmented,
-} from "@/components/console/instrument";
+import { Chip, InstrumentGroup, Readout, Segmented } from "@/components/console/instrument";
 import { useLocomotion, type Controller, type Policy } from "@/hooks/use-locomotion";
 import type { RobotLowLevelMode } from "@/lib/types/robot";
 
@@ -32,12 +24,6 @@ const POLICIES: readonly { value: Policy; label: string }[] = [
  * - **Policy** is reported (`low_level_mode.policy`); an unconfirmed request
  *   shows as `confirming…` rather than looking applied. Disabled under MPC,
  *   since a policy only means anything under RL.
- *
- * Folded by default: these are how the robot walks, set while commissioning
- * and rarely touched after, and the screen people watch a patrol on (and
- * show a customer) was spending a third of its rail on two algorithm names.
- * It opens on its own while a request is unconfirmed or refused, so the
- * answer to a press is never folded away.
  */
 export function LocomotionControl({
   lowLevelMode,
@@ -55,72 +41,53 @@ export function LocomotionControl({
   } = useLocomotion(lowLevelMode);
 
   const mpc = controller === "MPC";
-  const bodyId = React.useId();
-  const [chosen, setChosen] = React.useState(false);
-  const open = chosen || Boolean(pendingPolicy) || Boolean(error) || policy === null;
 
   return (
     <InstrumentGroup
       label="Locomotion"
       action={
-        <span className="flex items-center gap-1.5">
-          {pendingPolicy && <Chip tone="caution">Confirming</Chip>}
-          <GroupToggle
-            open={open}
-            onToggle={() => setChosen(!open)}
-            controls={bodyId}
-            what="locomotion settings"
-          />
-        </span>
+        pendingPolicy ? <Chip tone="caution">Confirming</Chip> : undefined
       }
     >
-      {!open ? (
-        <p id={bodyId} className="text-[12px] leading-snug text-muted-foreground">
-          How the robot walks. Show to change it.
+      <Row label="Controller · commanded">
+        <Segmented
+          label="Controller"
+          stretch
+          value={controller}
+          options={CONTROLLERS}
+          onChange={selectController}
+          disabled={busy}
+        />
+      </Row>
+
+      <Row
+        label={
+          mpc
+            ? "Policy · RL only"
+            : pendingPolicy
+              ? `Policy · confirming ${pendingPolicy}…`
+              : "Policy · reported"
+        }
+      >
+        <Segmented
+          label="Policy"
+          stretch
+          value={policy}
+          options={POLICIES}
+          onChange={selectPolicy}
+          disabled={busy || mpc}
+        />
+      </Row>
+
+      {/* A reported policy this control cannot ask for must still be visible. */}
+      {policy === null && (
+        <Readout label="Reported" value={lowLevelMode.policy} tone="caution" />
+      )}
+
+      {error && (
+        <p className="text-[11px] leading-snug break-words text-signal-warn">
+          {error}
         </p>
-      ) : (
-        <div id={bodyId} className="space-y-1.5">
-          <Row label="Controller · commanded">
-            <Segmented
-              label="Controller"
-              stretch
-              value={controller}
-              options={CONTROLLERS}
-              onChange={selectController}
-              disabled={busy}
-            />
-          </Row>
-
-          <Row
-            label={
-              mpc
-                ? "Policy · RL only"
-                : pendingPolicy
-                  ? `Policy · confirming ${pendingPolicy}…`
-                  : "Policy · reported"
-            }
-          >
-            <Segmented
-              label="Policy"
-              stretch
-              value={policy}
-              options={POLICIES}
-              onChange={selectPolicy}
-              disabled={busy || mpc}
-            />
-          </Row>
-
-          {/* A reported policy this control cannot ask for must still be visible. */}
-          {policy === null && (
-            <Readout label="Reported" value={lowLevelMode.policy} tone="caution" />
-          )}
-
-          {error && (
-            <p className="text-[11px] leading-snug break-words text-signal-warn">
-              {error}
-            </p>
-          )}
-        </div>
       )}
     </InstrumentGroup>
   );

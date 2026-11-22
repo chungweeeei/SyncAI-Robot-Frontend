@@ -275,10 +275,9 @@ components/
                 first — a glance with pause and delete, the soonest drawn as
                 an Up next card, a schedule with a run going marked Running
                 now off the active-tasks poll; the list itself stays
-                on /tasks — then locomotion and motors, both folded behind
-                Show: locomotion opens on its own while a request is
-                unconfirmed or refused, motors while one is warm or
-                faulted) and the driving controls; Set goal and a stop's
+                on /tasks — then locomotion, then motors, folded behind
+                Show while every motor is normal and opened on its own
+                when one warms or faults) and the driving controls; Set goal and a stop's
                 Go are held while any job runs, another console's or a
                 schedule's included, since the robot takes one at a time
                 (lib/map/run-lock.ts's goalLock, use-goal-lock), and at a

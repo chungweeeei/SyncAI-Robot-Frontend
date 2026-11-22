@@ -75,8 +75,7 @@ export function autoLocalizeLock({
   return UNLOCKED;
 }
 
-export const GOAL_JOB_RUNNING =
-  "The robot is running another job, and it takes one at a time. Cancel it or wait for it to finish before sending it here.";
+export const GOAL_JOB_RUNNING = "A job is running. Set goal opens once it ends.";
 
 /**
  * Whether a goal from the dashboard (Set goal, a stop's Go or Charge) may be

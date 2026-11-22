@@ -1009,7 +1009,9 @@ test.describe("tapping a stop on the dashboard", () => {
 
     await tapStop(page);
     const panel = page.getByRole("region", { name: stop.name });
-    await expect(panel.getByText(/The robot is running a job on this map/)).toBeVisible();
+    await expect(
+      panel.getByText("A job is running. Go, Reposition and Delete open once it ends."),
+    ).toBeVisible();
     await panel.getByRole("button", { name: `More for ${stop.name}` }).click();
     await expect(page.getByRole("menuitem", { name: "Delete" })).toHaveAttribute(
       "aria-disabled",
@@ -1411,7 +1413,11 @@ test.describe("tapping a stop on the dashboard", () => {
     await tapStop(page);
 
     const card = page.getByRole("region", { name: stop.name });
-    await expect(card.getByText(/^The robot is running another job/)).toBeVisible();
+    // One line for both holds, not the map lock and the goal lock apiece.
+    await expect(
+      card.getByText("A job is running. Go, Reposition and Delete open once it ends."),
+    ).toBeVisible();
+    await expect(card.getByText(/^The robot is running a job on this map/)).toHaveCount(0);
     await expect(card.getByRole("button", { name: "Go" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Set goal" })).toBeDisabled();
     // The route is still drawn: a preview moves nothing.
@@ -1428,7 +1434,7 @@ test.describe("tapping a stop on the dashboard", () => {
 
     const card = page.getByRole("region", { name: stop.name });
     await expect(card.getByRole("button", { name: "Go" })).toBeEnabled();
-    await expect(card.getByText(/^The robot is running another job/)).toHaveCount(0);
+    await expect(card.getByText(/^A job is running/)).toHaveCount(0);
   });
 });
 
