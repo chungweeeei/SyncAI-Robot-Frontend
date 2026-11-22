@@ -19,7 +19,7 @@ import { useMaps } from "@/hooks/use-maps";
 
 /**
  * Pick a saved map and keep building it — the other way a run begins, beside
- * Start mapping. The robot loads the map, finds where it stands on it, and
+ * Start. The robot loads the map, finds where it stands on it, and
  * maps on in that map's own frame.
  *
  * A dialog for the reason the save is one: there is a choice to make and a

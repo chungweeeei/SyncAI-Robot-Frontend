@@ -11,7 +11,7 @@ import {
 
 /**
  * The mapping run strip against the robot's run state. The strip offers only
- * the press the robot would accept (Start mapping, then Save), read off
+ * the press the robot would accept (Start, then Save), read off
  * GET /mapping rather than a flag this tab set, so each test moves the fake's
  * state and asserts what the strip offers next plus the write each press sent.
  */
@@ -33,15 +33,15 @@ test.describe("the mapping run", () => {
   });
 
   const strip = (page: Page) => page.getByRole("group", { name: "Mapping run" });
-  const startButton = (page: Page) => strip(page).getByRole("button", { name: "Start mapping" });
-  const resumeButton = (page: Page) => strip(page).getByRole("button", { name: "Resume map" });
+  const startButton = (page: Page) => strip(page).getByRole("button", { name: "Start", exact: true });
+  const resumeButton = (page: Page) => strip(page).getByRole("button", { name: "Resume", exact: true });
   // Scoped to the strip: while the dialog is open there is a second Save in it.
   const saveButton = (page: Page) => strip(page).getByRole("button", { name: "Save", exact: true });
   const resetButton = (page: Page) => strip(page).getByRole("button", { name: "New map" });
   const dialog = (page: Page) => page.getByRole("alertdialog");
   const mapping = () => robotState({ mode: "MANUAL", localization_valid: false });
 
-  test("offers Start and Resume map while idle and nothing else", async ({ page }) => {
+  test("offers Start and Resume while idle and nothing else", async ({ page }) => {
     await mockBackend(page, {
       state: mapping(),
       mappingStatus: { state: "idle", key_poses: 0, loop_closures: 0 },
@@ -429,6 +429,8 @@ test.describe("the mapping run", () => {
     await expect(strip(page).getByRole("status")).toHaveText("Mapping, continuing dp2f");
     await expect(saveButton(page)).toBeEnabled();
     await expect(resumeButton(page)).toHaveCount(0);
+    // New map is a started run's: a reset here would not go back to dp2f.
+    await expect(resetButton(page)).toHaveCount(0);
     // The receipt went with the dialog.
     await expect(page.getByText(/Resumed the saved map/)).toHaveCount(0);
   });
@@ -496,16 +498,15 @@ test.describe("the mapping run", () => {
 
     await saveButton(page).click();
     // Said before the name is typed: a new map, and what stays behind.
-    await expect(dialog(page)).toContainText("This run continues dp2f");
     await expect(dialog(page)).toContainText(
-      "keeps its waypoints, forbidden zones, ground patches and floors",
+      "Saved as a new map: dp2f stays as it is, and its waypoints and forbidden zones are not copied.",
     );
     const submit = dialog(page).getByRole("button", { name: "Save", exact: true });
 
     // The old name is well-formed and still refused, with the reason.
     await dialog(page).getByLabel("Map name").fill("dp2f");
     await expect(submit).toBeDisabled();
-    await expect(dialog(page)).toContainText("Save under another name.");
+    await expect(dialog(page)).toContainText("dp2f is the map this run continues. Pick another name.");
     await dialog(page).getByLabel("Map name").press("Enter");
     expect(writes.filter((w) => w.path === "/api/v1/maps")).toEqual([]);
 
@@ -518,7 +519,36 @@ test.describe("the mapping run", () => {
     await expect(dialog(page)).toContainText(/Mapping has stopped/);
   });
 
-  test("New map on a resumed run says the saved map is not what comes back", async ({
+  test("a resumed run offers no New map, and leaving it says the saved map stays", async ({
+    page,
+  }) => {
+    const writes = await mockBackend(page, {
+      state: mapping(),
+      mappingStatus: { state: "idle", key_poses: 0, loop_closures: 0 },
+    });
+    await page.goto("/mapping");
+
+    await resumeButton(page).click();
+    await dialog(page).getByRole("button", { name: "Resume mapping" }).click();
+    await dialog(page).getByRole("button", { name: "Close" }).click();
+
+    // Absent, not greyed: a reset would start an empty map, not go back to
+    // the one resumed. Save is the positive control that the run is on.
+    await expect(saveButton(page)).toBeEnabled();
+    await expect(resetButton(page)).toHaveCount(0);
+
+    // The way out without saving is the mode switch, which says what is
+    // lost and what is not.
+    await page.getByRole("button", { name: "Navigation" }).click();
+    await expect(dialog(page)).toContainText("Leave mapping without saving?");
+    await expect(dialog(page)).toContainText("What this run added to dp2f");
+    await expect(dialog(page)).toContainText("dp2f itself stays as it was saved");
+    await dialog(page).getByRole("button", { name: "Keep mapping" }).click();
+    expect(writes.filter((w) => w.path === "/api/v1/mapping/reset")).toEqual([]);
+    expect(writes.filter((w) => w.path === "/api/v1/robot/mode")).toEqual([]);
+  });
+
+  test("a run started from nothing after a resumed one was saved offers New map again", async ({
     page,
   }) => {
     await mockBackend(page, {
@@ -530,14 +560,14 @@ test.describe("the mapping run", () => {
     await resumeButton(page).click();
     await dialog(page).getByRole("button", { name: "Resume mapping" }).click();
     await dialog(page).getByRole("button", { name: "Close" }).click();
+    await saveButton(page).click();
+    await dialog(page).getByLabel("Map name").fill("dp2f_east");
+    await dialog(page).getByRole("button", { name: "Save", exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Close" }).click();
 
-    await resetButton(page).click();
-    await expect(dialog(page)).toContainText("Start a new map?");
-    await expect(dialog(page)).toContainText("the robot starts a new, empty map");
-    await expect(dialog(page)).toContainText("dp2f stays as it was saved");
-    await dialog(page).getByRole("button", { name: "Discard and start over" }).click();
-
-    // The run that follows is a plain one: the strip drops the name.
+    // The save ended the resumed run; the next one is a plain run.
+    await startButton(page).click();
     await expect(strip(page).getByRole("status")).toHaveText("Mapping");
+    await expect(resetButton(page)).toBeEnabled();
   });
 });

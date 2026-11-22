@@ -276,7 +276,7 @@ components/
                 The link is offered to a coarse pointer at any width, and to
                 any pointer below sm
   mapping/      the mode switch (the rail), the run strip over the viewport
-                (Start and Resume map, then a recording-style indicator
+                (Start and Resume, then a recording-style indicator
                 beside Save and New map — its face is lib/map/run-face.ts),
                 the resume dialog (resume-map-dialog.tsx: a saved map picked
                 by name, the loaded one first, every map offered since the
@@ -290,10 +290,12 @@ components/
                 its own press (`resumedFrom`, like `savedRun`): the strip
                 names it, the save dialog says the run is saved as another
                 map and that the old one keeps its waypoints, forbidden
-                zones, ground patches and floors, New map says a reset
-                starts an empty map rather than going back to it — and a
+                zones, ground patches and floors, and New map is not
+                offered (a reset would start an empty map, not go back to
+                the saved one, so a resumed run ends by Save or by leaving
+                Mapping, whose confirm says the saved map stays) — and a
                 reload or another console's resume falls back to a plain
-                run's words. The save dialog (the
+                run's words and buttons. The save dialog (the
                 name alone: the robot builds the 3D map after every save;
                 its receipt asks whether to switch back to Navigation, on
                 the map loaded before, only once that build has an outcome —

@@ -51,7 +51,7 @@ SYNCAI_DEV_ORIGINS=robot-01.lan,10.8.140.138 npm run dev
 |---|---|
 | `/login` | Sign in. Every other route needs it; a token lasts an hour (the backend's `JWT_EXPIRE_SECONDS`) and an open console renews it before then (`POST /api/v1/auth/refresh`), so it returns here only on Sign out or when the robot refuses a renewal. One account, `admin`, set in the backend's environment. |
 | `/` | Dashboard: the 3D view (live scan, the map's scan and 3D map, robot, route, waypoints, forbidden zones) and the instrument rail (schedules, locomotion, motors). |
-| `/mapping` | Build a map: switch to Mapping, **Start mapping**, drive, then **Save** (or **New map**). **Resume map** keeps building a saved one instead: pick it, keep the robot still on ground it covers while the robot finds itself (over a minute), drive on, and save under a new name — the old map and what was placed on it stay as they are. |
+| `/mapping` | Build a map: switch to Mapping, **Start**, drive, then **Save** (or **New map**). **Resume** keeps building a saved one instead: pick it, keep the robot still on ground it covers while the robot finds itself (over a minute), drive on, and save under a new name — the old map and what was placed on it stay as they are. |
 | `/maps` | Map library: switch, rename, delete, export / import, and open a map's editor. |
 | `/maps/[name]/edit` | The map's editor, on its 3D map: ground patches (Fill / Erase), waypoints and forbidden zones. Changes are staged and sent by **Save**. |
 | `/recordings` | Start, watch and manage recordings on the robot. |

@@ -10,17 +10,24 @@ import { cn } from "@/lib/utils";
 export type RunPending = "start" | "resume" | "save" | "reset" | null;
 
 /**
- * The run's controls as one strip over the viewport: Start and Resume map
+ * The run's controls as one strip over the viewport: Start and Resume
  * while idle, then a recording indicator beside Save and New map. One strip
  * because the faces are exclusive. Presentational: `face` comes from
  * lib/map/run-face.ts, and the page owns the confirm (`onReset`) and the
  * dialogs (`onResume`, `onSave`).
  *
- * Resume map sits beside Start because it is the same moment: both begin a
+ * Resume sits beside Start because it is the same moment: both begin a
  * run, and the robot takes either only in Mapping with no run on, which is
  * the one face that offers them.
  *
- * Worded buttons, since Start mapping is what the screen is for. Native
+ * New map belongs to a run started from nothing. On a resumed run it is not
+ * offered: a reset there does not go back to the saved map, it starts an
+ * empty one, which is neither what "New map" promises beside a map's name
+ * nor a way to try the resume again. Leaving a resumed run unsaved is the
+ * mode switch's question.
+ *
+ * Worded buttons, since starting a run is what the screen is for; one word
+ * each, the group's name ("Mapping run") saying what of. Native
  * `<button>`s, because the shadcn Button sets `pointer-events-none` when
  * disabled and the held Start's `title` (why it is held) would never show.
  * The indicator borrows the recorder's red, so both capture surfaces agree.
@@ -40,7 +47,7 @@ export function RunStrip({
   /**
    * The saved map this run continues, when this console resumed it — the
    * robot's status does not say, so another console's resume shows the dot
-   * alone.
+   * alone, and New map with it.
    */
   resumedFrom: string | null;
   onStart: () => void;
@@ -67,7 +74,7 @@ export function RunStrip({
             className={cn(BUTTON, CMD)}
           >
             <PlayIcon aria-hidden className="size-3.5" />
-            {pending === "start" ? "Starting…" : "Start mapping"}
+            {pending === "start" ? "Starting…" : "Start"}
           </button>
           {/* Hairlined, not filled: Start is what the screen is for, and this
             * opens a dialog rather than commanding. */}
@@ -79,7 +86,7 @@ export function RunStrip({
             className={cn(BUTTON, QUIET)}
           >
             <MapPlusIcon aria-hidden className="size-3.5" />
-            {pending === "resume" ? "Resuming…" : "Resume map"}
+            {pending === "resume" ? "Resuming…" : "Resume"}
           </button>
         </>
       ) : (
@@ -128,16 +135,19 @@ export function RunStrip({
             <SaveIcon aria-hidden className="size-3.5" />
             {pending === "save" ? "Saving…" : "Save"}
           </button>
-          {/* Warn-bordered, not solid: the red fills in the confirm it opens. */}
-          <button
-            type="button"
-            disabled={face.kind !== "run" || held}
-            onClick={onReset}
-            className={cn(BUTTON, WARN)}
-          >
-            <RotateCcwIcon aria-hidden className="size-3.5" />
-            {pending === "reset" ? "Resetting…" : "New map"}
-          </button>
+          {/* Warn-bordered, not solid: the red fills in the confirm it opens.
+            * Absent, not greyed, on a resumed run: there is nothing to wait for. */}
+          {resumedFrom === null && (
+            <button
+              type="button"
+              disabled={face.kind !== "run" || held}
+              onClick={onReset}
+              className={cn(BUTTON, WARN)}
+            >
+              <RotateCcwIcon aria-hidden className="size-3.5" />
+              {pending === "reset" ? "Resetting…" : "New map"}
+            </button>
+          )}
         </>
       )}
     </div>

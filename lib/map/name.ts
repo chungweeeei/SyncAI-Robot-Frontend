@@ -16,5 +16,5 @@ export const MAP_NAME_HINT =
  */
 export function resumedSaveProblem(name: string, resumedFrom: string | null): string | null {
   if (resumedFrom === null || name !== resumedFrom) return null;
-  return `This run continues ${resumedFrom}, which stays as it is. Save under another name.`;
+  return `${resumedFrom} is the map this run continues. Pick another name.`;
 }

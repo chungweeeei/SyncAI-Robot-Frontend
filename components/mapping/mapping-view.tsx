@@ -51,10 +51,11 @@ import { cn } from "@/lib/utils";
  * What the operator is about to do, once they have said yes. `unsaved` is
  * frozen when the dialog opens so a save landing underneath can't rewrite the
  * question, and `resumedFrom` (the saved map the run continues, or null) for
- * the same reason: the reset it confirms clears it.
+ * the same reason. A reset carries none: the strip offers New map only on a
+ * run started from nothing.
  */
 type Confirming =
-  | { kind: "reset"; resumedFrom: string | null }
+  | { kind: "reset" }
   | { kind: "switch"; to: SwitchableMode; unsaved: boolean; resumedFrom: string | null };
 
 /**
@@ -82,7 +83,7 @@ const CONFIRM_COPY = {
   },
   reset: {
     title: "Start a new map?",
-    // `confirmBody` writes it: the line depends on `savedRun` and on a resume.
+    // `confirmBody` writes it: the line depends on `savedRun`.
     body: null,
     icon: RotateCcwIcon,
     confirm: "Discard and start over",
@@ -113,29 +114,23 @@ function confirmKey(confirming: Confirming): keyof typeof CONFIRM_COPY {
 }
 
 /**
- * The question's second line. A run resumed from a saved map loses less and
- * differently: the saved map is still on the robot, only what the run added
- * goes — and a reset does not go back to it, it starts an empty map, which is
- * the one thing an operator would not guess.
+ * The question's second line. Leaving a run resumed from a saved map loses
+ * less than leaving one started from nothing: the saved map is still on the
+ * robot, only what the run added goes.
  */
 function confirmBody(confirming: Confirming, savedRun: boolean): string {
-  const key = confirmKey(confirming);
-  const from = confirming.resumedFrom;
-  if (key === "leave" && from !== null) {
-    return `What this run added to ${from} is only in the robot's memory. Switching discards it for good; ${from} itself stays as it was saved.`;
-  }
-  if (key === "reset") {
-    const still = "Keep the robot still while the lidar re-levels.";
-    if (from !== null) {
-      return `What this run added to ${from} is discarded for good, and the robot starts a new, empty map: ${from} stays as it was saved, but is no longer what the run builds on — resume it again for that. ${still}`;
-    }
+  if (confirming.kind === "reset") {
     return `${
       savedRun
         ? "Anything driven since the last save is discarded."
         : "This run's map is discarded for good."
-    } ${still}`;
+    } Keep the robot still while the lidar re-levels.`;
   }
-  return CONFIRM_COPY[key].body ?? "";
+  const from = confirming.resumedFrom;
+  if (confirming.unsaved && from !== null) {
+    return `What this run added to ${from} is only in the robot's memory. Switching discards it for good; ${from} itself stays as it was saved.`;
+  }
+  return CONFIRM_COPY[confirmKey(confirming)].body ?? "";
 }
 
 /**
@@ -177,9 +172,12 @@ function confirmBody(confirming: Confirming, savedRun: boolean): string {
  * never says a run was resumed — only the resume's own answer does — so it is
  * this console's memory of its own press, like `savedRun`: a reload, or a
  * resume from another console, has none, and the strip, the save dialog and
- * the confirms fall back to a plain run's words (the robot still refuses a
- * save into the old name). It is dropped by whatever ends or replaces the
- * run: a start, a reset, a save, a new session, and the robot reading idle.
+ * the leave confirm fall back to a plain run's words (the robot still refuses
+ * a save into the old name). While it holds, the strip offers no New map: a
+ * reset would not go back to the saved map but start an empty one, so the
+ * only ways out of a resumed run are Save and the mode switch. It is dropped
+ * by whatever ends or replaces the run: a start, a reset, a save, a new
+ * session, and the robot reading idle.
  */
 export function MappingView() {
   const control = useModeSwitch();
@@ -347,7 +345,8 @@ export function MappingView() {
         // `reported` stays MANUAL through a reset, so without this a save of A,
         // reset, drive B, switch to Nav would lose B with no warning.
         setSavedRun(false);
-        // A reset starts an empty map; the saved one is no longer under it.
+        // Reached only where the name was lost (a reload): a reset starts
+        // an empty map, with no saved one under it.
         setResumedFrom(null);
       },
     });
@@ -355,13 +354,13 @@ export function MappingView() {
 
   // Confirmed even when saved: the minutes driven since the save are still lost.
   const requestReset = React.useCallback(
-    () => setConfirming({ kind: "reset", resumedFrom }),
-    [resumedFrom],
+    () => setConfirming({ kind: "reset" }),
+    [],
   );
 
   // The last question, held past close so the copy doesn't change under the
   // close animation (adjust-during-render, as above).
-  const [shown, setShown] = React.useState<Confirming>({ kind: "reset", resumedFrom: null });
+  const [shown, setShown] = React.useState<Confirming>({ kind: "reset" });
   if (confirming && confirming !== shown) setShown(confirming);
   const confirmCopy = CONFIRM_COPY[confirmKey(shown)];
   const ConfirmIcon = confirmCopy.icon;

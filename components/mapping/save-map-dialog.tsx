@@ -46,10 +46,14 @@ import type { MapSummary } from "@/lib/types/map";
  * build is a detached job on the robot and survives the switch.
  *
  * A run resumed from a saved map is saved as another map: the robot refuses
- * its own name, and what was placed on the old map — waypoints, forbidden
- * zones, ground patches, floors — stays with the old name. Both are said
- * here, before the name is typed, because afterwards the new map simply
- * turns up without them.
+ * its own name, and what was placed on the old map stays with the old name.
+ * Both are said here, before the name is typed, because afterwards the new
+ * map simply turns up without them — in one sentence in place of the plain
+ * run's first, naming the two things an operator would miss (waypoints and
+ * forbidden zones; ground patches and floors stay behind too).
+ *
+ * Two sentences, by request: what the press does and what follows it. That
+ * a save can take a minute is what the button's "Saving…" is for.
  */
 export function SaveMapDialog({
   open,
@@ -123,21 +127,19 @@ export function SaveMapDialog({
           >
             <AlertDialogHeader>
               <AlertDialogTitle>Save this map?</AlertDialogTitle>
-              <AlertDialogDescription>
-                The run lives in the robot&apos;s memory until saved. Saving
-                ends the run and can take a minute on a large site; the robot
-                then builds the map&apos;s 3D map, which takes several minutes.
+              <AlertDialogDescription className="break-words">
+                {resumedFrom === null ? (
+                  "Saving ends the run."
+                ) : (
+                  <>
+                    Saved as a new map:{" "}
+                    <span className="readout text-foreground">{resumedFrom}</span> stays as it
+                    is, and its waypoints and forbidden zones are not copied.
+                  </>
+                )}{" "}
+                The robot then builds the 3D map, which takes several minutes.
               </AlertDialogDescription>
             </AlertDialogHeader>
-
-            {resumedFrom !== null && (
-              <p className="text-sm break-words text-muted-foreground">
-                This run continues <span className="readout text-foreground">{resumedFrom}</span>,
-                so it is saved as a new map under a new name. {resumedFrom} stays
-                as it is and keeps its waypoints, forbidden zones, ground
-                patches and floors — the new map starts without them.
-              </p>
-            )}
 
             <div className="space-y-1.5">
               <Label htmlFor={nameId} className="text-xs">

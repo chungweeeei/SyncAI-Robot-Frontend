@@ -18,7 +18,7 @@ export interface RunFaceInput {
 
 export type RunFace =
   /**
-   * Nothing is running: offer Start, and Resume map beside it — the robot
+   * Nothing is running: offer Start, and Resume beside it — the robot
    * takes either only from here. `enabled` is false in the wrong mode, and
    * `reason` says so.
    */
