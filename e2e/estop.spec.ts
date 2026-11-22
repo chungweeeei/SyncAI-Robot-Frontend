@@ -132,6 +132,10 @@ test.describe("the emergency stop", () => {
   test("Shift+Space engages it from anywhere on the page", async ({ page }) => {
     const writes = await mockBackend(page);
     await page.goto("/settings");
+    // The listener is attached once the console has hydrated; a key pressed
+    // before that lands on server-rendered markup and is lost. The job bar's
+    // idle line comes from a client read, so it says hydration is done.
+    await expect(strip(page).getByRole("status")).toHaveText("No task message in queue");
 
     await page.keyboard.press("Shift+Space");
 
