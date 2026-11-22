@@ -1009,7 +1009,9 @@ test.describe("tapping a stop on the dashboard", () => {
 
     await tapStop(page);
     const panel = page.getByRole("region", { name: stop.name });
-    await expect(panel.getByText(/The robot is running a job on this map/)).toBeVisible();
+    await expect(
+      panel.getByText("A job is running. Go, Reposition and Delete open once it ends."),
+    ).toBeVisible();
     await panel.getByRole("button", { name: `More for ${stop.name}` }).click();
     await expect(page.getByRole("menuitem", { name: "Delete" })).toHaveAttribute(
       "aria-disabled",
@@ -1393,6 +1395,46 @@ test.describe("tapping a stop on the dashboard", () => {
     expect(previews(writes)).toHaveLength(1);
     expect(dispatches(writes)).toEqual([]);
     expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("holds Go and Set goal while another console's job runs, since the robot takes one at a time", async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    failOnConsoleErrors(page, errors);
+    const writes = await mockBackend(page, {
+      vertices: [stop],
+      octomap: framedTree(),
+      // Started elsewhere (a schedule): this console sent no goal.
+      activeTasks: [activeTask({ source: "SCHEDULE" })],
+    });
+    await page.goto("/");
+
+    await tapStop(page);
+
+    const card = page.getByRole("region", { name: stop.name });
+    // One line for both holds, not the map lock and the goal lock apiece.
+    await expect(
+      card.getByText("A job is running. Go, Reposition and Delete open once it ends."),
+    ).toBeVisible();
+    await expect(card.getByText(/^The robot is running a job on this map/)).toHaveCount(0);
+    await expect(card.getByRole("button", { name: "Go" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Set goal" })).toBeDisabled();
+    // The route is still drawn: a preview moves nothing.
+    expect(previews(writes)).toHaveLength(1);
+    expect(dispatches(writes)).toEqual([]);
+    expect(errors, "the page logged errors").toEqual([]);
+  });
+
+  test("offers Go with nothing running — the control for the hold above", async ({ page }) => {
+    await mockBackend(page, { vertices: [stop], octomap: framedTree() });
+    await page.goto("/");
+
+    await tapStop(page);
+
+    const card = page.getByRole("region", { name: stop.name });
+    await expect(card.getByRole("button", { name: "Go" })).toBeEnabled();
+    await expect(card.getByText(/^A job is running/)).toHaveCount(0);
   });
 });
 

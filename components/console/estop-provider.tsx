@@ -6,7 +6,7 @@ import { EstopContext, type ConsoleEstop } from "@/hooks/use-console-estop";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
 import { useEstop } from "@/hooks/use-estop";
 import { isTypingTarget } from "@/lib/keyboard";
-import { estopEngaged, requestAfterReading } from "@/lib/robot/estop";
+import { estopEngaged, estopLine, requestAfterReading } from "@/lib/robot/estop";
 
 /**
  * The emergency stop for the whole console, mounted once in the root layout
@@ -68,10 +68,25 @@ export function EstopProvider({ children }: { children: React.ReactNode }) {
 
   const releasing = estop.isPending && estop.variables === false;
   const notice = estop.error?.message ?? null;
+  const line = estopLine({
+    engaged,
+    confirmed: locked === true,
+    releasing,
+    refusedRequest: estop.isError ? (estop.variables ?? null) : null,
+  });
 
   const value = React.useMemo<ConsoleEstop>(
-    () => ({ engaged, releasing, engage, release, busy: estop.isPending, notice }),
-    [engaged, releasing, engage, release, estop.isPending, notice],
+    () => ({
+      engaged,
+      releasing,
+      engage,
+      release,
+      busy: estop.isPending,
+      notice,
+      line,
+      dismissNotice: reset,
+    }),
+    [engaged, releasing, engage, release, estop.isPending, notice, line, reset],
   );
 
   return <EstopContext.Provider value={value}>{children}</EstopContext.Provider>;

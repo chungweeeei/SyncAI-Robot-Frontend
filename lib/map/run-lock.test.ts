@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  GOAL_JOB_RUNNING,
+  goalLock,
   AUTO_LOCALIZE_JOB_RUNNING,
   AUTO_LOCALIZE_NOT_NAVIGATING,
   AUTO_LOCALIZE_UNKNOWN,
@@ -87,5 +89,23 @@ describe("autoLocalizeLock", () => {
 
   it("leaves a mode not yet reported to the backend", () => {
     expect(autoLocalizeLock({ mode: null, tasks: [], status: "ok" }).locked).toBe(false);
+  });
+});
+
+describe("goalLock", () => {
+  it("holds a goal while any job runs, since the robot takes one at a time", () => {
+    expect(goalLock({ tasks: [{ map_name: "dp2f" }], status: "ok" })).toEqual({
+      locked: true,
+      reason: GOAL_JOB_RUNNING,
+    });
+  });
+
+  it("is free with nothing running", () => {
+    expect(goalLock({ tasks: [], status: "ok" })).toEqual({ locked: false, reason: null });
+  });
+
+  it("fails open while the list is unread, leaving the press to the backend", () => {
+    expect(goalLock({ tasks: [], status: "loading" }).locked).toBe(false);
+    expect(goalLock({ tasks: [{}], status: "error" }).locked).toBe(false);
   });
 });

@@ -8,6 +8,7 @@ import { ActiveRunControls } from "@/components/console/active-run-controls";
 import { CameraDisclosure } from "@/components/console/camera-disclosure";
 import { DriveDisclosure } from "@/components/console/drive-disclosure";
 import { EstopButton } from "@/components/console/estop-button";
+import { EstopLine } from "@/components/console/estop-line";
 import { FaultBoundary } from "@/components/console/fault-boundary";
 import { SensorDisclosure } from "@/components/console/sensor-disclosure";
 import { useConsoleEstop } from "@/hooks/use-console-estop";
@@ -235,6 +236,10 @@ export function StatusStrip() {
           />
         )}
       </div>
+
+      {/* The stop in words, under the edge it also turns red. Outside every
+        * boundary, like the button: it fails with nothing else. */}
+      <EstopLine />
     </header>
   );
 }

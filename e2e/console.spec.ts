@@ -455,7 +455,7 @@ test.describe("when a motor overheats", () => {
 
     state.motor_status = hot(86);
     await expect(notice).toBeVisible();
-    await expect(notice.getByText("HL KN", { exact: true })).toBeVisible();
+    await expect(notice.getByText("Hind left knee", { exact: true })).toBeVisible();
     await expect(notice.getByText("86")).toBeVisible();
     // The grid's own number, not the driver's identifier.
     await expect(notice.getByText(/_joint/)).toHaveCount(0);

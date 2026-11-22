@@ -14,19 +14,24 @@ import {
  */
 describe("strayMotorLabels", () => {
   it("names a leg's unknown joint by its leg and part", () => {
-    expect(strayMotorLabels(["FL_Ankle_joint"])).toEqual(["FL Ankle"]);
+    expect(strayMotorLabels(["FL_Ankle_joint"])).toEqual(["Front left ankle"]);
   });
 
-  it("uses the grid's code for a known joint on a leg", () => {
+  it("uses the grid's words for a known joint on a leg", () => {
     // A known joint only reaches the strays if the grid failed to place it,
     // but it should still read the way the grid reads it.
-    expect(strayMotorLabels(["HR_Knee_joint"])).toEqual(["HR KN"]);
+    expect(strayMotorLabels(["HR_Knee_joint"])).toEqual(["Hind right knee"]);
   });
 
   it("numbers only the motors that have no leg to name them by", () => {
     expect(
       strayMotorLabels(["FL_Ankle_joint", "waist_motor", "XX_Knee_joint"]),
-    ).toEqual(["FL Ankle", "Other motor 1", "Other motor 2"]);
+    ).toEqual(["Front left ankle", "Other motor 1", "Other motor 2"]);
+  });
+
+  it("never prints a code that needs a key to read", () => {
+    const labels = strayMotorLabels(["FL_HipX_joint", "HR_HipY_joint", "HL_Knee_joint"]);
+    for (const label of labels) expect(label).not.toMatch(/\b(FL|FR|HL|HR|HX|HY|KN)\b/);
   });
 
   it("never prints the raw joint name", () => {
@@ -40,8 +45,8 @@ describe("strayMotorLabels", () => {
 
 describe("motorLabel", () => {
   it("names one motor the way the grid names it", () => {
-    expect(motorLabel("HL_Knee_joint")).toBe("HL KN");
-    expect(motorLabel("FL_Ankle_joint")).toBe("FL Ankle");
+    expect(motorLabel("HL_Knee_joint")).toBe("Hind left knee");
+    expect(motorLabel("FL_Ankle_joint")).toBe("Front left ankle");
   });
 
   it("leaves a lone unplaceable motor unnumbered", () => {

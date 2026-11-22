@@ -196,9 +196,14 @@ components/
                 providers (their contexts live in hooks/use-console-*.ts — see
                 Layering), the emergency stop at the head of the strip's
                 presses — the driver's safety lock (one press engages, a
-                one-second hold releases; estop-provider.tsx reads
-                `safety_locked` and the press the drive panel and the command
-                hooks obey),
+                one-second hold releases; framed in the fault hue at rest;
+                estop-provider.tsx reads `safety_locked` and the press the
+                drive panel and the command hooks obey), and under the strip
+                its line in words (estop-line.tsx, lib/robot/estop.ts's
+                estopLine: Stopping… until the robot reports the lock, then
+                engaged, Releasing…; a refused press an alert with the
+                backend's sentence, held until dismissed — the one place a
+                failed stop is said where a finger can see it),
                 the strip's running-job controls (a fixed pause / resume and
                 cancel pair, then one always-present bar: job id, step and
                 state, the step's line crawling when it is wider than the
@@ -270,8 +275,15 @@ components/
                 first — a glance with pause and delete, the soonest drawn as
                 an Up next card, a schedule with a run going marked Running
                 now off the active-tasks poll; the list itself stays
-                on /tasks — then locomotion and motors) and the
-                driving controls
+                on /tasks — then locomotion, then motors, folded behind
+                Show while every motor is normal and opened on its own
+                when one warms or faults) and the driving controls; Set goal and a stop's
+                Go are held while any job runs, another console's or a
+                schedule's included, since the robot takes one at a time
+                (lib/map/run-lock.ts's goalLock, use-goal-lock), and at a
+                finger the viewport strip prints Goal / Pose / Locate
+                under the pose tools (ToolButton's shortLabel), its zoom
+                left to the pinch
   drive/        the full-screen drive view (/drive, unlisted in the nav rail):
                 a blank screen with the sticks in its bottom corners, the
                 translation one locked to one axis, and the
@@ -636,7 +648,8 @@ lib/
   settings/     the settings form's rules: a typed draft against
                 the robot's limits, and which drafts a Save sends
   robot/        G23 joint table (URDF link names ↔ GLB node names), how the
-                dashboard names a motor (the leg grid and its joint codes), and
+                dashboard names a motor (the leg grid in words — Front left,
+                Hip roll / Hip pitch / Knee — never the HX / HY / KN codes), and
                 the readout thresholds (levels.ts: Wi-Fi bars, battery, joint heat,
                 and isCharging — the state rollup's CHARGING, which the
                 masthead's battery shows as a bolt and a climbing meter)

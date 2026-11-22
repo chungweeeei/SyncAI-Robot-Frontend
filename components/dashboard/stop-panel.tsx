@@ -66,6 +66,7 @@ export function StopPanel({
   cancelError = null,
   goLocked,
   goLockReason = null,
+  jobRunning = false,
   editLock = null,
   deleting,
   deleteError,
@@ -98,6 +99,11 @@ export function StopPanel({
   goLocked: boolean;
   /** Why Go is held, when the reason is not a running goal. */
   goLockReason?: string | null;
+  /**
+   * Go is held because the robot runs another job. With the map lock it is
+   * the same fact twice, so the two lines are said as one.
+   */
+  jobRunning?: boolean;
   /** Why the stop is read-only (a job drives on its map). Greys Reposition and Delete. */
   editLock?: string | null;
   deleting: boolean;
@@ -197,7 +203,14 @@ export function StopPanel({
         {stale && reachable && (
           <p className="text-signal-caution">The robot has moved since this route was planned.</p>
         )}
-        {editLock && <p className="text-signal-caution">{editLock}</p>}
+        {editLock && !jobRunning && <p className="text-signal-caution">{editLock}</p>}
+        {jobRunning && (
+          <p className="text-signal-caution">
+            {editLock
+              ? `A job is running. ${goLabel}, Reposition and Delete open once it ends.`
+              : `A job is running. ${goLabel} opens once it ends.`}
+          </p>
+        )}
         {/* While asking, the refusal is the question's own answer. */}
         {deleteError && !confirming && (
           <p role="alert" className="text-signal-warn">
@@ -206,7 +219,7 @@ export function StopPanel({
         )}
       </div>
 
-      {reachable && !stale && goLockReason && (
+      {reachable && !stale && goLockReason && !jobRunning && (
         <p className="mt-2.5 text-[11px] leading-snug text-signal-caution">{goLockReason}</p>
       )}
 

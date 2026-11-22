@@ -92,13 +92,21 @@ test.describe("the emergency stop", () => {
 
     await stopButton(page).click();
 
-    // Nothing was locked, so the controls are not held — but the sentence is
-    // on the button for whoever asks, never as a line under the strip.
+    // Nothing was locked, so the controls are not held — and the refusal is
+    // said where a finger can read it, not only in a tooltip: a silent
+    // failed stop reads as a stopped robot.
     await expect(stopButton(page)).toHaveAttribute("aria-pressed", "false");
     await expect(stopButton(page)).toHaveAccessibleDescription(
       "The robot's driver did not answer.",
     );
-    await expect(strip(page).getByRole("alert")).toHaveCount(0);
+    const alert = strip(page).getByRole("alert");
+    await expect(alert).toContainText("Stop not confirmed.");
+    await expect(alert).toContainText("The robot's driver did not answer.");
+    await expect(alert).toContainText("Press the stop again.");
+
+    // Read and dismissed, it goes; the button keeps nothing either.
+    await alert.getByRole("button", { name: "Dismiss" }).click();
+    await expect(alert).toHaveCount(0);
   });
 
   test("a tap does not release it; a held press does", async ({ page }) => {
@@ -124,6 +132,10 @@ test.describe("the emergency stop", () => {
   test("Shift+Space engages it from anywhere on the page", async ({ page }) => {
     const writes = await mockBackend(page);
     await page.goto("/settings");
+    // The listener is attached once the console has hydrated; a key pressed
+    // before that lands on server-rendered markup and is lost. The job bar's
+    // idle line comes from a client read, so it says hydration is done.
+    await expect(strip(page).getByRole("status")).toHaveText("No task message in queue");
 
     await page.keyboard.press("Shift+Space");
 
