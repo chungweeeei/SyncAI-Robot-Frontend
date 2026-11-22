@@ -40,6 +40,12 @@ import {
   setMarkerColor,
 } from "@/lib/scene/markers";
 import { createDockLayer } from "@/lib/scene/dock-layer";
+import {
+  createStreamedMapLayer,
+  disposeStreamedMapLayer,
+  pointsOffSavedMap,
+  savedMapCells,
+} from "@/lib/scene/map-cloud-layer";
 import type { SurfaceTop } from "@/lib/scene/map-surface";
 import {
   createLocalNavLayer,
@@ -248,11 +254,19 @@ interface PointCloudCanvasProps {
   /**
    * Stream the "map so far" cloud (only produced while mapping) as a dim layer
    * under the live scan. Each frame replaces the layer wholesale, because a
-   * loop closure moves the whole map. Defaults to false.
+   * loop closure moves the whole map. On a resumed run the saved map it
+   * continues comes on a stream of its own and is drawn apart, fainter
+   * (lib/scene/map-cloud-layer.ts). Defaults to false.
    */
   mapCloudStream?: boolean;
   /** The map-cloud stream's status; it fails independently of `onStatus`. */
   onMapStatus?: (status: StreamStatus) => void;
+  /**
+   * Whether a saved map is drawn under the run, on each of its frames: true
+   * once a resume's arrives, false on the empty one that ends the run. The
+   * caller's legend follows it, since only this stream knows.
+   */
+  onSavedMapCloud?: (shown: boolean) => void;
   /** Committed goal, drawn on its floor's ground until the caller clears it. */
   goal?: (PlanarPose & { z?: number }) | null;
   /**
@@ -322,6 +336,7 @@ export function PointCloudCanvas({
   zoomStep = null,
   mapCloudStream = false,
   onMapStatus,
+  onSavedMapCloud,
   goal = null,
   previewGoal = null,
   previewPath = null,
@@ -384,6 +399,8 @@ export function PointCloudCanvas({
      * seconds apart, unlike the preallocated 10 Hz liveGeom.
      */
     streamedMapPoints: THREE.Points | null;
+    /** A resumed run's saved map, under it: one frame a run. */
+    streamedSavedMapPoints: THREE.Points | null;
     goalMarker: THREE.Group;
     previewMarker: THREE.Group;
     initialPoseMarker: THREE.Group;
@@ -475,53 +492,65 @@ export function PointCloudCanvas({
     onMapStatusRef.current = onMapStatus;
   }, [onMapStatus]);
 
+  const onSavedMapCloudRef = React.useRef(onSavedMapCloud);
+  React.useEffect(() => {
+    onSavedMapCloudRef.current = onSavedMapCloud;
+  }, [onSavedMapCloud]);
+
   /**
-   * Last streamed map frame, held so the layer survives a scene rebuild: the
-   * next one may be seconds away (the live cloud's is 100 ms away).
+   * Last streamed map frames, held so the layers survive a scene rebuild: the
+   * next run frame may be seconds away (the live cloud's is 100 ms away), and
+   * the saved map's comes once a run.
    */
   const mapStreamFrameRef = React.useRef<PointCloudFrame | null>(null);
+  const savedMapFrameRef = React.useRef<PointCloudFrame | null>(null);
+  /**
+   * The cells the saved map occupies, while one is drawn: the run's layer
+   * shows only its points outside them (pointsOffSavedMap), so a run that
+   * re-walks the map it continues does not bury it.
+   */
+  const savedMapCellsRef = React.useRef<Set<number> | null>(null);
 
+  // An empty frame (the saved map's "there is none") only takes the layer down.
   const applyMapStreamFrame = React.useCallback(
     (frame: PointCloudFrame) => {
       const ctx = sceneRef.current;
       if (!ctx) return;
-      if (ctx.streamedMapPoints) {
-        ctx.scene.remove(ctx.streamedMapPoints);
-        ctx.streamedMapPoints.geometry.dispose();
-        (ctx.streamedMapPoints.material as THREE.Material).dispose();
-        ctx.streamedMapPoints = null;
+      if (ctx.streamedMapPoints) disposeStreamedMapLayer(ctx.scene, ctx.streamedMapPoints);
+      ctx.streamedMapPoints = null;
+      const cells = savedMapCellsRef.current;
+      const shown = cells ? pointsOffSavedMap(frame, cells) : frame;
+      if (shown.count > 0) {
+        ctx.streamedMapPoints = createStreamedMapLayer(shown, "run", theme);
+        ctx.scene.add(ctx.streamedMapPoints);
       }
-      const geom = new THREE.BufferGeometry();
-      // Zero-copy is safe: each WS message owns its ArrayBuffer, and the layer
-      // is replaced (never appended to) when the next frame arrives.
-      geom.setAttribute(
-        "position",
-        new THREE.BufferAttribute(frame.positions, 3),
-      );
-      // Dim and solid like the static map cloud, so the live scan reads on top.
-      const points = new THREE.Points(
-        geom,
-        new THREE.PointsMaterial({
-          size: MAP_POINT_SIZE,
-          color: theme.mapCloud,
-          opacity: 0.6,
-          transparent: true,
-        }),
-      );
-      points.frustumCulled = false;
-      ctx.streamedMapPoints = points;
-      ctx.scene.add(points);
+      invalidate();
+    },
+    [theme, invalidate],
+  );
+  const applySavedMapFrame = React.useCallback(
+    (frame: PointCloudFrame) => {
+      const ctx = sceneRef.current;
+      if (!ctx) return;
+      if (ctx.streamedSavedMapPoints) disposeStreamedMapLayer(ctx.scene, ctx.streamedSavedMapPoints);
+      ctx.streamedSavedMapPoints = null;
+      if (frame.count > 0) {
+        ctx.streamedSavedMapPoints = createStreamedMapLayer(frame, "saved", theme);
+        ctx.scene.add(ctx.streamedSavedMapPoints);
+      }
       invalidate();
     },
     [theme, invalidate],
   );
 
-  // Through a ref so a theme change re-tints via the setup effect's re-apply
-  // instead of bouncing the WebSocket.
+  // Through refs so a theme change re-tints via the setup effect's re-apply
+  // instead of bouncing the WebSockets.
   const applyMapStreamFrameRef = React.useRef(applyMapStreamFrame);
+  const applySavedMapFrameRef = React.useRef(applySavedMapFrame);
   React.useEffect(() => {
     applyMapStreamFrameRef.current = applyMapStreamFrame;
-  }, [applyMapStreamFrame]);
+    applySavedMapFrameRef.current = applySavedMapFrame;
+  }, [applyMapStreamFrame, applySavedMapFrame]);
 
   // Read by the render loop and by effects that must not depend on them. The
   // pose refs live at component scope so a scene rebuild does not restart the
@@ -917,6 +946,7 @@ export function PointCloudCanvas({
       liveGeom,
       mapPoints: null,
       streamedMapPoints: null,
+      streamedSavedMapPoints: null,
       goalMarker,
       previewMarker,
       initialPoseMarker,
@@ -924,9 +954,12 @@ export function PointCloudCanvas({
       dispose,
     };
 
-    // Re-apply the held streamed map frame (and re-tint it for a theme change).
+    // Re-apply the held streamed map frames (and re-tint them for a theme change).
     if (mapStreamFrameRef.current) {
       applyMapStreamFrame(mapStreamFrameRef.current);
+    }
+    if (savedMapFrameRef.current) {
+      applySavedMapFrame(savedMapFrameRef.current);
     }
 
     return () => {
@@ -937,6 +970,7 @@ export function PointCloudCanvas({
     theme,
     applyJoints,
     applyMapStreamFrame,
+    applySavedMapFrame,
     pumpTelemetry,
     invalidate,
     gpu.onContextLost,
@@ -978,14 +1012,16 @@ export function PointCloudCanvas({
   // its ref so a theme change never bounces the socket.
   React.useEffect(() => {
     if (mapCloudStream) return;
-    // Drop the held frame too, or the next rebuild's re-apply resurrects it.
+    // Drop the held frames too, or the next rebuild's re-apply resurrects them.
     mapStreamFrameRef.current = null;
+    savedMapFrameRef.current = null;
+    savedMapCellsRef.current = null;
     const ctx = sceneRef.current;
-    if (ctx?.streamedMapPoints) {
-      ctx.scene.remove(ctx.streamedMapPoints);
-      ctx.streamedMapPoints.geometry.dispose();
-      (ctx.streamedMapPoints.material as THREE.Material).dispose();
+    if (ctx?.streamedMapPoints) disposeStreamedMapLayer(ctx.scene, ctx.streamedMapPoints);
+    if (ctx?.streamedSavedMapPoints) disposeStreamedMapLayer(ctx.scene, ctx.streamedSavedMapPoints);
+    if (ctx) {
       ctx.streamedMapPoints = null;
+      ctx.streamedSavedMapPoints = null;
     }
   }, [mapCloudStream]);
   usePointCloudStream(
@@ -996,6 +1032,18 @@ export function PointCloudCanvas({
     },
     (s) => onMapStatusRef.current?.(s),
   );
+  // Its status is not reported: a backend from before the split has no such
+  // stream, and the run's own map, which it then carries whole, is the one
+  // whose loss the caller says.
+  usePointCloudStream(mapCloudStream ? "saved" : null, (frame) => {
+    savedMapFrameRef.current = frame;
+    savedMapCellsRef.current = frame.count > 0 ? savedMapCells(frame) : null;
+    applySavedMapFrameRef.current(frame);
+    // The two sockets race, so the run's last frame is re-cut against the
+    // map that has just arrived (or drawn whole again once it is gone).
+    if (mapStreamFrameRef.current) applyMapStreamFrameRef.current(mapStreamFrameRef.current);
+    onSavedMapCloudRef.current?.(frame.count > 0);
+  });
 
   // ---- A new pose frame (see `poseFrame`) -------------------------------
   // The view goes back to opening too: wherever it looked was in the old

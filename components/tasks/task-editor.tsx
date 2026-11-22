@@ -18,7 +18,7 @@ import {
 import { ErrorLine } from "@/components/console/error-line";
 import { Chip } from "@/components/console/instrument";
 import { ActiveRunBanner } from "@/components/tasks/active-run-banner";
-import { MapPicker } from "@/components/tasks/map-picker";
+import { MapPicker } from "@/components/maps/map-picker";
 import { RouteMap } from "@/components/tasks/route-map";
 import { SavedNotice, type SavedNoticeValue } from "@/components/tasks/saved-notice";
 import { StopList } from "@/components/tasks/stop-list";

@@ -281,8 +281,34 @@ components/
                 The link is offered to a coarse pointer at any width, and to
                 any pointer below sm
   mapping/      the mode switch (the rail), the run strip over the viewport
-                (Start, then a recording-style indicator beside Save and New
-                map — its face is lib/map/run-face.ts), the save dialog (the
+                (Start and Resume, then a recording-style indicator
+                beside Save and New map — its face is lib/map/run-face.ts),
+                on a resumed run the saved map it continues drawn apart
+                from what the run adds, in a muted rose under the run's
+                grey, the run showing only what the saved map lacks (a
+                re-walk would bury it otherwise; the robot streams the
+                saved map on its own, once: lib/scene/map-cloud-layer.ts),
+                and a key beside Top down while one is drawn
+                (map-cloud-legend.tsx — off that stream, not `resumedFrom`,
+                so a reload or another console's resume keeps it),
+                the resume dialog (resume-map-dialog.tsx: a saved map picked
+                by name, the loaded one first, every map offered since the
+                catalogue cannot say which a resume can read; the robot
+                finds itself on it, over a minute with only "busy" to
+                report, so a bar with no value and Cancel held; a refusal
+                stays beside the picker, the receipt says where the robot
+                found itself; no position is sent yet — the request's `hint`
+                has no control). The robot's status never says a run was
+                resumed, so which map it continues is the view's memory of
+                its own press (`resumedFrom`, like `savedRun`): the strip
+                names it, the save dialog says the run is saved as another
+                map and that the old one keeps its waypoints, forbidden
+                zones, ground patches and floors, and New map is not
+                offered (a reset would start an empty map, not go back to
+                the saved one, so a resumed run ends by Save or by leaving
+                Mapping, whose confirm says the saved map stays) — and a
+                reload or another console's resume falls back to a plain
+                run's words and buttons. The save dialog (the
                 name alone: the robot builds the 3D map after every save;
                 its receipt asks whether to switch back to Navigation, on
                 the map loaded before, only once that build has an outcome —
@@ -443,7 +469,8 @@ lib/
   api/          typed fetchers per backend router, config.ts, http.ts, query-keys.ts
                 (requests only — mirrored validation rules live with their domain)
   ros/          WebSocket clients + frame decoders (telemetry, point cloud, teleop)
-  map/          map rules: vertex helpers, name rule, the route map's flat
+  map/          map rules: vertex helpers, name rule (and the one a resumed
+                run's save adds: not the map it continues), the route map's flat
                 marks (draw.ts: palette and marker; preview.ts: stops,
                 route legs — each kept right of its walk with a chevron,
                 so a walk back runs beside the walk out, none drawn across
@@ -511,6 +538,9 @@ lib/
                 itself (viewport.ts: renderer, z-up camera, controls, the
                 resize-then-draw, the frame loop, a lost GPU context's
                 events and the teardown, for every 3D view), theme, markers,
+                the mapping run's streamed map clouds (map-cloud-layer.ts:
+                the run's and a resumed run's saved map, and the cut that
+                keeps only the run's points off the saved map's 0.4 m cells),
                 vertex layer, zone layer (a banded zone on its floor's ground,
                 one of every floor at the floor shown), path ribbon, the running
                 charge's staging point and leg (dock-layer.ts), where a solid
@@ -884,11 +914,12 @@ touch one, prefer moving it toward the rule.
   list and draws it into the tree, so a save shows there at once); a map
   rename, delete or
   activate also changes the forbidden zones' read (`mapKeepout`, whose
-  `active` moves with a switch); a mapping start, save or reset changes the
-  run state (`mappingStatus` — invalidated, never written, because the
+  `active` moves with a switch); a mapping start, resume, save or reset
+  changes the run state (`mappingStatus` — invalidated, never written, because the
   answer travels a latched ROS topic every console reads). Those are wired in the write
   hooks now — when adding a write, list every key its response affects in
-  its `onSuccess`, not only the key it was fetched under. A rename, delete,
+  its `onSuccess`, not only the key it was fetched under. A resume changes
+  nothing else: the saved map is only read, and the run is saved as another. A rename, delete,
   import or mapping save
   drops every key that belongs to the map through `mapScopedKeys`, and a
   rule test fails when a `map-…` key taken by name is missing from it.
@@ -931,7 +962,11 @@ As built:
 - **Point cloud** (~10 Hz, binary) is opened by `usePointCloudStream`, which
   hands each frame to a callback and never to state, and written straight
   into preallocated three.js buffers via refs in `pointcloud-canvas.tsx`.
-  This is the pattern to copy for anything at frame rate.
+  This is the pattern to copy for anything at frame rate. A mapping run adds
+  two more, seconds or a run apart, each frame replacing its layer: the map
+  so far (`map`), and on a resumed run the saved map it continues (`saved`,
+  an empty frame when there is none), which the robot sends apart so the
+  run's own points are what `map` carries.
 - **Teleop** (10 Hz outbound) reads a ref on an interval; React is not involved.
 - **Telemetry** is split by rate in `hooks/use-telemetry.ts`, and the split is
   the rule to follow for anything added to that stream. Pose and joints are

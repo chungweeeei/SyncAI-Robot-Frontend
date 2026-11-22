@@ -1,4 +1,4 @@
-// The mapping run: mode switch, start, save, discard, and its state.
+// The mapping run: mode switch, start, resume, save, discard, and its state.
 
 import * as z from "zod";
 
@@ -151,5 +151,64 @@ export function startMapping(): Promise<StartMappingResult> {
   return requestJson<StartMappingResult>(apiUrl("/api/v1/mapping/start"), {
     method: "POST",
     schema: StartMappingResultSchema,
+  });
+}
+
+/**
+ * Roughly where the robot stands on the saved map, for a place the robot
+ * cannot tell from another. Within a few metres and 45° is enough; `z` only
+ * picks the floor. With one, the robot looks nowhere else and refuses rather
+ * than search the whole map.
+ */
+export interface ResumeMappingHint {
+  x: number;
+  y: number;
+  z?: number;
+  /** Degrees. */
+  theta: number;
+}
+
+export interface ResumeMappingRequest {
+  /** The saved map to keep building. It is only read; the run saves as another. */
+  name: string;
+  hint?: ResumeMappingHint;
+}
+
+export interface ResumeMappingResult {
+  /** True on any 200; a refusal is a 409, 404 or 502. */
+  resumed: boolean;
+  /** The map the run continues — the only place that is said, `GET /mapping` never does. */
+  name: string;
+  /** Operator-facing, with where the robot found itself; render verbatim. */
+  message: string;
+}
+
+const ResumeMappingResultSchema: z.ZodType<ResumeMappingResult> = z.object({
+  resumed: z.boolean(),
+  name: z.string(),
+  message: z.string(),
+});
+
+/**
+ * Load a saved map and keep building it, in its own frame, from where the
+ * robot stands. The robot finds itself on the map first — by the hint, else by
+ * where it last localized on that map, else by searching all of it — which
+ * takes tens of seconds (the backend waits up to 90), with `GET /mapping`
+ * answering `resetting` throughout. A refusal leaves the robot idle with
+ * nothing loaded.
+ *
+ * 409 `mapping_running` while a run is on, 409 `mapping_busy` while a start
+ * or reset settles, 404 for no such map, 502 with the robot's own sentence
+ * (not found on the map, a place that looks like another, a map saved without
+ * what a resume reads) or in the wrong mode.
+ *
+ * STANDING STILL on ground the saved map covers until it answers, as for
+ * `startMapping`.
+ */
+export function resumeMapping(request: ResumeMappingRequest): Promise<ResumeMappingResult> {
+  return requestJson<ResumeMappingResult>(apiUrl("/api/v1/mapping/resume"), {
+    method: "POST",
+    body: JSON.stringify(request),
+    schema: ResumeMappingResultSchema,
   });
 }

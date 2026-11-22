@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type WebSocketRoute } from "@playwright/test";
 
 import {
   failOnConsoleErrors,
@@ -9,9 +9,17 @@ import {
   withoutOctomap,
 } from "./backend";
 
+/** A scan stream's frame: a little-endian uint32 count, then float32 xyz. */
+function cloudFrame(points: ReadonlyArray<readonly [number, number, number]>): Buffer {
+  const buf = Buffer.alloc(4 + points.length * 12);
+  buf.writeUInt32LE(points.length, 0);
+  points.forEach((p, i) => p.forEach((v, j) => buf.writeFloatLE(v, 4 + i * 12 + j * 4)));
+  return buf;
+}
+
 /**
  * The mapping run strip against the robot's run state. The strip offers only
- * the press the robot would accept (Start mapping, then Save), read off
+ * the press the robot would accept (Start, then Save), read off
  * GET /mapping rather than a flag this tab set, so each test moves the fake's
  * state and asserts what the strip offers next plus the write each press sent.
  */
@@ -33,14 +41,15 @@ test.describe("the mapping run", () => {
   });
 
   const strip = (page: Page) => page.getByRole("group", { name: "Mapping run" });
-  const startButton = (page: Page) => strip(page).getByRole("button", { name: "Start mapping" });
+  const startButton = (page: Page) => strip(page).getByRole("button", { name: "Start", exact: true });
+  const resumeButton = (page: Page) => strip(page).getByRole("button", { name: "Resume", exact: true });
   // Scoped to the strip: while the dialog is open there is a second Save in it.
   const saveButton = (page: Page) => strip(page).getByRole("button", { name: "Save", exact: true });
   const resetButton = (page: Page) => strip(page).getByRole("button", { name: "New map" });
   const dialog = (page: Page) => page.getByRole("alertdialog");
   const mapping = () => robotState({ mode: "MANUAL", localization_valid: false });
 
-  test("offers Start while idle and nothing else", async ({ page }) => {
+  test("offers Start and Resume while idle and nothing else", async ({ page }) => {
     await mockBackend(page, {
       state: mapping(),
       mappingStatus: { state: "idle", key_poses: 0, loop_closures: 0 },
@@ -48,6 +57,8 @@ test.describe("the mapping run", () => {
     await page.goto("/mapping");
 
     await expect(startButton(page)).toBeEnabled();
+    // The other way a run begins, from the same state.
+    await expect(resumeButton(page)).toBeEnabled();
     // Not greyed: absent. An idle robot has nothing to save or discard.
     await expect(saveButton(page)).toHaveCount(0);
     await expect(resetButton(page)).toHaveCount(0);
@@ -308,6 +319,11 @@ test.describe("the mapping run", () => {
       "title",
       "Starting a map needs mapping mode.",
     );
+    await expect(resumeButton(page)).toBeDisabled();
+    await expect(resumeButton(page)).toHaveAttribute(
+      "title",
+      "Resuming a map needs mapping mode.",
+    );
     await expect(saveButton(page)).toHaveCount(0);
     await expect(resetButton(page)).toHaveCount(0);
   });
@@ -378,5 +394,219 @@ test.describe("the mapping run", () => {
     await expect(page.getByText(/nothing started/)).toBeVisible();
     // Nothing changed on the robot, so the strip still offers Start.
     await expect(startButton(page)).toBeEnabled();
+  });
+
+  test("resuming sends the loaded map's name alone, and the strip names the map it continues", async ({
+    page,
+  }) => {
+    const writes = await mockBackend(page, {
+      state: mapping(),
+      mappingStatus: { state: "idle", key_poses: 0, loop_closures: 0 },
+      maps: [mapSummary(), mapSummary({ name: "wh1", active: false })],
+    });
+    await page.goto("/mapping");
+
+    await resumeButton(page).click();
+    await expect(dialog(page)).toContainText("Resume a saved map?");
+    // Opens on the loaded map: it is where the robot last knew its place.
+    await expect(dialog(page).getByRole("combobox", { name: "Map" })).toContainText(
+      "dp2f · loaded",
+    );
+    // Nothing is sent until the operator says so.
+    expect(writes.filter((w) => w.path === "/api/v1/mapping/resume")).toEqual([]);
+
+    await dialog(page).getByRole("button", { name: "Resume mapping" }).click();
+
+    expect(writes.filter((w) => w.path === "/api/v1/mapping/resume")).toEqual([
+      // The name alone: with no position given, the robot finds itself.
+      { method: "POST", path: "/api/v1/mapping/resume", body: { name: "dp2f" } },
+    ]);
+    // A resume is not a start.
+    expect(writes.filter((w) => w.path === "/api/v1/mapping/start")).toEqual([]);
+
+    // The dialog turns into the receipt: the robot's sentence, which says
+    // where it found itself, and the picker is gone.
+    await expect(dialog(page)).toContainText("Mapping resumed");
+    await expect(dialog(page)).toContainText(/the robot is at \(12\.4, -3\.1\), heading 90°/);
+    await expect(dialog(page).getByRole("combobox", { name: "Map" })).toHaveCount(0);
+    await dialog(page).getByRole("button", { name: "Close" }).click();
+    await expect(dialog(page)).toHaveCount(0);
+
+    // The strip has followed the robot into the run, and says which map the
+    // run adds to — the robot's status does not.
+    await expect(strip(page).getByRole("status")).toHaveText("Mapping, continuing dp2f");
+    await expect(saveButton(page)).toBeEnabled();
+    await expect(resumeButton(page)).toHaveCount(0);
+    // New map is a started run's: a reset here would not go back to dp2f.
+    await expect(resetButton(page)).toHaveCount(0);
+    // The receipt went with the dialog.
+    await expect(page.getByText(/Resumed the saved map/)).toHaveCount(0);
+  });
+
+  test("a saved map streamed under the run gets a key, gone when the run ends", async ({
+    page,
+  }) => {
+    // The robot's stream, not this tab's press, is what says a saved map is
+    // drawn: so a reload or another console's resume gets the key too.
+    let saved: WebSocketRoute | null = null;
+    await page.routeWebSocket(/\/api\/v1\/robot\/pointcloud\/map\/saved\/stream/, (ws) => {
+      saved = ws;
+    });
+    await mockBackend(page, {
+      state: mapping(),
+      mappingStatus: { state: "mapping", key_poses: 80, loop_closures: 2 },
+    });
+    await page.goto("/mapping");
+
+    const legend = page.getByRole("list", { name: "Map colours" });
+    await expect.poll(() => saved).not.toBeNull();
+    // Opened with the operator's token, as every stream is.
+    expect(new URL(saved!.url()).searchParams.get("token")).toBeTruthy();
+    // Positive control for the absence below: nothing has said there is one.
+    await expect(legend).toHaveCount(0);
+
+    saved!.send(cloudFrame([[1, 2, 0], [3, 4, 0]]));
+    await expect(legend).toBeVisible();
+    await expect(legend.getByRole("listitem")).toHaveText(["Saved map", "Added this run"]);
+
+    // A save, reset or new start: the robot sends an empty frame.
+    saved!.send(cloudFrame([]));
+    await expect(legend).toHaveCount(0);
+  });
+
+  test("a refused resume stays in the dialog in the robot's words, and another map can be tried", async ({
+    page,
+  }) => {
+    const writes = await mockBackend(page, {
+      state: mapping(),
+      mappingStatus: { state: "idle", key_poses: 0, loop_closures: 0 },
+      maps: [mapSummary(), mapSummary({ name: "wh1", active: false })],
+    });
+    const refusal =
+      "Could not find the robot in the saved map (closest candidate rejected: no saved keyframe near). Move it to a place the saved map covers, or give its position. Nothing started.";
+    await page.route("**/api/v1/mapping/resume", (route) => {
+      const { name } = route.request().postDataJSON() as { name: string };
+      // The loaded map is the one the robot is not standing on.
+      if (name !== "dp2f") return route.fallback();
+      return route.fulfill({
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: refusal }),
+      });
+    });
+    await page.goto("/mapping");
+
+    await resumeButton(page).click();
+    await dialog(page).getByRole("button", { name: "Resume mapping" }).click();
+
+    // The robot's own sentence, in the dialog, with the picker still there.
+    await expect(dialog(page).getByRole("alert")).toHaveText(refusal);
+    const map = dialog(page).getByRole("combobox", { name: "Map" });
+    await expect(map).toContainText("dp2f · loaded");
+    // Nothing started: under the dialog the strip is still the idle one.
+    await dialog(page).getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(startButton(page)).toBeEnabled();
+    // Backed out of, so it is not a thing the strip has to report.
+    await expect(page.getByText(/Could not find the robot/)).toHaveCount(0);
+
+    // Positive control: the other map is taken, by its own name.
+    await resumeButton(page).click();
+    await expect(dialog(page).getByRole("alert")).toHaveCount(0);
+    await dialog(page).getByRole("combobox", { name: "Map" }).click();
+    await page.getByRole("option", { name: "wh1" }).click();
+    await dialog(page).getByRole("button", { name: "Resume mapping" }).click();
+    await expect(dialog(page)).toContainText("Mapping resumed");
+    expect(
+      writes.filter((w) => w.path === "/api/v1/mapping/resume").map((w) => w.body),
+    ).toEqual([{ name: "wh1" }]);
+  });
+
+  test("a resumed run is saved under another name than the map it continues", async ({
+    page,
+  }) => {
+    const writes = await mockBackend(page, {
+      state: mapping(),
+      mappingStatus: { state: "idle", key_poses: 0, loop_closures: 0 },
+    });
+    await page.goto("/mapping");
+
+    await resumeButton(page).click();
+    await dialog(page).getByRole("button", { name: "Resume mapping" }).click();
+    await dialog(page).getByRole("button", { name: "Close" }).click();
+
+    await saveButton(page).click();
+    // Said before the name is typed: a new map, and what stays behind.
+    await expect(dialog(page)).toContainText(
+      "Saved as a new map: dp2f stays as it is, and its waypoints and forbidden zones are not copied.",
+    );
+    const submit = dialog(page).getByRole("button", { name: "Save", exact: true });
+
+    // The old name is well-formed and still refused, with the reason.
+    await dialog(page).getByLabel("Map name").fill("dp2f");
+    await expect(submit).toBeDisabled();
+    await expect(dialog(page)).toContainText("dp2f is the map this run continues. Pick another name.");
+    await dialog(page).getByLabel("Map name").press("Enter");
+    expect(writes.filter((w) => w.path === "/api/v1/maps")).toEqual([]);
+
+    // Positive control: another name saves.
+    await dialog(page).getByLabel("Map name").fill("dp2f_east");
+    await submit.click();
+    expect(writes.filter((w) => w.path === "/api/v1/maps")).toEqual([
+      { method: "POST", path: "/api/v1/maps", body: { name: "dp2f_east" } },
+    ]);
+    await expect(dialog(page)).toContainText(/Mapping has stopped/);
+  });
+
+  test("a resumed run offers no New map, and leaving it says the saved map stays", async ({
+    page,
+  }) => {
+    const writes = await mockBackend(page, {
+      state: mapping(),
+      mappingStatus: { state: "idle", key_poses: 0, loop_closures: 0 },
+    });
+    await page.goto("/mapping");
+
+    await resumeButton(page).click();
+    await dialog(page).getByRole("button", { name: "Resume mapping" }).click();
+    await dialog(page).getByRole("button", { name: "Close" }).click();
+
+    // Absent, not greyed: a reset would start an empty map, not go back to
+    // the one resumed. Save is the positive control that the run is on.
+    await expect(saveButton(page)).toBeEnabled();
+    await expect(resetButton(page)).toHaveCount(0);
+
+    // The way out without saving is the mode switch, which says what is
+    // lost and what is not.
+    await page.getByRole("button", { name: "Navigation" }).click();
+    await expect(dialog(page)).toContainText("Leave mapping without saving?");
+    await expect(dialog(page)).toContainText("What this run added to dp2f");
+    await expect(dialog(page)).toContainText("dp2f itself stays as it was saved");
+    await dialog(page).getByRole("button", { name: "Keep mapping" }).click();
+    expect(writes.filter((w) => w.path === "/api/v1/mapping/reset")).toEqual([]);
+    expect(writes.filter((w) => w.path === "/api/v1/robot/mode")).toEqual([]);
+  });
+
+  test("a run started from nothing after a resumed one was saved offers New map again", async ({
+    page,
+  }) => {
+    await mockBackend(page, {
+      state: mapping(),
+      mappingStatus: { state: "idle", key_poses: 0, loop_closures: 0 },
+    });
+    await page.goto("/mapping");
+
+    await resumeButton(page).click();
+    await dialog(page).getByRole("button", { name: "Resume mapping" }).click();
+    await dialog(page).getByRole("button", { name: "Close" }).click();
+    await saveButton(page).click();
+    await dialog(page).getByLabel("Map name").fill("dp2f_east");
+    await dialog(page).getByRole("button", { name: "Save", exact: true }).click();
+    await dialog(page).getByRole("button", { name: "Close" }).click();
+
+    // The save ended the resumed run; the next one is a plain run.
+    await startButton(page).click();
+    await expect(strip(page).getByRole("status")).toHaveText("Mapping");
+    await expect(resetButton(page)).toBeEnabled();
   });
 });

@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OctomapLine } from "@/components/mapping/octomap-line";
-import { MAP_NAME_HINT, MAP_NAME_RE } from "@/lib/map/name";
+import { MAP_NAME_HINT, MAP_NAME_RE, resumedSaveProblem } from "@/lib/map/name";
 import type { MapSummary } from "@/lib/types/map";
 
 /**
@@ -44,6 +44,16 @@ import type { MapSummary } from "@/lib/types/map";
  * that question would — that Navigation comes back on the map loaded before,
  * not this one, which cannot be switched to until its 3D map is built. The
  * build is a detached job on the robot and survives the switch.
+ *
+ * A run resumed from a saved map is saved as another map: the robot refuses
+ * its own name, and what was placed on the old map stays with the old name.
+ * Both are said here, before the name is typed, because afterwards the new
+ * map simply turns up without them — in one sentence in place of the plain
+ * run's first, naming the two things an operator would miss (waypoints and
+ * forbidden zones; ground patches and floors stay behind too).
+ *
+ * Two sentences, by request: what the press does and what follows it. That
+ * a save can take a minute is what the button's "Saving…" is for.
  */
 export function SaveMapDialog({
   open,
@@ -52,6 +62,7 @@ export function SaveMapDialog({
   saved,
   conversion,
   switchHeld,
+  resumedFrom,
   onSave,
   onSwitchToNav,
   onClose,
@@ -66,13 +77,19 @@ export function SaveMapDialog({
   conversion: MapSummary | null;
   /** A mode switch is already on its way. */
   switchHeld: boolean;
+  /** The saved map this run continues, or null for a run started from nothing. */
+  resumedFrom: string | null;
   onSave: (name: string) => void;
   onSwitchToNav: () => void;
   onClose: () => void;
 }) {
   const [name, setName] = React.useState("");
   const nameId = React.useId();
-  const valid = MAP_NAME_RE.test(name);
+  const problemId = React.useId();
+  // Its own line, not the name rule's: the name is well-formed, just taken
+  // by the map the run stands on.
+  const resumedProblem = resumedSaveProblem(name, resumedFrom);
+  const valid = MAP_NAME_RE.test(name) && resumedProblem === null;
   // No entry yet counts as building: the robot lists a saved map as
   // `converting` at once, so it is only the moment before the catalogue's
   // first read. `none` is an outcome — the build never started, which the
@@ -110,10 +127,17 @@ export function SaveMapDialog({
           >
             <AlertDialogHeader>
               <AlertDialogTitle>Save this map?</AlertDialogTitle>
-              <AlertDialogDescription>
-                The run lives in the robot&apos;s memory until saved. Saving
-                ends the run and can take a minute on a large site; the robot
-                then builds the map&apos;s 3D map, which takes several minutes.
+              <AlertDialogDescription className="break-words">
+                {resumedFrom === null ? (
+                  "Saving ends the run."
+                ) : (
+                  <>
+                    Saved as a new map:{" "}
+                    <span className="readout text-foreground">{resumedFrom}</span> stays as it
+                    is, and its waypoints and forbidden zones are not copied.
+                  </>
+                )}{" "}
+                The robot then builds the 3D map, which takes several minutes.
               </AlertDialogDescription>
             </AlertDialogHeader>
 
@@ -128,13 +152,19 @@ export function SaveMapDialog({
                 onChange={(event) => setName(event.target.value)}
                 placeholder="site_a"
                 aria-invalid={name.length > 0 && !valid ? true : undefined}
+                aria-describedby={resumedProblem !== null ? problemId : undefined}
                 disabled={busy}
                 className="readout h-8 rounded-sm"
               />
               {/* Shown only while the name breaks the rule, as on import and rename. */}
-              {name.length > 0 && !valid && (
+              {name.length > 0 && !MAP_NAME_RE.test(name) && (
                 <p className="text-[11px] leading-snug text-signal-caution">
                   {MAP_NAME_HINT}
+                </p>
+              )}
+              {resumedProblem !== null && (
+                <p id={problemId} className="text-[11px] leading-snug break-words text-signal-caution">
+                  {resumedProblem}
                 </p>
               )}
             </div>

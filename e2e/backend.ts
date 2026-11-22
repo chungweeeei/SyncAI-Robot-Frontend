@@ -1199,6 +1199,40 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
           "Mapping started. The map begins building once the lidar has re-levelled — keep the robot still until then.",
       });
     }
+    if (path === "/api/v1/mapping/resume" && method === "POST") {
+      // Refused in the backend's order: no such map, then a run already on.
+      // The robot's own refusals (not found on the map, a place that looks
+      // like another) are a 502 a test routes itself.
+      const body = parseBody(request.postData()) as { name?: string } | null;
+      const name = body?.name ?? "";
+      if (!maps.some((map) => map.name === name)) {
+        return json(route, { detail: `No map named '${name}' on this robot.` }, 404);
+      }
+      if (mappingStatus.state === "mapping") {
+        return json(
+          route,
+          {
+            detail: "The robot is already building a map. Save it before resuming another one.",
+            code: "mapping_running",
+          },
+          409,
+        );
+      }
+      // The saved map's keyframes are in the run from its first read.
+      mappingStatus = { state: "mapping", key_poses: 214, loop_closures: 0 };
+      return json(route, {
+        resumed: true,
+        message:
+          "Resumed the saved map (214 keyframes): the robot is at (12.4, -3.1), heading 90°. New keyframes are added to it — save under a new map name when done.",
+        name,
+        prior_key_poses: 214,
+        method: "last_pose",
+        x: 12.4,
+        y: -3.1,
+        z: 0.5,
+        theta: 90,
+      });
+    }
     if (path === "/api/v1/maps" && method === "POST") {
       // A save ends the run, so the next poll moves the rail back to Start.
       // The catch-all's `{ message }` would fail the save schema.
