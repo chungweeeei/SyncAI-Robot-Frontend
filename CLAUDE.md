@@ -1081,6 +1081,12 @@ when working here:
   output.
 - `frontend-patterns` — React/Next.js component, state and render-performance
   patterns. Consult when reviewing or restructuring components.
+- `impeccable` — a vendored design skill (critique, audit, polish, animate,
+  and the product and design-system record) with its own subagents in
+  `.claude/agents/`; a copy for Copilot sits in `.github/skills/`,
+  `.github/agents/` and `.github/hooks/`. Its bundled browser scripts are
+  third-party, which is why eslint ignores `.claude/` and `.github/`.
+  Update it by re-installing, not by editing it here.
 - `grill-me` — user-invoked only (`/grill-me`): a relentless interview that
   sharpens a plan or design before it is built. Not for Claude to start on
   its own.
