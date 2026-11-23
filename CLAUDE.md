@@ -222,8 +222,11 @@ components/
                 stair while the floor holds: lib/map/floors.ts's
                 followWindow; on a dashboard map of one storey it is All
                 and 1F alone, no Follow, 1F pressed — the 3D map cut
-                under its ceiling, storeyCeiling, so a room seen from
-                above shows the robot — and All the ceiling back), and the
+                under its ceiling, storeyCeiling — 1.5 m over the highest
+                height the backend's `storey` says it was walked at, so a
+                slope up from where the robot started keeps its top — so a
+                room seen from above shows the robot — and All the ceiling
+                back), and the
                 fault boundaries (fault-boundary.tsx,
                 fault-panel.tsx: what a part that threw shows instead — see
                 Conventions), and the pieces every screen's dialogs and lists

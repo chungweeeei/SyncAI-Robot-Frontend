@@ -164,3 +164,15 @@ export interface MapFloor {
   low?: number | null;
   high?: number | null;
 }
+
+/**
+ * The body heights a map of one storey was walked at, metres: the backend's
+ * `storey`, sent beside `floors: []`. A storey whose ground climbs reaches
+ * well over the height the robot started at, which is where its 3D map was
+ * cut before this was sent.
+ */
+export interface MapStorey {
+  level: number;
+  low: number;
+  high: number;
+}

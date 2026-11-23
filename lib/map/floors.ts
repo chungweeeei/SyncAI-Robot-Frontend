@@ -1,7 +1,7 @@
 // The floors of a map that spans storeys: the height band each one owns, and
 // the rules a list has to keep for the backend to save it.
 
-import type { MapFloor } from "@/lib/types/map";
+import type { MapFloor, MapStorey } from "@/lib/types/map";
 
 /** Mirrors FLOORS_MAX, FLOOR_NAME_MAX and FLOOR_MIN_SEPARATION_M in the backend's map router. */
 export const FLOORS_MAX = 16;
@@ -88,13 +88,24 @@ export function floorBands(floors: readonly MapFloor[]): FloorBand[] {
  * Where the 3D map of one storey is cut, metres: `FLOOR_BAND_ABOVE_M` over
  * the highest height walked on it, as a floor picked on a building is cut —
  * a room seen from above was otherwise its ceiling, with the robot and its
- * waypoints under it. No floors is one storey too, whose level is the
- * map frame's 0: the body height the robot's odometry started at. A map of
- * several storeys is not cut here; picking a floor does that.
+ * waypoints under it. No floors is one storey too: cut over the highest
+ * height the backend says it was walked at (`storey`), else over the map
+ * frame's 0, the body height the robot's odometry started at — which cut a
+ * storey whose ground climbs from where the robot started, a slope up to a
+ * yard, at the foot of it. A map of several storeys is not cut here;
+ * picking a floor does that.
  */
-export function storeyCeiling(floors: readonly MapFloor[]): number {
+export function storeyCeiling(
+  floors: readonly MapFloor[],
+  storey: MapStorey | null = null,
+): number {
   if (floors.length > 1) return Infinity;
-  const top = floors.length === 1 ? floorSpan(floors[0]).top : 0;
+  const top =
+    floors.length === 1
+      ? floorSpan(floors[0]).top
+      : storey && Number.isFinite(storey.high)
+        ? storey.high
+        : 0;
   return top + FLOOR_BAND_ABOVE_M;
 }
 

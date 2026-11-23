@@ -118,6 +118,24 @@ describe("storeyCeiling", () => {
     expect(storeyCeiling([])).toBe(FLOOR_BAND_ABOVE_M);
   });
 
+  it("cuts a storey with no floors over the highest height it was walked at", () => {
+    // A slope up from where the robot started: cut at the start, its top
+    // three metres up was off the map.
+    expect(storeyCeiling([], { level: 0.0, low: -0.1, high: 3.0 })).toBeCloseTo(
+      3.0 + FLOOR_BAND_ABOVE_M,
+    );
+    // outdoor_1027 went down from where it started, and keeps its cut.
+    expect(storeyCeiling([], { level: -1.49, low: -2.29, high: 0.05 })).toBeCloseTo(
+      0.05 + FLOOR_BAND_ABOVE_M,
+    );
+  });
+
+  it("goes by a floor saved over the storey's heights", () => {
+    expect(storeyCeiling([{ name: "1F", level: 0.2 }], { level: 0, low: 0, high: 3 })).toBeCloseTo(
+      0.2 + FLOOR_BAND_ABOVE_M,
+    );
+  });
+
   it("leaves a map of several storeys whole, which picking a floor cuts", () => {
     expect(storeyCeiling(TWO)).toBe(Infinity);
   });
