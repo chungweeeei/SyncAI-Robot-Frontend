@@ -811,8 +811,8 @@ touch one, prefer moving it toward the rule.
   `Authorization: Bearer`, and a 401 empties the session store, but only of
   the token that request carried, so a refusal of a request sent before a
   fresh sign-in does not end it. A WebSocket cannot carry a header, so
-  `wsUrl()` puts the token in `?token=`, read at each connect; WHEP / WHIP
-  signalling and the WebRTC bench add it through `withToken`. There is one
+  `wsUrl()` puts the token in `?token=`, read at each connect; the camera
+  window's WHEP signalling adds it through `withToken`. There is one
   account on the robot (`admin`, its password in the backend's environment)
   and no route to add another. The emergency stop is behind the sign-in
   like everything else, so an open console does not sign out at the token's
@@ -1087,6 +1087,14 @@ when working here:
   `.github/agents/` and `.github/hooks/`. Its bundled browser scripts are
   third-party, which is why eslint ignores `.claude/` and `.github/`.
   Update it by re-installing, not by editing it here.
+  Its record is three files at the root, and they are this repo's, not the
+  skill's: `PRODUCT.md` (who uses the console and what it is for — the
+  FAE first), `DESIGN.md` (the design system as built: tokens, type, the
+  rules behind them) and `.impeccable/design.json` (the same, machine-read).
+  Read the first two before reshaping UI, and when a change moves a token
+  or a rule they state, correct them in the same change — they are derived
+  from the shipped console, so a stale one argues for the old design. The
+  rest of `.impeccable/` is the skill's local state and is not committed.
 - `grill-me` — user-invoked only (`/grill-me`): a relentless interview that
   sharpens a plan or design before it is built. Not for Claude to start on
   its own.
