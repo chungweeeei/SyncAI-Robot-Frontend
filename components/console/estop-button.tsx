@@ -15,11 +15,12 @@ import { cn } from "@/lib/utils";
  * robot. Releasing costs a deliberate second, since a stop a panicked second
  * tap could undo is one an operator cannot trust.
  *
- * Icon-only, by request, but never mistaken for the disclosures beside it:
- * framed in the fault hue at rest, so it reads as the stop before it is
- * needed, and set apart from the job bar's Cancel by that frame. What it is
- * doing is said in words by the strip's stop line (estop-line.tsx), which is
- * also where a refused press is reported. The hold follows the pressing
+ * Icon-only, by request, and unframed at rest: the strip's own ground with a
+ * red octagon, so it does not shout over the strip while nothing is wrong
+ * (a frame at rest was tried and turned down). The fault-hue frame and tint
+ * arrive on hover and focus, and stay while engaged. What it is doing is
+ * said in words by the strip's stop line (estop-line.tsx), which is also
+ * where a refused press is reported. The hold follows the pressing
  * pointer; lifting, cancel or sliding off restarts it.
  * Enter or Space held the same second releases from the keyboard; key repeats
  * are not a new press.
@@ -124,12 +125,13 @@ export function EstopButton() {
       // A held release must not open a callout or a text selection.
       onContextMenu={(event) => event.preventDefault()}
       className={cn(
-        // The disclosures' size and corners (strip-disclosure.tsx), in the
-        // fault hue at rest; engaged fills it.
+        // The disclosures' size and corners (strip-disclosure.tsx). At rest
+        // only the icon is red; hover and focus frame and tint it, engaged
+        // keeps both.
         "relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-sm border select-none [-webkit-touch-callout:none] touch-manipulation transition-colors focus-visible:outline-none",
         engaged
           ? "border-signal-warn/60 bg-signal-warn/15 text-signal-warn"
-          : "border-signal-warn/35 text-signal-warn hover:border-signal-warn hover:bg-signal-warn/12 focus-visible:border-signal-warn",
+          : "border-transparent text-signal-warn hover:border-signal-warn hover:bg-signal-warn/12 focus-visible:border-signal-warn focus-visible:bg-signal-warn/12",
       )}
     >
       {/* The hold's progress: a width transition timed to the hold. */}
