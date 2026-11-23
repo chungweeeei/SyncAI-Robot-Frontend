@@ -7,7 +7,7 @@ import { readBlob, requestJson, requestRaw } from "@/lib/api/http";
 import { decodeOctomapBt } from "@/lib/map/octree";
 import { decodePointCloud } from "@/lib/ros/pointcloud-stream";
 import { OctomapStatusSchema } from "@/lib/types/map";
-import type { MapFloor, MapSummary, OctomapStatus } from "@/lib/types/map";
+import type { MapFloor, MapStorey, MapSummary, OctomapStatus } from "@/lib/types/map";
 import type { OccupiedVoxels } from "@/lib/types/octree";
 import type { PointCloudFrame } from "@/lib/types/pointcloud";
 
@@ -182,7 +182,18 @@ export interface MapFloors {
   detected: MapFloor[];
   /** Whether `floors` is a saved list. */
   saved: boolean;
+  /**
+   * With `floors: []`, the heights the one storey was walked at; null with
+   * floors, without a trajectory, or from a backend older than the field.
+   */
+  storey: MapStorey | null;
 }
+
+const MapStoreySchema: z.ZodType<MapStorey> = z.object({
+  level: z.number(),
+  low: z.number(),
+  high: z.number(),
+});
 
 const MapFloorSchema: z.ZodType<MapFloor> = z.object({
   name: z.string(),
@@ -196,6 +207,7 @@ const MapFloorsSchema: z.ZodType<MapFloors> = z.object({
   floors: z.array(MapFloorSchema),
   detected: z.array(MapFloorSchema),
   saved: z.boolean(),
+  storey: MapStoreySchema.nullish().transform((storey) => storey ?? null),
 });
 
 function floorsPath(name: string): string {
