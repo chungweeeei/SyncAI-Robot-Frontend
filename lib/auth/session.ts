@@ -203,7 +203,7 @@ export function currentToken(): string | null {
 
 /**
  * `headers` with the operator's token added, for the requests that do not go
- * through lib/api/http.ts (WHEP/WHIP signalling, the WebRTC bench).
+ * through lib/api/http.ts (the camera window's WHEP signalling).
  */
 export function withToken(headers?: HeadersInit): Headers {
   const out = new Headers(headers);
