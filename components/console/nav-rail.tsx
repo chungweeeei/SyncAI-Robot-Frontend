@@ -260,9 +260,10 @@ export function NavRail() {
         * the console, not the screen on show. The theme over the way out. */}
       <div className="flex shrink-0 lg:-mx-2.5 lg:mt-auto lg:flex-col lg:items-center lg:gap-1 lg:border-t lg:border-hairline lg:px-2.5 lg:pt-3">
         <ThemeSwitch expanded={expanded} />
-        {/* From lg only: the phone's bar is seven tabs and the theme already,
-          * so a phone signs out from Settings. Nothing to send — see
-          * SignOutButton, the same press on a page. */}
+        {/* From lg only: the phone's bar is seven tabs and the theme already.
+          * The one Sign out in the console: Settings' went (2026-11-23, by
+          * request), so a phone has none. Nothing to send — the token is the
+          * whole session, and a sign-out is the console forgetting it. */}
         <button
           type="button"
           onClick={signOut}
