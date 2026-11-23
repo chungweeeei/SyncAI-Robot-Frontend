@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { fetchMapFloors } from "@/lib/api/map";
 import { queryKeys } from "@/lib/api/query-keys";
-import type { MapFloor } from "@/lib/types/map";
+import type { MapFloor, MapStorey } from "@/lib/types/map";
 
 export interface UseMapFloors {
   /** The floors to offer, lowest first; `[]` for one storey or until the read answers. */
@@ -13,6 +13,8 @@ export interface UseMapFloors {
   detected: MapFloor[];
   /** Whether `floors` is an operator's list rather than the detected one. */
   saved: boolean;
+  /** With no floors, the heights the one storey was walked at; null otherwise. */
+  storey: MapStorey | null;
   /** True once the read has answered; an editor seeds from it only then. */
   ready: boolean;
   /** The backend's sentence, verbatim. */
@@ -36,6 +38,7 @@ export function useMapFloors(name: string | null): UseMapFloors {
     floors: data?.floors ?? NONE,
     detected: data?.detected ?? NONE,
     saved: data?.saved ?? false,
+    storey: data?.storey ?? null,
     ready: isSuccess,
     error: error?.message ?? null,
   };

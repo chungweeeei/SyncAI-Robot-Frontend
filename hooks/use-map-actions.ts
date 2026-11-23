@@ -12,6 +12,7 @@ import {
   saveMapFloors,
   saveMapOctomapEdits,
 } from "@/lib/api/map";
+import type { MapFloors } from "@/lib/api/map";
 import { saveKeepout } from "@/lib/api/keepout";
 import { mapScopedKeys, queryKeys } from "@/lib/api/query-keys";
 import { downloadBlob } from "@/lib/download";
@@ -137,7 +138,9 @@ export function useSaveMapOctomapEdits() {
 /**
  * PUT /api/v1/maps/{name}/floors. The answer is the list as saved (sorted,
  * trimmed), written straight into the key the dashboard reads too, so a
- * renamed floor is renamed on both without a round trip.
+ * renamed floor is renamed on both without a round trip. The storey's
+ * heights are the backend's to work out (a storey saved over several floors
+ * spans them all), so the key is read again behind it for those.
  */
 export function useSaveMapFloors() {
   const queryClient = useQueryClient();
@@ -147,13 +150,15 @@ export function useSaveMapFloors() {
     onSuccess: (result) => {
       queryClient.setQueryData(
         queryKeys.mapFloors(result.name),
-        (previous: { detected: MapFloor[] } | undefined) => ({
+        (previous: MapFloors | undefined): MapFloors => ({
           name: result.name,
           floors: result.floors,
           detected: previous?.detected ?? [],
           saved: true,
+          storey: result.floors.length === 0 ? (previous?.storey ?? null) : null,
         }),
       );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.mapFloors(result.name) });
     },
   });
 }
