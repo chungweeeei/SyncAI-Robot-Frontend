@@ -125,7 +125,7 @@ components:
     rounded: "{rounded.sm}"
     typography: "{typography.label}"
   emergency-stop:
-    textColor: "{colors.muted-ink-day}"
+    textColor: "{colors.signal-warn-day}"
     rounded: "{rounded.sm}"
     size: "56px"
   emergency-stop-engaged:
@@ -292,7 +292,7 @@ Quiet and exact: small, square-shouldered, and coloured only when they command.
 - **Phone:** the same items become a bottom bar of 40 px tabs, labelled from `md`, with the tick under the active tab.
 
 ### Emergency Stop (signature)
-The first of the strip's presses on every screen. A 56 px square, icon-only (octagon), the disclosure buttons' size and corners but framed in Fault Red at rest (a 35 % red border, red icon), so it reads as the stop before it is needed and never as the job bar's Cancel. Engaged it fills to a 15 % red tint with a 60 % red border. One press engages at pointer-down; release takes a one-second hold, shown as a red bar filling the button. It is never wrapped in a fault boundary and nothing that can fail sits between it and the layout.
+The first of the strip's presses on every screen. A 56 px square, icon-only (octagon), the disclosure buttons' size and corners. At rest it has no frame and the strip's own ground, only the octagon in Fault Red; hover and keyboard focus bring a full Fault Red border and a 12 % red tint. Engaged it fills to a 15 % red tint with a 60 % red border. One press engages at pointer-down; release takes a one-second hold, shown as a red bar filling the button. It is never wrapped in a fault boundary and nothing that can fail sits between it and the layout.
 
 **Stop line.** What the stop is doing is said in words, in a band under the strip (Fault Red headline, ink sentence, a 10 % red tint, a 30 % red top rule): *Stopping…* until the robot reports the lock, *Emergency stop engaged.* with how to release, *Releasing…*. A refused press is an alert in the same band carrying the backend's sentence, held until dismissed. The band exists only while the robot is not free to move.
 
