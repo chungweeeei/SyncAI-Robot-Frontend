@@ -206,8 +206,6 @@ interface PointCloudCanvasProps {
    * hand a pose up and the view writes it.
    */
   vertices?: MapVertex[];
-  /** Hide the vertex layer without unmounting the canvas. Defaults to true. */
-  showVertices?: boolean;
   /** The active map's saved forbidden zones. Draw-only. */
   zones?: ZonePolygon[];
   /** Hide the zone layer without unmounting the canvas. Defaults to true. */
@@ -324,7 +322,6 @@ export function PointCloudCanvas({
   dock = null,
   showPath = true,
   vertices,
-  showVertices = true,
   zones,
   showZones = true,
   onVertexActivate,
@@ -1259,7 +1256,7 @@ export function PointCloudCanvas({
   // removes it.
   React.useEffect(() => {
     const ctx = sceneRef.current;
-    if (!ctx || !showVertices || !vertices?.length) return;
+    if (!ctx || !vertices?.length) return;
 
     // A charger stands on the 3D map's floor once the tree is read, so the
     // layer is rebuilt when it arrives.
@@ -1279,7 +1276,7 @@ export function PointCloudCanvas({
       layer.dispose();
       vertexLayerRef.current = null;
     };
-  }, [vertices, showVertices, theme, surfaceTop]);
+  }, [vertices, theme, surfaceTop]);
 
   // Its own effect so arming a re-place does not rebuild the layer.
   React.useEffect(() => {
