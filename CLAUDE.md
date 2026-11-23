@@ -237,7 +237,9 @@ components/
   dashboard/    3D viewport (pointcloud-canvas) with the pose laid over its
                 corner — its layers are the saved scan (its toggle not offered
                 for now: OFFER_MAP_SCAN), the robot's 3D map
-                (the occupancy tree, on by default, one floor at a time
+                (the occupancy tree, always drawn — it and the waypoints
+                have no toggle, since every pick is made against them —
+                one floor at a time
                 on a map that spans storeys — the floors under it faint
                 in one neutral (VoxelLayer.ghost), and a switch carrying
                 the camera to the new floor's ground (liftView), so 2F

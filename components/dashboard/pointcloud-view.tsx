@@ -100,11 +100,13 @@ export function PointCloudView({
     run && activeMap && run.task.map_name === activeMap.name
       ? liveDock(run.steps)
       : null;
-  // Off by default: the map scan is for checking localization. Path, waypoints
-  // and zones are on: a few marks that say what the robot and map are for.
+  // Off by default: the map scan is for checking localization. Path and zones
+  // are on: a few marks that say what the robot and map are for. The 3D map
+  // and the waypoints have no toggle at all (2026-11-23, by request): they are
+  // what every pick on this view is made against, so hiding either only left
+  // a view that could not be used.
   const [showMapCloud, setShowMapCloud] = React.useState(false);
   const [showPath, setShowPath] = React.useState(true);
-  const [showVertices, setShowVertices] = React.useState(true);
   // A failed zone read draws none and offers no toggle; the editor is where
   // that failure is reported, since it is where it would cost an edit.
   const [showZones, setShowZones] = React.useState(true);
@@ -114,21 +116,12 @@ export function PointCloudView({
   const scan = useMapPointCloud(
     showMapCloud && hasScan && activeMap ? activeMap.name : null,
   );
-  // The robot's 3D map, on by default: it is the map the robot navigates on,
-  // and the viewport frames on it. The operator's own toggle wins, held per
-  // map so another map's choice does not carry over. Offered only once the
-  // robot reports it built — building, failed or never made has nothing to
-  // give but a refusal, and the Maps screen is where those states are said.
-  const [voxelChoice, setVoxelChoice] = React.useState<{ map: string; on: boolean } | null>(
-    null,
-  );
+  // The robot's 3D map, always drawn: it is the map the robot navigates on,
+  // and the viewport frames on it. Read only once the robot reports it built —
+  // building, failed or never made has nothing to give but a refusal, and the
+  // Maps screen is where those states are said.
   const hasVoxels = activeMap?.octomap_status === "ok";
-  const showVoxels =
-    activeMap && voxelChoice?.map === activeMap.name ? voxelChoice.on : true;
-  const toggleVoxels = () => {
-    if (activeMap) setVoxelChoice({ map: activeMap.name, on: !showVoxels });
-  };
-  const voxelMap = showVoxels && hasVoxels && activeMap ? activeMap.name : null;
+  const voxelMap = hasVoxels && activeMap ? activeMap.name : null;
   const octomap = useMapOctomap(voxelMap);
   // The ground patches saved for it, drawn in: the operator saved them for
   // the robot to drive on, and a save is only a record until the robot's
@@ -543,23 +536,6 @@ export function PointCloudView({
       onToggle: () => setShowMapCloud((v) => !v),
     });
   }
-  if (hasVoxels) {
-    layers.push({
-      kind: "voxels",
-      label: "3D map",
-      on: showVoxels,
-      busy: octomap.status === "loading" || (octomap.voxels !== null && patches.status === "loading"),
-      onToggle: toggleVoxels,
-    });
-  }
-  if (vertices.length > 0) {
-    layers.push({
-      kind: "waypoints",
-      label: "Waypoints",
-      on: showVertices,
-      onToggle: () => setShowVertices((v) => !v),
-    });
-  }
   if (zones && zones.length > 0) {
     layers.push({
       kind: "zones",
@@ -602,7 +578,6 @@ export function PointCloudView({
           dock={dock}
           showPath={showPath}
           vertices={vertices}
-          showVertices={showVertices}
           zones={zones ?? undefined}
           showZones={showZones}
           onVertexActivate={askVertex}

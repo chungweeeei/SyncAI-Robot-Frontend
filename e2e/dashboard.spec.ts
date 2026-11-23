@@ -104,7 +104,7 @@ test.describe("the dashboard's map scan layer", () => {
     await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
 
     // The toolbar is up (the positive control), without the scan's toggle.
-    await expect(page.getByRole("button", { name: /^3D map/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Move/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Map scan/ })).toHaveCount(0);
     await page.waitForTimeout(500);
     expect(scanReads).toEqual([]);
@@ -116,7 +116,7 @@ test.describe("the dashboard's 3D map layer", () => {
   const treePath = `/api/v1/maps/${MAP_NAME}/octomap`;
   const toggle = (page: Page) => page.getByRole("button", { name: /^3D map/ });
 
-  test("downloads the running map's tree once, and draws it from the start", async ({
+  test("downloads the running map's tree once, and draws it with no toggle", async ({
     page,
   }) => {
     const errors: string[] = [];
@@ -134,33 +134,35 @@ test.describe("the dashboard's 3D map layer", () => {
       page.getByRole("region", { name: "Map viewport" }),
     ).toBeVisible();
 
-    // The map the robot navigates on, so it is up without asking.
-    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
+    // The map the robot navigates on, so it is up without asking, and every
+    // pick is made against it, so there is nothing to hide it with.
     await expect.poll(() => treeReads).toEqual([treePath]);
     // With the ground patches saved for it: the map as the robot drives it.
     await expect.poll(() => patchReads).toEqual([`${treePath}/edits`]);
-
-    // Off and on is the same version, so it comes from the cache.
-    await toggle(page).click();
-    await toggle(page).click();
-    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
-    expect(treeReads).toEqual([treePath]);
+    await expect(page.getByRole("button", { name: /^Move/ })).toBeVisible();
+    await expect(toggle(page)).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("is not offered for a map the robot built no 3D map for", async ({
+  test("is not read for a map the robot built no 3D map for", async ({
     page,
   }) => {
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { maps: [mapSummary(withoutOctomap())] });
+    const treeReads: string[] = [];
+    page.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (pathname.endsWith("/octomap")) treeReads.push(pathname);
+    });
     await page.goto("/");
     await expect(
       page.getByRole("region", { name: "Map viewport" }),
     ).toBeVisible();
 
     await expect(page.getByRole("button", { name: "Recenter" })).toBeVisible();
-    await expect(toggle(page)).toHaveCount(0);
+    await page.waitForTimeout(500);
+    expect(treeReads).toEqual([]);
     expect(errors, "the page logged errors").toEqual([]);
   });
 
@@ -181,11 +183,6 @@ test.describe("the dashboard's 3D map layer", () => {
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Map viewport" })).toBeVisible();
     const floors = page.getByRole("group", { name: "Floor" });
-    await expect(floors).toBeVisible();
-    // The floors are picked on the 3D map, so not offered while it is hidden.
-    await toggle(page).click();
-    await expect(floors).toHaveCount(0);
-    await toggle(page).click();
     await expect(floors).toBeVisible();
     // The robot's floor is what opens, not every storey at once.
     await expect(floors.getByRole("button", { name: "Follow robot" })).toHaveAttribute(
@@ -216,7 +213,6 @@ test.describe("the dashboard's 3D map layer", () => {
     failOnConsoleErrors(page, errors);
     await mockBackend(page, { maps: [mapSummary(withOctomap())] });
     await page.goto("/");
-    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
     const floors = page.getByRole("group", { name: "Floor" });
     await expect(floors).toBeVisible();
     // The one floor, cut under its ceiling, is what opens.
@@ -240,13 +236,10 @@ test.describe("the dashboard's 3D map layer", () => {
       "aria-pressed",
       "true",
     );
-    // Picked on the 3D map, so not offered while it is hidden.
-    await toggle(page).click();
-    await expect(floors).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
 
-  test("frames on the 3D map, and holds the operator's choice to hide it", async ({ page }) => {
+  test("frames on the 3D map", async ({ page }) => {
     // The tree is what the viewport has to frame, so Recenter looks at it.
     const errors: string[] = [];
     failOnConsoleErrors(page, errors);
@@ -261,15 +254,8 @@ test.describe("the dashboard's 3D map layer", () => {
       page.getByRole("region", { name: "Map viewport" }),
     ).toBeVisible();
 
-    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
     await expect.poll(() => treeReads).toEqual([treePath]);
     await page.getByRole("button", { name: "Recenter" }).click();
-
-    // Still the operator's to hide, and the choice holds.
-    await toggle(page).click();
-    await expect(toggle(page)).toHaveAttribute("aria-pressed", "false");
-    await page.waitForTimeout(300);
-    await expect(toggle(page)).toHaveAttribute("aria-pressed", "false");
     // Settled: the decode and the draw have had a frame to throw.
     await page.waitForTimeout(500);
     expect(errors, "the page logged errors").toEqual([]);
@@ -302,7 +288,6 @@ test.describe("the dashboard's 3D map layer", () => {
     await expect(
       page.getByRole("region", { name: "Map viewport" }),
     ).toBeVisible();
-    await expect(toggle(page)).toHaveAttribute("aria-pressed", "true");
     await expect.poll(() => treeReads).toEqual([treePath, treePath]);
     expect(errors, "the page logged errors").toEqual([]);
   });
@@ -326,9 +311,6 @@ test.describe("the dashboard's 3D map layer", () => {
 
     const alert = page.getByRole("alert").filter({ hasText: "still being built" });
     await expect(alert).toHaveText(`The 3D map of '${MAP_NAME}' is still being built`);
-
-    await toggle(page).click();
-    await expect(alert).toHaveCount(0);
   });
 });
 
@@ -379,10 +361,8 @@ test.describe("the dashboard's forbidden zone layer", () => {
       page.getByRole("region", { name: "Map viewport" }),
     ).toBeVisible();
 
-    // The positive control: the layer strip is up, with the stops' toggle.
-    await expect(
-      page.getByRole("button", { name: /^Waypoints/ }),
-    ).toBeVisible();
+    // The positive control: the viewport strip is up.
+    await expect(page.getByRole("button", { name: /^Move/ })).toBeVisible();
     await expect(toggle(page)).toHaveCount(0);
     expect(errors, "the page logged errors").toEqual([]);
   });
@@ -992,10 +972,6 @@ test.describe("tapping a stop on the dashboard", () => {
       )
       .toEqual([stopPath]);
     await expect(page.getByRole("region", { name: stop.name })).toHaveCount(0);
-    // The layer toggle goes with the last stop: nothing left to hide.
-    await expect(page.getByRole("button", { name: "Waypoints" })).toHaveCount(
-      0,
-    );
     expect(errors, "the page logged errors").toEqual([]);
   });
 
