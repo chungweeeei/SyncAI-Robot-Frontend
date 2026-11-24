@@ -127,7 +127,7 @@ export interface RobotBatteryStatus {
 
 /** One joint's health. Kinematics are not here; they come from telemetry. */
 export interface RobotMotorStatus {
-  /** URDF joint name, matching the keys in lib/robot/g23-joints.ts */
+  /** URDF joint name, matching the keys of the robot's joint table (lib/robot/profile.ts) */
   name: string;
   /** degrees Celsius */
   temperature: number;
@@ -138,6 +138,12 @@ export interface RobotMotorStatus {
 export interface RobotState {
   timestamp: number;
   robot_id: string;
+  /**
+   * Which kind of robot this is, lower-case (`g23`, `m20`): what the console
+   * picks the 3D model and the motor grid by (lib/robot/profile.ts). Absent
+   * only from a backend older than the field, which ran on G23s alone.
+   */
+  robot_model?: string;
   map: string;
   mode: RobotMode;
   /**
@@ -187,6 +193,7 @@ const RobotPoseSchema: z.ZodType<RobotPose> = z.object({
 export const RobotStateSchema: z.ZodType<RobotState> = z.object({
   timestamp: z.number(),
   robot_id: z.string(),
+  robot_model: z.string().optional(),
   map: z.string(),
   mode: z.enum(["MAINTENANCE", "MANUAL", "AUTO"]),
   state: z.string().optional(),

@@ -26,7 +26,8 @@ FAE is there.
 
 ## Product Purpose
 
-The operator console for one SyncAI quadruped robot (G23): watch its
+The operator console for one SyncAI quadruped robot (a G23 or a wheel-legged
+M20, whichever it is served from): watch its
 telemetry and cameras, drive it, build and edit the maps it navigates on,
 and dispatch, schedule and review its jobs. It is a browser client of the
 robot's own backend (`syncai_backend`), served from the robot, so nothing is
@@ -84,7 +85,8 @@ brand mark.
 
 ## Evidence on Hand
 
-- The robot's real 3D model: `public/models/g23.glb` (baked from its URDF).
+- The robots' real 3D models: `public/models/g23.glb` and `m20.glb` (each
+  baked from its URDF).
 - No customer names, case studies, testimonials or metrics exist in the
   repository. Do not fabricate any.
 

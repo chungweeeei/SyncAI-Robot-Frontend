@@ -3,6 +3,11 @@
 // Never inline a key in its hook.
 
 export const queryKeys = {
+  /**
+   * GET /health — read once by the sign-in screen, for the one thing it
+   * needs before there is a token: which kind of robot to draw.
+   */
+  health: ["health"] as const,
   /** GET /api/v1/robot/state — the console's single 1 Hz poll. */
   robotState: ["robot-state"] as const,
   /**

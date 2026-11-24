@@ -34,6 +34,13 @@ describe("RobotStateSchema", () => {
     expect(RobotStateSchema.parse(frame)).toEqual(frame);
   });
 
+  it("carries the robot's model, and reads a backend from before it without one", () => {
+    // The two repos are deployed independently: a frame with no model is an
+    // older backend's, not a broken one.
+    expect(RobotStateSchema.parse({ ...frame, robot_model: "m20" }).robot_model).toBe("m20");
+    expect(RobotStateSchema.parse(frame).robot_model).toBeUndefined();
+  });
+
   it("ignores a field the backend added", () => {
     // Or the two repos cannot be deployed independently.
     const parsed = RobotStateSchema.parse({ ...frame, gait_phase: 0.25 });

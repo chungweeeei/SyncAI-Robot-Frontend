@@ -8,19 +8,15 @@ import {
   InstrumentGroup,
   TONE_TEXT,
 } from "@/components/console/instrument";
-import {
-  JOINTS,
-  LEG_LABEL,
-  LEG_ROWS,
-  jointName,
-  strayMotorLabels,
-} from "@/lib/robot/motor-label";
+import { useRobotProfile } from "@/hooks/use-console-robot-state";
+import { strayMotorLabels } from "@/lib/robot/motor-label";
 import { cn } from "@/lib/utils";
 import type { RobotMotorStatus } from "@/lib/types/robot";
 import { motorTempTone } from "@/lib/robot/levels";
 
 // A plan view, because a fault reads as "the hind-left leg is hot", not
-// "HL_Knee_joint is 78". The naming rule is lib/robot/motor-label.ts.
+// "HL_Knee_joint is 78". The legs and their rows are the robot's profile
+// (lib/robot/profile.ts); the naming rule for the rest is lib/robot/motor-label.ts.
 
 /** The worst thing in the set, as one chip. Faults outrank heat. */
 function summaryChip(motors: RobotMotorStatus[]) {
@@ -99,13 +95,11 @@ export function MotorStatus({ motors }: { motors: RobotMotorStatus[] }) {
   const [chosen, setChosen] = React.useState<boolean | null>(null);
   const open = chosen ?? attention;
 
-  // Joints the layout does not know (the driver's naming is still unsettled):
-  // listed rather than silently dropped from the grid.
-  const placed = new Set(
-    LEG_ROWS.flat().flatMap((leg) =>
-      JOINTS.map((j) => jointName(leg, j.suffix)),
-    ),
-  );
+  // Joints the layout does not know (the driver's naming is still unsettled,
+  // or the robot is a kind this console has no grid for): listed rather than
+  // silently dropped from the grid.
+  const grid = useRobotProfile()?.motorGrid ?? [];
+  const placed = new Set(grid.flatMap((leg) => leg.motors.map((m) => m.name)));
   const strays = motors.filter((m) => !placed.has(m.name));
   const strayLabels = strayMotorLabels(strays.map((m) => m.name));
 
@@ -138,27 +132,34 @@ export function MotorStatus({ motors }: { motors: RobotMotorStatus[] }) {
         </p>
       ) : (
         <div id={gridId}>
-          <div className="grid grid-cols-2 gap-x-5 gap-y-3">
-            {LEG_ROWS.flat().map((leg) => (
-              <div key={leg}>
-                <div className="mb-1 text-[12px] font-medium text-foreground">
-                  {LEG_LABEL[leg]}
+          {grid.length > 0 && (
+            <div className="grid grid-cols-2 gap-x-5 gap-y-3">
+              {grid.map((leg) => (
+                <div key={leg.label}>
+                  <div className="mb-1 text-[12px] font-medium text-foreground">
+                    {leg.label}
+                  </div>
+                  <div className="space-y-1">
+                    {leg.motors.map((motor) => (
+                      <JointRow
+                        key={motor.name}
+                        label={motor.label}
+                        motor={byName.get(motor.name)}
+                      />
+                    ))}
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  {JOINTS.map((joint) => (
-                    <JointRow
-                      key={joint.suffix}
-                      label={joint.label}
-                      motor={byName.get(jointName(leg, joint.suffix))}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
           {strays.length > 0 && (
-            <div className="mt-3 space-y-1 border-t border-hairline pt-2.5">
+            <div
+              className={cn(
+                "space-y-1",
+                grid.length > 0 && "mt-3 border-t border-hairline pt-2.5",
+              )}
+            >
               {strays.map((motor, index) => (
                 <JointRow
                   key={motor.name}

@@ -741,6 +741,23 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     );
   }
 
+  // The liveness answer, the one read the sign-in screen makes before there
+  // is a token: it names the robot's kind when the state does, and like a
+  // backend from before the field leaves it out otherwise (which reads as a G23).
+  // `state` is robotState()'s literal type or an override's record, and the
+  // literal has no robot_model, so the field is read through the record type.
+  const robotModel = (state as Record<string, unknown> | null)?.robot_model;
+  await page.route(
+    (url) => url.port === "3000" && url.pathname === "/health",
+    (route) =>
+      json(route, {
+        status: "ok",
+        task_server: "running",
+        task_server_error: null,
+        ...(typeof robotModel === "string" ? { robot_model: robotModel } : {}),
+      }),
+  );
+
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());

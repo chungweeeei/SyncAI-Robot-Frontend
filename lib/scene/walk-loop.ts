@@ -25,6 +25,33 @@ export function loopPose(t: number): LoopPose {
   };
 }
 
+/** The oval's speed at angle s, metres per radian of s. */
+function loopSpeed(s: number): number {
+  return Math.hypot(LOOP_RADIUS_X_M * Math.sin(s), LOOP_RADIUS_Y_M * Math.cos(s));
+}
+
+/** The ground covered from angle 0 to s in [0, 2π], by Simpson's rule. */
+function arcTo(s: number, steps = 64): number {
+  const h = s / steps;
+  let sum = loopSpeed(0) + loopSpeed(s);
+  for (let i = 1; i < steps; i += 1) sum += (i % 2 ? 4 : 2) * loopSpeed(i * h);
+  return (sum * h) / 3;
+}
+
+/** One lap's length, metres: an ellipse's perimeter has no closed form. */
+const LAP_M = arcTo(2 * Math.PI, 256);
+
+/**
+ * The ground covered `t` seconds in, metres: what a wheel rolling round the
+ * oval has turned through. Whole laps by their length and the rest by a
+ * fixed number of steps, so the cost is the same an hour in.
+ */
+export function loopDistance(t: number): number {
+  const laps = t / LOOP_PERIOD_S;
+  const whole = Math.floor(laps);
+  return whole * LAP_M + arcTo(2 * Math.PI * (laps - whole));
+}
+
 /**
  * The stretch of the oval ahead of the robot `t` seconds in, as [x, y, z]
  * triples at ground height 0, starting where it stands: the route it is

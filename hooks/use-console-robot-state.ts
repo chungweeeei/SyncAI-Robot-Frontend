@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { robotStateQuery, type UseRobotState } from "@/hooks/use-robot-state";
 import { readStatus } from "@/lib/api/read-state";
 import { robotStateSilence } from "@/lib/api/robot";
+import { robotProfile, type RobotProfile } from "@/lib/robot/profile";
 import type { ReadStatus } from "@/lib/types/read";
 import type { RobotState } from "@/lib/types/robot";
 
@@ -48,6 +49,17 @@ const robotId = (state: RobotState) => state.robot_id;
 /** The robot's name, or null before the first frame. */
 export function useRobotId(): string | null {
   return useRobotStateSelect(robotId) ?? null;
+}
+
+const profile = (state: RobotState) => robotProfile(state.robot_model);
+
+/**
+ * How to draw the robot this console is on (lib/robot/profile.ts). Null
+ * before the first frame — a view waits for it rather than draw one robot
+ * and swap it for another — and for a model this console does not know.
+ */
+export function useRobotProfile(): RobotProfile | null {
+  return useRobotStateSelect(profile) ?? null;
 }
 
 const nothing = () => null;

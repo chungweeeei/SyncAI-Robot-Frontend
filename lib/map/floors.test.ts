@@ -20,7 +20,7 @@ import {
   snapToGroundFloor,
   storeyCeiling,
 } from "@/lib/map/floors";
-import { ROBOT_BASE_HEIGHT_M } from "@/lib/scene/robot-model";
+import { G23_PROFILE } from "@/lib/robot/profile";
 
 const TWO = [
   { name: "2F", level: 5.5 },
@@ -233,11 +233,11 @@ describe("drawnGround", () => {
   });
 
   it("stands the robot on the ground floor at the height it reports", () => {
-    // base_link as robot01 reported it standing on its ground floor in AUTO
-    // (2026-10-19). Its feet, a rest-pose leg under it, must meet the plan
+    // base_link as robot01, then a G23, reported it standing on its ground
+    // floor in AUTO (2026-10-19). Its feet, a rest-pose leg under it, must meet the plan
     // rather than hang half a metre through it, as they did with the plan at 0.
     const reportedBase = -0.056;
-    expect(reportedBase - ROBOT_BASE_HEIGHT_M).toBeCloseTo(drawnGround(0), 1);
+    expect(reportedBase - G23_PROFILE.baseHeightM).toBeCloseTo(drawnGround(0), 1);
   });
 
   it("keeps a height the 3D map measured, which is in the map frame already", () => {

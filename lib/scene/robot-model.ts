@@ -1,23 +1,17 @@
-// The G23 mesh: one cached load per page, shared by every scene rebuild.
+// The robot's mesh: one cached load per model and page, shared by every
+// scene rebuild.
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 
-// Baked by scripts/urdf2glb.py in the ROS convention (Z-up, +x forward,
-// metres), not glTF's +Y-up, so the Z-up scene needs no correction rotation.
-const ROBOT_MODEL_URL = "/models/g23.glb";
-
-// base_link height at the GLB's rest pose (link offsets to the foot plus the
-// 22 mm foot sphere). The pose feed carries base_link's real height, so the
-// model is drawn at it as is; this is for standing the robot on a ground
-// height instead (an initial pose placed on a floor).
-export const ROBOT_BASE_HEIGHT_M = 0.43212;
-
-
 /**
- * Load the robot model once per page load: the scene is rebuilt on every map
- * or theme change, and reparsing a ~600 kB GLB each time is waste.
+ * Load a robot model (a profile's `modelUrl`) once per page load: the scene
+ * is rebuilt on every map or theme change, and reparsing a ~600 kB GLB each
+ * time is waste.
+ *
+ * Baked by scripts/urdf2glb.py in the ROS convention (Z-up, +x forward,
+ * metres), not glTF's +Y-up, so the Z-up scene needs no correction rotation.
  *
  * The GLB has no materials or normals; glTF's default material would render
  * pure black here, so every mesh gets our own flat-shaded one.
@@ -31,15 +25,16 @@ export const ROBOT_BASE_HEIGHT_M = 0.43212;
  * segments and the x-ray a second full draw, which starved the page on a
  * software GPU — CI's, and a weak laptop's.
  */
-let robotModelPromise: Promise<THREE.Object3D> | null = null;
+const robotModels = new Map<string, Promise<THREE.Object3D>>();
 
-export function loadRobotModel(): Promise<THREE.Object3D> {
+export function loadRobotModel(url: string): Promise<THREE.Object3D> {
+  let robotModelPromise = robotModels.get(url);
   if (!robotModelPromise) {
     const loader = new GLTFLoader();
     // scripts/urdf2glb.py runs gltfpack -cc, whose output declares
     // EXT_meshopt_compression. (KHR_mesh_quantization needs no registration.)
     loader.setMeshoptDecoder(MeshoptDecoder);
-    robotModelPromise = loader.loadAsync(ROBOT_MODEL_URL).then((gltf) => {
+    robotModelPromise = loader.loadAsync(url).then((gltf) => {
       const material = new THREE.MeshStandardMaterial({
         color: 0x5a636d,
         metalness: 0.1,
@@ -53,12 +48,13 @@ export function loadRobotModel(): Promise<THREE.Object3D> {
       });
       return gltf.scene;
     });
+    robotModels.set(url, robotModelPromise);
   }
   return robotModelPromise;
 }
 
 /**
- * Joint names in a `joints` prop that G23_JOINTS does not know, warned once
+ * Joint names in a `joints` prop that the robot's joint table does not know, warned once
  * each: a mismatch would otherwise fail silently as a leg that never moves
  * (kJointNames in syncai_driver_manager.cpp still has a TODO on its order).
  */

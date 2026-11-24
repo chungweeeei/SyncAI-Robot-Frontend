@@ -6,11 +6,11 @@ import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js
 import { useTheme } from "next-themes";
 
 import { GpuLostNotice } from "@/components/console/fault-panel";
+import { useRobotProfile } from "@/hooks/use-console-robot-state";
 import { useGpuContext } from "@/hooks/use-gpu-context";
 import { usePointCloudStream } from "@/hooks/use-point-cloud-stream";
 import type { TelemetryFeed } from "@/hooks/use-telemetry";
 import { cn } from "@/lib/utils";
-import { G23_JOINTS } from "@/lib/robot/g23-joints";
 import {
   FLOOR_LIFT_MS,
   FRONT_DEFAULT_Z,
@@ -67,7 +67,6 @@ import { bandRange, drawnGround, snapToGroundFloor } from "@/lib/map/floors";
 import { columnAt, columnStacks, surfaceTopNear } from "@/lib/map/ground";
 import { POSE_EASE_TAU_S, poseMoved, type SmoothPose } from "@/lib/scene/pose";
 import {
-  ROBOT_BASE_HEIGHT_M,
   loadRobotModel,
   warnedUnknownJoints,
 } from "@/lib/scene/robot-model";
@@ -570,10 +569,21 @@ export function PointCloudCanvas({
     null,
   );
 
+  // Which robot this is (lib/robot/profile.ts): its model, its joints, how
+  // tall it stands. Null until the robot has said, and for a kind this
+  // console cannot draw; no robot is drawn then.
+  const profile = useRobotProfile();
+  const baseHeight = profile?.baseHeightM ?? 0;
+  /** For the render loop, which outlives a render. */
+  const baseHeightRef = React.useRef(baseHeight);
+  React.useEffect(() => {
+    baseHeightRef.current = baseHeight;
+  }, [baseHeight]);
+
   // Each joint resolves to the child-link node it rotates (the GLB keeps URDF
-  // link names). The nodes belong to the module-cached model, so the map is
-  // resolved once and survives scene rebuilds. `latestJointsRef` buffers angles
-  // that arrive before the model has loaded.
+  // link names). The nodes belong to the module-cached model, so they survive
+  // scene rebuilds; the map is resolved again whenever the model is added to
+  // one. `latestJointsRef` buffers angles that arrive before the model has loaded.
   const jointNodesRef = React.useRef<Map<
     string,
     { node: THREE.Object3D; axis: THREE.Vector3 }
@@ -596,7 +606,7 @@ export function PointCloudCanvas({
       if (!joint) {
         if (!warnedUnknownJoints.has(name)) {
           warnedUnknownJoints.add(name);
-          console.warn(`unknown joint "${name}" — not in G23_JOINTS / the GLB`);
+          console.warn(`unknown joint "${name}" — not in the robot's joint table / the GLB`);
         }
         continue;
       }
@@ -785,21 +795,24 @@ export function PointCloudCanvas({
     appliedLocalCostmapRef.current = undefined;
     appliedLocalPlanRef.current = undefined;
 
+    // The joints of whichever model the last scene held are not this one's.
+    jointNodesRef.current = null;
+    appliedJointsRef.current.clear();
     // `cancelled` matters here: add() reparents, so a stale callback would
     // steal the shared model from the rebuilt scene's group.
-    loadRobotModel()
-      .then((model) => {
-        if (cancelled) return;
-        robotGroup.add(model);
-        if (!jointNodesRef.current) {
+    if (profile) {
+      loadRobotModel(profile.modelUrl)
+        .then((model) => {
+          if (cancelled) return;
+          robotGroup.add(model);
           const nodes = new Map<
             string,
             { node: THREE.Object3D; axis: THREE.Vector3 }
           >();
-          for (const [name, spec] of G23_JOINTS) {
+          for (const [name, spec] of profile.joints) {
             const node = model.getObjectByName(spec.childLink);
             if (node) {
-              nodes.set(name, { node, axis: spec.axis });
+              nodes.set(name, { node, axis: new THREE.Vector3(...spec.axis) });
             } else {
               console.warn(
                 `joint "${name}": link node "${spec.childLink}" missing from GLB`,
@@ -807,12 +820,12 @@ export function PointCloudCanvas({
             }
           }
           jointNodesRef.current = nodes;
-        }
-        applyJoints();
-        // The model itself is new to the picture, whether or not a joint turned.
-        invalidate();
-      })
-      .catch((err) => console.error("robot model failed to load", err));
+          applyJoints();
+          // The model itself is new to the picture, whether or not a joint turned.
+          invalidate();
+        })
+        .catch((err) => console.error("robot model failed to load", err));
+    }
 
     // The canvas's client rect, cached: castFromPointer runs per pointermove.
     // Made here so it dies with this renderer.
@@ -882,7 +895,7 @@ export function PointCloudCanvas({
       // on (its body height under base_link), lifted off the drift just under
       // the ground floor as the route's band is.
       if (cur) {
-        localNav.setGround(snapToGroundFloor(cur.z - ROBOT_BASE_HEIGHT_M));
+        localNav.setGround(snapToGroundFloor(cur.z - baseHeightRef.current));
       }
 
       // An initial-pose drag draws the robot at the dragged pose, un-eased so
@@ -965,6 +978,7 @@ export function PointCloudCanvas({
     };
   }, [
     theme,
+    profile,
     applyJoints,
     applyMapStreamFrame,
     applySavedMapFrame,
@@ -1250,12 +1264,12 @@ export function PointCloudCanvas({
       // already drawn at; plus the lift while in hand.
       z:
         (initialPoseGround !== null
-          ? drawnGround(initialPoseGround) + ROBOT_BASE_HEIGHT_M
-          : (renderedPoseRef.current?.z ?? drawnGround(pickZ) + ROBOT_BASE_HEIGHT_M)) +
+          ? drawnGround(initialPoseGround) + baseHeight
+          : (renderedPoseRef.current?.z ?? drawnGround(pickZ) + baseHeight)) +
         (carrying ? CARRY_LIFT_M : 0),
       yaw: toRadians(draft.theta),
     };
-  }, [draft, carrying, pickMode, initialPoseGround, pickZ]);
+  }, [draft, carrying, pickMode, initialPoseGround, pickZ, baseHeight]);
 
   // ---- Stored map vertices (toggle) ------------------------------------
   // Held in a ref because hover recolours it per pointer move. Lists the

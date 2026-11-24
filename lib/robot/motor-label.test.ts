@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  JOINTS,
-  LEG_ROWS,
-  jointName,
-  motorLabel,
-  strayMotorLabels,
-} from "@/lib/robot/motor-label";
+import { motorLabel, strayMotorLabels } from "@/lib/robot/motor-label";
 
 /**
  * The rule: a motor's label names a place on the robot, never the driver's
@@ -56,13 +50,17 @@ describe("motorLabel", () => {
   });
 });
 
-describe("the plan-view grid", () => {
-  it("places the twelve G23 actuators under their URDF names", () => {
-    const names = LEG_ROWS.flat().flatMap((leg) =>
-      JOINTS.map((joint) => jointName(leg, joint.suffix)),
-    );
-    expect(names).toHaveLength(12);
-    expect(names).toContain("FL_HipX_joint");
-    expect(names).toContain("HR_Knee_joint");
+describe("a robot that spells its joints in lower case", () => {
+  it("names the M20's motors by the same words, its wheels included", () => {
+    expect(motorLabel("hl_knee_joint")).toBe("Hind left knee");
+    expect(motorLabel("fr_hipx_joint")).toBe("Front right hip roll");
+    expect(motorLabel("fl_wheel_joint")).toBe("Front left wheel");
+  });
+
+  it("still numbers a name with no leg in it", () => {
+    expect(strayMotorLabels(["xx_knee_joint", "fl_wheel_joint"])).toEqual([
+      "Other motor 1",
+      "Front left wheel",
+    ]);
   });
 });

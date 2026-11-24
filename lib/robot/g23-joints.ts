@@ -1,20 +1,8 @@
-import * as THREE from "three";
+import type { JointSpec } from "@/lib/robot/joint";
 
-// The 12 actuated G23 joints, transcribed from G23.urdf. The GLB baked by
-// scripts/urdf2glb.py keeps node names equal to URDF link names and its pose
-// is the zero configuration, so a joint is driven by looking the child link up
-// by name and applying setFromAxisAngle(axis, q) absolutely (no joint origin
-// has an rpy). Names match the driver's MotorState.name, which telemetry
-// carries. The Ankle joints are fixed.
-
-export interface JointSpec {
-  /** URDF child-link name == GLB node name to rotate. */
-  childLink: string;
-  /** Rotation axis in the child's parent frame (URDF <axis>). */
-  axis: THREE.Vector3;
-  /** URDF position limits [lower, upper] in radians, for clamping. */
-  limits: [number, number];
-}
+// The 12 actuated G23 joints, transcribed from G23.urdf (lib/robot/joint.ts
+// has how one is driven). Names match the driver's MotorState.name, which
+// telemetry carries. The Ankle joints are fixed.
 
 const LEGS = ["FL", "FR", "HL", "HR"] as const;
 
@@ -37,7 +25,7 @@ export const G23_JOINTS: ReadonlyMap<string, JointSpec> = new Map(
       `${leg}_${suffix}`,
       {
         childLink: `${leg}_${link}`,
-        axis: new THREE.Vector3(...axis),
+        axis,
         limits,
       },
     ]),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { LOOP_PERIOD_S, loopPose, routeAhead } from "@/lib/scene/walk-loop";
+import { LOOP_PERIOD_S, loopDistance, loopPose, routeAhead } from "@/lib/scene/walk-loop";
 
 describe("loopPose", () => {
   it("faces along the oval, the way it is walking", () => {
@@ -32,6 +32,32 @@ describe("routeAhead", () => {
       const heading = Math.atan2(points[4] - points[1], points[3] - points[0]);
       const off = Math.atan2(Math.sin(heading - robot.yaw), Math.cos(heading - robot.yaw));
       expect(Math.abs(off)).toBeLessThan(0.05);
+    }
+  });
+});
+
+describe("loopDistance", () => {
+  it("is the path walked, summed from the poses", () => {
+    // A wheel turned by this is turned by the ground it really covered.
+    for (const end of [3.7, LOOP_PERIOD_S * 0.5, LOOP_PERIOD_S * 1.3]) {
+      let walked = 0;
+      let prev = loopPose(0);
+      for (let i = 1; i <= 4000; i += 1) {
+        const here = loopPose((end * i) / 4000);
+        walked += Math.hypot(here.x - prev.x, here.y - prev.y);
+        prev = here;
+      }
+      expect(loopDistance(end)).toBeCloseTo(walked, 3);
+    }
+  });
+
+  it("only grows, across the lap boundary too", () => {
+    let prev = loopDistance(0);
+    expect(prev).toBe(0);
+    for (let t = 0.25; t <= LOOP_PERIOD_S * 2; t += 0.25) {
+      const here = loopDistance(t);
+      expect(here).toBeGreaterThan(prev);
+      prev = here;
     }
   });
 });

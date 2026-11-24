@@ -5,7 +5,8 @@ import * as THREE from "three";
 import { useTheme } from "next-themes";
 
 import { drawnGround } from "@/lib/map/floors";
-import { G23_JOINTS } from "@/lib/robot/g23-joints";
+import { useSignInRobotProfile } from "@/hooks/use-sign-in-robot-profile";
+import { walkAngles } from "@/lib/robot/walk";
 import { easeInOut } from "@/lib/scene/camera";
 import { DEMO_PROPS, createDemoSite } from "@/lib/scene/demo-site";
 import { createFrameBudget } from "@/lib/scene/frame-budget";
@@ -14,7 +15,7 @@ import { createPathRibbon, type PathRibbon } from "@/lib/scene/path-ribbon";
 import { loadRobotModel } from "@/lib/scene/robot-model";
 import { THEMES } from "@/lib/scene/theme";
 import { createViewport } from "@/lib/scene/viewport";
-import { chaseCamera, loopPose, routeAhead } from "@/lib/scene/walk-loop";
+import { chaseCamera, loopDistance, loopPose, routeAhead } from "@/lib/scene/walk-loop";
 
 /** A frame every ~33 ms: the walk reads as smooth, and a software GPU keeps up. */
 const FRAME_S = 1 / 30;
@@ -37,30 +38,6 @@ const ROUTE_EVERY_S = 0.25;
  * on it too, or the robot floats over its own route.
  */
 const GROUND_Z = drawnGround(0);
-
-// The legs' loop. An animation, not a gait: the thigh swings and the knee
-// lifts on a sine, diagonal pairs (FL + HR, FR + HL) half a cycle apart, at
-// the standing pose's angles on the GLB's axes (G23_JOINTS).
-const STEP_S = 0.9;
-const STAND_HIP_Y = -0.75;
-const STAND_KNEE = 1.5;
-const SWING_HIP_Y = 0.22;
-const LIFT_KNEE = 0.45;
-const LEG_OFFSET: Record<string, number> = { FL: 0, HR: 0, FR: Math.PI, HL: Math.PI };
-
-/** Each joint's angle `t` seconds into the walk; the standing pose when `t` is null. */
-function legAngles(t: number | null): Record<string, number> {
-  const angles: Record<string, number> = {};
-  for (const [leg, offset] of Object.entries(LEG_OFFSET)) {
-    const p = t === null ? 0 : (2 * Math.PI * t) / STEP_S + offset;
-    const lift = t === null ? 0 : Math.max(0, Math.sin(p));
-    const swing = t === null ? 0 : Math.cos(p);
-    angles[`${leg}_HipX_joint`] = 0;
-    angles[`${leg}_HipY_joint`] = STAND_HIP_Y - SWING_HIP_Y * swing;
-    angles[`${leg}_Knee_joint`] = STAND_KNEE + LIFT_KNEE * lift;
-  }
-  return angles;
-}
 
 /** Metre lines on the ground, drawn in the ground's own plane. */
 function groundGrid(color: number): THREE.LineSegments {
@@ -91,6 +68,7 @@ function webglAvailable(): boolean {
 
 /**
  * The sign-in screen's picture: the robot walking its route round a shelf
+ * (rolling it, for a wheel-legged robot: its profile's walk says which)
  * in a made-up corner of a warehouse, its lidar sweeping the set into
  * fading points coloured as the 3D map is, the camera coming down from over
  * the set and then following from outside its route. The same model and the same route band as the dashboard, so
@@ -108,6 +86,9 @@ function webglAvailable(): boolean {
 export function WalkingRobot({ className }: { className?: string }) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
+  // Which robot this is; undefined until the backend has said, and null for a
+  // kind this console has no picture of: the set is drawn without one.
+  const profile = useSignInRobotProfile();
 
   React.useEffect(() => {
     const container = containerRef.current;
@@ -188,7 +169,9 @@ export function WalkingRobot({ className }: { className?: string }) {
     const budget = createFrameBudget();
     const place = () => {
       const at = loopPose(t);
-      pose(legAngles(still ? null : t));
+      if (profile) {
+        pose(walkAngles(profile.walk, still ? null : { t, distanceM: loopDistance(t) }));
+      }
       robotGroup.position.set(at.x, at.y, GROUND_Z + standHeight);
       if (routeAge >= ROUTE_EVERY_S) drawRoute();
       robotGroup.rotation.z = at.yaw;
@@ -212,17 +195,19 @@ export function WalkingRobot({ className }: { className?: string }) {
 
     const draw = () => renderer.render(scene, camera);
 
-    loadRobotModel()
-      .then((shared) => {
-        if (cancelled) return;
+    // No robot for a model this console has no picture of: the set alone.
+    const robot = profile ? loadRobotModel(profile.modelUrl) : null;
+    robot
+      ?.then((shared) => {
+        if (cancelled || !profile) return;
         // A clone, sharing the geometry: its joints are this view's alone, and
         // the shared model stays whole for the dashboard after sign-in.
         model = shared.clone();
-        joints = [...G23_JOINTS].flatMap(([name, spec]) => {
+        joints = [...profile.joints].flatMap(([name, spec]) => {
           const node = model!.getObjectByName(spec.childLink);
-          return node ? [{ node, axis: spec.axis, name }] : [];
+          return node ? [{ node, axis: new THREE.Vector3(...spec.axis), name }] : [];
         });
-        pose(legAngles(null));
+        pose(walkAngles(profile.walk, null));
         model.updateMatrixWorld(true);
         standHeight = -new THREE.Box3().setFromObject(model).min.z;
         robotGroup.add(model);
@@ -276,7 +261,7 @@ export function WalkingRobot({ className }: { className?: string }) {
       lidar.dispose();
       view.dispose();
     };
-  }, [resolvedTheme]);
+  }, [resolvedTheme, profile]);
 
   return <div ref={containerRef} aria-hidden className={className} />;
 }

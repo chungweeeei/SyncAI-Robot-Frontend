@@ -68,7 +68,7 @@ not runtime environment, because Next inlines them at build time; the README's
 
 The source was ported in from `src/syncai_frontend` of the
 `SyncAI-Robot-Workspace` repo, which still holds the ROS side (including
-`scripts/urdf2glb.py`, which bakes `public/models/g23.glb`).
+`scripts/urdf2glb.py`, which bakes `public/models/g23.glb` and `m20.glb`).
 
 ## Tests
 
@@ -161,7 +161,11 @@ app/            route shells; the real content belongs to a component (see devia
 components/
   auth/         the sign-in screen (/login): on one half the robot
                 walking round a shelf in a made-up warehouse corner
-                (walking-robot: the real model, its legs a looped animation,
+                (walking-robot: the real model — this robot's, asked of
+                /health since there is no token yet,
+                use-sign-in-robot-profile — its legs a looped animation,
+                or for the wheel-legged M20 its legs held and its wheels
+                rolling by the ground covered (lib/robot/walk.ts),
                 its lidar sweeping the set into points that fade, coloured
                 as the 3D map is, the camera opening high over the set,
                 the route ahead in the dashboard's band, the camera
@@ -624,8 +628,10 @@ lib/
                 primary, the middle button taking over the pan, so the
                 right button never changes meaning), the ground patches'
                 3D marks, picking,
-                robot mesh, and the sign-in screen's set (walk-loop.ts: the
-                oval the robot walks, the stretch of it ahead and the
+                robot mesh (robot-model.ts: one cached load per model's
+                GLB), and the sign-in screen's set (walk-loop.ts: the
+                oval the robot walks, the ground covered round it
+                (loopDistance, what the M20's wheels turn by), the stretch of it ahead and the
                 camera's place outside it;
                 demo-site.ts: the shelves, crates and columns round it, clear
                 of the oval; lidar-sweep.ts: the head's turning fan of rays,
@@ -689,7 +695,21 @@ lib/
                 the one it sends)
   settings/     the settings form's rules: a typed draft against
                 the robot's limits, and which drafts a Save sends
-  robot/        G23 joint table (URDF link names ↔ GLB node names), how the
+  robot/        what differs from one robot model to another, in one place
+                (profile.ts: the GLB, the joint table, the rest pose's
+                height, the motor grid's legs and rows, the sign-in
+                screen's standing pose — picked by the model the robot
+                reports, `robot_model` on its state and on /health; a
+                backend from before the field is a G23's, and a model this
+                console does not know draws no robot and lists its motors
+                unplaced, never a guess), the joint tables it picks from
+                (g23-joints.ts, m20-joints.ts: URDF link names ↔ GLB node
+                names, axes as plain numbers so the masthead can read a
+                profile without three.js; the M20's limits are the
+                vendor's, since its URDF's hip pitch and knee limits are an
+                export's with the sign flipped), the sign-in screen's leg
+                loop (walk.ts: a knee lifts by folding further the way it
+                already bends, which is what the M20's hind pair needs), how the
                 dashboard names a motor (the leg grid in words — Front left,
                 Hip roll / Hip pitch / Knee — never the HX / HY / KN codes), and
                 the readout thresholds (levels.ts: Wi-Fi bars, battery, joint heat,
@@ -923,6 +943,7 @@ touch one, prefer moving it toward the rule.
   `RobotStateProvider` (1 Hz) and `ActiveTaskProvider` (2 s). Pages read those
   providers; they do not start their own `robotState` poll. A reader that
   wants one field takes it through a selector (`useRobotId`,
+  `useRobotProfile`,
   `useRobotStateSelect`, `useActiveTasksSelect`: a second observer of the
   same entry, `enabled: false` with `select`, so no request of its own),
   because the context's value is new on every read and a page that took the
