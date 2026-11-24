@@ -997,6 +997,13 @@ export function PointCloudCanvas({
       dstPos[j + 2] = src[j + 2];
       writeHeightColor(src[j + 2], dstCol, j);
     }
+    // Upload only the frame's points. Without a range, needsUpdate sends the
+    // whole preallocated buffer (MAX_LIVE_POINTS, 2.4 MB each attribute) to
+    // the GPU for a frame of a few thousand points: ~48 MB/s at 10 Hz, which
+    // cost a slower machine its scan frames. three clears the range after it
+    // uploads, so each frame sets its own.
+    posAttr.addUpdateRange(0, n * 3);
+    colAttr.addUpdateRange(0, n * 3);
     posAttr.needsUpdate = true;
     colAttr.needsUpdate = true;
     ctx.liveGeom.setDrawRange(0, n);
