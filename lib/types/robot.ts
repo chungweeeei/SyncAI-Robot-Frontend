@@ -14,11 +14,18 @@ export type RobotMode = "MAINTENANCE" | "MANUAL" | "AUTO";
  * `robot_state` topic has the integers.
  */
 /**
- * syncai_robot_state's one-word rollup, most-severe-first: UNINITIALIZED
- * (not localized) > CHARGING > WARNING (battery low) > IDLE. One value at a
- * time, so a robot on its charger before it is localized reads UNINITIALIZED.
- * An open string, like the low-level mode: the backend answers UNKNOWN for a
- * code it cannot name.
+ * The robot's state machine as one word, most-severe-first: ERROR (a job
+ * failed; latched until an operator releases it) > UNINITIALIZED (no operator
+ * has confirmed the robot's position) > RUNNING > CHARGING > WARNING (battery
+ * low) > IDLE. One value at a time, so a word that is neither ERROR nor
+ * UNINITIALIZED also says the position is confirmed, and a robot on its
+ * charger before that reads UNINITIALIZED. An open string, like the
+ * low-level mode: the backend answers UNKNOWN for a code it cannot name.
+ * What the console makes of each word is lib/robot/readiness.ts.
+ *
+ * A backend from before the state machine sends UNINITIALIZED (then: not
+ * localized), CHARGING, WARNING and IDLE only; `localization_converged` is
+ * how the two are told apart.
  */
 export type RobotStatus = string;
 
@@ -138,6 +145,20 @@ export interface RobotState {
    * whole frame: the two repos are deployed independently.
    */
   state?: RobotStatus;
+  /**
+   * Whether the robot's last position guess has settled on the map, which is
+   * what lets an operator confirm it — never that the position is right; that
+   * judgement is the operator's. Absent from a backend older than the state
+   * machine, and its presence is how the console knows the robot gates jobs
+   * on `state` at all (`gateSupported` in lib/robot/readiness.ts).
+   */
+  localization_converged?: boolean;
+  /**
+   * One sentence for the operator on why `state` is what it is: what the
+   * robot waits for while UNINITIALIZED, which job failed while ERROR. Shown
+   * verbatim; "" when there is nothing to add. Absent from an older backend.
+   */
+  state_message?: string;
   low_level_mode: RobotLowLevelMode;
   /**
    * Whether localization_status is real. False before convergence and for the
@@ -169,6 +190,11 @@ export const RobotStateSchema: z.ZodType<RobotState> = z.object({
   map: z.string(),
   mode: z.enum(["MAINTENANCE", "MANUAL", "AUTO"]),
   state: z.string().optional(),
+  // Optional, not defaulted: their absence is the reading "this backend has
+  // no state machine", and a default would turn every old frame into a robot
+  // that has not converged.
+  localization_converged: z.boolean().optional(),
+  state_message: z.string().optional(),
   // Open strings, matching the interface.
   low_level_mode: z.object({
     policy: z.string(),

@@ -12,6 +12,7 @@ import { useBrowserTimeZone } from "@/hooks/use-browser-time-zone";
 import { useConsoleActiveTasks } from "@/hooks/use-console-active-tasks";
 import { useConsoleEstop } from "@/hooks/use-console-estop";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
+import { useStartLock } from "@/hooks/use-start-lock";
 import { useTaskContinue } from "@/hooks/use-task-continue";
 import { useTaskRun } from "@/hooks/use-task-run";
 import type { TaskHistoryEntry, TaskStepState } from "@/lib/api/task";
@@ -25,6 +26,7 @@ import {
   runSeconds,
   stepSeconds,
 } from "@/lib/task/history";
+import { runNeedsLocalization } from "@/lib/task/run";
 import { formatLocalRunTime, formatUtcRunTime } from "@/lib/task/schedule";
 import { wireGroupPlaces } from "@/lib/task/step";
 import { cn } from "@/lib/utils";
@@ -73,7 +75,9 @@ function useFinishedReadout(closedAt: string | null): {
  * Run a failed job again from the step it failed at, as a new job the
  * masthead then follows. The steps before it are not run again; the new job
  * lists them as SKIPPED. Greyed, with the reason on hover, while anything
- * would make the robot refuse it; the backend's own sentence otherwise.
+ * would make the robot refuse it — and in a line when it is the robot's own
+ * hold (a latched error, an unconfirmed position), which only an operator
+ * lifts; the backend's own sentence otherwise.
  */
 function RetryFromFailure({
   entry,
@@ -87,6 +91,12 @@ function RetryFromFailure({
   const { engaged: stopped } = useConsoleEstop();
   const { tasks, status } = useConsoleActiveTasks();
   const send = useTaskContinue();
+  // The robot's own hold, judged by the steps the retry would run: the ones
+  // before the failed step are skipped, so a job whose driving is behind it
+  // still retries on an unconfirmed position.
+  const held = useStartLock(
+    start ? runNeedsLocalization(steps.slice(start.ordinal - 1)) : false,
+  ).reason;
 
   if (!start) return null;
 
@@ -94,6 +104,7 @@ function RetryFromFailure({
   const blocked = continuationBlocked({
     robotId,
     stopped,
+    held,
     listReadable: status === "ok",
     running: tasks.length > 0,
   });
@@ -123,6 +134,14 @@ function RetryFromFailure({
         <RotateCcwIcon data-icon="inline-start" aria-hidden />
         Retry from step {start.ordinal}
       </Button>
+      {/* The robot's hold is said in a line: it outlasts a hover, and a
+        * greyed button swallows its tooltip. Not while the stop is engaged,
+        * which is what `blocked` names then, on the masthead for all to see. */}
+      {held && blocked === held && (
+        <p role="status" className="text-[11px] leading-snug text-signal-caution">
+          {held}
+        </p>
+      )}
       {send.error && (
         <ErrorLine>
           {send.error.message}

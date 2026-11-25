@@ -190,8 +190,31 @@ components/
                 chosen in CSS off the `.dark` class so it is right before
                 mount, and the bar has no Sign out — Sign out is the
                 rail's alone, by request, so a phone has none), status strip (its
-                robot id is the link home, the mode chip beside it — a dot
-                in the mode's hue below sm), the three layout-level
+                left group is a context line of muted plain text, no frame or
+                fill — `robot01 · Navigation · dp2f`, the robot id the link
+                home, Mapping and Maintenance keeping their hue in the word,
+                the map from xl, and below md the id alone, the mode left to
+                a screen reader — then the robot's state, the one coloured
+                thing in the group (robot-state-chip.tsx; readiness.ts's
+                robotStatusView): Unconfirmed and Error a framed, filled chip
+                with a dot (`loud`), Idle / Running / Charging / Low battery
+                a quiet dot and word, a dot alone below md (a halo round a
+                loud one, drawn as a ring so it takes none of the first
+                line). Only a state with something to do is a button with ▾
+                (stateAction: Unconfirmed — Confirm position; Idle — Mark
+                unconfirmed; Error — Release and confirm position, the only
+                way out of an error, needing a settled guess; Running only
+                once the robot has reported it over an empty job list for
+                5 s — Clear the stuck job); the rest are text, the robot's
+                `state_message` in the hover title. Its popover has no
+                header: the sentence verbatim and that one button, with the
+                lock's reason under it; a press outside or Escape closes it,
+                and it closes itself when the state stops offering anything.
+                Nothing is drawn for a backend from before the state machine,
+                and while the robot-state poll fails the state is a dash in
+                no hue, not a button, the backend's sentence in its title —
+                the link chip beside the stop is what says the link is down,
+                with that sentence as its hover text too when the robot is what went quiet), the three layout-level
                 providers (their contexts live in hooks/use-console-*.ts — see
                 Layering), the emergency stop at the head of the strip's
                 presses — the driver's safety lock (one press engages, a
@@ -284,7 +307,15 @@ components/
                 when one warms or faults) and the driving controls; Set goal and a stop's
                 Go are held while any job runs, another console's or a
                 schedule's included, since the robot takes one at a time
-                (lib/map/run-lock.ts's goalLock, use-goal-lock), and at a
+                (lib/map/run-lock.ts's goalLock, use-goal-lock), and with
+                a failed stop's Retry by the robot's own state
+                (use-start-lock: an error held, a position unconfirmed) —
+                said in a line in the left column, or by
+                confirm-position-control.tsx, the panel there while the
+                position is unconfirmed in Navigation mode, beside the
+                live scan it is judged against; Set initial pose is held
+                while any job runs, as Auto localize is, said in a line in
+                that column too; and at a
                 finger the viewport strip prints Goal / Pose / Locate
                 under the pose tools (ToolButton's shortLabel), its zoom
                 left to the pinch
@@ -398,7 +429,10 @@ components/
                 Delete (a trash button, confirmed) beside them; Schedule opens a
                 dialog; schedules no saved task owns listed apart. A run is
                 not followed here — the masthead's bar is where it is —
-                only a refused Run is said. And the /tasks/editor page, built for commissioning on a
+                only a refused Run is said, and above the list why Run is
+                greyed when the robot's state holds it (every task on an
+                error; on an unconfirmed position the ones with a stop,
+                lib/task/step.ts's needsLocalization). And the /tasks/editor page, built for commissioning on a
                 laptop: the name, Save (Save as copy and Delete in its
                 menu; running and scheduling stay on /tasks), and two
                 columns from lg — the
@@ -663,7 +697,17 @@ lib/
                 at IDLE or LOCOMOTION drops a commanded MPC back to RL), and
                 when the emergency stop reads as engaged (estop.ts: the
                 robot's safety lock, or this tab's press until the lock
-                confirms it, and the release hold)
+                confirms it, and the release hold), and what the console
+                makes of the robot's state machine (readiness.ts: each
+                state's word and hue, an unknown word shown as itself;
+                gateSupported — `localization_converged` present, else a
+                backend from before the state machine, on which nothing is
+                gated or drawn; startLock, which jobs a state holds back,
+                failing open; confirmLock / stateChangeLock, when the state
+                may be changed by hand, failing closed; stateAction, the
+                one control a state offers, and so whether it opens; initialPoseLock; stateReading —
+                the state is a reading only while the poll renews the
+                frame)
   teleop/       thumbstick maths: clamp, deadzone, key bindings (and the
                 drive panel's posture keys, R / F: posture-keys.ts), the linear
                 speed limit, the drive view's one-axis lock (lockToAxis) and
@@ -786,6 +830,10 @@ touch one, prefer moving it toward the rule.
   `use-task-hold`, `use-task-continue`, `use-charger-detect` (which answers
   with a measurement — the charger's pose, for the create dialog's draft —
   and refuses one measured on another map than the one being edited).
+  `use-robot-state-control`'s `useSetRobotState` (confirm the position,
+  withdraw it, release an error) is not one of them: its answer is a
+  receipt, but every lock in the console is read off the robot's frame, so
+  it invalidates `robotState` rather than wait a poll for it.
   They invalidate nothing — there is no cached resource a motion key or a pose
   estimate makes stale (the one exception is `use-wifi-connect`, whose join by
   SSID or rejoin of a saved network changes `wifiConnections`, invalidated on
@@ -963,6 +1011,43 @@ touch one, prefer moving it toward the rule.
   keys on the job's `map_name` and never on which map is active, and it
   fails closed while the poll is loading or failing. Only writes are held;
   the editor keeps its staged edits until the job ends.
+- **The robot decides whether a job may start; the console only greys the
+  press first.** `RobotState.state` is the robot's own state machine (ERROR >
+  UNINITIALIZED > RUNNING > CHARGING > WARNING > IDLE, one word): it boots
+  UNINITIALIZED — no operator has confirmed its position — and returns there
+  after a map switch or any new position guess; a failed job latches ERROR.
+  The robot refuses a job at its own door (a schedule's too), and the
+  backend answers 409 `error_latched` / `not_initialized` before that.
+  `startLock` in `lib/robot/readiness.ts` mirrors that refusal for every
+  start — Run, Retry, Set goal, Go, Charge — through `useStartLock`, with a
+  reason said in a line (a greyed button swallows its tooltip), and **fails
+  open**: an unknown word, or a frame without `localization_converged` (a
+  backend from before the state machine, whose UNINITIALIZED meant only "no
+  pose yet"), locks nothing and draws no chip. Changing the state by hand
+  (`POST /api/v1/robot/state`) **fails closed** on the job list, as Auto
+  localize does. `localization_converged` says Confirm may be pressed,
+  never that the position is right — that is what the operator confirms.
+- **A frame the poll has not renewed is a memory, and the robot's state is
+  the one field never shown from memory.** The backend answers
+  `GET /robot/state` with 404 `robot_state_stale` once the robot has not
+  reported for a few seconds (`RobotStateSilentError`); TanStack keeps the
+  last frame through that, and through a dropped link or a mis-shaped frame,
+  so the context and every selector go on handing it out. The robot id, the
+  map, the mode and the pose are still drawn from it, beside the strip's
+  "Last seen" chip. The state chip is not (`stateReading`: `live` only while
+  the poll's status is "ok", else `silent`): it goes to a dash, its panel and
+  the dashboard's Confirm offer nothing, since an "Idle" over a robot nobody
+  hears from is the one wrong reading an operator would act on. The start
+  locks are another matter and keep judging by the last frame, as Run does
+  by its robot id and Auto localize by its mode: they only grey a press the
+  robot itself answers, and locking every start on the console's own
+  dropped poll would take the controls away for a fault that may be the
+  console's — but their reason, while silent, says the robot is not
+  reporting (`START_LOCK_SILENT`) rather than repeat the last frame's word.
+  The dashboard's Confirm position panel, if it was up when the robot went
+  quiet, stays (not to vanish under a finger) with the dash, the backend's
+  sentence and Confirm held (`confirmPanel`'s `silent`). Below lg the pose
+  card is put away while that panel is up, since it covered the button.
 - **Wire types** are split between `lib/types/` and the fetcher modules with no
   rule yet. Prefer `lib/types/` for anything more than one router shares.
 
@@ -1123,6 +1208,8 @@ it is run in, so it does not belong to any one of them.
   Temporal or the Tegra). Diagnostics of that kind were deliberately removed
   rather than demoted — do not reintroduce them, and do not put one in an
   error string because it would help you debug. The house words are:
+  **Confirm position** / **Unconfirmed** for the robot's UNINITIALIZED state
+  and the press that leaves it (never "initialized" or "localized"),
   **scan** (not point cloud /
   "the cloud"), **3D map** (not octomap / octree / voxels — the occupancy
   tree the robot builds beside the scan), **ground patch** for a floor cell

@@ -11,6 +11,7 @@ import { useCancelTask } from "@/hooks/use-cancel-task";
 import { useConsoleActiveTasks } from "@/hooks/use-console-active-tasks";
 import { useConsoleEstop } from "@/hooks/use-console-estop";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
+import { useStartLock } from "@/hooks/use-start-lock";
 import { useTaskContinue } from "@/hooks/use-task-continue";
 import { useTaskHold } from "@/hooks/use-task-hold";
 import {
@@ -24,6 +25,7 @@ import {
   holdOffered,
   runClosed,
   runElapsed,
+  runNeedsLocalization,
   runState,
   stepProgress,
   type RunState,
@@ -288,11 +290,21 @@ function FailedRunControls({
   const send = useTaskContinue();
 
   const start = continuationStart(run.steps);
+  // The robot's own hold, for the steps the retry would run. A failed job
+  // latches the robot's error, so on a robot that reports it this greys
+  // Retry from the moment the job fails until an operator releases it — on
+  // the state chip at the head of this strip, which has turned to Error and
+  // is where the hover text points. No line is hung under the strip for it:
+  // it would sit over every screen for as long as the error does.
+  const held = useStartLock(
+    start ? runNeedsLocalization(run.steps.slice(start.ordinal - 1)) : false,
+  ).reason;
   const robotId = robot?.robot_id ?? null;
   const blocked =
     continuationBlocked({
       robotId,
       stopped,
+      held,
       listReadable: status === "ok",
       // The failed job itself may still be listed while the list lags.
       running: tasks.some((task) => task.id !== run.task.id),

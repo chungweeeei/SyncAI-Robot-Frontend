@@ -41,6 +41,17 @@ describe("stepFailureText", () => {
     expect(stepFailureText("Goal is blocked.")).toBe("Goal is blocked.");
   });
 
+  it("shows the robot's refusal of a job whole: it is already an operator's sentence", () => {
+    // A run the robot would not start fails at its first step with the
+    // robot's own reason, which no wrapper precedes.
+    for (const sentence of [
+      "The robot's position has not been confirmed.",
+      "A task failed and the robot is holding every task until an operator releases it.",
+    ]) {
+      expect(stepFailureText(sentence)).toBe(sentence);
+    }
+  });
+
   it("never names a step by its id", () => {
     expect(stepFailureText("Canceled: step 2-move failed")).toBe(
       "Canceled because a step beside it failed.",

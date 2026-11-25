@@ -4,6 +4,7 @@ import {
   MAP_NAME,
   activeTask,
   failOnConsoleErrors,
+  gatedRobotState,
   mapSummary,
   mockBackend,
   octomapBt,
@@ -225,18 +226,12 @@ test.describe("the console on a phone", () => {
       expect(box?.height, `${name} is shorter than a finger`).toBeGreaterThanOrEqual(TARGET);
     }
 
-    // The mode is a dot here, its word kept for a screen reader: printed, it
-    // would take the robot id's share of the first line.
+    // The context line is the robot id alone here: the mode is kept for a
+    // screen reader, out of sight, since printed it would take the id's
+    // share of the first line.
     const mode = strip.getByTitle("Navigation");
     await expect(mode).toHaveText("Navigation");
-    const modeBox = await mode.boundingBox();
-    await expectOnScreen(page, "the mode chip", modeBox);
-    expect(modeBox?.width, "the mode chip printed its word").toBeLessThan(TARGET);
-    const stopBox = await strip.getByRole("button", { name: "Emergency stop" }).boundingBox();
-    expect(
-      Math.abs((modeBox?.y ?? 0) + (modeBox?.height ?? 0) / 2 - ((stopBox?.y ?? 0) + (stopBox?.height ?? 0) / 2)),
-      "the mode chip left the first line",
-    ).toBeLessThan(8);
+    await expect(mode).not.toBeInViewport();
     const id = strip.getByRole("link", { name: "robot01" });
     expect(
       await id.evaluate((el) => el.scrollWidth <= el.clientWidth),
@@ -247,6 +242,120 @@ test.describe("the console on a phone", () => {
     const resume = strip.getByRole("button", { name: "Resume the job" });
     await expect(resume).toBeVisible();
     await expectOnScreen(page, "Resume the job", await resume.boundingBox());
+  });
+
+  for (const [state, word] of [
+    ["UNINITIALIZED", "Unconfirmed"],
+    ["ERROR", "Error"],
+  ] as const) {
+    test(`keeps the robot's state on the first line beside the id, its popover on screen: ${word}`, async ({
+      page,
+    }) => {
+      // The masthead's first line is the robot id and the state's dot, on
+      // the line where only the id may give way.
+      const writes = await mockBackend(page, {
+        state: gatedRobotState({ state, state_message: `Said for ${word}.` }),
+      });
+      await page.goto("/settings");
+      const strip = page.getByRole("banner");
+
+      const mark = strip.getByRole("button", { name: `Robot state: ${word}` });
+      // A dot here, its word kept for a screen reader.
+      await expect(mark).toHaveText(word);
+      const markBox = await mark.boundingBox();
+      await expectOnScreen(page, "the state", markBox);
+      expect(markBox?.width, "the state printed its word").toBeLessThan(TARGET);
+      const stopBox = await strip.getByRole("button", { name: "Emergency stop" }).boundingBox();
+      expect(
+        Math.abs((markBox?.y ?? 0) + (markBox?.height ?? 0) / 2 - ((stopBox?.y ?? 0) + (stopBox?.height ?? 0) / 2)),
+        "the state left the first line",
+      ).toBeLessThan(8);
+      // It stands clear of the stop: a press meant for one never lands on the other.
+      expect((markBox?.x ?? 0) + (markBox?.width ?? 0)).toBeLessThanOrEqual(stopBox?.x ?? 0);
+
+      // The rest of the line is as it was: the id whole, the buttons under a finger.
+      const id = strip.getByRole("link", { name: "robot01" });
+      expect(
+        await id.evaluate((el) => el.scrollWidth <= el.clientWidth),
+        "the robot id is cut off",
+      ).toBe(true);
+      for (const name of ["Emergency stop", "Sensor alerts", "Manual drive panel", "Camera window"]) {
+        const box = await strip.getByRole("button", { name }).boundingBox();
+        await expectOnScreen(page, name, box);
+        expect(box?.width, `${name} is narrower than a finger`).toBeGreaterThanOrEqual(TARGET);
+      }
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        "the page scrolls sideways",
+      ).toBe(true);
+
+      // A finger opens it, and the popover it drops is whole and pressable:
+      // the robot's sentence and one button.
+      await mark.tap();
+      const panel = strip.getByRole("dialog", { name: "Robot state" });
+      await expect(panel).toBeVisible();
+      await expect(panel).toContainText(`Said for ${word}.`);
+      await expectOnScreen(page, "the state popover", await panel.boundingBox());
+      await expect(panel.getByRole("button")).toHaveCount(1);
+      const confirm = panel.getByRole("button", {
+        name: state === "ERROR" ? "Release and confirm position" : "Confirm position",
+      });
+      const confirmBox = await confirm.boundingBox();
+      await expectOnScreen(page, "its button", confirmBox);
+      expect(confirmBox?.height).toBeGreaterThanOrEqual(TARGET);
+      await confirm.tap();
+      await expect(strip.getByRole("button", { name: "Robot state: Idle" })).toBeVisible();
+      expect(writes.filter((w) => w.path === "/api/v1/robot/state").map((w) => w.body)).toEqual([
+        { state: "IDLE" },
+      ]);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+    });
+  }
+
+  test("leaves the dashboard's Confirm position whole under a finger", async ({ page }) => {
+    // The pose card shares the viewport's left foot with the panels, and
+    // once covered half of this button — the press that lets a fresh robot
+    // take jobs.
+    const writes = await mockBackend(page, { state: gatedRobotState() });
+    await page.goto("/");
+    const confirm = page
+      .getByRole("region", { name: "Robot position" })
+      .getByRole("button", { name: "Confirm position" });
+    await expect(confirm).toBeEnabled();
+    const box = await confirm.boundingBox();
+    await expectOnScreen(page, "Confirm position", box);
+    // Nothing is drawn over any part of it: the topmost element at each
+    // corner and the centre is the button or inside it.
+    const inset = 2;
+    const points = [
+      [box!.x + box!.width / 2, box!.y + box!.height / 2],
+      [box!.x + inset, box!.y + inset],
+      [box!.x + box!.width - inset, box!.y + inset],
+      [box!.x + inset, box!.y + box!.height - inset],
+      [box!.x + box!.width - inset, box!.y + box!.height - inset],
+    ];
+    for (const [x, y] of points) {
+      expect(
+        await confirm.evaluate(
+          (button, [px, py]) => {
+            const top = document.elementFromPoint(px, py);
+            return top !== null && button.contains(top);
+          },
+          [x, y],
+        ),
+        `something covers Confirm position at ${Math.round(x)}, ${Math.round(y)}`,
+      ).toBe(true);
+    }
+    // And a tap there is the press.
+    await confirm.tap();
+    await expect
+      .poll(() => writes.filter((w) => w.path === "/api/v1/robot/state").map((w) => w.body))
+      .toEqual([{ state: "IDLE" }]);
+    // Once confirmed the panel goes and the pose card comes back.
+    await expect(page.getByRole("region", { name: "Robot position" })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Pose" })).toBeVisible();
   });
 
   test("drops the drive panel and the camera window inside the viewport", async ({

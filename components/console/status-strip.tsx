@@ -10,6 +10,7 @@ import { DriveDisclosure } from "@/components/console/drive-disclosure";
 import { EstopButton } from "@/components/console/estop-button";
 import { EstopLine } from "@/components/console/estop-line";
 import { FaultBoundary } from "@/components/console/fault-boundary";
+import { RobotStateChip } from "@/components/console/robot-state-chip";
 import { SensorDisclosure } from "@/components/console/sensor-disclosure";
 import { useConsoleEstop } from "@/hooks/use-console-estop";
 import { useConsoleRobotState } from "@/hooks/use-console-robot-state";
@@ -19,6 +20,7 @@ import {
   Chip,
   SegmentMeter,
   StripDivider,
+  TONE_TEXT,
   type Tone,
 } from "@/components/console/instrument";
 import { cn } from "@/lib/utils";
@@ -38,8 +40,8 @@ const MODE_TONE: Record<RobotMode, Tone> = {
 };
 
 /**
- * The console's masthead, on every screen: robot, mode, map, the running job,
- * and whether the link is alive. Before the first frame it holds its shape
+ * The console's masthead, on every screen: robot, mode, the robot's state,
+ * map, the running job, and whether the link is alive. Before the first frame it holds its shape
  * with dashes. No page title: the rail already marks where you are.
  *
  * The bottom edge is the heartbeat: a sweep per 1 Hz robot-state frame, amber
@@ -48,7 +50,7 @@ const MODE_TONE: Record<RobotMode, Tone> = {
  * a static edge and the link chip says it in text.
  */
 export function StatusStrip() {
-  const { state, status, updatedAt } = useConsoleRobotState();
+  const { state, status, silence, updatedAt } = useConsoleRobotState();
   const { engaged: stopped } = useConsoleEstop();
   const { map: activeMap } = useActiveMap();
   const { refresh: refreshMaps } = useMaps();
@@ -68,7 +70,10 @@ export function StatusStrip() {
 
   /**
    * Null while healthy, where the heartbeat already says it. The chip names
-   * the faults, which under reduced motion only text can do.
+   * the faults, which under reduced motion only text can do. It is also what
+   * says the robot's state beside the mode is no longer a reading
+   * (robot-state-chip.tsx goes to a dash under it), and its hover text is the
+   * backend's sentence when the robot is what went quiet (`silence`).
    */
   const link: { label: string; tone: Tone } | null =
     status === "ok"
@@ -94,28 +99,38 @@ export function StatusStrip() {
           * third line. From `sm` the row no longer wraps and this cluster
           * holds its width (the id capped): the job bar is what gives way,
           * or a tablet's strip squeezed the id to nothing. */}
-        <div className="flex min-w-0 shrink items-center gap-1.5 max-sm:grow max-sm:basis-0 sm:shrink-0 sm:gap-3.5">
-          {/* The robot's name is the link home, like a site's logo. */}
-          <Link
-            href="/"
-            className="readout truncate rounded-sm text-[15px] font-medium hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:max-w-48"
-          >
-            {state?.robot_id ?? "—"}
-          </Link>
-          {/* Mapping vs Navigation changes what every screen means, so it is
-            * shown here; it is changed on the mapping screen. */}
-          {state && <ModeChip mode={state.mode} />}
-        </div>
-
-        {/* From `xl`: narrower, the map's name took the job bar's room and
-          * was itself cut to a letter. */}
-        <StripDivider className="hidden xl:block" />
-
-        <div className="hidden max-w-40 min-w-0 shrink-0 items-baseline gap-2 xl:flex">
-          <span className="instrument-label text-muted-foreground">Map</span>
-          <span className="readout truncate text-[13px]">
-            {activeMap?.name ?? "—"}
-          </span>
+        <div className="flex min-w-0 shrink items-center gap-1.5 max-sm:grow max-sm:basis-0 sm:shrink-0 sm:gap-3">
+          {/* The context, as one line of muted text: which robot, in which
+            * mode, on which map. It rarely changes, so it carries no frame
+            * or fill — the robot's state after it is the one coloured thing
+            * in this group, being the one an operator acts on. Below `md`
+            * only the id (the mode stays in the accessibility tree); the map
+            * from `xl`, where the job bar no longer needs its room. */}
+          <div className="flex min-w-0 items-baseline gap-1.5 text-[13px] text-muted-foreground">
+            {/* The robot's name is the link home, like a site's logo. */}
+            <Link
+              href="/"
+              className="readout truncate rounded-sm text-[15px] font-medium text-foreground/85 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:max-w-48"
+            >
+              {state?.robot_id ?? "—"}
+            </Link>
+            {/* Mapping vs Navigation changes what every screen means, so it
+              * is said here; it is changed on the mapping screen. */}
+            {state && <ModeText mode={state.mode} />}
+            <span className="hidden min-w-0 items-baseline gap-1.5 xl:flex">
+              <Dot />
+              <span className="sr-only">Map</span>
+              <span title="Map" className="readout max-w-40 truncate">
+                {activeMap?.name ?? "—"}
+              </span>
+            </span>
+          </div>
+          {/* In a boundary of its own, like the panels on the right: it
+            * holds a write, and nothing that can fail shares a fate with
+            * the stop. */}
+          <FaultBoundary title="Robot state unavailable" compact>
+            <RobotStateChip />
+          </FaultBoundary>
         </div>
 
         {/* The running job, read from the backend so it is true for a run
@@ -159,6 +174,7 @@ export function StatusStrip() {
               // Framed on hover only, like the buttons beside it.
               <Chip
                 tone={link.tone}
+                title={silence ?? undefined}
                 className="border-transparent hover:border-current/40"
               >
                 {link.label}
@@ -244,22 +260,33 @@ export function StatusStrip() {
   );
 }
 
-/**
- * The robot's mode; a dot in the mode's hue below `md`, where the word would
- * truncate the robot id on a phone and squeeze the job bar shut on a
- * landscape one. The word stays in the accessible name and the title.
- * One element styled two ways, so it is in the accessibility tree once.
- */
-function ModeChip({ mode }: { mode: RobotMode }) {
-  const label = MODE_LABEL[mode];
+/** The context line's separator: heard as nothing. */
+function Dot() {
   return (
-    <Chip
-      tone={MODE_TONE[mode]}
-      title={label}
-      className="max-md:border-0 max-md:bg-transparent max-md:px-0"
-    >
-      <span aria-hidden className="size-2.5 rounded-full bg-current md:hidden" />
-      <span className="max-md:sr-only">{label}</span>
-    </Chip>
+    <span aria-hidden className="text-muted-foreground/60">
+      ·
+    </span>
+  );
+}
+
+/**
+ * The robot's mode, in the context line's muted text. Navigation is the
+ * usual mode and says nothing more; Mapping and Maintenance keep the hue
+ * their chip had, in the word alone, since a console in either is not the
+ * one an operator expects. Below `md` it is out of sight but still read by a
+ * screen reader: a phone's first line is the robot id and its state.
+ */
+function ModeText({ mode }: { mode: RobotMode }) {
+  const tone = MODE_TONE[mode];
+  return (
+    <span className="flex items-baseline gap-1.5 max-md:sr-only">
+      <Dot />
+      <span
+        title={MODE_LABEL[mode]}
+        className={cn("whitespace-nowrap", tone !== "live" && TONE_TEXT[tone])}
+      >
+        {MODE_LABEL[mode]}
+      </span>
+    </span>
   );
 }

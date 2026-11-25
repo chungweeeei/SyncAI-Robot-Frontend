@@ -9,6 +9,11 @@
  * robot's sentences this console knows are said in the house words, and
  * anything else loses only the wrapper — an unknown sentence shown whole beats
  * one guessed at. The record (the history export) keeps the raw text.
+ *
+ * A run the robot would not start (its error latched, its position not
+ * confirmed) fails at its first step with the robot's own reason, which has
+ * no wrapper and is written for an operator: it is such an unknown sentence,
+ * shown whole.
  */
 
 /** `_move_failure`'s prefix in the backend, for each nav step's label. */

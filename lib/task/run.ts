@@ -15,7 +15,7 @@ import {
 import { formatDuration } from "@/lib/recording/format";
 import { stepFailureText } from "@/lib/task/failure";
 import { isHistoryKind, kindLabel, runSeconds } from "@/lib/task/history";
-import { STEP_TYPES } from "@/lib/task/step";
+import { STEP_TYPES, isStopStep } from "@/lib/task/step";
 
 /**
  * The step the robot is on: the first one held or in progress.
@@ -35,6 +35,29 @@ export function currentStep(
 const LABEL_BY_TYPE_WORD = new Map(
   STEP_TYPES.map((spec) => [spec.value.toLowerCase(), spec.label] as const),
 );
+
+/** The step words (`stepIdFor`'s second half) of the steps that drive on the map. */
+const DRIVING_TYPE_WORDS: ReadonlySet<string> = new Set(
+  STEP_TYPES.map((spec) => spec.value)
+    .filter((type) => isStopStep({ type }))
+    .map((type) => type.toLowerCase()),
+);
+
+/**
+ * `needsLocalization` for a run read back, whose steps carry only their ids:
+ * `${ordinal}-${type}` from the composer, or `goal` for the dashboard's
+ * one-step Move or Charge. For a Retry, pass the steps it would run.
+ *
+ * An id from another client says nothing, and is read as not driving: the
+ * lock this feeds fails open, and the robot's own refusal answers the press.
+ */
+export function runNeedsLocalization(steps: readonly { id: string }[]): boolean {
+  return steps.some(({ id }) => {
+    if (id === "goal") return true;
+    const composed = /^\d+-([a-z]+)$/.exec(id);
+    return composed !== null && DRIVING_TYPE_WORDS.has(composed[1]!);
+  });
+}
 
 /**
  * What a step is called, read off its id — the only thing the read carries.

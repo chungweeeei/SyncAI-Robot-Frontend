@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { robotStateQuery, type UseRobotState } from "@/hooks/use-robot-state";
 import { readStatus } from "@/lib/api/read-state";
+import { robotStateSilence } from "@/lib/api/robot";
 import type { ReadStatus } from "@/lib/types/read";
 import type { RobotState } from "@/lib/types/robot";
 
@@ -55,4 +56,15 @@ const nothing = () => null;
 export function useRobotStateStatus(): ReadStatus {
   const { isPending, isError } = useQuery({ ...robotStateQuery, enabled: false, select: nothing });
   return readStatus({ isPending, isError });
+}
+
+/**
+ * The backend's sentence for a robot that has stopped reporting its state
+ * (lib/api/robot.ts's robotStateSilence), off the provider's entry; null on
+ * a healthy poll and for any failure that is not the backend's to word. Its
+ * caller re-renders on each failed read while silent, and not otherwise.
+ */
+export function useRobotStateSilence(): string | null {
+  const { error } = useQuery({ ...robotStateQuery, enabled: false, select: nothing });
+  return robotStateSilence(error);
 }

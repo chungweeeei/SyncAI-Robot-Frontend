@@ -49,6 +49,36 @@ describe("RobotStateSchema", () => {
     );
   });
 
+  it("accepts a frame from a backend without the state machine's fields", () => {
+    // Their absence is itself the reading (`gateSupported`), so they must
+    // come through absent and never defaulted to a value.
+    const parsed = RobotStateSchema.parse({ ...frame, state: "UNINITIALIZED" });
+    expect("localization_converged" in parsed).toBe(false);
+    expect("state_message" in parsed).toBe(false);
+  });
+
+  it("carries the state machine's fields when the backend sends them", () => {
+    const parsed = RobotStateSchema.parse({
+      ...frame,
+      state: "ERROR",
+      localization_converged: false,
+      state_message: "Task robot01-task-1-1 failed: the way to the goal is closed.",
+    });
+    expect(parsed.localization_converged).toBe(false);
+    expect(parsed.state_message).toBe(
+      "Task robot01-task-1-1 failed: the way to the goal is closed.",
+    );
+    // An empty sentence is an answer too: nothing to add to the state's name.
+    expect(RobotStateSchema.parse({ ...frame, state_message: "" }).state_message).toBe("");
+  });
+
+  it("rejects a retyped state machine field rather than reading it as absent", () => {
+    expect(
+      RobotStateSchema.safeParse({ ...frame, localization_converged: "yes" }).success,
+    ).toBe(false);
+    expect(RobotStateSchema.safeParse({ ...frame, state_message: null }).success).toBe(false);
+  });
+
   it("rejects a renamed field and names it", () => {
     const result = RobotStateSchema.safeParse({
       ...frame,

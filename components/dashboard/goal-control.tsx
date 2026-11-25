@@ -21,11 +21,18 @@ import type { GoalTask } from "@/hooks/use-goal-task";
 export function GoalControl({
   task,
   name = null,
+  sendLock = null,
   className,
 }: {
   task: GoalTask;
   /** The waypoint the goal went to, or null for one set on the map. */
   name?: string | null;
+  /**
+   * Why the robot would refuse the goal again right now (its error is
+   * latched, its position unconfirmed), or null. Greys Retry; the view says
+   * the reason in a line of its own beside this card.
+   */
+  sendLock?: string | null;
   className?: string;
 }) {
   const { goal, taskStatus, error, message, running, busy } = task;
@@ -75,7 +82,8 @@ export function GoalControl({
             {(error || taskStatus === "FAILED") && (
               <button
                 type="button"
-                disabled={busy || !goal}
+                disabled={busy || !goal || sendLock !== null}
+                title={sendLock ?? undefined}
                 onClick={task.send}
                 className={cardAction("cmd")}
               >

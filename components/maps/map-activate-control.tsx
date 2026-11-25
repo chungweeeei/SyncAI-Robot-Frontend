@@ -13,7 +13,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { useRobotStateSelect } from "@/hooks/use-console-robot-state";
 import { useActivateMap } from "@/hooks/use-map-actions";
+import { gateSupported } from "@/lib/robot/readiness";
 import { switchRefusal } from "@/lib/map/switch";
 import { cn } from "@/lib/utils";
 import type { MapSummary } from "@/lib/types/map";
@@ -39,9 +41,11 @@ const CORNER =
  *
  * Confirmed in an AlertDialog that names the map, because the consequence
  * isn't guessable from an arrow: the pose resets to the new map's origin and
- * must be set again (an old-frame pose would be meaningless there). One
- * sentence, no backdrop dismiss — every extra line is read instead of the one
- * that asks for action.
+ * must be set again (an old-frame pose would be meaningless there), and the
+ * switch withdraws the operator's confirmation of the position, so no job
+ * drives until it is given again on the new map (said only for a robot that
+ * has the state machine). Two sentences, no backdrop dismiss — every extra
+ * line is read instead of the ones that ask for action.
  *
  * A refusal keeps the dialog open, which matters for 409 `task_running`: it
  * names the running tasks. On success the badge moves here, so the sentence
@@ -58,6 +62,10 @@ export function MapActivateControl({
 }) {
   const activate = useActivateMap();
   const [confirming, setConfirming] = React.useState(false);
+  // Only a robot with the state machine withdraws the confirmation on a
+  // switch; on an older one there is nothing to confirm, and saying so would
+  // send the operator looking for a control that is not there.
+  const gated = useRobotStateSelect(gateSupported) ?? false;
 
   const busy = activate.isPending;
   // Every refusal is the backend's sentence; ActivateConflictError's code isn't
@@ -121,8 +129,9 @@ export function MapActivateControl({
           <AlertDialogHeader>
             <AlertDialogTitle>Switch to {map.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              The robot&apos;s pose resets to this map&apos;s origin — set an
-              initial pose on the dashboard afterwards.
+              {gated
+                ? "The robot's pose resets to this map's origin. Afterwards, set an initial pose on the dashboard and confirm the robot's position — it will not drive on the map until you do."
+                : "The robot's pose resets to this map's origin — set an initial pose on the dashboard afterwards."}
             </AlertDialogDescription>
           </AlertDialogHeader>
 

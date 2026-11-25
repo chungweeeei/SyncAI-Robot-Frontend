@@ -72,21 +72,31 @@ export function continuationStart(
  * history and on the masthead's bar, so one failed job cannot be retryable in
  * one place and not the other. A running job is read off the active list,
  * which is why a list that cannot be read blocks too: the backend refuses a
- * second job.
+ * second job. The robot's own hold (`held`) is said before either, since
+ * waiting for the other job to end would not lift it.
  */
 export function continuationBlocked({
   robotId,
   stopped,
+  held = null,
   listReadable,
   running,
 }: {
   robotId: string | null;
   stopped: boolean;
+  /**
+   * Why the robot's state holds the job back, or null: `startLock`'s reason
+   * (lib/robot/readiness.ts) for the steps the continuation would run. A
+   * failed job latches the robot's error, so right after a failure this is
+   * what stands in a Retry's way until an operator releases it.
+   */
+  held?: string | null;
   listReadable: boolean;
   running: boolean;
 }): string | null {
   if (robotId === null) return "The robot cannot be reached.";
   if (stopped) return "The emergency stop is engaged.";
+  if (held !== null) return held;
   if (!listReadable) return "Whether a job is running cannot be read.";
   if (running) return "Another job is running; it has to finish first.";
   return null;

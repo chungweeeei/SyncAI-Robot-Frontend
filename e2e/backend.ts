@@ -88,6 +88,22 @@ export function robotState(over: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * A frame from a robot with the state machine: `localization_converged` is
+ * what tells the console so (robotState's frame, without it, is a backend
+ * from before, on which the console gates nothing). Unconfirmed and
+ * converged, as a robot is after its boot guess has settled: the state an
+ * operator's Confirm position is owed in.
+ */
+export function gatedRobotState(over: Record<string, unknown> = {}) {
+  return robotState({
+    state: "UNINITIALIZED",
+    localization_converged: true,
+    state_message: "Waiting for an operator to confirm the robot's position.",
+    ...over,
+  });
+}
+
 export function mapSummary(over: Record<string, unknown> = {}) {
   return {
     name: MAP_NAME,
@@ -759,7 +775,8 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
     }
 
     // Reads -------------------------------------------------------------
-    if (path === "/api/v1/robot/state") {
+    // GET only: the same path takes the operator's state change as a POST.
+    if (path === "/api/v1/robot/state" && method === "GET") {
       return state
         ? json(route, {
             ...state,
@@ -1299,6 +1316,49 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
           : "Safety lock released.",
       });
     }
+    if (path === "/api/v1/robot/state" && method === "POST") {
+      // The backend's rules, in its order: no change under a running job,
+      // IDLE only once the robot's guess has settled. The frame moves here,
+      // so the console's next read sees the state land. A test that needs
+      // the robot unreachable routes it itself.
+      const { state: target } = parseBody(request.postData()) as { state: string };
+      if (activeTasks.length > 0) {
+        return json(
+          route,
+          {
+            detail: "A job is running. Cancel it or wait for it to finish first.",
+            code: "task_running",
+          },
+          409,
+        );
+      }
+      if (!state) {
+        return json(route, { detail: "The robot did not answer." }, 502);
+      }
+      // As a row: the default frame is from before the state machine and has
+      // neither of its fields.
+      const frame: Record<string, unknown> = state;
+      if (target === "IDLE" && frame.localization_converged !== true) {
+        return json(
+          route,
+          {
+            detail: "The robot has not found its position on the map yet.",
+            code: "not_converged",
+          },
+          409,
+        );
+      }
+      frame.state = target;
+      frame.state_message =
+        target === "IDLE" ? "" : "Waiting for an operator to confirm the robot's position.";
+      return json(route, {
+        state: target,
+        message:
+          target === "IDLE"
+            ? "Position confirmed."
+            : "The robot's position is no longer confirmed.",
+      });
+    }
     if (path === "/api/v1/localization/auto" && method === "POST") {
       // A match that held, the usual answer. A test that needs the search to
       // fail or take its time routes it itself.
@@ -1383,6 +1443,32 @@ export async function mockBackend(page: Page, over: BackendOverrides = {}) {
   );
 
   return writes;
+}
+
+/** What the backend says once the robot has stopped reporting its state. */
+export const ROBOT_STATE_STALE = "The robot has not reported its state for 4 seconds.";
+
+/**
+ * A switch on the robot's reporting. While `silent`, GET /api/v1/robot/state
+ * answers as the backend does once the robot has not renewed its frame for a
+ * few seconds — 404 `robot_state_stale`, in the shape of every coded refusal
+ * — and the fake's own answer otherwise, so a test can let good frames in,
+ * cut them, and bring them back. Install it after `mockBackend`: the route
+ * registered last answers first. Chromium logs each 404 as "Failed to load
+ * resource", which a spec using this filters out of its console guard.
+ */
+export async function robotStateSilence(page: Page): Promise<{ silent: boolean }> {
+  const robot = { silent: false };
+  await page.route("**/api/v1/robot/state", (route) =>
+    robot.silent && route.request().method() === "GET"
+      ? route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: ROBOT_STATE_STALE, code: "robot_state_stale" }),
+        })
+      : route.fallback(),
+  );
+  return robot;
 }
 
 /**

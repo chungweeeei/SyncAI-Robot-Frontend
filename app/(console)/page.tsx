@@ -8,6 +8,7 @@ import {
   useRobotId,
   useRobotStateStatus,
 } from "@/hooks/use-console-robot-state";
+import { useConfirmPanelShown } from "@/hooks/use-robot-state-control";
 import { PoseOverlay } from "@/components/dashboard/pose-overlay";
 import { TelemetryRail } from "@/components/dashboard/telemetry-rail";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,11 @@ export default function DashboardPage() {
   // read it themselves.
   const robotId = useRobotId();
   const status = useRobotStateStatus();
+  // Below lg the viewport is short and the pose card shares its left foot
+  // with the panels' column; it covered half of Confirm position, the one
+  // press that lets a fresh robot take jobs. So while that panel is up the
+  // card goes below lg; from lg the column is tall enough for both.
+  const confirming = useConfirmPanelShown();
 
   if (robotId === null) {
     return <AwaitingTelemetry connecting={status === "loading"} />;
@@ -58,7 +64,10 @@ export default function DashboardPage() {
         <LivePoseOverlay
           // Not on a phone held sideways: the corner belongs to the panels
           // stacked down the left, and the strip's map view has the pose.
-          className="pointer-events-none absolute bottom-3 left-3 short:hidden"
+          className={cn(
+            "pointer-events-none absolute bottom-3 left-3 short:hidden",
+            confirming && "max-lg:hidden",
+          )}
         />
       </section>
 

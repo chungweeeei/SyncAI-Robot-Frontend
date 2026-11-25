@@ -67,7 +67,8 @@ export function InitialPoseControl({
         {error && (
           <button
             type="button"
-            disabled={busy || !pose}
+            disabled={busy || !pose || estimate.lock !== null}
+            title={estimate.lock ?? undefined}
             onClick={estimate.publish}
             className="instrument-label flex h-7 flex-1 items-center justify-center gap-1.5 rounded-sm border border-signal-caution/50 bg-signal-caution/12 text-signal-caution transition-colors hover:bg-signal-caution/20 disabled:opacity-50"
           >

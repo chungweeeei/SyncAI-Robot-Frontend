@@ -3,9 +3,16 @@
 import * as React from "react";
 import { useMutation } from "@tanstack/react-query";
 
+import { useActiveTasksSelect } from "@/hooks/use-console-active-tasks";
 import { ignore } from "@/lib/api/mutation-state";
 import { setInitialPose, type InitialPose } from "@/lib/api/robot";
+import type { ActiveTasksResponse } from "@/lib/api/task";
 import { normalizeTheta } from "@/lib/angle";
+import { initialPoseLock } from "@/lib/robot/readiness";
+
+const anyRunning = (list: ActiveTasksResponse) => list.tasks.length > 0;
+const RUNNING: readonly unknown[] = [true];
+const IDLE: readonly unknown[] = [];
 
 /**
  * How long a published estimate stays on screen. Short on purpose: 5 s had
@@ -22,6 +29,11 @@ export interface InitialPoseEstimate {
   published: boolean;
   busy: boolean;
   error: string | null;
+  /**
+   * Why a pose cannot be set right now (a job is running, or whether one is
+   * cannot be read), or null when it may.
+   */
+  lock: string | null;
   /** Re-send the pose already placed — a retry, not the normal path. */
   publish: () => Promise<void>;
   clear: () => void;
@@ -36,9 +48,16 @@ export interface InitialPoseEstimate {
  * shows as the pose feed moving. With nothing to wait for, the estimate
  * expires on its own. `published` is the mutation's success, so a fresh drag
  * (going pending) cancels the pending expiry for free.
+ *
+ * Held while a job runs (`lock`, lib/robot/readiness.ts's initialPoseLock):
+ * a new pose moves the map frame under the job and withdraws the position's
+ * confirmation, so the backend refuses it, and the tool is greyed first —
+ * off the console's shared active-tasks poll, selected down to one boolean.
  */
 export function useInitialPose(): InitialPoseEstimate {
   const [pose, setPose] = React.useState<InitialPose | null>(null);
+  const { data: running, status } = useActiveTasksSelect(anyRunning);
+  const lock = initialPoseLock({ tasks: running ? RUNNING : IDLE, status }).reason;
 
   const publishPose = useMutation({
     mutationFn: (next: InitialPose) => setInitialPose(next),
@@ -91,6 +110,7 @@ export function useInitialPose(): InitialPoseEstimate {
     published,
     busy: publishPose.isPending,
     error: publishPose.error?.message ?? null,
+    lock,
     publish,
     clear,
   };
