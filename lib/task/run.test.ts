@@ -13,6 +13,7 @@ import {
   requestedHold,
   runClosed,
   runElapsed,
+  runNeedsLocalization,
   runPhase,
   runState,
   stepLabel,
@@ -324,5 +325,35 @@ describe("failedStepProgress", () => {
   it("is null when no step is marked failed", () => {
     expect(failedStepProgress([step("1-move", "CANCELED")])).toBeNull();
     expect(failedStepProgress([])).toBeNull();
+  });
+});
+
+describe("runNeedsLocalization", () => {
+  const ids = (...list: string[]) => list.map((id) => ({ id }));
+
+  it("reads a composed job's driving steps off their ids", () => {
+    expect(runNeedsLocalization(ids("1-standup", "2-move"))).toBe(true);
+    expect(runNeedsLocalization(ids("1-charge"))).toBe(true);
+    expect(runNeedsLocalization(ids("1-speak", "2-patrol"))).toBe(true);
+  });
+
+  it("reads the dashboard's goal, a Move or a Charge, as driving", () => {
+    expect(runNeedsLocalization(ids("goal"))).toBe(true);
+  });
+
+  it("is false for a run that drives nowhere", () => {
+    expect(runNeedsLocalization(ids("1-standup", "2-speak", "3-wait", "4-liedown"))).toBe(false);
+    expect(runNeedsLocalization(ids("standup"))).toBe(false);
+    expect(runNeedsLocalization([])).toBe(false);
+  });
+
+  it("claims nothing about an id another client wrote", () => {
+    // The lock it feeds fails open; the robot's refusal answers the press.
+    expect(runNeedsLocalization(ids("patrol-east-wing", "move"))).toBe(false);
+  });
+
+  it("judges a Retry by the steps it would run, not the ones it skips", () => {
+    const steps = ids("1-move", "2-speak", "3-wait");
+    expect(runNeedsLocalization(steps.slice(1))).toBe(false);
   });
 });

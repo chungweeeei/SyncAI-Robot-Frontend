@@ -36,6 +36,12 @@ export interface TaskTemplateRowProps {
   busy: boolean;
   /** The task's map is not the loaded one, or is held; its group is under that map's name. */
   runBlocked: boolean;
+  /**
+   * Why the robot's state holds this task's Run (a latched error, or for a
+   * task that drives, an unconfirmed position), or null. The list says it in
+   * a line of its own; here it is the button's hover text.
+   */
+  runHeldReason?: string | null;
   /** As `runBlocked`, for Schedule: only another map holds it. */
   scheduleBlocked: boolean;
   /** The schedules made from this task; empty for one run by hand. */
@@ -61,6 +67,7 @@ export interface TaskTemplateRowProps {
 export function TaskTemplateRow({
   template,
   runBlocked,
+  runHeldReason = null,
   scheduleBlocked,
   schedules,
   busy,
@@ -102,6 +109,7 @@ export function TaskTemplateRow({
           <Button
             size="sm"
             aria-label={`Run "${template.name}" now`}
+            title={runHeldReason ?? undefined}
             disabled={runBlocked || busy}
             onClick={onRun}
             className="bg-signal-cmd text-background hover:bg-signal-cmd/85"

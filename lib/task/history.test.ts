@@ -626,4 +626,25 @@ describe("continuationBlocked", () => {
       "Another job is running; it has to finish first.",
     );
   });
+
+  it("says the robot's own hold, which a failed job leaves behind", () => {
+    // A failure latches the robot's error: Retry stays shut until an operator
+    // releases it, and the reason is the readiness rule's own sentence.
+    const held = "A job failed, and the robot takes no job until that is released.";
+    expect(continuationBlocked({ ...clear, held })).toBe(held);
+  });
+
+  it("says the hold before another job: that job ending would not lift it", () => {
+    const held = "The robot's position is not confirmed.";
+    expect(continuationBlocked({ ...clear, held, running: true })).toBe(held);
+    expect(continuationBlocked({ ...clear, held, listReadable: false })).toBe(held);
+    // The stop still outranks it: nothing moves until it is released.
+    expect(continuationBlocked({ ...clear, held, stopped: true })).toBe(
+      "The emergency stop is engaged.",
+    );
+  });
+
+  it("is not held on a backend that sends no hold", () => {
+    expect(continuationBlocked({ ...clear, held: null })).toBeNull();
+  });
 });

@@ -10,6 +10,7 @@ import type { TaskTemplate } from "@/lib/api/task-template";
 import type { TaskTemplatesStatus } from "@/hooks/use-task-templates";
 import { groupTasks, type TaskGroup } from "@/lib/task/library";
 import { schedulesByTemplate } from "@/lib/task/schedule";
+import { needsLocalization } from "@/lib/task/step";
 import { cn } from "@/lib/utils";
 
 /** Shared empty list, so an unscheduled card is not a fresh prop every render. */
@@ -29,6 +30,12 @@ export interface TaskLibraryProps {
   activeMapName: string | null;
   /** True while a run this tab sent is in flight, the stop is engaged, or the robot is unknown. */
   runDisabled: boolean;
+  /**
+   * Why the robot's state holds a Run back, or null: for a task that drives
+   * on the map, and for one that does not (lib/robot/readiness.ts's
+   * startLock, once per kind).
+   */
+  runHeld: { driving: string | null; other: string | null };
   onRun: (template: TaskTemplate) => void;
   onEdit: (template: TaskTemplate) => void;
   onSchedule: (template: TaskTemplate) => void;
@@ -53,6 +60,7 @@ export function TaskLibrary({
   busy,
   activeMapName,
   runDisabled,
+  runHeld,
   onRun,
   onEdit,
   onSchedule,
@@ -145,12 +153,17 @@ export function TaskLibrary({
 
             {open && (
               <ul className="space-y-1.5">
-                {group.tasks.map((template) => (
+                {group.tasks.map((template) => {
+                  const held = needsLocalization(template.steps)
+                    ? runHeld.driving
+                    : runHeld.other;
+                  return (
                   <TaskTemplateRow
                     key={template.id}
                     template={template}
                     busy={busy}
-                    runBlocked={other || runDisabled}
+                    runBlocked={other || runDisabled || held !== null}
+                    runHeldReason={held}
                     scheduleBlocked={other}
                     schedules={scheduledBy.get(template.id) ?? EMPTY_SCHEDULES}
                     scheduleActions={scheduleActions}
@@ -159,7 +172,8 @@ export function TaskLibrary({
                     onSchedule={() => onSchedule(template)}
                     onDelete={() => onDelete(template)}
                   />
-                ))}
+                  );
+                })}
               </ul>
             )}
           </section>

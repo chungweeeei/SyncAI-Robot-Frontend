@@ -14,6 +14,7 @@ import { useMaps } from "@/hooks/use-maps";
 import { useTaskTemplates } from "@/hooks/use-task-templates";
 import { useSchedules } from "@/hooks/use-schedules";
 import { useConsoleEstop } from "@/hooks/use-console-estop";
+import { useStartLock } from "@/hooks/use-start-lock";
 import { useTaskDispatch } from "@/hooks/use-task-dispatch";
 import { useTaskDraft } from "@/hooks/use-task-draft";
 import type { TaskTemplate } from "@/lib/api/task-template";
@@ -36,6 +37,11 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
   const [draft, updateDraft] = useTaskDraft();
   const dispatch = useTaskDispatch(robotId);
   const { engaged: stopped } = useConsoleEstop();
+  // The robot's own hold on a Run: every task while a failed job's error is
+  // latched, the ones that drive on the map while nobody has confirmed its
+  // position. Two verdicts, so each card takes the one its steps call for.
+  const driveLock = useStartLock(true);
+  const restLock = useStartLock(false);
   const schedules = useSchedules();
   const library = useTaskTemplates();
   const { maps } = useMaps();
@@ -148,6 +154,15 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
           {schedules.error && <ErrorLine>{schedules.error}</ErrorLine>}
           {/* A refused Run never started, so the masthead never shows it. */}
           {dispatch.refused && <ErrorLine>{dispatch.refused}</ErrorLine>}
+          {/* Why Run is greyed, once for the list: a greyed button swallows
+            * its tooltip, and the same sentence under every card would bury
+            * the cards. While only the position is owed, the tasks that
+            * drive nowhere keep their Run, which says the rest. */}
+          {driveLock.reason && (
+            <p role="status" className="text-[11px] leading-snug text-signal-caution">
+              {driveLock.reason}
+            </p>
+          )}
           <TaskLibrary
             templates={library.templates}
             schedules={schedules.schedules}
@@ -156,6 +171,7 @@ export function TaskOverview({ robotId }: { robotId: string | null }) {
             busy={library.busy}
             activeMapName={activeMap?.name ?? null}
             runDisabled={dispatch.running || robotId === null || stopped}
+            runHeld={{ driving: driveLock.reason, other: restLock.reason }}
             onRun={run}
             onEdit={openInEditor}
             onSchedule={(template) => setSchedulingId(template.id)}

@@ -16,6 +16,7 @@ import {
   movePatrolWaypoint,
   moveStep,
   moveStepDraft,
+  needsLocalization,
   newPatrolWaypoint,
   newStepDraft,
   patrolSummary,
@@ -1019,5 +1020,29 @@ describe("patrol steps", () => {
       row.waypoints.map((waypoint) => waypoint.key),
     );
     expect(again!.waypoints.map((waypoint) => waypoint.x)).toEqual(["1", "3"]);
+  });
+});
+
+describe("needsLocalization", () => {
+  // What the robot refuses on an unconfirmed position: a job with a step
+  // that drives on the map. A job without one still runs there.
+  it("is true for a job with any stop in it", () => {
+    for (const type of ["MOVE", "CHARGE", "PATROL"] as const) {
+      expect(needsLocalization([{ type: "STANDUP" }, { type }, { type: "SPEAK" }]), type).toBe(
+        true,
+      );
+    }
+  });
+
+  it("is false for a job of postures, spoken lines and waits", () => {
+    expect(
+      needsLocalization([
+        { type: "STANDUP" },
+        { type: "SPEAK" },
+        { type: "WAIT" },
+        { type: "LIEDOWN" },
+      ]),
+    ).toBe(false);
+    expect(needsLocalization([])).toBe(false);
   });
 });

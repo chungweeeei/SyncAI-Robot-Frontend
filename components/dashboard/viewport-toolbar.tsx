@@ -41,6 +41,7 @@ export function ViewportToolbar({
   goalLocked,
   goalLockReason = null,
   onArmGoal,
+  initialPoseLock = null,
   onArmInitialPose,
   autoLocalizeBusy,
   autoLocalizeLock = null,
@@ -59,6 +60,8 @@ export function ViewportToolbar({
   /** Why the map cannot take a goal, for the tooltip. A running goal needs none. */
   goalLockReason?: string | null;
   onArmGoal: () => void;
+  /** Why an initial pose cannot be set right now (a job is running), or null. */
+  initialPoseLock?: string | null;
   onArmInitialPose: () => void;
   /** The robot is searching for where it stands. */
   autoLocalizeBusy: boolean;
@@ -90,10 +93,13 @@ export function ViewportToolbar({
           <ToolButton
             label="Set initial pose"
             shortLabel="Pose"
-            hint="tell the robot where it stands"
+            hint={initialPoseLock ?? "tell the robot where it stands"}
             icon={LocateFixedIcon}
             tone="caution"
             pressed={pick === "initial-pose"}
+            // The backend refuses a pose under a running job, as it does the
+            // search beside this.
+            disabled={initialPoseLock !== null}
             onClick={onArmInitialPose}
           />
           {/* Same question as Set initial pose without the drag, and the same

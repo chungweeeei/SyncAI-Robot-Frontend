@@ -124,6 +124,16 @@ export function isStopStep<T extends { type: StepType }>(
 }
 
 /**
+ * Whether a job drives on the map: any stop in it. Such a job needs the
+ * robot's position confirmed by an operator, and the robot refuses it until
+ * it is; a job of postures, spoken lines and waits needs no position and
+ * still runs (`startLock` in lib/robot/readiness.ts is the gate).
+ */
+export function needsLocalization(steps: readonly { type: StepType }[]): boolean {
+  return steps.some(isStopStep);
+}
+
+/**
  * Whether a step leaves the robot standing on a charger: a Charge, which
  * walks onto it by its marker. What "ends docked at" says of a job.
  */

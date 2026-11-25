@@ -3,18 +3,131 @@ import * as z from "zod";
 import { apiUrl } from "@/lib/api/config";
 import { requestJson } from "@/lib/api/http";
 import { normalizeTheta } from "@/lib/angle";
+import type { RobotStateTarget } from "@/lib/robot/readiness";
 import { RobotStateSchema } from "@/lib/types/robot";
-import type { PlanarPose, RobotState } from "@/lib/types/robot";
+import type { PlanarPose, RobotState, RobotStatus } from "@/lib/types/robot";
 
 /**
- * The console's 1 Hz machine snapshot. 404 until the robot's first frame. Not
- * a source of motion (whole-second stamps, a frozen third-party contract):
- * the 3D viewer reads the telemetry socket.
+ * Why the backend has no current frame to give, by its 404's code: the robot
+ * has not reported its state yet (`robot_state_unavailable`), or reported it
+ * and then stopped (`robot_state_stale` — the backend serves a frame only
+ * while the robot keeps renewing it, about every second).
+ */
+export type RobotStateSilentCode = "robot_state_unavailable" | "robot_state_stale";
+
+const ROBOT_STATE_SILENT_CODES: readonly string[] = [
+  "robot_state_unavailable",
+  "robot_state_stale",
+];
+
+/**
+ * The robot is not reporting its state. Typed apart from every other failed
+ * read because its sentence is the backend's, written for an operator ("The
+ * robot has not reported its state for 4 seconds."), and so may be shown —
+ * where a dropped connection's or a mis-shaped frame's is an engineer's.
+ */
+export class RobotStateSilentError extends Error {
+  code: RobotStateSilentCode;
+
+  constructor(message: string, code: RobotStateSilentCode) {
+    super(message);
+    this.name = "RobotStateSilentError";
+    this.code = code;
+  }
+}
+
+/**
+ * The backend's own sentence for a robot that is not reporting its state, or
+ * null: for no failure at all, and for one that is not the backend's to word.
+ */
+export function robotStateSilence(error: Error | null | undefined): string | null {
+  return error instanceof RobotStateSilentError ? error.message : null;
+}
+
+/**
+ * The console's 1 Hz machine snapshot. 404 until the robot's first frame,
+ * and again once the robot has not renewed it for a few seconds — a frame is
+ * only ever the robot's current word (`RobotStateSilentError`). Not a source
+ * of motion (whole-second stamps, a frozen third-party contract): the 3D
+ * viewer reads the telemetry socket.
  */
 export function fetchRobotState(signal?: AbortSignal): Promise<RobotState> {
   return requestJson<RobotState>(apiUrl("/api/v1/robot/state"), {
     signal,
     schema: RobotStateSchema,
+    mapError: ({ detail, code }, res) =>
+      res.status === 404 && code && ROBOT_STATE_SILENT_CODES.includes(code)
+        ? new RobotStateSilentError(detail, code as RobotStateSilentCode)
+        : undefined,
+  });
+}
+
+/**
+ * The state change's 409 codes, each temporary in its own way: a job has to
+ * end (`task_running`), the job list has to be readable again
+ * (`tasks_unknown`), the robot has to find its position first
+ * (`not_converged`, whose sentence is the robot's own), or the robot refused
+ * for a reason of its own (`robot_state_refused`).
+ */
+export type RobotStateConflictCode =
+  | "task_running"
+  | "tasks_unknown"
+  | "not_converged"
+  | "robot_state_refused";
+
+const ROBOT_STATE_CONFLICT_CODES: readonly string[] = [
+  "task_running",
+  "tasks_unknown",
+  "not_converged",
+  "robot_state_refused",
+];
+
+export class RobotStateConflictError extends Error {
+  code: RobotStateConflictCode;
+
+  constructor(message: string, code: RobotStateConflictCode) {
+    super(message);
+    this.name = "RobotStateConflictError";
+    this.code = code;
+  }
+}
+
+export interface SetRobotStateResult {
+  /**
+   * The state the robot reports after the change, which is not always the
+   * one asked for: the rollup answers CHARGING for a confirmed robot on its
+   * charger. Open, as `RobotState.state` is.
+   */
+  state: RobotStatus;
+  /** Operator-facing; render verbatim. */
+  message: string;
+}
+
+const SetRobotStateResultSchema: z.ZodType<SetRobotStateResult> = z.object({
+  state: z.string(),
+  message: z.string(),
+});
+
+/**
+ * The operator's switch on the robot's state machine. `IDLE` confirms the
+ * robot's position — the only way a job that drives on the map may start —
+ * and `UNINITIALIZED` withdraws that confirmation; either one also releases
+ * a latched error, and clears a job the robot still counts as running after
+ * its run was ended from outside.
+ *
+ * A 409 carries one of `RobotStateConflictCode`; a 502 means the robot did
+ * not answer and nothing changed. The answer is a receipt: the reading is
+ * the next `GET /robot/state`.
+ */
+export function setRobotState(target: RobotStateTarget): Promise<SetRobotStateResult> {
+  return requestJson<SetRobotStateResult>(apiUrl("/api/v1/robot/state"), {
+    method: "POST",
+    body: JSON.stringify({ state: target }),
+    schema: SetRobotStateResultSchema,
+    mapError: ({ detail, code }, res) =>
+      res.status === 409 && code && ROBOT_STATE_CONFLICT_CODES.includes(code)
+        ? new RobotStateConflictError(detail, code as RobotStateConflictCode)
+        : undefined,
   });
 }
 
@@ -27,7 +140,9 @@ export type InitialPose = PlanarPose & { z?: number };
 /**
  * Seed localization with an operator pose (RViz's "2D Pose Estimate"). Fire
  * and forget: a 200 means it was sent, not that localization converged — the
- * pose feed moving to the marker is the answer.
+ * pose feed moving to the marker is the answer. It also withdraws an
+ * operator's confirmation of the position, which is why the backend refuses
+ * it while a job runs (409 `task_running` / `tasks_unknown`).
  *
  * `z` is sent whenever it is set, 0 included: unlike a goal's, a missing one
  * is not the ground floor but "the storey the localizer thinks it is on",

@@ -7,6 +7,7 @@ import { ArmedHint } from "@/components/console/armed-hint";
 import { FloorPicker } from "@/components/console/floor-picker";
 import { overlayPanel } from "@/components/console/instrument";
 import { AutoLocalizeControl } from "@/components/dashboard/auto-localize-control";
+import { ConfirmPositionControl } from "@/components/dashboard/confirm-position-control";
 import { GoalControl } from "@/components/dashboard/goal-control";
 import { InitialPoseControl } from "@/components/dashboard/initial-pose-control";
 import { PointCloudCanvas } from "@/components/dashboard/pointcloud-canvas";
@@ -35,7 +36,9 @@ import { useActiveMap } from "@/hooks/use-maps";
 import { useFloorBand } from "@/hooks/use-floor-band";
 import { useWaypointPlacement } from "@/hooks/use-waypoint-placement";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
+import { useRobotStateControl } from "@/hooks/use-robot-state-control";
 import { useRoutePreview } from "@/hooks/use-route-preview";
+import { useStartLock } from "@/hooks/use-start-lock";
 import { useTelemetry } from "@/hooks/use-telemetry";
 import { useViewCommands } from "@/hooks/use-view-commands";
 import {
@@ -260,20 +263,29 @@ export function PointCloudView({
   // list too, and keeps its own wording, so it is left out here.
   const jobLock = useGoalLock();
   const busyElsewhere = jobLock.locked && !task.running && !task.busy;
-
-  // A lock arriving with a pick armed disarms it, during render rather than in
-  // an effect, so the next release cannot write onto a read-only map. An open
-  // name dialog stays up instead: its Create greys and the typed name survives.
-  if (
-    (runLock.locked && (pick?.mode === "place" || pick?.mode === "vertex")) ||
-    ((stopped || busyElsewhere) && pick?.mode === "goal")
-  ) {
-    setPick(null);
-  }
+  // The robot's own hold on a goal: an error a failed job left latched, or a
+  // position nobody has confirmed. Every goal from here drives on the map (a
+  // Move or a Charge), so it is the driving lock. The robot refuses the goal
+  // either way; this greys the tools first and says why.
+  const stateLock = useStartLock(true);
+  const position = useRobotStateControl();
 
   const routePreview = useRoutePreview(activeMap?.name ?? null);
   const estimate = useInitialPose();
   const localize = useAutoLocalize();
+
+  // A lock arriving with a pick armed disarms it, during render rather than in
+  // an effect, so the next release cannot write onto a read-only map — or send
+  // a goal the robot holds, or a pose under a job that has since started. An
+  // open name dialog stays up instead: its Create greys and the typed name
+  // survives.
+  if (
+    (runLock.locked && (pick?.mode === "place" || pick?.mode === "vertex")) ||
+    ((stopped || busyElsewhere || stateLock.locked) && pick?.mode === "goal") ||
+    (estimate.lock !== null && pick?.mode === "initial-pose")
+  ) {
+    setPick(null);
+  }
 
   // Destructured: the hooks' return objects are fresh every render, their
   // members are stable.
@@ -641,11 +653,18 @@ export function PointCloudView({
                 ? pick.mode
                 : null
             }
-            goalLocked={task.running || task.busy || stopped || busyElsewhere}
+            goalLocked={
+              task.running || task.busy || stopped || busyElsewhere || stateLock.locked
+            }
             goalLockReason={
-              stopped ? ESTOP_REFUSAL : busyElsewhere ? (jobLock.reason ?? undefined) : undefined
+              stopped
+                ? ESTOP_REFUSAL
+                : busyElsewhere
+                  ? (jobLock.reason ?? undefined)
+                  : (stateLock.reason ?? undefined)
             }
             onArmGoal={() => armPick("goal")}
+            initialPoseLock={estimate.lock}
             onArmInitialPose={() => armPick("initial-pose")}
             autoLocalizeBusy={localize.busy}
             autoLocalizeLock={localize.lock}
@@ -685,7 +704,9 @@ export function PointCloudView({
               cancelable={task.cancelable && !task.busy}
               onCancel={task.cancel}
               cancelError={goalBusy ? task.error : null}
-              goLocked={goalBusy || stopped || busyElsewhere}
+              // The robot's own hold is said once, by the line or the
+              // Confirm position panel below this one, not again in here.
+              goLocked={goalBusy || stopped || busyElsewhere || stateLock.locked}
               goLockReason={stopped ? ESTOP_REFUSAL : null}
               jobRunning={busyElsewhere && !stopped}
               editLock={runLock.reason}
@@ -704,11 +725,43 @@ export function PointCloudView({
               <GoalControl
                 task={task}
                 name={goalVertex?.name ?? null}
+                sendLock={stateLock.reason}
                 className="pointer-events-auto"
               />
             )}
             <InitialPoseControl estimate={estimate} className="pointer-events-auto" />
             <AutoLocalizeControl localize={localize} className="pointer-events-auto" />
+            {/* After the two tools that set the position: confirming it is
+              * the step that follows either. */}
+            <ConfirmPositionControl control={position} className="pointer-events-auto" />
+            {/* Why the goal tools are greyed, when the panel above does not
+              * already say it: a greyed button swallows its tooltip, and the
+              * release is on the masthead. */}
+            {stateLock.reason && position.confirmPanel === "none" && (
+              <p
+                role="status"
+                className={cn(
+                  overlayPanel,
+                  "pointer-events-auto px-2 py-1.5 text-[11px] leading-snug break-words text-signal-caution",
+                )}
+              >
+                {stateLock.reason}
+              </p>
+            )}
+            {/* Why Set initial pose is greyed (and Auto localize beside it,
+              * for the same job): said here, since a greyed button takes no
+              * hover and a finger has none. */}
+            {estimate.lock && (
+              <p
+                role="status"
+                className={cn(
+                  overlayPanel,
+                  "pointer-events-auto px-2 py-1.5 text-[11px] leading-snug break-words text-signal-caution",
+                )}
+              >
+                {estimate.lock}
+              </p>
+            )}
             {/* Shown while a re-place is live, and after it when the write fails
               * so the sentence lands where the operator is looking. */}
             <VertexPlaceControl
