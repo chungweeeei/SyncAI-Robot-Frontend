@@ -197,7 +197,9 @@ components/
                 a screen reader — then the robot's state, the one coloured
                 thing in the group (robot-state-chip.tsx; readiness.ts's
                 robotStatusView): Unconfirmed and Error a framed, filled chip
-                with a dot (`loud`), Idle / Running / Charging / Low battery
+                with a pulsing dot (`loud`; still under reduced motion), one
+                segment — a second naming the press was dropped as too busy —
+                Idle / Running / Charging / Low battery
                 a quiet dot and word, a dot alone below md (a halo round a
                 loud one, drawn as a ring so it takes none of the first
                 line). Only a state with something to do is a button with ▾
@@ -206,9 +208,12 @@ components/
                 way out of an error, needing a settled guess; Running only
                 once the robot has reported it over an empty job list for
                 5 s — Clear the stuck job); the rest are text, the robot's
-                `state_message` in the hover title. Its popover has no
-                header: the sentence verbatim and that one button, with the
-                lock's reason under it; a press outside or Escape closes it,
+                `state_message` in the hover title. Its popover is a small
+                card, kept short by request: the state's icon and word, the
+                sentence verbatim, the lock's reason in a caution callout,
+                and that one button (Confirm solid cyan, the rest outlined)
+                — the one place the position is confirmed, the dashboard
+                having no card of its own; a press outside or Escape closes it,
                 and it closes itself when the state stops offering anything.
                 Nothing is drawn for a backend from before the state machine,
                 and while the robot-state poll fails the state is a dash in
@@ -310,10 +315,9 @@ components/
                 (lib/map/run-lock.ts's goalLock, use-goal-lock), and with
                 a failed stop's Retry by the robot's own state
                 (use-start-lock: an error held, a position unconfirmed) —
-                said in a line in the left column, or by
-                confirm-position-control.tsx, the panel there while the
-                position is unconfirmed in Navigation mode, beside the
-                live scan it is judged against; Set initial pose is held
+                said only by the masthead's state chip, where it is
+                confirmed or released (no card over the map for it, by
+                request; Set goal's hint still names it); Set initial pose is held
                 while any job runs, as Auto localize is, said in a line in
                 that column too; and at a
                 finger the viewport strip prints Goal / Pose / Locate
@@ -1035,8 +1039,8 @@ touch one, prefer moving it toward the rule.
   so the context and every selector go on handing it out. The robot id, the
   map, the mode and the pose are still drawn from it, beside the strip's
   "Last seen" chip. The state chip is not (`stateReading`: `live` only while
-  the poll's status is "ok", else `silent`): it goes to a dash, its panel and
-  the dashboard's Confirm offer nothing, since an "Idle" over a robot nobody
+  the poll's status is "ok", else `silent`): it goes to a dash, and its popover
+  closes and offers nothing, since an "Idle" over a robot nobody
   hears from is the one wrong reading an operator would act on. The start
   locks are another matter and keep judging by the last frame, as Run does
   by its robot id and Auto localize by its mode: they only grey a press the
@@ -1044,10 +1048,6 @@ touch one, prefer moving it toward the rule.
   dropped poll would take the controls away for a fault that may be the
   console's — but their reason, while silent, says the robot is not
   reporting (`START_LOCK_SILENT`) rather than repeat the last frame's word.
-  The dashboard's Confirm position panel, if it was up when the robot went
-  quiet, stays (not to vanish under a finger) with the dash, the backend's
-  sentence and Confirm held (`confirmPanel`'s `silent`). Below lg the pose
-  card is put away while that panel is up, since it covered the button.
 - **Wire types** are split between `lib/types/` and the fetcher modules with no
   rule yet. Prefer `lib/types/` for anything more than one router shares.
 

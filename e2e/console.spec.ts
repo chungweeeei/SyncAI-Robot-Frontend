@@ -9,6 +9,7 @@ import {
   robotState,
   withOctomap,
 } from "./backend";
+import { openingSettled } from "./motion";
 
 /**
  * The shell: every screen loads, the rail navigates, and the header agrees
@@ -82,6 +83,8 @@ test.describe("the console shell", () => {
     await page.getByRole("button", { name: "Camera window" }).click();
     const handle = page.getByRole("button", { name: "Move the camera window" });
     const panel = page.locator("div", { has: handle }).last();
+    // Where it opened, not where its opening zoom was a moment before.
+    await openingSettled(page);
     const start = (await panel.boundingBox())!;
 
     await handle.focus();

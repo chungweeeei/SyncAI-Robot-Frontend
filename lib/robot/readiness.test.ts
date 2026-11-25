@@ -10,8 +10,6 @@ import {
   STATE_CHANGE_JOB_RUNNING,
   STATE_CHANGE_UNKNOWN,
   confirmLock,
-  confirmOffered,
-  confirmPanel,
   gateSupported,
   initialPoseLock,
   robotStatusView,
@@ -347,53 +345,6 @@ describe("robotStatusView's weight", () => {
     for (const state of ["IDLE", "RUNNING", "CHARGING", "WARNING", "UNKNOWN"]) {
       expect(robotStatusView(state).loud, state).toBe(false);
     }
-  });
-});
-
-describe("confirmOffered", () => {
-  const on = { supported: true, mode: "AUTO" as const };
-
-  it("offers the dashboard's Confirm only while the position is unconfirmed", () => {
-    expect(confirmOffered({ ...on, state: "UNINITIALIZED" })).toBe(true);
-    for (const state of ["IDLE", "RUNNING", "ERROR", "CHARGING", null, undefined]) {
-      expect(confirmOffered({ ...on, state })).toBe(false);
-    }
-  });
-
-  it("does not in Mapping mode, where it could not be given", () => {
-    expect(confirmOffered({ ...on, mode: "MANUAL", state: "UNINITIALIZED" })).toBe(false);
-    expect(confirmOffered({ ...on, mode: null, state: "UNINITIALIZED" })).toBe(false);
-  });
-
-  it("does not on a backend from before the state machine", () => {
-    expect(confirmOffered({ ...on, supported: false, state: "UNINITIALIZED" })).toBe(false);
-  });
-});
-
-describe("confirmPanel", () => {
-  const live = (state: string) => ({ kind: "live" as const, state });
-
-  it("is up while the position is owed, in Navigation mode", () => {
-    expect(confirmPanel({ reading: live("UNINITIALIZED"), lastState: "UNINITIALIZED", mode: "AUTO" })).toBe("live");
-    expect(confirmPanel({ reading: live("IDLE"), lastState: "IDLE", mode: "AUTO" })).toBe("none");
-    expect(confirmPanel({ reading: live("UNINITIALIZED"), lastState: "UNINITIALIZED", mode: "MANUAL" })).toBe("none");
-  });
-
-  it("stays up, held, when the robot goes silent while it is owed", () => {
-    // Gone, it would take the button from under the operator's finger.
-    expect(confirmPanel({ reading: { kind: "silent" }, lastState: "UNINITIALIZED", mode: "AUTO" })).toBe(
-      "silent",
-    );
-  });
-
-  it("does not appear for a silent robot that last reported anything else", () => {
-    for (const lastState of ["IDLE", "ERROR", "RUNNING", null]) {
-      expect(confirmPanel({ reading: { kind: "silent" }, lastState, mode: "AUTO" })).toBe("none");
-    }
-  });
-
-  it("is never up without the state machine", () => {
-    expect(confirmPanel({ reading: { kind: "none" }, lastState: "UNINITIALIZED", mode: "AUTO" })).toBe("none");
   });
 });
 

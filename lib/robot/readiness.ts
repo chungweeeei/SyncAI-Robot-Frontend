@@ -68,9 +68,6 @@ export const STATE_SILENT_NAME = "not reported";
 /** Said when the failure carries no sentence of the backend's own. */
 export const STATE_SILENT =
   "The robot's state cannot be read right now.";
-/** Why the state's controls are not offered meanwhile. */
-export const STATE_SILENT_HOLD =
-  "Confirming the position and releasing an error are held until the robot reports its state again.";
 
 export interface RobotStatusView {
   /** The word on the masthead's chip. */
@@ -346,50 +343,6 @@ export function stateAction({
     default:
       return null;
   }
-}
-
-/**
- * Whether the dashboard offers its own Confirm position, beside the live
- * scan the operator judges the position by: only while that is the thing
- * owed, in the mode it can be given in. Every other state's control is the
- * masthead's alone.
- */
-export function confirmOffered({
-  state,
-  supported,
-  mode,
-}: {
-  state: RobotStatus | null | undefined;
-  supported: boolean;
-  mode: RobotMode | null;
-}): boolean {
-  return supported && state === "UNINITIALIZED" && mode === "AUTO";
-}
-
-/**
- * What the dashboard's Confirm position panel is: `live` while it is owed
- * (`confirmOffered`), `silent` when it was owed by the last frame and the
- * robot has since stopped reporting — the panel stays, so it does not blink
- * out from under the operator's finger, but says the robot is silent and
- * holds its button — and `none` otherwise.
- */
-export function confirmPanel({
-  reading,
-  lastState,
-  mode,
-}: {
-  reading: StateReading;
-  /** The last frame's word, live or not; null before the first. */
-  lastState: RobotStatus | null;
-  mode: RobotMode | null;
-}): "none" | "live" | "silent" {
-  if (reading.kind === "live") {
-    return confirmOffered({ state: reading.state, supported: true, mode }) ? "live" : "none";
-  }
-  if (reading.kind === "silent") {
-    return confirmOffered({ state: lastState, supported: true, mode }) ? "silent" : "none";
-  }
-  return "none";
 }
 
 export const INITIAL_POSE_JOB_RUNNING =

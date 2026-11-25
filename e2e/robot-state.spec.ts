@@ -8,7 +8,6 @@ import {
   START_LOCK_SILENT,
   START_LOCK_UNCONFIRMED,
   STATE_CHANGE_JOB_RUNNING,
-  STATE_SILENT_HOLD,
 } from "@/lib/robot/readiness";
 
 import {
@@ -27,8 +26,8 @@ import {
 
 /**
  * The robot's state machine on the console: the masthead's chip says the
- * state on every screen and is where it is changed by hand, the dashboard
- * offers Confirm position beside the live scan, and every way of starting a
+ * state on every screen and is the one place it is changed by hand (Confirm
+ * position included — the dashboard has no panel of its own), and every way of starting a
  * job is greyed, with its reason, while the robot would refuse it.
  *
  * Each press is checked against what the console sent, and every greyed
@@ -41,6 +40,7 @@ const chip = (page: Page) => page.getByRole("banner").getByTitle(/^Robot state:/
 const chipButton = (page: Page) =>
   page.getByRole("banner").getByRole("button", { name: /^Robot state:/ });
 const panel = (page: Page) => page.getByRole("banner").getByRole("dialog", { name: "Robot state" });
+/** The dashboard's old Confirm position panel, which must not come back. */
 const positionPanel = (page: Page) => page.getByRole("region", { name: "Robot position" });
 const toolbar = (page: Page, name: string) =>
   page.getByRole("toolbar", { name: "Viewport" }).getByRole("button", { name });
@@ -105,7 +105,6 @@ test.describe("the robot's state", () => {
     // The positive control: the strip is up and the mode chip is on it.
     await expect(page.getByRole("banner").getByTitle("Navigation")).toBeVisible();
     await expect(chip(page)).toHaveCount(0);
-    await expect(positionPanel(page)).toHaveCount(0);
     await expect(toolbar(page, "Set goal")).toBeEnabled();
 
     await page.goto("/tasks");
@@ -116,7 +115,7 @@ test.describe("the robot's state", () => {
     const writes = await mockBackend(page, { state: gatedRobotState() });
     await page.goto("/settings");
 
-    await expect(chip(page)).toHaveText("Unconfirmed");
+    await expect(chip(page)).toHaveText(/^Unconfirmed/);
     await chip(page).click();
     // The robot's own sentence, verbatim.
     await expect(panel(page)).toContainText(
@@ -133,7 +132,7 @@ test.describe("the robot's state", () => {
     // And the control is now the way back.
     await expect(panel(page).getByRole("button", { name: "Confirm position" })).toHaveCount(0);
     await panel(page).getByRole("button", { name: "Mark unconfirmed" }).click();
-    await expect(chip(page)).toHaveText("Unconfirmed");
+    await expect(chip(page)).toHaveText(/^Unconfirmed/);
     expect(stateWrites(writes).map((w) => w.body)).toEqual([
       { state: "IDLE" },
       { state: "UNINITIALIZED" },
@@ -148,39 +147,36 @@ test.describe("the robot's state", () => {
     });
     await page.goto("/");
 
-    // On the masthead and on the dashboard alike, each saying why in a line.
+    // Said in a line, since a greyed button takes no hover.
     await chip(page).click();
     const fromChip = panel(page).getByRole("button", { name: "Confirm position" });
     await expect(fromChip).toBeDisabled();
     await expect(panel(page)).toContainText(CONFIRM_NOT_CONVERGED);
-    const fromDashboard = positionPanel(page).getByRole("button", { name: "Confirm position" });
-    await expect(fromDashboard).toBeDisabled();
-    await expect(positionPanel(page)).toContainText(CONFIRM_NOT_CONVERGED);
 
     await fromChip.click({ force: true });
-    await fromDashboard.click({ force: true });
     expect(stateWrites(writes)).toEqual([]);
   });
 
-  test("offers Confirm beside the live scan, and opens the goal tools with it", async ({
+  test("confirms from the masthead on the dashboard, and opens the goal tools with it", async ({
     page,
   }) => {
     const writes = await mockBackend(page, { state: gatedRobotState() });
     await page.goto("/");
 
-    await expect(positionPanel(page)).toContainText("Unconfirmed");
-    await expect(positionPanel(page)).toContainText("Check the live scan against the map");
+    // Nothing over the map: the top bar's chip is where the hold is said.
+    await expect(positionPanel(page)).toHaveCount(0);
+    await expect(page.getByRole("main").getByText(START_LOCK_UNCONFIRMED)).toHaveCount(0);
     // A goal drives on the map, so it is held; setting the pose is not.
     await expect(toolbar(page, "Set goal")).toBeDisabled();
     await expect(toolbar(page, "Set initial pose")).toBeEnabled();
     await toolbar(page, "Set goal").click({ force: true });
     await expect(toolbar(page, "Set goal")).toHaveAttribute("aria-pressed", "false");
 
-    await positionPanel(page).getByRole("button", { name: "Confirm position" }).click();
+    await chip(page).click();
+    await panel(page).getByRole("button", { name: "Confirm position" }).click();
 
     await expect.poll(() => stateWrites(writes).map((w) => w.body)).toEqual([{ state: "IDLE" }]);
-    // The panel goes with the state it was for; the chip is the reading.
-    await expect(positionPanel(page)).toHaveCount(0);
+    // The chip is the reading.
     await expect(chip(page)).toHaveText("Idle");
     await expect(toolbar(page, "Set goal")).toBeEnabled();
     expect(dispatches(writes)).toEqual([]);
@@ -216,7 +212,7 @@ test.describe("the robot's state", () => {
     });
     await page.goto("/tasks");
 
-    await expect(chip(page)).toHaveText("Error");
+    await expect(chip(page)).toHaveText(/^Error/);
     // Any kind, the one that drives nowhere included.
     for (const name of ['Run "Morning round" now', 'Run "Greeting" now']) {
       const run = page.getByRole("button", { name });
@@ -241,17 +237,15 @@ test.describe("the robot's state", () => {
     }
   });
 
-  test("greys the dashboard's goal tools on an error and says where to release it", async ({
+  test("greys the dashboard's goal tools on an error, with no card over the map", async ({
     page,
   }) => {
     const writes = await mockBackend(page, { state: gatedRobotState({ state: "ERROR" }) });
     await page.goto("/");
 
     await expect(toolbar(page, "Set goal")).toBeDisabled();
-    await expect(page.getByRole("main").getByText(START_LOCK_ERROR)).toBeVisible();
-    // Confirm position is the masthead's here: the dashboard's is for an
-    // unconfirmed position alone.
-    await expect(positionPanel(page)).toHaveCount(0);
+    await expect(page.getByRole("main").getByText(START_LOCK_ERROR)).toHaveCount(0);
+    await expect(chip(page)).toHaveText(/^Error/);
     await toolbar(page, "Set goal").click({ force: true });
     expect(dispatches(writes)).toEqual([]);
   });
@@ -334,11 +328,12 @@ test.describe("the robot's state", () => {
     );
     await page.goto("/");
 
-    await positionPanel(page).getByRole("button", { name: "Confirm position" }).click();
+    await chip(page).click();
+    await panel(page).getByRole("button", { name: "Confirm position" }).click();
 
-    await expect(positionPanel(page)).toContainText(sentence);
+    await expect(panel(page)).toContainText(sentence);
     // Nothing changed, and nothing claims it did.
-    await expect(chip(page)).toHaveText("Unconfirmed");
+    await expect(chip(page)).toHaveText(/^Unconfirmed/);
     await expect(toolbar(page, "Set goal")).toBeDisabled();
   });
 
@@ -346,9 +341,7 @@ test.describe("the robot's state", () => {
     const writes = await mockBackend(page, { state: gatedRobotState({ mode: "MANUAL" }) });
     await page.goto("/");
 
-    // The dashboard's Confirm is Navigation's alone.
-    await expect(chip(page)).toHaveText("Unconfirmed");
-    await expect(positionPanel(page)).toHaveCount(0);
+    await expect(chip(page)).toHaveText(/^Unconfirmed/);
     await chip(page).click();
     const confirm = panel(page).getByRole("button", { name: "Confirm position" });
     await expect(confirm).toBeDisabled();
@@ -453,31 +446,26 @@ test.describe("the robot's state", () => {
     ]);
   });
 
-  test("holds the dashboard's Confirm with the reading, and keeps the last hold on goals", async ({
+  test("closes the chip's card when the robot goes silent, and keeps the last hold on goals", async ({
     page,
   }) => {
     const writes = await mockBackend(page, { state: gatedRobotState() });
     const robot = await robotStateSilence(page);
     await page.goto("/");
 
-    const confirm = positionPanel(page).getByRole("button", { name: "Confirm position" });
-    await expect(confirm).toBeEnabled();
+    await chip(page).click();
+    await expect(panel(page).getByRole("button", { name: "Confirm position" })).toBeEnabled();
     await expect(toolbar(page, "Set goal")).toBeDisabled();
 
     robot.silent = true;
 
-    // Nothing to confirm on a state nobody is reporting. The panel stays
-    // where the finger is, says so in the chip's words, and holds Confirm.
+    // Nothing to confirm on a state nobody is reporting: the dash offers
+    // nothing, and the card it hung off closes.
     await expect(chip(page)).toHaveText("—");
-    await expect(positionPanel(page)).toContainText(ROBOT_STATE_STALE);
-    await expect(positionPanel(page)).toContainText(STATE_SILENT_HOLD);
-    await expect(positionPanel(page)).not.toContainText("Unconfirmed");
-    await expect(confirm).toBeDisabled();
-    await confirm.click({ force: true });
+    await expect(chipButton(page)).toHaveCount(0);
+    await expect(panel(page)).toHaveCount(0);
     // Nothing on the dashboard repeats the last frame's word.
     await expect(page.getByRole("main").getByText(START_LOCK_UNCONFIRMED)).toHaveCount(0);
-    // The masthead follows the same rule: the dash offers nothing.
-    await expect(chipButton(page)).toHaveCount(0);
     // The goal tools stay as the last frame left them, as every gate here
     // judges by the last frame.
     await expect(toolbar(page, "Set goal")).toBeDisabled();
@@ -485,10 +473,9 @@ test.describe("the robot's state", () => {
 
     robot.silent = false;
 
-    await expect(chip(page)).toHaveText("Unconfirmed");
-    await expect(positionPanel(page)).toContainText("Unconfirmed");
-    await expect(confirm).toBeEnabled();
-    await confirm.click();
+    await expect(chip(page)).toHaveText(/^Unconfirmed/);
+    await chip(page).click();
+    await panel(page).getByRole("button", { name: "Confirm position" }).click();
     await expect.poll(() => stateWrites(writes).map((w) => w.body)).toEqual([{ state: "IDLE" }]);
     await expect(chip(page)).toHaveText("Idle");
     await expect(toolbar(page, "Set goal")).toBeEnabled();
