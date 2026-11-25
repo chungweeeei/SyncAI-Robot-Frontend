@@ -46,3 +46,14 @@ export function hottestMotor(
   }
   return hottest;
 }
+
+/**
+ * The top of the notice's heat gauge, °C: room above the limit for a joint
+ * that keeps climbing, without squeezing a calm 40 ° into a sliver.
+ */
+export const HEAT_GAUGE_MAX_C = 100;
+
+/** Where a reading sits on the gauge, 0–1, clamped: a reading past the top fills it. */
+export function heatGaugeFraction(celsius: number): number {
+  return Math.min(1, Math.max(0, celsius / HEAT_GAUGE_MAX_C));
+}

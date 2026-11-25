@@ -167,8 +167,11 @@ graphite for a dim one. Neither is the default the other was derived from.
 
 Motion is functional and scarce: a sweep across the status strip once per
 telemetry frame (proof the link is alive), a hold bar filling on the stop's
-release, a climbing battery meter while charging. Every one of them stops
-under reduced motion.
+release, a climbing battery meter while charging, and every panel the strip
+drops — the robot state's card, sensor alerts, the drive panel, the camera
+window — opening as the menus do (fade, 4 px drop, 95 % zoom from the corner
+nearest its button, 150 ms ease-out; closing at once). Every one of them
+stops under reduced motion.
 
 **Key Characteristics:**
 - Five EFIS signal hues carry all meaning; neutrals carry everything else.
@@ -275,6 +278,7 @@ Quiet and exact: small, square-shouldered, and coloured only when they command.
 ### Chips
 - **Style:** caption-size label in a signal hue, 1 px border at 40 % of that hue, an 8 % tint behind. The neutral chip is hairline and muted ink.
 - **Use:** a status, mode or tone attached to an item (the strip's mode chip, a map's 3D map state). Below `sm` the mode chip collapses to a dot in its hue.
+- **The robot-state chip** is the one chip that is a press: when the state is owed an action (Unconfirmed, Error) it is framed and filled, its dot pulsing (still under reduced motion), the state's word and ▾ in one segment — a second segment naming the press was tried and dropped as too busy. Its popover is a card on the Menu shadow, opening as every strip panel does (see Motion): the state's icon in a tinted square beside its word and the robot's sentence, a caution callout for a hold, one full-width button — nothing more, by request (Confirm solid Commanded Cyan, the rest outlined).
 
 ### Cards / Containers
 - **Instrument group (preferred):** not a card. A label row, then readout rows, separated from the next group by a hairline; 14 px × 16 px padding on the panel. A group of detail rather than of watching (the motor grid) folds behind a worded **Show / Hide** in its label row, and opens on its own when something in it needs the operator.

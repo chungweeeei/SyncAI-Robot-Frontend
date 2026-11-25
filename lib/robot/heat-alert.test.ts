@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   type HeatAlertPhase,
+  HEAT_GAUGE_MAX_C,
+  heatGaugeFraction,
   hottestMotor,
   nextHeatAlertPhase,
 } from "@/lib/robot/heat-alert";
@@ -65,5 +67,13 @@ describe("hottestMotor", () => {
 
   it("has nothing to name when the robot reports no motors", () => {
     expect(hottestMotor([])).toBeUndefined();
+  });
+});
+
+describe("heatGaugeFraction", () => {
+  it("never draws past either end of the gauge", () => {
+    expect(heatGaugeFraction(-5)).toBe(0);
+    expect(heatGaugeFraction(HEAT_GAUGE_MAX_C + 20)).toBe(1);
+    expect(heatGaugeFraction(TEMP_ALERT_C)).toBeCloseTo(TEMP_ALERT_C / HEAT_GAUGE_MAX_C);
   });
 });
