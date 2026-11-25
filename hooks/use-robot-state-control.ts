@@ -14,7 +14,6 @@ import { setRobotState } from "@/lib/api/robot";
 import type { ActiveTasksResponse } from "@/lib/api/task";
 import {
   STUCK_JOB_AFTER_MS,
-  confirmPanel,
   gateSupported,
   stateAction,
   stateReading,
@@ -88,8 +87,7 @@ export interface RobotStateControl {
   /**
    * The robot has a state machine and is not reporting it: the poll is
    * failing over a last frame, whose word is a memory and is withheld. No
-   * action is offered and the dashboard's Confirm steps aside; the masthead's
-   * chip goes neutral beside the link chip, which is what says the link is
+   * action is offered; the masthead's chip goes neutral beside the link chip, which is what says the link is
    * down.
    */
   silent: boolean;
@@ -110,13 +108,6 @@ export interface RobotStateControl {
   action: StateAction | null;
   /** The robot counts a job as running that the job list has not had for a while. */
   stuck: boolean;
-  /** The dashboard's own Confirm position is owed (lib/robot/readiness.ts). */
-  confirmOffered: boolean;
-  /**
-   * The dashboard's Confirm position panel: `live`, `silent` (owed by the
-   * last frame, held while the robot is not reporting), or `none`.
-   */
-  confirmPanel: "none" | "live" | "silent";
   busy: boolean;
   /** The backend's refusal of the last press, or null. Rendered verbatim. */
   error: string | null;
@@ -135,8 +126,7 @@ export interface RobotStateControl {
  * The robot's state machine as an operator's control: the state, what may be
  * done about it, and the press. Read off the console's two shared polls
  * through selectors — no request of its own, and no re-render at their rate —
- * so the masthead's chip and the dashboard's Confirm position can each mount
- * one. Each has its own press, so a refusal is said where it was pressed.
+ * so the masthead's chip can mount it on every screen.
  *
  * Only while the robot-state poll is healthy: a frame it has not renewed is
  * not the robot's word, so the state, its sentence and every action are
@@ -159,7 +149,6 @@ export function useRobotStateControl(): RobotStateControl {
   const mode = facts?.mode ?? null;
   const converged = facts?.converged ?? false;
 
-  const panel = confirmPanel({ reading, lastState: facts?.state ?? null, mode });
   const stuck = useHeldFor(stuckJobSuspected({ state, tasks, status }), STUCK_JOB_AFTER_MS);
 
   const { mutate, reset, isPending, isSuccess, error, data } = useSetRobotState();
@@ -186,23 +175,10 @@ export function useRobotStateControl(): RobotStateControl {
     action,
     stuck,
     silence: reading.kind === "silent" ? silence : null,
-    confirmOffered: panel === "live",
-    confirmPanel: panel,
     busy: isPending,
     error: error?.message ?? null,
     receipt: data && data.state === state ? data.message : null,
     apply: mutate,
     reset,
   };
-}
-
-/**
- * Whether the dashboard's Confirm position panel is up, alone: for the page
- * that lays the pose card beside it, which must not re-render with the rest
- * of the control. Selected down to one value.
- */
-export function useConfirmPanelShown(): boolean {
-  const facts = useRobotStateSelect(stateFacts);
-  const reading = stateReading({ frame: facts, status: useRobotStateStatus() });
-  return confirmPanel({ reading, lastState: facts?.state ?? null, mode: facts?.mode ?? null }) !== "none";
 }

@@ -7,7 +7,6 @@ import { ArmedHint } from "@/components/console/armed-hint";
 import { FloorPicker } from "@/components/console/floor-picker";
 import { overlayPanel } from "@/components/console/instrument";
 import { AutoLocalizeControl } from "@/components/dashboard/auto-localize-control";
-import { ConfirmPositionControl } from "@/components/dashboard/confirm-position-control";
 import { GoalControl } from "@/components/dashboard/goal-control";
 import { InitialPoseControl } from "@/components/dashboard/initial-pose-control";
 import { PointCloudCanvas } from "@/components/dashboard/pointcloud-canvas";
@@ -36,7 +35,6 @@ import { useActiveMap } from "@/hooks/use-maps";
 import { useFloorBand } from "@/hooks/use-floor-band";
 import { useWaypointPlacement } from "@/hooks/use-waypoint-placement";
 import { useRobotMapPose } from "@/hooks/use-robot-map-pose";
-import { useRobotStateControl } from "@/hooks/use-robot-state-control";
 import { useRoutePreview } from "@/hooks/use-route-preview";
 import { useStartLock } from "@/hooks/use-start-lock";
 import { useTelemetry } from "@/hooks/use-telemetry";
@@ -268,7 +266,6 @@ export function PointCloudView({
   // Move or a Charge), so it is the driving lock. The robot refuses the goal
   // either way; this greys the tools first and says why.
   const stateLock = useStartLock(true);
-  const position = useRobotStateControl();
 
   const routePreview = useRoutePreview(activeMap?.name ?? null);
   const estimate = useInitialPose();
@@ -704,8 +701,8 @@ export function PointCloudView({
               cancelable={task.cancelable && !task.busy}
               onCancel={task.cancel}
               cancelError={goalBusy ? task.error : null}
-              // The robot's own hold is said once, by the line or the
-              // Confirm position panel below this one, not again in here.
+              // The robot's own hold is said by the masthead's state chip,
+              // not again in here (no card over the map, by request).
               goLocked={goalBusy || stopped || busyElsewhere || stateLock.locked}
               goLockReason={stopped ? ESTOP_REFUSAL : null}
               jobRunning={busyElsewhere && !stopped}
@@ -731,23 +728,6 @@ export function PointCloudView({
             )}
             <InitialPoseControl estimate={estimate} className="pointer-events-auto" />
             <AutoLocalizeControl localize={localize} className="pointer-events-auto" />
-            {/* After the two tools that set the position: confirming it is
-              * the step that follows either. */}
-            <ConfirmPositionControl control={position} className="pointer-events-auto" />
-            {/* Why the goal tools are greyed, when the panel above does not
-              * already say it: a greyed button swallows its tooltip, and the
-              * release is on the masthead. */}
-            {stateLock.reason && position.confirmPanel === "none" && (
-              <p
-                role="status"
-                className={cn(
-                  overlayPanel,
-                  "pointer-events-auto px-2 py-1.5 text-[11px] leading-snug break-words text-signal-caution",
-                )}
-              >
-                {stateLock.reason}
-              </p>
-            )}
             {/* Why Set initial pose is greyed (and Auto localize beside it,
               * for the same job): said here, since a greyed button takes no
               * hover and a finger has none. */}

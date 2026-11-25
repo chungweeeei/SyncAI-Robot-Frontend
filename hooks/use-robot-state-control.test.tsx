@@ -210,7 +210,6 @@ describe("useRobotStateControl", () => {
 
     expect(result.current.state).toBeNull();
     expect(result.current.action).toBeNull();
-    expect(result.current.confirmOffered).toBe(false);
   });
 
   it("withholds the state and every control while the robot is not reporting it", async () => {
@@ -235,9 +234,6 @@ describe("useRobotStateControl", () => {
     expect(result.current.state).toBeNull();
     expect(result.current.message).toBe("");
     expect(result.current.action).toBeNull();
-    expect(result.current.confirmOffered).toBe(false);
-    // The dashboard's panel stays, held: it was owed when the robot went quiet.
-    expect(result.current.confirmPanel).toBe("silent");
 
     // Frames resume, and it all comes back.
     fetchRobotState.mockResolvedValue({ ...unconfirmed, timestamp: 2 });
@@ -245,8 +241,6 @@ describe("useRobotStateControl", () => {
 
     expect(result.current.silent).toBe(false);
     expect(result.current.state).toBe("UNINITIALIZED");
-    expect(result.current.confirmOffered).toBe(true);
-    expect(result.current.confirmPanel).toBe("live");
     expect(result.current.action?.id).toBe("confirm");
   });
 
@@ -282,7 +276,6 @@ describe("useRobotStateControl", () => {
 
     expect(result.current.state).toBe("UNINITIALIZED");
     expect(result.current.message).toBe("Waiting for an operator to confirm the position.");
-    expect(result.current.confirmOffered).toBe(true);
     expect(result.current.action).toMatchObject({ id: "confirm", lock: null });
   });
 

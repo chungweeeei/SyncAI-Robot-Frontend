@@ -13,6 +13,7 @@ import {
   taskState,
   withOctomap,
 } from "./backend";
+import { openingSettled } from "./motion";
 
 /**
  * The console on a phone: 375 px wide, driven by a finger. Run only by the
@@ -260,8 +261,9 @@ test.describe("the console on a phone", () => {
       const strip = page.getByRole("banner");
 
       const mark = strip.getByRole("button", { name: `Robot state: ${word}` });
-      // A dot here, its word kept for a screen reader.
-      await expect(mark).toHaveText(word);
+      // A dot here, its word kept for a screen reader (and the loud chip's
+      // cue, Confirm or Release, hidden with it).
+      await expect(mark).toHaveText(new RegExp(`^${word}`));
       const markBox = await mark.boundingBox();
       await expectOnScreen(page, "the state", markBox);
       expect(markBox?.width, "the state printed its word").toBeLessThan(TARGET);
@@ -295,6 +297,8 @@ test.describe("the console on a phone", () => {
       const panel = strip.getByRole("dialog", { name: "Robot state" });
       await expect(panel).toBeVisible();
       await expect(panel).toContainText(`Said for ${word}.`);
+      // Measured once its opening zoom has settled, not at 95 % of its size.
+      await openingSettled(page);
       await expectOnScreen(page, "the state popover", await panel.boundingBox());
       await expect(panel.getByRole("button")).toHaveCount(1);
       const confirm = panel.getByRole("button", {
@@ -314,15 +318,18 @@ test.describe("the console on a phone", () => {
     });
   }
 
-  test("leaves the dashboard's Confirm position whole under a finger", async ({ page }) => {
-    // The pose card shares the viewport's left foot with the panels, and
-    // once covered half of this button — the press that lets a fresh robot
-    // take jobs.
+  test("leaves Confirm position whole under a finger over the dashboard", async ({ page }) => {
+    // The masthead's card is the one place the position is confirmed; on
+    // the dashboard it drops over the map and its panels, and nothing of
+    // theirs may cover the press that lets a fresh robot take jobs.
     const writes = await mockBackend(page, { state: gatedRobotState() });
     await page.goto("/");
-    const confirm = page
-      .getByRole("region", { name: "Robot position" })
-      .getByRole("button", { name: "Confirm position" });
+    await expect(page.getByRole("region", { name: "Robot position" })).toHaveCount(0);
+    const strip = page.getByRole("banner");
+    await strip.getByRole("button", { name: "Robot state: Unconfirmed" }).tap();
+    const popover = strip.getByRole("dialog", { name: "Robot state" });
+    await openingSettled(page);
+    const confirm = popover.getByRole("button", { name: "Confirm position" });
     await expect(confirm).toBeEnabled();
     const box = await confirm.boundingBox();
     await expectOnScreen(page, "Confirm position", box);
@@ -353,8 +360,7 @@ test.describe("the console on a phone", () => {
     await expect
       .poll(() => writes.filter((w) => w.path === "/api/v1/robot/state").map((w) => w.body))
       .toEqual([{ state: "IDLE" }]);
-    // Once confirmed the panel goes and the pose card comes back.
-    await expect(page.getByRole("region", { name: "Robot position" })).toHaveCount(0);
+    await expect(strip.getByRole("button", { name: "Robot state: Idle" })).toBeVisible();
     await expect(page.getByRole("region", { name: "Pose" })).toBeVisible();
   });
 
@@ -370,6 +376,7 @@ test.describe("the console on a phone", () => {
     await drive.click();
     const driveHeading = page.getByRole("heading", { name: "Manual drive" });
     await expect(driveHeading).toBeVisible();
+    await openingSettled(page);
     // The panel is the nearest positioned ancestor that owns the heading; the
     // desktop suite locates it the same way.
     const drivePanel = page.locator("div", { has: driveHeading }).last();
@@ -381,6 +388,7 @@ test.describe("the console on a phone", () => {
     await camera.click();
     const cameraHeading = page.getByRole("heading", { name: "Camera" });
     await expect(cameraHeading).toBeVisible();
+    await openingSettled(page);
     const cameraPanel = page.locator("div", { has: cameraHeading }).last();
     await expectOnScreen(page, "the camera window", await cameraPanel.boundingBox());
 
@@ -509,6 +517,7 @@ test.describe("the console on a phone", () => {
 
     const notice = page.getByRole("alert").filter({ hasText: "A motor is overheating" });
     await expect(notice).toBeVisible();
+    await openingSettled(page);
     await expectOnScreen(page, "the overheating notice", await notice.boundingBox());
     const dismiss = notice.getByRole("button", { name: "Dismiss" });
     const box = await dismiss.boundingBox();
