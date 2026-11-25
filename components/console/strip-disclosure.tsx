@@ -96,6 +96,18 @@ export function StripDisclosure({
 }
 
 /**
+ * How every panel the strip drops opens, as the console's menus do (the
+ * dropdown's tw-animate-css vocabulary): a fade, a 4 px drop and a 95 %
+ * zoom out of the corner nearest its button (the caller's `origin-*`),
+ * 150 ms ease-out. Opening only — a panel closes at once, since the press
+ * that closed it has already moved on — and not at all under reduced
+ * motion. A dragged panel's own translate is untouched: it mounts at no
+ * offset, and the keyframe only names where the opening starts from.
+ */
+export const panelEnter =
+  "animate-in fade-in-0 zoom-in-95 slide-in-from-top-1 duration-150 ease-out motion-reduce:animate-none";
+
+/**
  * Where a dropped panel sits: under the strip, right-aligned to its button.
  * z-30 because <main>, a later sibling, would paint over it.
  *
@@ -103,8 +115,11 @@ export function StripDisclosure({
  * opened past a phone's left edge. `fixed` is sound because no ancestor has a
  * transform or filter, and the drag clamps measure against `window` anyway.
  */
-export const droppedPanel =
-  "fixed top-16 right-3 z-30 sm:absolute sm:top-full sm:right-0 sm:mt-2";
+export const droppedPanel = cn(
+  "fixed top-16 right-3 z-30 sm:absolute sm:top-full sm:right-0 sm:mt-2",
+  "origin-top-right",
+  panelEnter,
+);
 
 /**
  * The lowest a dropped panel may reach: the bottom of <main>, so it cannot be
