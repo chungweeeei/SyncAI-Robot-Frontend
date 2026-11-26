@@ -68,6 +68,9 @@ test.describe("the console shell", () => {
     const clip = page.getByRole("button", { name: "Video clip" });
     await expect(clip).toBeDisabled();
     await expect(clip).toHaveAttribute("aria-pressed", "false");
+    // No picture, so no second camera: a robot that sent none gets the
+    // window it always had.
+    await expect(page.getByRole("button", { name: "Picture in picture" })).toHaveCount(0);
 
     // Escape is scoped to this subtree, not to the window.
     await page.keyboard.press("Escape");

@@ -52,6 +52,8 @@ export type ClipEnd =
   | "limit"
   /** The picture went away (session dropped, or a retry replaced it). */
   | "source"
+  /** The operator switched the large picture to the other camera. */
+  | "switch"
   /** The window was closed mid-capture. */
   | "closed"
   | "error";

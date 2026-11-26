@@ -1,3 +1,4 @@
+import { carriesMedia, type CameraFeed } from "@/lib/video/cameras";
 import { openSession, type SessionHandlers } from "@/lib/video/signalling";
 
 /**
@@ -6,7 +7,8 @@ import { openSession, type SessionHandlers } from "@/lib/video/signalling";
  */
 
 export interface WhepSession {
-  readonly stream: MediaStream;
+  /** The front camera first; the rear one only where the robot sent it. */
+  readonly cameras: readonly CameraFeed[];
   /** From the Location header, for the DELETE. */
   readonly sessionUrl: string | null;
   readonly pc: RTCPeerConnection;
@@ -24,21 +26,33 @@ export async function startWhepSession(
     // Host candidates connect a console and robot on one LAN.
     iceServers: [],
   });
-  const stream = new MediaStream();
-
   const session = await openSession(pc, path, {
     handlers,
     setup: () => {
-      pc.addEventListener("track", (event) => stream.addTrack(event.track));
-      // In this order: the worker sends exactly H264 video then Opus audio,
-      // and needs an m-line for each.
+      // Video, audio, then the second video: the worker reads the first video
+      // m-line as its first camera whatever comes after it, and one from
+      // before the second camera expects video then audio and answers a
+      // third line it has no track for inactive.
       pc.addTransceiver("video", { direction: "recvonly" });
       pc.addTransceiver("audio", { direction: "recvonly" });
+      pc.addTransceiver("video", { direction: "recvonly" });
     },
   });
 
+  // In the order `setup` added them.
+  const [front, audio, rear] = pc.getTransceivers();
+  // A receiver's track exists from the transceiver's creation, so the streams
+  // are whole the moment the answer lands. One stream per camera, each with
+  // the audio, so the window's mute works whichever camera is the large one.
+  const feed = (video: RTCRtpTransceiver) =>
+    new MediaStream([video.receiver.track, audio.receiver.track]);
+  const cameras: CameraFeed[] = [{ id: "front", stream: feed(front) }];
+  if (carriesMedia(rear.currentDirection)) {
+    cameras.push({ id: "rear", stream: feed(rear) });
+  }
+
   return {
-    stream,
+    cameras,
     get sessionUrl() {
       return session.sessionUrl;
     },

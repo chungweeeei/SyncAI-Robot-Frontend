@@ -133,7 +133,13 @@ The stack as built. Correct this section if a choice changes.
   scene.
 - **WebRTC (WHEP) in `lib/video/`** reaches the operator as the masthead's
   camera window (`useCameraStream` → `components/console/camera-window.tsx`), a
-  movable, resizable panel any screen can open, and is its only consumer:
+  movable, resizable panel any screen can open, and is its only consumer.
+  The offer is video, audio, video: the worker sends its first camera (the
+  front) on the first video line and a second (the M20's rear) on the
+  second, answering it inactive where it has none — so whether the window
+  offers its Front / Rear switch and picture in picture is read off the
+  answer (`lib/video/cameras.ts`), never off the robot's model. A clip
+  records the large picture, and a switch ends it and saves it;
   the `/webrtc-test` bench, and with it WHIP and the duplex endpoint, went
   on 2026-11-20.
 - **@dnd-kit** (`core` + `sortable`) for the task editor's drag-to-reorder
@@ -736,7 +742,8 @@ lib/
                 drive panel's posture keys, R / F: posture-keys.ts), the linear
                 speed limit, the drive view's one-axis lock (lockToAxis) and
                 the screen-to-body-frame turn the drive panel commands through
-  video/        WHEP signalling, and the camera window's clip capture
+  video/        WHEP signalling, the cameras a session carries and which one
+                the window shows (cameras.ts), and the camera window's clip capture
                 (container pick, filename rule, the recorder wrapper)
   types/        shared wire types (map, robot, pointcloud, stream), the
                 decoded 3D map (octree.ts: the occupied cells and the key

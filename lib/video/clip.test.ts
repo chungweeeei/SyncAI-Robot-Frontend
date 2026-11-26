@@ -247,6 +247,26 @@ describe("startClipCapture", () => {
     expect(outcomes[0].end).toBe("closed");
   });
 
+  it("says a camera switch ended it, though the picture then goes away", () => {
+    // The window stops with "switch" and then swaps the stream, whose track
+    // ends while a real recorder is still flushing: the receipt must name the
+    // switch, not a lost picture.
+    const track = new FakeTrack("video");
+    const { handle, recorder, delivered, outcomes } = capture(new FakeStream([track]));
+    recorder.emit(4);
+    recorder.stop = function (this: FakeRecorder) {
+      this.state = "inactive";
+    };
+
+    handle!.stop("switch");
+    track.end();
+    recorder.dispatchEvent(new Event("stop"));
+
+    expect(delivered).toHaveLength(1);
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0].end).toBe("switch");
+  });
+
   it("hands over no empty file", () => {
     const { handle, delivered, outcomes } = capture(
       new FakeStream([new FakeTrack("video")]),

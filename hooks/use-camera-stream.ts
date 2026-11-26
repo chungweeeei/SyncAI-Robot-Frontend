@@ -2,7 +2,11 @@
 
 import * as React from "react";
 
+import type { CameraFeed } from "@/lib/video/cameras";
 import { startWhepSession, type WhepSession } from "@/lib/video/whep";
+
+/** One identity, so a reader's memo on the list survives every render before the answer. */
+const NO_CAMERAS: readonly CameraFeed[] = [];
 
 export type CameraPhase = "connecting" | "live" | "failed";
 
@@ -10,8 +14,8 @@ export interface CameraStream {
   phase: CameraPhase;
   /** The backend's sentence when it refused, verbatim. */
   error: string | null;
-  /** For a <video>'s srcObject; null until the answer lands. */
-  stream: MediaStream | null;
+  /** Empty until the answer lands; the front camera first, the rear where there is one. */
+  cameras: readonly CameraFeed[];
   retry: () => void;
 }
 
@@ -26,7 +30,7 @@ export interface CameraStream {
 export function useCameraStream(): CameraStream {
   const [phase, setPhase] = React.useState<CameraPhase>("connecting");
   const [error, setError] = React.useState<string | null>(null);
-  const [stream, setStream] = React.useState<MediaStream | null>(null);
+  const [cameras, setCameras] = React.useState<readonly CameraFeed[]>(NO_CAMERAS);
   const [attempt, setAttempt] = React.useState(0);
   const sessionRef = React.useRef<WhepSession | null>(null);
 
@@ -45,7 +49,7 @@ export function useCameraStream(): CameraStream {
         }
         opened = session;
         sessionRef.current = session;
-        setStream(session.stream);
+        setCameras(session.cameras);
         setPhase("live");
       } catch (e) {
         if (cancelled) return;
@@ -74,9 +78,9 @@ export function useCameraStream(): CameraStream {
   const retry = React.useCallback(() => {
     setPhase("connecting");
     setError(null);
-    setStream(null);
+    setCameras(NO_CAMERAS);
     setAttempt((n) => n + 1);
   }, []);
 
-  return { phase, error, stream, retry };
+  return { phase, error, cameras, retry };
 }

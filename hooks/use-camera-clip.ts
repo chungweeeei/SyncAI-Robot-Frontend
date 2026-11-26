@@ -8,6 +8,7 @@ import {
   pickClipFormat,
   startClipCapture,
   type ClipCapture,
+  type ClipEnd,
   type ClipFormat,
   type ClipOutcome,
 } from "@/lib/video/clip";
@@ -29,7 +30,12 @@ export interface CameraClip {
   /** The capture that just ended, for the receipt. */
   last: ClipOutcome | null;
   start: () => void;
-  stop: () => void;
+  /**
+   * The operator's stop by default. The window passes `"switch"` before it
+   * changes the camera, so the receipt says why the clip ended rather than the
+   * "picture stopped" the stream change would otherwise report.
+   */
+  stop: (end?: ClipEnd) => void;
   dismiss: () => void;
 }
 
@@ -87,7 +93,10 @@ export function useCameraClip(stream: MediaStream | null): CameraClip {
     setCapturing(true);
   }, [format, stream]);
 
-  const stop = React.useCallback(() => captureRef.current?.stop("operator"), []);
+  const stop = React.useCallback(
+    (end: ClipEnd = "operator") => captureRef.current?.stop(end),
+    [],
+  );
   const dismiss = React.useCallback(() => setLast(null), []);
 
   // MediaRecorder cannot be re-pointed, so a new stream ends the capture. The

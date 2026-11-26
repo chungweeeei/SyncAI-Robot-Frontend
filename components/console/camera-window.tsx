@@ -4,7 +4,9 @@ import * as React from "react";
 import {
   CircleIcon,
   GripHorizontalIcon,
+  PictureInPicture2Icon,
   SquareIcon,
+  SwitchCameraIcon,
   Volume2Icon,
   VolumeXIcon,
 } from "lucide-react";
@@ -16,6 +18,13 @@ import { useCameraStream } from "@/hooks/use-camera-stream";
 import { isDrag } from "@/lib/map/gesture";
 import { clamp } from "@/lib/math";
 import { formatDuration, formatSize } from "@/lib/recording/format";
+import {
+  CAMERA_LABEL,
+  INITIAL_CAMERA_VIEW,
+  otherCamera,
+  shownView,
+  type CameraView,
+} from "@/lib/video/cameras";
 import type { ClipOutcome } from "@/lib/video/clip";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +76,11 @@ function receiptFor(outcome: ClipOutcome): { text: string; tone: string } {
         text: `Saved automatically at ${length}.`,
         tone: "text-signal-caution",
       };
+    case "switch":
+      return {
+        text: `Switched cameras — saved ${length}.`,
+        tone: "text-signal-caution",
+      };
     case "source":
       return {
         text: `The picture stopped — saved ${length}.`,
@@ -95,10 +109,25 @@ function receiptFor(outcome: ClipOutcome): { text: string; tone: string } {
  * strip that mounts this window is in the root layout.
  */
 export function CameraWindow({ className }: { className?: string }) {
-  const { phase, error, stream, retry } = useCameraStream();
+  const { phase, error, cameras, retry } = useCameraStream();
+  const [view, setView] = React.useState<CameraView>(INITIAL_CAMERA_VIEW);
+  const shown = shownView(view, cameras);
+  const dual = cameras.length > 1;
+  const stream = cameras.find((camera) => camera.id === shown.main)?.stream ?? null;
+  const inset = shown.pip ? otherCamera(shown.main) : null;
+  const insetStream = cameras.find((camera) => camera.id === inset)?.stream ?? null;
+  // The clip records the large picture, which is the one the operator chose.
   const clip = useCameraClip(stream);
 
+  // A clip is one camera's picture, so a switch ends it and saves what it has.
+  const showCamera = (main: CameraView["main"]) => {
+    if (main === shown.main) return;
+    if (clip.capturing) clip.stop("switch");
+    setView({ ...shown, main });
+  };
+
   const videoRef = React.useRef<HTMLVideoElement>(null);
+  const insetRef = React.useRef<HTMLVideoElement>(null);
   const panelRef = React.useRef<HTMLDivElement>(null);
   const [muted, setMuted] = React.useState(true);
   const [size, setSize] = React.useState(openingSize);
@@ -134,6 +163,18 @@ export function CameraWindow({ className }: { className?: string }) {
       video.srcObject = null;
     };
   }, [stream]);
+
+  // Its own effect: the inset mounts and unmounts with the toggle, and the
+  // large picture must not restart when it does.
+  React.useEffect(() => {
+    const video = insetRef.current;
+    if (!video || !insetStream) return;
+    video.srcObject = insetStream;
+    void video.play().catch(() => {});
+    return () => {
+      video.srcObject = null;
+    };
+  }, [insetStream]);
 
   const dragRef = React.useRef<{
     pointerId: number;
@@ -314,8 +355,47 @@ export function CameraWindow({ className }: { className?: string }) {
             <GripHorizontalIcon aria-hidden className="size-3" />
           </button>
           Camera
+          {dual && <span className="text-foreground">· {CAMERA_LABEL[shown.main]}</span>}
         </h2>
         <div className="flex items-center gap-1">
+          {/* Offered only where the robot sent a second camera, so a robot
+            * with one shows the window it always had. */}
+          {dual && (
+            <>
+              <button
+                type="button"
+                aria-label={`Show the ${CAMERA_LABEL[otherCamera(shown.main)].toLowerCase()} camera`}
+                onClick={() => showCamera(otherCamera(shown.main))}
+                title={
+                  clip.capturing
+                    ? `Save the clip and show the ${CAMERA_LABEL[otherCamera(shown.main)].toLowerCase()} camera`
+                    : `Show the ${CAMERA_LABEL[otherCamera(shown.main)].toLowerCase()} camera`
+                }
+                className="flex size-5 items-center justify-center rounded-sm border border-hairline text-muted-foreground transition-colors hover:bg-elevated hover:text-foreground pointer-coarse:size-10"
+              >
+                <SwitchCameraIcon aria-hidden className="size-3" />
+              </button>
+              <button
+                type="button"
+                aria-pressed={shown.pip}
+                aria-label="Picture in picture"
+                onClick={() => setView({ ...shown, pip: !shown.pip })}
+                title={
+                  shown.pip
+                    ? "Hide the second camera"
+                    : `Show the ${CAMERA_LABEL[otherCamera(shown.main)].toLowerCase()} camera small`
+                }
+                className={cn(
+                  "flex size-5 items-center justify-center rounded-sm border transition-colors pointer-coarse:size-10",
+                  shown.pip
+                    ? "border-signal-cmd/50 bg-signal-cmd/12 text-signal-cmd"
+                    : "border-hairline text-muted-foreground hover:bg-elevated hover:text-foreground",
+                )}
+              >
+                <PictureInPicture2Icon aria-hidden className="size-3" />
+              </button>
+            </>
+          )}
           {/* Record red, not commanded cyan: it starts something running, as
             * the recorder's signal-warn does. */}
           <button
@@ -377,6 +457,39 @@ export function CameraWindow({ className }: { className?: string }) {
           muted={muted}
           className="h-full w-full object-contain"
         />
+
+        {inset && (
+          // Top-right: top-left is the clip's clock, bottom-left the resize
+          // grip, bottom-right the clip's receipt. The inset is a button, so
+          // a tap or a key swaps the two pictures.
+          <button
+            type="button"
+            aria-label={`Show the ${CAMERA_LABEL[inset].toLowerCase()} camera large`}
+            title={
+              clip.capturing
+                ? `Save the clip and show the ${CAMERA_LABEL[inset].toLowerCase()} camera large`
+                : `Show the ${CAMERA_LABEL[inset].toLowerCase()} camera large`
+            }
+            onClick={() => showCamera(inset)}
+            style={{ width: Math.round(size.width / 3) }}
+            className="absolute top-1 right-1 aspect-video overflow-hidden rounded-sm border border-white/40 bg-black transition-colors hover:border-white focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            {/* Always muted: the audio is the robot's one microphone, already
+              * on the large picture. */}
+            <video
+              ref={insetRef}
+              playsInline
+              muted
+              className="pointer-events-none h-full w-full object-cover"
+            />
+            <span
+              aria-hidden
+              className="instrument-label absolute bottom-0 left-0 rounded-tr-sm bg-black/60 px-1 text-[9px] leading-tight text-white"
+            >
+              {CAMERA_LABEL[inset]}
+            </span>
+          </button>
+        )}
 
         {phase !== "live" && (
           <div className="absolute inset-0 flex items-center justify-center p-3 text-center">
