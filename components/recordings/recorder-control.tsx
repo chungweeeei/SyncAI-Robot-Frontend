@@ -5,12 +5,13 @@ import { CircleIcon, SquareIcon } from "lucide-react";
 
 import { ErrorLine } from "@/components/console/error-line";
 import { RecordDot, Readout } from "@/components/console/instrument";
-import { TopicPicker, DEFAULT_TOPICS } from "@/components/recordings/topic-picker";
+import { TopicPicker } from "@/components/recordings/topic-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useStartRecording, useStopRecording } from "@/hooks/use-recorder";
+import { useRobotProfile } from "@/hooks/use-console-robot-state";
 import { useActiveRecording } from "@/hooks/use-recordings";
 import type { ActiveRecording, StoppedRecording } from "@/lib/api/recording";
 import { formatDuration, formatSize, formatTimestamp } from "@/lib/recording/format";
@@ -19,6 +20,7 @@ import {
   RECORDING_NAME_RE,
   RESERVED_RECORDING_NAME,
 } from "@/lib/recording/name";
+import { recordingTopics, topicsToSend } from "@/lib/recording/topics";
 import { cn } from "@/lib/utils";
 
 /** The live recorder: what is being written, and the one way to end it. */
@@ -125,7 +127,12 @@ export function RecorderControl() {
   const stop = useStopRecording();
 
   const [name, setName] = React.useState("");
-  const [topics, setTopics] = React.useState<string[]>(DEFAULT_TOPICS);
+  // The channels are the robot model's (lib/recording/topics.ts), and the
+  // model arrives with the first state frame, after mount — so the choice is
+  // null until the operator makes one, and reads as the model's defaults.
+  const topicSet = recordingTopics(useRobotProfile()?.id);
+  const [chosen, setChosen] = React.useState<string[] | null>(null);
+  const topics = topicSet ? topicsToSend(topicSet, chosen) : [];
   // On by default, by request: recordings are kept until deleted and the 2 GB
   // floor is what stops a run. The robot's CPU is the trade.
   const [compression, setCompression] = React.useState(true);
@@ -198,9 +205,21 @@ export function RecorderControl() {
             </p>
           )}
 
-          <TopicPicker value={topics} onChange={setTopics} disabled={busy} />
+          {topicSet ? (
+            <TopicPicker
+              presets={topicSet.presets}
+              value={topics}
+              onChange={setChosen}
+              disabled={busy}
+            />
+          ) : (
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              Waiting for the robot to say which model it is — its channels
+              depend on it.
+            </p>
+          )}
 
-          {topics.length === 0 && (
+          {topicSet && topics.length === 0 && (
             <p className="text-[11px] leading-snug text-signal-caution">
               Pick at least one channel to record.
             </p>

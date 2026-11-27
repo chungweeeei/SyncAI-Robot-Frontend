@@ -2,49 +2,8 @@
 
 import * as React from "react";
 
+import type { TopicPreset } from "@/lib/recording/topics";
 import { cn } from "@/lib/utils";
-
-/**
- * The channels offered as one tap, and why each is on the list.
- *
- * Hardcoded: the backend has no channel-list route, and one would put a ROS
- * graph query behind every visit. This can drift from what the robot
- * publishes, which is why each row shows its message count.
- *
- * A relative name is expanded by the backend (`livox/lidar` →
- * `/robot01/livox/lidar`); an absolute one passes through as written, which is
- * what the transform pair needs, since it is not under the robot's namespace.
- * Trimmed to what rebuilding a map needs, by request.
- */
-const PRESETS: readonly { topic: string; hint: string }[] = [
-  // The pair a lost mapping run is replayed from — the reason this page exists.
-  { topic: "livox/lidar", hint: "Laser scanner — the robot's main sensor" },
-  { topic: "livox/imu", hint: "Motion sensor — needed with the scanner to rebuild a map" },
-  { topic: "imu", hint: "Body motion sensor — how the robot itself tilts and turns" },
-  // The camera node is pinned to MJPG, so only image_raw/compressed exists.
-  // It is opt-in at bringup, so without it this records nothing — which the
-  // zero-message row will say.
-  { topic: "image_raw/compressed", hint: "Camera picture" },
-  // The camera has no usable calibration on this hardware, so this is expected
-  // to record nothing until it does — the zero-message row will say so.
-  { topic: "camera_info", hint: "Camera calibration — how the picture maps onto the world" },
-  { topic: "/tf", hint: "How the robot's parts are placed as it moves" },
-  { topic: "/tf_static", hint: "How the robot's fixed parts are mounted" },
-  { topic: "odom", hint: "Where the robot calculates it has travelled" },
-  // The localizer's own answers, so a replay can be checked against what the
-  // robot believed at the time rather than only re-run from its inputs.
-  { topic: "pointlio/lio_odom", hint: "Where the robot placed itself on the map" },
-  { topic: "pointlio/body_cloud", hint: "The scan as the robot lined it up with its own body" },
-  { topic: "initialpose", hint: "Starting positions an operator set on the map" },
-  { topic: "robot_state", hint: "Overall status: battery, mode, motor health" },
-];
-
-/**
- * The default: the LIO inputs (also the backend's default). The camera is
- * opt-in, by request — its node is off at bringup on most robots. The console
- * always sends its list.
- */
-export const DEFAULT_TOPICS = ["livox/lidar", "livox/imu"];
 
 /**
  * One selectable channel; chosen ones take the commanded hue (a choice, not a
@@ -95,15 +54,18 @@ function TopicChip({
 
 /**
  * Pick the channels a recording subscribes to: toggles rather than free text,
- * because a misspelled channel records nothing silently. A channel off this
- * list is added here in code, by request.
+ * because a misspelled channel records nothing silently. The list is the
+ * robot model's, from lib/recording/topics.ts; a channel off it is added
+ * there in code, by request.
  */
 export function TopicPicker({
+  presets,
   value,
   onChange,
   disabled = false,
 }: {
-  value: string[];
+  presets: readonly TopicPreset[];
+  value: readonly string[];
   onChange: (topics: string[]) => void;
   disabled?: boolean;
 }) {
@@ -122,7 +84,7 @@ export function TopicPicker({
 
   return (
     <div className="flex flex-wrap gap-1.5">
-      {PRESETS.map((preset) => (
+      {presets.map((preset) => (
         <TopicChip
           key={preset.topic}
           topic={preset.topic}
